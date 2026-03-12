@@ -1,0 +1,328 @@
+{
+  "projectStructure": {
+    "formatVersion": "0.3.3",
+    "isPublishedAsRoot": "true",
+    "variants": [
+      {
+        "name": "debugApiElements",
+        "sourceSet": [
+          "jvmAndAndroidMain",
+          "commonMain",
+          "jvmMain"
+        ]
+      },
+      {
+        "name": "debugRuntimeElements",
+        "sourceSet": [
+          "jvmAndAndroidMain",
+          "commonMain",
+          "jvmMain"
+        ]
+      },
+      {
+        "name": "releaseApiElements",
+        "sourceSet": [
+          "jvmAndAndroidMain",
+          "commonMain",
+          "jvmMain"
+        ]
+      },
+      {
+        "name": "releaseRuntimeElements",
+        "sourceSet": [
+          "jvmAndAndroidMain",
+          "commonMain",
+          "jvmMain"
+        ]
+      },
+      {
+        "name": "desktopApiElements",
+        "sourceSet": [
+          "jvmAndAndroidMain",
+          "commonMain",
+          "jvmMain",
+          "nonAndroidMain"
+        ]
+      },
+      {
+        "name": "desktopRuntimeElements",
+        "sourceSet": [
+          "jvmAndAndroidMain",
+          "commonMain",
+          "jvmMain",
+          "nonAndroidMain"
+        ]
+      },
+      {
+        "name": "iosArm64ApiElements",
+        "sourceSet": [
+          "iosMain",
+          "darwinMain",
+          "nativeMain",
+          "commonMain",
+          "nonJvmMain",
+          "nonAndroidMain"
+        ]
+      },
+      {
+        "name": "iosSimulatorArm64ApiElements",
+        "sourceSet": [
+          "iosMain",
+          "darwinMain",
+          "nativeMain",
+          "commonMain",
+          "nonJvmMain",
+          "nonAndroidMain"
+        ]
+      },
+      {
+        "name": "jsApiElements",
+        "sourceSet": [
+          "commonMain",
+          "webMain",
+          "nonJvmMain",
+          "nonAndroidMain"
+        ]
+      },
+      {
+        "name": "jsRuntimeElements",
+        "sourceSet": [
+          "commonMain",
+          "webMain",
+          "nonJvmMain",
+          "nonAndroidMain"
+        ]
+      },
+      {
+        "name": "macosArm64ApiElements",
+        "sourceSet": [
+          "darwinMain",
+          "nativeMain",
+          "commonMain",
+          "nonJvmMain",
+          "nonAndroidMain"
+        ]
+      },
+      {
+        "name": "wasmJsApiElements",
+        "sourceSet": [
+          "commonMain",
+          "webMain",
+          "nonJvmMain",
+          "nonAndroidMain"
+        ]
+      },
+      {
+        "name": "wasmJsRuntimeElements",
+        "sourceSet": [
+          "commonMain",
+          "webMain",
+          "nonJvmMain",
+          "nonAndroidMain"
+        ]
+      }
+    ],
+    "sourceSets": [
+      {
+        "name": "commonMain",
+        "dependsOn": [],
+        "moduleDependency": [
+          "androidx.navigation3:navigation3-runtime",
+          "org.jetbrains.androidx.navigationevent:navigationevent-compose",
+          "org.jetbrains.compose.animation:animation",
+          "org.jetbrains.compose.runtime:runtime",
+          "org.jetbrains.compose.runtime:runtime-saveable",
+          "org.jetbrains.compose.ui:ui",
+          "androidx.savedstate:savedstate",
+          "androidx.savedstate:savedstate-compose",
+          "androidx.annotation:annotation",
+          "org.jetbrains.kotlin:kotlin-stdlib",
+          "androidx.collection:collection",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose"
+        ],
+        "binaryLayout": "klib"
+      },
+      {
+        "name": "darwinMain",
+        "dependsOn": [
+          "nativeMain"
+        ],
+        "moduleDependency": [
+          "androidx.navigation3:navigation3-runtime",
+          "org.jetbrains.androidx.navigationevent:navigationevent-compose",
+          "org.jetbrains.compose.animation:animation",
+          "org.jetbrains.compose.runtime:runtime",
+          "org.jetbrains.compose.runtime:runtime-saveable",
+          "org.jetbrains.compose.ui:ui",
+          "androidx.savedstate:savedstate",
+          "androidx.savedstate:savedstate-compose",
+          "androidx.annotation:annotation",
+          "androidx.collection:collection",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose"
+        ],
+        "sourceSetCInteropMetadataDirectory": "darwinMain-cinterop",
+        "binaryLayout": "klib",
+        "hostSpecific": "true"
+      },
+      {
+        "name": "iosMain",
+        "dependsOn": [
+          "darwinMain"
+        ],
+        "moduleDependency": [
+          "androidx.navigation3:navigation3-runtime",
+          "org.jetbrains.androidx.navigationevent:navigationevent-compose",
+          "org.jetbrains.compose.animation:animation",
+          "org.jetbrains.compose.runtime:runtime",
+          "org.jetbrains.compose.runtime:runtime-saveable",
+          "org.jetbrains.compose.ui:ui",
+          "androidx.savedstate:savedstate",
+          "androidx.savedstate:savedstate-compose",
+          "androidx.annotation:annotation",
+          "androidx.collection:collection",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose"
+        ],
+        "sourceSetCInteropMetadataDirectory": "iosMain-cinterop",
+        "binaryLayout": "klib",
+        "hostSpecific": "true"
+      },
+      {
+        "name": "jvmAndAndroidMain",
+        "dependsOn": [
+          "commonMain"
+        ],
+        "moduleDependency": [
+          "androidx.navigation3:navigation3-runtime",
+          "org.jetbrains.androidx.navigationevent:navigationevent-compose",
+          "org.jetbrains.compose.animation:animation",
+          "org.jetbrains.compose.runtime:runtime",
+          "org.jetbrains.compose.runtime:runtime-saveable",
+          "org.jetbrains.compose.ui:ui",
+          "androidx.savedstate:savedstate",
+          "androidx.savedstate:savedstate-compose",
+          "androidx.annotation:annotation",
+          "org.jetbrains.kotlin:kotlin-stdlib",
+          "androidx.collection:collection",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose"
+        ],
+        "binaryLayout": "klib"
+      },
+      {
+        "name": "jvmMain",
+        "dependsOn": [
+          "commonMain"
+        ],
+        "moduleDependency": [
+          "androidx.navigation3:navigation3-runtime",
+          "org.jetbrains.androidx.navigationevent:navigationevent-compose",
+          "org.jetbrains.compose.animation:animation",
+          "org.jetbrains.compose.runtime:runtime",
+          "org.jetbrains.compose.runtime:runtime-saveable",
+          "org.jetbrains.compose.ui:ui",
+          "androidx.savedstate:savedstate",
+          "androidx.savedstate:savedstate-compose",
+          "androidx.annotation:annotation",
+          "org.jetbrains.kotlin:kotlin-stdlib",
+          "androidx.collection:collection",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose"
+        ],
+        "binaryLayout": "klib"
+      },
+      {
+        "name": "nativeMain",
+        "dependsOn": [
+          "commonMain",
+          "nonJvmMain"
+        ],
+        "moduleDependency": [
+          "androidx.navigation3:navigation3-runtime",
+          "org.jetbrains.androidx.navigationevent:navigationevent-compose",
+          "org.jetbrains.compose.animation:animation",
+          "org.jetbrains.compose.runtime:runtime",
+          "org.jetbrains.compose.runtime:runtime-saveable",
+          "org.jetbrains.compose.ui:ui",
+          "androidx.savedstate:savedstate",
+          "androidx.savedstate:savedstate-compose",
+          "androidx.annotation:annotation",
+          "androidx.collection:collection",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose"
+        ],
+        "sourceSetCInteropMetadataDirectory": "nativeMain-cinterop",
+        "binaryLayout": "klib",
+        "hostSpecific": "true"
+      },
+      {
+        "name": "nonAndroidMain",
+        "dependsOn": [
+          "commonMain"
+        ],
+        "moduleDependency": [
+          "androidx.navigation3:navigation3-runtime",
+          "org.jetbrains.androidx.navigationevent:navigationevent-compose",
+          "org.jetbrains.compose.animation:animation",
+          "org.jetbrains.compose.runtime:runtime",
+          "org.jetbrains.compose.runtime:runtime-saveable",
+          "org.jetbrains.compose.ui:ui",
+          "androidx.savedstate:savedstate",
+          "androidx.savedstate:savedstate-compose",
+          "androidx.annotation:annotation",
+          "org.jetbrains.kotlin:kotlin-stdlib",
+          "androidx.collection:collection",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose"
+        ],
+        "binaryLayout": "klib"
+      },
+      {
+        "name": "nonJvmMain",
+        "dependsOn": [
+          "nonAndroidMain"
+        ],
+        "moduleDependency": [
+          "androidx.navigation3:navigation3-runtime",
+          "org.jetbrains.androidx.navigationevent:navigationevent-compose",
+          "org.jetbrains.compose.animation:animation",
+          "org.jetbrains.compose.runtime:runtime",
+          "org.jetbrains.compose.runtime:runtime-saveable",
+          "org.jetbrains.compose.ui:ui",
+          "androidx.savedstate:savedstate",
+          "androidx.savedstate:savedstate-compose",
+          "androidx.annotation:annotation",
+          "org.jetbrains.kotlin:kotlin-stdlib",
+          "androidx.collection:collection",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose"
+        ],
+        "binaryLayout": "klib"
+      },
+      {
+        "name": "webMain",
+        "dependsOn": [
+          "nonJvmMain"
+        ],
+        "moduleDependency": [
+          "androidx.navigation3:navigation3-runtime",
+          "org.jetbrains.androidx.navigationevent:navigationevent-compose",
+          "org.jetbrains.compose.animation:animation",
+          "org.jetbrains.compose.runtime:runtime",
+          "org.jetbrains.compose.runtime:runtime-saveable",
+          "org.jetbrains.compose.ui:ui",
+          "androidx.savedstate:savedstate",
+          "androidx.savedstate:savedstate-compose",
+          "androidx.annotation:annotation",
+          "org.jetbrains.kotlin:kotlin-stdlib",
+          "androidx.collection:collection",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime",
+          "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose"
+        ],
+        "binaryLayout": "klib"
+      }
+    ]
+  }
+}
