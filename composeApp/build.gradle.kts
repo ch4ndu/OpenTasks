@@ -54,6 +54,9 @@ kotlin {
             implementation(libs.jetbrains.material3.adaptive.navigation3)
             api(libs.kmlog)
 
+            // DateTime
+            implementation(libs.kotlinx.datetime)
+
             // Room
             implementation(libs.androidx.room.runtime)
             implementation(libs.androidx.sqlite.bundled)
@@ -96,6 +99,7 @@ android {
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

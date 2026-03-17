@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.database
 import androidx.room.TypeConverter
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
+import com.udnahc.opentasks.data.model.TaskPriority
 
 class Converters {
 
@@ -17,4 +18,10 @@ class Converters {
 
     @TypeConverter
     fun toNotifyBeforeUnit(value: String): NotifyBeforeUnit = NotifyBeforeUnit.valueOf(value)
+
+    @TypeConverter
+    fun fromTaskPriority(value: TaskPriority): String = value.name
+
+    @TypeConverter
+    fun toTaskPriority(value: String): TaskPriority = TaskPriority.valueOf(value)
 }

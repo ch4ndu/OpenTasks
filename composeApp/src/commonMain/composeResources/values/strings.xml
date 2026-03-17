@@ -1,0 +1,156 @@
+<resources>
+    <!-- General -->
+    <string name="app_name">OpenTasks</string>
+    <string name="inbox">Inbox</string>
+    <string name="matrix">Matrix</string>
+    <string name="calendar">Calendar</string>
+    <string name="settings">Settings</string>
+    <string name="no_tasks">No tasks yet</string>
+    <string name="task_completed">Task completed</string>
+    <string name="habits">Habits</string>
+    <string name="eisenhower_matrix">Eisenhower Matrix</string>
+    <string name="urgent_important">Urgent &amp; Important</string>
+    <string name="urgent_unimportant">Urgent &amp; Unimportant</string>
+    <string name="not_urgent_important">Not Urgent &amp; Important</string>
+    <string name="not_urgent_unimportant">Not Urgent &amp; Unimportant</string>
+    <string name="view_more">View more</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="done">Done</string>
+    <string name="close">Close</string>
+    <string name="confirm">Confirm</string>
+    <string name="none">None</string>
+    <string name="custom">Custom</string>
+    <string name="back">Back</string>
+    <string name="select">Select</string>
+    <string name="more">More</string>
+    <string name="delete">Delete</string>
+    <string name="start">Start</string>
+    <string name="end">End</string>
+
+    <!-- Create Task Screen -->
+    <string name="title_hint">What would you like to do?</string>
+    <string name="description_hint">Description</string>
+    <string name="date_and_reminder">Date and Reminder</string>
+    <string name="add_subtask">Add subtask</string>
+
+    <!-- Priority -->
+    <string name="priority">Priority</string>
+    <string name="high_priority">High Priority</string>
+    <string name="medium_priority">Medium Priority</string>
+    <string name="low_priority">Low Priority</string>
+    <string name="no_priority">No Priority</string>
+
+    <!-- Bottom Bar -->
+    <string name="tags">Tags</string>
+    <string name="subtasks">Subtasks</string>
+    <string name="attach">Attach</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+    <string name="add_task">Add task</string>
+
+    <!-- Date & Duration -->
+    <string name="date">Date</string>
+    <string name="duration">Duration</string>
+    <string name="time">Time</string>
+    <string name="today">Today</string>
+    <string name="all_day">All day</string>
+    <string name="previous_month">Previous month</string>
+    <string name="next_month">Next month</string>
+    <string name="clear_reminder">Clear reminder</string>
+
+    <!-- Reminder Options (Date tab) -->
+    <string name="reminder">Reminder</string>
+    <string name="reminder_on_the_day">On the day (09:00)</string>
+    <string name="reminder_1_day_early">1 day early (09:00)</string>
+    <string name="reminder_2_days_early">2 days early (09:00)</string>
+    <string name="reminder_3_days_early">3 days early (09:00)</string>
+    <string name="reminder_1_week_early">1 week early (09:00)</string>
+
+    <!-- Reminder Options (Duration tab) -->
+    <string name="reminder_on_time">On time</string>
+    <string name="reminder_5_mins_early">5 mins early</string>
+    <string name="reminder_30_mins_early">30 mins early</string>
+    <string name="reminder_1_hour_early">1 hour early</string>
+    <string name="reminder_1_day_early_duration">1 day early</string>
+    <string name="reminder_at_the_end">At the end</string>
+    <string name="constant_reminder">Constant Reminder</string>
+
+    <!-- Repeat Options -->
+    <string name="repeat">Repeat</string>
+    <string name="daily">Daily</string>
+    <string name="weekly">Weekly</string>
+    <string name="monthly">Monthly</string>
+    <string name="yearly">Yearly</string>
+    <string name="every_weekday">Every Weekday (Mon - Fri)</string>
+    <string name="weekly_with_day">Weekly (%1$s)</string>
+    <string name="monthly_with_day">Monthly (The %1$d day)</string>
+    <string name="yearly_with_date">Yearly (on %1$s %2$d)</string>
+
+    <!-- Time -->
+    <string name="am">AM</string>
+    <string name="pm">PM</string>
+    <string name="duration_hours">Duration: %1$d hour</string>
+    <string name="duration_hours_plural">Duration: %1$d hours</string>
+    <string name="duration_hours_minutes">Duration: %1$dh %2$dm</string>
+    <string name="duration_minutes">Duration: %1$d min</string>
+
+    <!-- Days of week -->
+    <string name="sun">Sun</string>
+    <string name="mon">Mon</string>
+    <string name="tue">Tue</string>
+    <string name="wed">Wed</string>
+    <string name="thu">Thu</string>
+    <string name="fri">Fri</string>
+    <string name="sat">Sat</string>
+
+    <!-- Months (full) -->
+    <string name="january">January</string>
+    <string name="february">February</string>
+    <string name="march">March</string>
+    <string name="april">April</string>
+    <string name="may">May</string>
+    <string name="june">June</string>
+    <string name="july">July</string>
+    <string name="august">August</string>
+    <string name="september">September</string>
+    <string name="october">October</string>
+    <string name="november">November</string>
+    <string name="december">December</string>
+
+    <!-- Quadrant Detail -->
+    <string name="no_date">NO DATE</string>
+    <string name="overdue">OVERDUE</string>
+    <string name="next_7_days">NEXT 7 DAYS</string>
+    <string name="later">LATER</string>
+    <string name="completed">COMPLETED</string>
+
+    <!-- Months (short) -->
+    <string name="jan">Jan</string>
+    <string name="feb">Feb</string>
+    <string name="mar">Mar</string>
+    <string name="apr">Apr</string>
+    <string name="may_short">May</string>
+    <string name="jun">Jun</string>
+    <string name="jul">Jul</string>
+    <string name="aug">Aug</string>
+    <string name="sep">Sep</string>
+    <string name="oct">Oct</string>
+    <string name="nov">Nov</string>
+    <string name="dec">Dec</string>
+
+    <!-- Calendar Views -->
+    <string name="calendar_view_list">List</string>
+    <string name="calendar_view_year">Year</string>
+    <string name="calendar_view_month">Month</string>
+    <string name="calendar_view_week">Week</string>
+    <string name="calendar_view_three_day">3 Day</string>
+    <string name="calendar_view_day">Day</string>
+    <string name="view_coming_soon">%1$s view coming soon</string>
+
+    <!-- Lists -->
+    <string name="move_to">Move to</string>
+    <string name="add_list">Add List</string>
+    <string name="list_name">Name</string>
+    <string name="search">Search</string>
+</resources>
