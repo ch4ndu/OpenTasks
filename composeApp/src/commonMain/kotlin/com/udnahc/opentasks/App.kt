@@ -33,8 +33,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.ui.screens.CreateNoteBottomSheet
 import com.udnahc.opentasks.ui.screens.CreateTaskBottomSheet
 import com.udnahc.opentasks.ui.screens.EisenhowerMatrixScreen
+import com.udnahc.opentasks.ui.screens.NotesScreen
 import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
 import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
 import com.udnahc.opentasks.ui.screens.TaskListScreen
@@ -48,10 +50,9 @@ import opentasks.composeapp.generated.resources.ic_add
 import opentasks.composeapp.generated.resources.ic_calendar
 import opentasks.composeapp.generated.resources.ic_check_box
 import opentasks.composeapp.generated.resources.ic_grid_view
-import opentasks.composeapp.generated.resources.ic_star
+import opentasks.composeapp.generated.resources.ic_note
 import opentasks.composeapp.generated.resources.not_urgent_important
 import opentasks.composeapp.generated.resources.not_urgent_unimportant
-import opentasks.composeapp.generated.resources.settings
 import opentasks.composeapp.generated.resources.urgent_important
 import opentasks.composeapp.generated.resources.urgent_unimportant
 import org.jetbrains.compose.resources.DrawableResource
@@ -86,13 +87,15 @@ private fun MainScreen(
     var calendarSelectedYear by remember { mutableIntStateOf(0) }
     var calendarSelectedMonth by remember { mutableIntStateOf(0) }
     var calendarSelectedDay by remember { mutableIntStateOf(0) }
+    var showCreateNote by remember { mutableStateOf(false) }
+    var editNoteId by remember { mutableStateOf<Long?>(null) }
 
     val tabs = remember {
         listOf(
             BottomNavItem(iconRes = Res.drawable.ic_grid_view),
             BottomNavItem(iconRes = Res.drawable.ic_check_box),
             BottomNavItem(iconRes = Res.drawable.ic_calendar, isCalendar = true),
-            BottomNavItem(iconRes = Res.drawable.ic_star),
+            BottomNavItem(iconRes = Res.drawable.ic_note),
         )
     }
 
@@ -142,7 +145,10 @@ private fun MainScreen(
                         calendarSelectedDay = day
                     },
                 )
-                3 -> PlaceholderContent(stringResource(Res.string.settings))
+                3 -> NotesScreen(
+                    viewModel = viewModel,
+                    onNoteClick = { note -> editNoteId = note.id },
+                )
             }
         }
 
@@ -159,7 +165,9 @@ private fun MainScreen(
                 .align(Alignment.BottomEnd),
         ) {
             CreateTaskFab(
-                onClick = { showCreateSheet = true },
+                onClick = {
+                    if (selectedTab == 3) showCreateNote = true else showCreateSheet = true
+                },
             )
         }
     }
@@ -183,6 +191,40 @@ private fun MainScreen(
             initialYear = if (selectedTab == 2) calendarSelectedYear else 0,
             onDismiss = { showCreateSheet = false },
         )
+    }
+
+    // Create note bottom sheet
+    if (showCreateNote) {
+        val createNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        CreateNoteBottomSheet(
+            sheetState = createNoteSheetState,
+            onDismiss = { showCreateNote = false },
+            onSave = { title, content -> viewModel.addNote(title, content) },
+        )
+    }
+
+    // Edit note bottom sheet
+    val editNoteIdVal = editNoteId
+    if (editNoteIdVal != null) {
+        val notes by viewModel.notes.collectAsState()
+        val editNote = remember(editNoteIdVal, notes) { notes.find { it.id == editNoteIdVal } }
+        if (editNote != null) {
+            val editNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            CreateNoteBottomSheet(
+                sheetState = editNoteSheetState,
+                editNote = editNote,
+                onDismiss = { editNoteId = null },
+                onSave = { title, content ->
+                    viewModel.updateNote(editNote.copy(title = title, content = content))
+                },
+                onDelete = {
+                    viewModel.deleteNote(editNote)
+                    editNoteId = null
+                },
+            )
+        } else {
+            editNoteId = null
+        }
     }
 }
 

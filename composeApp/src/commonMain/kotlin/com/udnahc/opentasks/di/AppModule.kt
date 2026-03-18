@@ -5,6 +5,8 @@ import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import com.udnahc.opentasks.data.database.AppDatabase
+import com.udnahc.opentasks.data.repository.NoteRepository
+import com.udnahc.opentasks.data.repository.NoteRepositoryImpl
 import com.udnahc.opentasks.data.repository.TaskListRepository
 import com.udnahc.opentasks.data.repository.TaskListRepositoryImpl
 import com.udnahc.opentasks.data.repository.TaskRepository
@@ -33,7 +35,9 @@ val sharedModule = module {
     }
     single { get<AppDatabase>().taskDao() }
     single { get<AppDatabase>().taskListDao() }
+    single { get<AppDatabase>().noteDao() }
     single<TaskRepository> { TaskRepositoryImpl(get()) }
     single<TaskListRepository> { TaskListRepositoryImpl(get()) }
-    viewModel { TaskViewModel(get(), get()) }
+    single<NoteRepository> { NoteRepositoryImpl(get()) }
+    viewModel { TaskViewModel(get(), get(), get()) }
 }

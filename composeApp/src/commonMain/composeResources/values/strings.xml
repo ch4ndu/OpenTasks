@@ -22,6 +22,7 @@
     <string name="none">None</string>
     <string name="custom">Custom</string>
     <string name="back">Back</string>
+    <string name="save">Save</string>
     <string name="select">Select</string>
     <string name="more">More</string>
     <string name="delete">Delete</string>
@@ -153,4 +154,21 @@
     <string name="add_list">Add List</string>
     <string name="list_name">Name</string>
     <string name="search">Search</string>
+
+    <!-- Notes -->
+    <string name="notes">Notes</string>
+    <string name="note">Note</string>
+    <string name="create_note">Create note</string>
+    <string name="note_title_hint">Note title</string>
+    <string name="empty_notes">No notes yet</string>
+    <string name="delete_note">Delete note</string>
+
+    <!-- Formatting toolbar -->
+    <string name="bold">Bold</string>
+    <string name="italic">Italic</string>
+    <string name="underline">Underline</string>
+    <string name="strikethrough">Strikethrough</string>
+    <string name="bullet_list">Bullet list</string>
+    <string name="numbered_list">Numbered list</string>
+    <string name="code">Code</string>
 </resources>

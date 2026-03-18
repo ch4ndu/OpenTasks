@@ -254,7 +254,7 @@ fun CreateTaskBottomSheet(
     var selectedListId by remember(stateKey) { mutableStateOf(editTask?.listId ?: initialListId) }
     var showListPicker by remember { mutableStateOf(false) }
     var showPriorityMenu by remember { mutableStateOf(false) }
-    var isSubtaskMode by remember { mutableStateOf(false) }
+    var isSubtaskMode by remember(stateKey) { mutableStateOf(false) }
     var subtaskToggleCount by remember { mutableIntStateOf(0) }
     val subtasks = remember { mutableStateListOf<SubtaskItem>() }
     val scope = rememberCoroutineScope()
@@ -412,6 +412,7 @@ fun CreateTaskBottomSheet(
                             ReminderOption.THREE_DAYS_EARLY -> 3
                             ReminderOption.ONE_WEEK_EARLY -> 7
                         }
+                        if (isSubtaskMode) syncSubtasksToDescription()
                         onSave(
                             title,
                             description,
@@ -925,7 +926,8 @@ private fun CreateTaskBottomBar(
             Icon(
                 painter = painterResource(Res.drawable.ic_list),
                 contentDescription = stringResource(Res.string.subtasks),
-                tint = if (isSubtaskMode) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = if (isSubtaskMode) PrimaryBlue
+                else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         IconButton(onClick = { }) {

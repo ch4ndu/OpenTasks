@@ -66,6 +66,9 @@ kotlin {
             implementation(libs.koin.core)
             implementation(libs.koin.compose)
             implementation(libs.koin.compose.viewmodel)
+
+            // Rich Text Editor
+            implementation(libs.richeditor.compose)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

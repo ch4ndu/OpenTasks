@@ -6,9 +6,11 @@ import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.utcNow
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
+import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskList
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.repository.NoteRepository
 import com.udnahc.opentasks.data.repository.TaskListRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
 import kotlinx.coroutines.Dispatchers
@@ -25,9 +27,13 @@ import kotlinx.coroutines.launch
 class TaskViewModel(
     private val repository: TaskRepository,
     private val taskListRepository: TaskListRepository,
+    private val noteRepository: NoteRepository,
 ) : ViewModel() {
 
     val tasks: StateFlow<List<Task>> = repository.getAllTasks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val notes: StateFlow<List<Note>> = noteRepository.getAllNotes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val taskLists: StateFlow<List<TaskList>> = taskListRepository.getAllLists()
@@ -151,6 +157,32 @@ class TaskViewModel(
     fun deleteList(taskList: TaskList) {
         viewModelScope.launch(Dispatchers.IO) {
             taskListRepository.delete(taskList)
+        }
+    }
+
+    fun addNote(title: String, content: String) {
+        val now = utcNow()
+        viewModelScope.launch(Dispatchers.IO) {
+            noteRepository.insert(
+                Note(
+                    title = title,
+                    content = content,
+                    createdAt = now,
+                    updatedAt = now,
+                )
+            )
+        }
+    }
+
+    fun updateNote(note: Note) {
+        viewModelScope.launch(Dispatchers.IO) {
+            noteRepository.update(note.copy(updatedAt = utcNow()))
+        }
+    }
+
+    fun deleteNote(note: Note) {
+        viewModelScope.launch(Dispatchers.IO) {
+            noteRepository.delete(note)
         }
     }
 }
