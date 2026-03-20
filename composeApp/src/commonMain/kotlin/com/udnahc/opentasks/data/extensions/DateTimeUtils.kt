@@ -13,6 +13,8 @@ import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.datetime.until
 
+const val MILLIS_PER_DAY = 86400000L
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  CURRENT TIME
 // ═══════════════════════════════════════════════════════════════════════════

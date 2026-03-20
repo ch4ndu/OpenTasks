@@ -48,7 +48,7 @@ import com.udnahc.opentasks.ui.theme.PriorityHigh
 import com.udnahc.opentasks.ui.theme.PriorityLow
 import com.udnahc.opentasks.ui.theme.PriorityMedium
 import com.udnahc.opentasks.ui.theme.PriorityNone
-import com.udnahc.opentasks.viewmodel.TaskViewModel
+import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.eisenhower_matrix
 import opentasks.composeapp.generated.resources.ic_check
@@ -63,7 +63,7 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun EisenhowerMatrixScreen(
-    viewModel: TaskViewModel,
+    viewModel: MatrixViewModel,
     onTaskClick: (Task) -> Unit,
     onQuadrantClick: (TaskPriority) -> Unit,
 ) {

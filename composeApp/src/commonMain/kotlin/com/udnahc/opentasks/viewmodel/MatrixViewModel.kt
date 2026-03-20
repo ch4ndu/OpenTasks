@@ -1,0 +1,80 @@
+package com.udnahc.opentasks.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.model.NotifyBeforeUnit
+import com.udnahc.opentasks.data.model.RecurrenceType
+import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.TaskList
+import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.domain.action.task.AddTaskAction
+import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
+import com.udnahc.opentasks.domain.action.tasklist.AddTaskListAction
+import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
+import com.udnahc.opentasks.domain.usecase.tasklist.ObserveAllTaskListsUseCase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class MatrixViewModel(
+    observeTasksByPriority: ObserveTasksByPriorityUseCase,
+    observeTasksForPriority: ObserveTasksForPriorityUseCase,
+    observeAllTaskLists: ObserveAllTaskListsUseCase,
+    private val toggleTaskCompleteAction: ToggleTaskCompleteAction,
+    private val addTaskAction: AddTaskAction,
+    private val addTaskListAction: AddTaskListAction,
+) : ViewModel() {
+
+    private val _selectedPriority = MutableStateFlow(TaskPriority.HIGH)
+
+    val tasksByPriority: StateFlow<Map<TaskPriority, List<Task>>> = observeTasksByPriority()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val tasksForSelectedPriority: StateFlow<List<Task>> = observeTasksForPriority(_selectedPriority)
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val taskLists: StateFlow<List<TaskList>> = observeAllTaskLists()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun selectPriority(priority: TaskPriority) { _selectedPriority.value = priority }
+
+    fun toggleComplete(task: Task) {
+        viewModelScope.launch(Dispatchers.IO) { toggleTaskCompleteAction(task) }
+    }
+
+    fun addTask(
+        title: String,
+        content: String,
+        priority: TaskPriority = TaskPriority.NONE,
+        deadline: Long? = null,
+        notifyBeforeValue: Int = 0,
+        notifyBeforeUnit: NotifyBeforeUnit = NotifyBeforeUnit.NONE,
+        recurrenceType: RecurrenceType = RecurrenceType.NONE,
+        listId: Long = 1L,
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            addTaskAction(
+                title = title,
+                content = content,
+                priority = priority,
+                deadline = deadline,
+                notifyBeforeValue = notifyBeforeValue,
+                notifyBeforeUnit = notifyBeforeUnit,
+                recurrenceType = recurrenceType,
+                listId = listId,
+            )
+        }
+    }
+
+    fun addList(name: String) {
+        viewModelScope.launch(Dispatchers.IO) { addTaskListAction(name) }
+    }
+}

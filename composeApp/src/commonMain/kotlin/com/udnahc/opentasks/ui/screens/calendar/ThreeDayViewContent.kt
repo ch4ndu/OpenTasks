@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.extensions.extractDay
@@ -144,7 +145,7 @@ internal fun ThreeDayViewContent(
                     modifier = Modifier.fillMaxSize(),
                 ) { page ->
                     val dayOffset = page - pagerCentre
-                    val dayMillis = todayMillis + dayOffset * 86400000L
+                    val dayMillis = todayMillis + dayOffset * MILLIS_PER_DAY
 
                     ThreeDayColumn(
                         dayMillis = dayMillis,

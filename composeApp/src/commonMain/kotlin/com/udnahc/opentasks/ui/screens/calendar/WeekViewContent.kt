@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.extensions.extractDay
@@ -103,7 +103,7 @@ internal fun WeekViewContent(
                     modifier = Modifier.fillMaxSize(),
                 ) { page ->
                     val weekOffset = page - weekPagerCentre
-                    val pageSundayMillis = todayWeekSunMillis + weekOffset * 7 * 86400000L
+                    val pageSundayMillis = todayWeekSunMillis + weekOffset * 7 * MILLIS_PER_DAY
 
                     WeekViewDayPagerContent(
                         sundayMillis = pageSundayMillis,
@@ -170,7 +170,7 @@ private fun WeekViewDayPagerContent(
                         Spacer(modifier = Modifier.width(cellWidth).fillMaxHeight())
                     } else {
                         val dayIndex = row * 2 + col - 1  // 0=Sun..6=Sat
-                        val dayMillis = sundayMillis + dayIndex * 86400000L
+                        val dayMillis = sundayMillis + dayIndex * MILLIS_PER_DAY
                         WeekViewDayCell(
                             dayMillis = dayMillis,
                             todayMillis = todayMillis,
@@ -455,26 +455,32 @@ private fun WeekViewMiniCalendar(
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .aspectRatio(1f)
-                                        .clickable { onDayClick(dayMillis) }
-                                        .then(
-                                            if (isToday) Modifier.background(PrimaryBlue, CircleShape)
-                                            else Modifier
-                                        ),
+                                        .fillMaxHeight()
+                                        .clickable { onDayClick(dayMillis) },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Text(
-                                        text = if (day.isCurrentMonth) day.day.toString() else "",
-                                        style = OpenTasksTheme.typography.calendarEventOverflow,
-                                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                                        color = when {
-                                            isToday -> Color.White
-                                            hasTasks && day.isCurrentMonth -> PrimaryBlue
-                                            day.isCurrentMonth -> MaterialTheme.colorScheme.onBackground
-                                            else -> Color.Transparent
-                                        },
-                                        textAlign = TextAlign.Center,
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(dimens.miniCalTodayCircle)
+                                            .then(
+                                                if (isToday) Modifier.background(PrimaryBlue, CircleShape)
+                                                else Modifier
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = if (day.isCurrentMonth) day.day.toString() else "",
+                                            style = OpenTasksTheme.typography.calendarEventOverflow,
+                                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                                            color = when {
+                                                isToday -> Color.White
+                                                hasTasks && day.isCurrentMonth -> PrimaryBlue
+                                                day.isCurrentMonth -> MaterialTheme.colorScheme.onBackground
+                                                else -> Color.Transparent
+                                            },
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
                                 }
                             }
                         }

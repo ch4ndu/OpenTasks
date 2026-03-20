@@ -78,6 +78,7 @@ data class OpenTasksDimensions(
     val calendarTimeIndicatorWidth: Dp, // 24.dp (time indicator column width)
     val calendarMonthGridEventHeight: Dp, // 16.dp (event bar in month grid cell)
     val calendarWeekDayCircle: Dp,      // 28.dp (day circle in week/3-day header)
+    val miniCalTodayCircle: Dp,        // 18.dp (today circle in mini calendar)
     val calendarCollapsedWeekHeight: Dp, // 48.dp
     val threeDayAllDayHeight: Dp,       // 48.dp (fixed height for all-day section)
     val threeDayEventMinHeight: Dp,     // 20.dp (min height for a timed event bar)
@@ -155,6 +156,7 @@ fun compactDimensions() = OpenTasksDimensions(
     calendarTimeIndicatorWidth = 24.dp,
     calendarMonthGridEventHeight = 16.dp,
     calendarWeekDayCircle = 28.dp,
+    miniCalTodayCircle = 18.dp,
     calendarCollapsedWeekHeight = 48.dp,
     threeDayAllDayHeight = 48.dp,
     threeDayEventMinHeight = 20.dp,
@@ -230,6 +232,7 @@ fun mediumDimensions() = OpenTasksDimensions(
     calendarTimeIndicatorWidth = 28.dp,
     calendarMonthGridEventHeight = 18.dp,
     calendarWeekDayCircle = 32.dp,
+    miniCalTodayCircle = 20.dp,
     calendarCollapsedWeekHeight = 56.dp,
     threeDayAllDayHeight = 56.dp,
     threeDayEventMinHeight = 22.dp,
@@ -305,6 +308,7 @@ fun expandedDimensions() = OpenTasksDimensions(
     calendarTimeIndicatorWidth = 32.dp,
     calendarMonthGridEventHeight = 20.dp,
     calendarWeekDayCircle = 36.dp,
+    miniCalTodayCircle = 22.dp,
     calendarCollapsedWeekHeight = 64.dp,
     threeDayAllDayHeight = 64.dp,
     threeDayEventMinHeight = 24.dp,

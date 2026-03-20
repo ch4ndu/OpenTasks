@@ -43,18 +43,21 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun OpenTasksTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    textSizePreset: TextSizePreset = TextSizePreset.NORMAL,
     content: @Composable () -> Unit,
 ) {
-    val typography = remember(textSizePreset) { openTasksTypography(textSizePreset) }
-    val extendedTypography = remember(textSizePreset) { openTasksExtendedTypography(textSizePreset) }
-
     BoxWithConstraints {
         val sizeCategory = when {
             maxWidth < 600.dp -> WindowSizeCategory.COMPACT
             maxWidth < 840.dp -> WindowSizeCategory.MEDIUM
             else -> WindowSizeCategory.EXPANDED
         }
+        val textSizePreset = when (sizeCategory) {
+            WindowSizeCategory.COMPACT -> TextSizePreset.SMALL
+            WindowSizeCategory.MEDIUM -> TextSizePreset.NORMAL
+            WindowSizeCategory.EXPANDED -> TextSizePreset.LARGE
+        }
+        val typography = remember(textSizePreset) { openTasksTypography(textSizePreset) }
+        val extendedTypography = remember(textSizePreset) { openTasksExtendedTypography(textSizePreset) }
         val dimensions = remember(sizeCategory) {
             when (sizeCategory) {
                 WindowSizeCategory.COMPACT -> compactDimensions()

@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.model.TaskList
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -52,13 +53,15 @@ import org.jetbrains.compose.resources.stringResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ListPickerBottomSheet(
+fun CategoryPickerBottomSheet(
     sheetState: SheetState,
     lists: List<TaskList>,
     selectedListId: Long,
     onListSelected: (TaskList) -> Unit,
     onAddList: (String) -> Unit,
     onDismiss: () -> Unit,
+    showTitle: Boolean = true,
+    showSearch: Boolean = true,
 ) {
     val dimens = OpenTasksTheme.dimens
     var searchQuery by remember { mutableStateOf("") }
@@ -75,25 +78,67 @@ fun ListPickerBottomSheet(
         containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = null,
     ) {
-        Column(
+        CategoryPickerContent(
+            lists = filteredLists,
+            selectedListId = selectedListId,
+            showTitle = showTitle,
+            showSearch = showSearch,
+            searchQuery = searchQuery,
+            onSearchQueryChange = { searchQuery = it },
+            onListSelected = onListSelected,
+            onAddListClick = { showAddDialog = true },
+            onDismiss = onDismiss,
+        )
+    }
+
+    if (showAddDialog) {
+        AddListDialog(
+            onDismiss = { showAddDialog = false },
+            onConfirm = { name ->
+                onAddList(name)
+                showAddDialog = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun CategoryPickerContent(
+    lists: List<TaskList>,
+    selectedListId: Long,
+    showTitle: Boolean,
+    showSearch: Boolean = true,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onListSelected: (TaskList) -> Unit,
+    onAddListClick: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val dimens = OpenTasksTheme.dimens
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = dimens.paddingXXLarge),
+    ) {
+        // Header: X button + "Move to"
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = dimens.paddingXXLarge),
+                .padding(
+                    start = dimens.paddingSmall,
+                    end = dimens.paddingXLarge,
+                    top = dimens.paddingMedium
+                ),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Header: X button + "Move to"
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = dimens.paddingSmall, end = dimens.paddingXLarge, top = dimens.paddingMedium),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_close),
-                        contentDescription = stringResource(Res.string.close),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_close),
+                    contentDescription = stringResource(Res.string.close),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            if (showTitle) {
                 Text(
                     text = stringResource(Res.string.move_to),
                     style = MaterialTheme.typography.titleMedium,
@@ -101,11 +146,13 @@ fun ListPickerBottomSheet(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
+        }
 
-            // Search bar
+        // Search bar
+        if (showSearch) {
             OutlinedTextField(
                 value = searchQuery,
-                onValueChange = { searchQuery = it },
+                onValueChange = onSearchQueryChange,
                 placeholder = {
                     Text(
                         text = stringResource(Res.string.search),
@@ -122,62 +169,52 @@ fun ListPickerBottomSheet(
                     unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                 ),
             )
+        }
 
-            Spacer(Modifier.height(dimens.spacerSmall))
+        Spacer(Modifier.height(dimens.spacerSmall))
 
-            // List items
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                items(filteredLists, key = { it.id }) { taskList ->
-                    val isSelected = taskList.id == selectedListId
-                    ListPickerRow(
-                        taskList = taskList,
-                        isSelected = isSelected,
-                        onClick = { onListSelected(taskList) },
+        // List items
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            items(lists, key = { it.id }) { taskList ->
+                val isSelected = taskList.id == selectedListId
+                CategoryPickerRow(
+                    taskList = taskList,
+                    isSelected = isSelected,
+                    onClick = { onListSelected(taskList) },
+                )
+            }
+
+            // Add List row
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onAddListClick)
+                        .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_add),
+                        contentDescription = null,
+                        tint = PrimaryBlue,
+                        modifier = Modifier.size(dimens.iconXLarge),
                     )
-                }
-
-                // Add List row
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showAddDialog = true }
-                            .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            painter = painterResource(Res.drawable.ic_add),
-                            contentDescription = null,
-                            tint = PrimaryBlue,
-                            modifier = Modifier.size(dimens.iconXLarge),
-                        )
-                        Spacer(Modifier.width(dimens.spacerXXLarge))
-                        Text(
-                            text = stringResource(Res.string.add_list),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = PrimaryBlue,
-                        )
-                    }
+                    Spacer(Modifier.width(dimens.spacerXXLarge))
+                    Text(
+                        text = stringResource(Res.string.add_list),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = PrimaryBlue,
+                    )
                 }
             }
         }
     }
-
-    if (showAddDialog) {
-        AddListDialog(
-            onDismiss = { showAddDialog = false },
-            onConfirm = { name ->
-                onAddList(name)
-                showAddDialog = false
-            },
-        )
-    }
 }
 
 @Composable
-private fun ListPickerRow(
+private fun CategoryPickerRow(
     taskList: TaskList,
     isSelected: Boolean,
     onClick: () -> Unit,
@@ -264,4 +301,26 @@ private fun AddListDialog(
             }
         },
     )
+}
+
+@Composable
+@Preview
+private fun CategoryPickerPreview() {
+    val sampleLists = listOf(
+        TaskList(id = 1, name = "Inbox", icon = "inbox"),
+        TaskList(id = 2, name = "Work"),
+        TaskList(id = 3, name = "Personal"),
+    )
+    OpenTasksTheme {
+        CategoryPickerContent(
+            lists = sampleLists,
+            selectedListId = 1L,
+            showTitle = true,
+            searchQuery = "",
+            onSearchQueryChange = {},
+            onListSelected = {},
+            onAddListClick = {},
+            onDismiss = {},
+        )
+    }
 }

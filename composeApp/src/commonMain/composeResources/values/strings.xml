@@ -150,7 +150,7 @@
     <string name="view_coming_soon">%1$s view coming soon</string>
 
     <!-- Lists -->
-    <string name="move_to">Move to</string>
+    <string name="move_to">Categories</string>
     <string name="add_list">Add List</string>
     <string name="list_name">Name</string>
     <string name="search">Search</string>

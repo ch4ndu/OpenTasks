@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.extensions.extractDay
@@ -94,7 +95,7 @@ internal fun DayViewContent(
     )
 
     val selectedDayMillis by remember {
-        derivedStateOf { todayMillis + (pagerState.currentPage - pagerCentre) * 86400000L }
+        derivedStateOf { todayMillis + (pagerState.currentPage - pagerCentre) * MILLIS_PER_DAY }
     }
 
     // When timeline pager changes, scroll strip only if selected day is off-screen
@@ -124,7 +125,7 @@ internal fun DayViewContent(
                     key = { it },
                 ) { index ->
                     val dayOffset = index - pagerCentre
-                    val dayMillis = todayMillis + dayOffset * 86400000L
+                    val dayMillis = todayMillis + dayOffset * MILLIS_PER_DAY
                     val onClick = remember(index) { { scope.launch { pagerState.scrollToPage(index) }; Unit } }
                     DayViewStripItem(
                         dayMillis = dayMillis,
@@ -195,7 +196,7 @@ internal fun DayViewContent(
                     modifier = Modifier.fillMaxSize(),
                 ) { page ->
                     val dayOffset = page - pagerCentre
-                    val dayMillis = todayMillis + dayOffset * 86400000L
+                    val dayMillis = todayMillis + dayOffset * MILLIS_PER_DAY
 
                     DayViewTimeline(
                         dayMillis = dayMillis,

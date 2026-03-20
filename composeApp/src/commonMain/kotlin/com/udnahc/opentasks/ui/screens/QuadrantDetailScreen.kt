@@ -27,15 +27,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -52,7 +49,6 @@ import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.extensions.utcNow
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.plus
-import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
@@ -64,7 +60,7 @@ import com.udnahc.opentasks.ui.theme.PriorityHigh
 import com.udnahc.opentasks.ui.theme.PriorityLow
 import com.udnahc.opentasks.ui.theme.PriorityMedium
 import com.udnahc.opentasks.ui.theme.PriorityNone
-import com.udnahc.opentasks.viewmodel.TaskViewModel
+import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
 import opentasks.composeapp.generated.resources.back
@@ -95,18 +91,17 @@ private enum class TaskCategory {
     COMPLETED,
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuadrantDetailScreen(
     title: String,
     priority: TaskPriority,
-    viewModel: TaskViewModel,
+    viewModel: MatrixViewModel,
     onBack: () -> Unit,
     onTaskClick: (Task) -> Unit,
+    onCreateTask: (TaskPriority) -> Unit,
 ) {
     LaunchedEffect(priority) { viewModel.selectPriority(priority) }
     val tasks by viewModel.tasksForSelectedPriority.collectAsState()
-    var showCreateSheet by remember { mutableStateOf(false) }
 
     QuadrantDetailContent(
         title = title,
@@ -115,37 +110,8 @@ fun QuadrantDetailScreen(
         onBack = onBack,
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
-        onAddTask = { showCreateSheet = true },
+        onAddTask = { onCreateTask(priority) },
     )
-
-    if (showCreateSheet) {
-        val taskLists by viewModel.taskLists.collectAsState()
-        val createSheetState = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true,
-        )
-        CreateTaskBottomSheet(
-            sheetState = createSheetState,
-            initialPriority = priority,
-            taskLists = taskLists,
-            onAddList = { name -> viewModel.addList(name) },
-            onDismiss = { showCreateSheet = false },
-            onSave = { taskTitle, content, taskPriority, deadline, reminderDays, recurrence, listId ->
-                val notifyUnit =
-                    if (reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
-                viewModel.addTask(
-                    title = taskTitle,
-                    content = content,
-                    priority = taskPriority,
-                    deadline = deadline,
-                    notifyBeforeValue = reminderDays,
-                    notifyBeforeUnit = notifyUnit,
-                    recurrenceType = recurrence,
-                    listId = listId,
-                )
-                showCreateSheet = false
-            },
-        )
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

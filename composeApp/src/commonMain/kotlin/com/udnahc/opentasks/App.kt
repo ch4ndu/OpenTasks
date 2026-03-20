@@ -1,12 +1,16 @@
 package com.udnahc.opentasks
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -30,11 +34,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.NavDisplay
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.navigation.AppNavController
+import com.udnahc.opentasks.navigation.Screen
 import com.udnahc.opentasks.ui.screens.CreateNoteBottomSheet
-import com.udnahc.opentasks.ui.screens.CreateTaskBottomSheet
+import com.udnahc.opentasks.ui.screens.CreateTaskScreen
 import com.udnahc.opentasks.ui.screens.EisenhowerMatrixScreen
 import com.udnahc.opentasks.ui.screens.NotesScreen
 import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
@@ -42,8 +53,11 @@ import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
 import com.udnahc.opentasks.ui.screens.TaskListScreen
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
-import com.udnahc.opentasks.ui.util.PlatformBackHandler
-import com.udnahc.opentasks.viewmodel.TaskViewModel
+import com.udnahc.opentasks.viewmodel.AppViewModel
+import com.udnahc.opentasks.viewmodel.MatrixViewModel
+import com.udnahc.opentasks.viewmodel.CalendarViewModel
+import com.udnahc.opentasks.viewmodel.NoteViewModel
+import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
 import opentasks.composeapp.generated.resources.ic_add
@@ -64,8 +78,10 @@ import org.koin.compose.viewmodel.koinViewModel
 @Preview
 fun App() {
     OpenTasksTheme {
-        val viewModel: TaskViewModel = koinViewModel()
-        MainScreen(viewModel = viewModel)
+        val backStack = remember { NavBackStack<NavKey>(Screen.Matrix) }
+        val navController = remember { AppNavController(backStack) }
+        val appViewModel: AppViewModel = koinViewModel()
+        MainScreen(navController = navController, backStack = backStack, appViewModel = appViewModel)
     }
 }
 
@@ -77,12 +93,10 @@ private data class BottomNavItem(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreen(
-    viewModel: TaskViewModel,
+    navController: AppNavController,
+    backStack: NavBackStack<NavKey>,
+    appViewModel: AppViewModel,
 ) {
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var selectedTaskId by remember { mutableStateOf<Long?>(null) }
-    var showCreateSheet by remember { mutableStateOf(false) }
-    var selectedQuadrant by remember { mutableStateOf<TaskPriority?>(null) }
     var selectedListId by rememberSaveable { mutableStateOf(1L) }
     var calendarSelectedYear by remember { mutableIntStateOf(0) }
     var calendarSelectedMonth by remember { mutableIntStateOf(0) }
@@ -99,98 +113,208 @@ private fun MainScreen(
         )
     }
 
-    PlatformBackHandler(enabled = selectedQuadrant != null) {
-        selectedQuadrant = null
+    // Derive selected tab and visibility from the back stack
+    val currentScreen = backStack.last()
+    val selectedTab = remember(currentScreen) {
+        when (currentScreen) {
+            is Screen.Matrix, is Screen.QuadrantDetail -> 0
+            is Screen.TaskList -> 1
+            is Screen.Calendar -> 2
+            is Screen.Notes -> 3
+            else -> 0
+        }
     }
+    val showBottomNav = currentScreen !is Screen.QuadrantDetail
+            && currentScreen !is Screen.CreateTask
+            && currentScreen !is Screen.EditTask
 
-    selectedQuadrant?.let { priority ->
-        val quadrantTitle = quadrantTitle(priority)
-        QuadrantDetailScreen(
-            title = quadrantTitle,
-            priority = priority,
-            viewModel = viewModel,
-            onBack = { selectedQuadrant = null },
-            onTaskClick = { task -> selectedTaskId = task.id },
-        )
-    } ?: Box(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
-        // Content layer — fills entire screen, scrolls behind bars
-        Box(
-            modifier = Modifier
-                .fillMaxSize(),
+        NavDisplay(
+            backStack = backStack,
+            onBack = { navController.popBackStack() },
+            modifier = Modifier.fillMaxSize(),
+            entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
+            entryProvider = entryProvider {
+                entry<Screen.Matrix> {
+                    val matrixViewModel: MatrixViewModel = koinViewModel()
+                    EisenhowerMatrixScreen(
+                        viewModel = matrixViewModel,
+                        onTaskClick = { task ->
+                            navController.navigate(Screen.EditTask(task.id))
+                        },
+                        onQuadrantClick = { priority ->
+                            navController.navigate(Screen.QuadrantDetail(priority.ordinal))
+                        },
+                    )
+                }
+
+                entry<Screen.TaskList> {
+                    val taskListViewModel: TaskListViewModel = koinViewModel()
+                    TaskListScreen(
+                        viewModel = taskListViewModel,
+                        selectedListId = selectedListId,
+                        onSelectedListChanged = { selectedListId = it },
+                        onTaskClick = { task ->
+                            navController.navigate(Screen.EditTask(task.id))
+                        },
+                    )
+                }
+
+                entry<Screen.Calendar> {
+                    val calendarViewModel: CalendarViewModel = koinViewModel()
+                    CalendarScreen(
+                        viewModel = calendarViewModel,
+                        onTaskClick = { task ->
+                            navController.navigate(Screen.EditTask(task.id))
+                        },
+                        onSelectedDateChanged = { year, month, day ->
+                            calendarSelectedYear = year
+                            calendarSelectedMonth = month
+                            calendarSelectedDay = day
+                        },
+                    )
+                }
+
+                entry<Screen.Notes> {
+                    val noteViewModel: NoteViewModel = koinViewModel()
+                    NotesScreen(
+                        viewModel = noteViewModel,
+                        onNoteClick = { note -> editNoteId = note.id },
+                    )
+                }
+
+                entry<Screen.QuadrantDetail> { screen ->
+                    val matrixViewModel: MatrixViewModel = koinViewModel()
+                    val priority = TaskPriority.entries[screen.priorityOrdinal]
+                    val quadrantTitle = quadrantTitle(priority)
+                    QuadrantDetailScreen(
+                        title = quadrantTitle,
+                        priority = priority,
+                        viewModel = matrixViewModel,
+                        onBack = { navController.popBackStack() },
+                        onTaskClick = { task ->
+                            navController.navigate(Screen.EditTask(task.id))
+                        },
+                        onCreateTask = { taskPriority ->
+                            navController.navigate(
+                                Screen.CreateTask(priorityOrdinal = taskPriority.ordinal)
+                            )
+                        },
+                    )
+                }
+
+                entry<Screen.CreateTask> { screen ->
+                    val taskLists by appViewModel.taskLists.collectAsState()
+                    CreateTaskScreen(
+                        onBack = { navController.popBackStack() },
+                        initialPriority = TaskPriority.entries[screen.priorityOrdinal],
+                        initialListId = screen.listId,
+                        initialDay = screen.day,
+                        initialMonth = screen.month,
+                        initialYear = screen.year,
+                        taskLists = taskLists,
+                        onAddList = { name -> appViewModel.addList(name) },
+                        onSave = { title, content, priority, deadline, reminderDays, recurrence, listId, _ ->
+                            val notifyUnit =
+                                if (reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
+                            appViewModel.addTask(
+                                title = title,
+                                content = content,
+                                priority = priority,
+                                deadline = deadline,
+                                notifyBeforeValue = reminderDays,
+                                notifyBeforeUnit = notifyUnit,
+                                recurrenceType = recurrence,
+                                listId = listId,
+                            )
+                        },
+                    )
+                }
+
+                entry<Screen.EditTask> { screen ->
+                    val tasks by appViewModel.tasks.collectAsState()
+                    val taskLists by appViewModel.taskLists.collectAsState()
+                    val editTask = tasks.find { it.id == screen.taskId }
+                    if (editTask != null) {
+                        CreateTaskScreen(
+                            onBack = { navController.popBackStack() },
+                            editTask = editTask,
+                            taskLists = taskLists,
+                            onAddList = { name -> appViewModel.addList(name) },
+                            onSave = { title, content, priority, deadline, reminderDays, recurrence, listId, isCompleted ->
+                                val notifyUnit =
+                                    if (reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
+                                appViewModel.updateTask(
+                                    editTask.copy(
+                                        title = title,
+                                        content = content,
+                                        priority = priority,
+                                        deadline = deadline,
+                                        notifyBeforeValue = reminderDays,
+                                        notifyBeforeUnit = notifyUnit,
+                                        recurrenceType = recurrence,
+                                        listId = listId,
+                                        isCompleted = isCompleted,
+                                    )
+                                )
+                            },
+                        )
+                    }
+                }
+            },
+        )
+
+        // Bottom nav bar — slides out when entering detail screens
+        AnimatedVisibility(
+            visible = showBottomNav,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            when (selectedTab) {
-                0 -> EisenhowerMatrixScreen(
-                    viewModel = viewModel,
-                    onTaskClick = { task -> selectedTaskId = task.id },
-                    onQuadrantClick = { priority -> selectedQuadrant = priority },
-                )
-
-                1 -> TaskListScreen(
-                    viewModel = viewModel,
-                    selectedListId = selectedListId,
-                    onSelectedListChanged = { selectedListId = it },
-                    onTaskClick = { task -> selectedTaskId = task.id },
-                )
-
-                2 -> CalendarScreen(
-                    viewModel = viewModel,
-                    onTaskClick = { task -> selectedTaskId = task.id },
-                    onSelectedDateChanged = { year, month, day ->
-                        calendarSelectedYear = year
-                        calendarSelectedMonth = month
-                        calendarSelectedDay = day
-                    },
-                )
-                3 -> NotesScreen(
-                    viewModel = viewModel,
-                    onNoteClick = { note -> editNoteId = note.id },
-                )
-            }
-        }
-
-        Box(modifier = Modifier.align(Alignment.BottomCenter)) {
             BottomNavBar(
                 tabs = tabs,
                 selectedTab = selectedTab,
-                onTabSelected = { selectedTab = it },
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd),
-        ) {
-            CreateTaskFab(
-                onClick = {
-                    if (selectedTab == 3) showCreateNote = true else showCreateSheet = true
+                onTabSelected = { index ->
+                    val target: NavKey = when (index) {
+                        0 -> Screen.Matrix
+                        1 -> Screen.TaskList
+                        2 -> Screen.Calendar
+                        3 -> Screen.Notes
+                        else -> Screen.Matrix
+                    }
+                    navController.navigateToTab(target)
                 },
             )
         }
-    }
 
-    // Task edit bottom sheet
-    selectedTaskId?.let { taskId ->
-        EditTaskSheet(
-            viewModel = viewModel,
-            taskId = taskId,
-            onDismiss = { selectedTaskId = null },
-        )
-    }
-
-    // Create task bottom sheet
-    if (showCreateSheet) {
-        CreateTaskSheetWrapper(
-            viewModel = viewModel,
-            initialListId = if (selectedTab == 1) selectedListId else 1L,
-            initialDay = if (selectedTab == 2) calendarSelectedDay else 0,
-            initialMonth = if (selectedTab == 2) calendarSelectedMonth else 0,
-            initialYear = if (selectedTab == 2) calendarSelectedYear else 0,
-            onDismiss = { showCreateSheet = false },
-        )
+        // FAB — slides out with nav bar
+        AnimatedVisibility(
+            visible = showBottomNav,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomEnd),
+        ) {
+            CreateTaskFab(
+                onClick = {
+                    if (selectedTab == 3) {
+                        showCreateNote = true
+                    } else {
+                        navController.navigate(
+                            Screen.CreateTask(
+                                listId = if (selectedTab == 1) selectedListId else 1L,
+                                day = if (selectedTab == 2) calendarSelectedDay else 0,
+                                month = if (selectedTab == 2) calendarSelectedMonth else 0,
+                                year = if (selectedTab == 2) calendarSelectedYear else 0,
+                            )
+                        )
+                    }
+                },
+            )
+        }
     }
 
     // Create note bottom sheet
@@ -199,14 +323,14 @@ private fun MainScreen(
         CreateNoteBottomSheet(
             sheetState = createNoteSheetState,
             onDismiss = { showCreateNote = false },
-            onSave = { title, content -> viewModel.addNote(title, content) },
+            onSave = { title, content -> appViewModel.addNote(title, content) },
         )
     }
 
     // Edit note bottom sheet
     val editNoteIdVal = editNoteId
     if (editNoteIdVal != null) {
-        val notes by viewModel.notes.collectAsState()
+        val notes by appViewModel.notes.collectAsState()
         val editNote = remember(editNoteIdVal, notes) { notes.find { it.id == editNoteIdVal } }
         if (editNote != null) {
             val editNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -215,10 +339,10 @@ private fun MainScreen(
                 editNote = editNote,
                 onDismiss = { editNoteId = null },
                 onSave = { title, content ->
-                    viewModel.updateNote(editNote.copy(title = title, content = content))
+                    appViewModel.updateNote(editNote.copy(title = title, content = content))
                 },
                 onDelete = {
-                    viewModel.deleteNote(editNote)
+                    appViewModel.deleteNote(editNote)
                     editNoteId = null
                 },
             )
@@ -308,108 +432,10 @@ private fun CreateTaskFab(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun EditTaskSheet(
-    viewModel: TaskViewModel,
-    taskId: Long,
-    onDismiss: () -> Unit,
-) {
-    val tasks by viewModel.tasks.collectAsState()
-    val taskLists by viewModel.taskLists.collectAsState()
-    val editTask = tasks.find { it.id == taskId }
-    if (editTask == null) {
-        onDismiss()
-    } else {
-        val editSheetState = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true,
-        )
-        CreateTaskBottomSheet(
-            sheetState = editSheetState,
-            editTask = editTask,
-            taskLists = taskLists,
-            onAddList = { name -> viewModel.addList(name) },
-            onDismiss = onDismiss,
-            onSave = { title, content, priority, deadline, reminderDays, recurrence, listId ->
-                val notifyUnit =
-                    if (reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
-                viewModel.updateTask(
-                    editTask.copy(
-                        title = title,
-                        content = content,
-                        priority = priority,
-                        deadline = deadline,
-                        notifyBeforeValue = reminderDays,
-                        notifyBeforeUnit = notifyUnit,
-                        recurrenceType = recurrence,
-                        listId = listId,
-                    )
-                )
-                onDismiss()
-            },
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CreateTaskSheetWrapper(
-    viewModel: TaskViewModel,
-    initialListId: Long,
-    initialDay: Int,
-    initialMonth: Int,
-    initialYear: Int,
-    onDismiss: () -> Unit,
-) {
-    val taskLists by viewModel.taskLists.collectAsState()
-    val createSheetState = rememberModalBottomSheetState(
-        skipPartiallyExpanded = true,
-    )
-    CreateTaskBottomSheet(
-        sheetState = createSheetState,
-        initialListId = initialListId,
-        initialDay = initialDay,
-        initialMonth = initialMonth,
-        initialYear = initialYear,
-        taskLists = taskLists,
-        onAddList = { name -> viewModel.addList(name) },
-        onDismiss = onDismiss,
-        onSave = { title, content, priority, deadline, reminderDays, recurrence, listId ->
-            val notifyUnit =
-                if (reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
-            viewModel.addTask(
-                title = title,
-                content = content,
-                priority = priority,
-                deadline = deadline,
-                notifyBeforeValue = reminderDays,
-                notifyBeforeUnit = notifyUnit,
-                recurrenceType = recurrence,
-                listId = listId,
-            )
-            onDismiss()
-        },
-    )
-}
-
 @Composable
 private fun quadrantTitle(priority: TaskPriority): String = when (priority) {
     TaskPriority.HIGH -> stringResource(Res.string.urgent_important)
     TaskPriority.MEDIUM -> stringResource(Res.string.not_urgent_important)
     TaskPriority.LOW -> stringResource(Res.string.urgent_unimportant)
     TaskPriority.NONE -> stringResource(Res.string.not_urgent_unimportant)
-}
-
-@Composable
-private fun PlaceholderContent(title: String) {
-    Box(
-        modifier = Modifier.fillMaxSize().statusBarsPadding(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-    }
 }

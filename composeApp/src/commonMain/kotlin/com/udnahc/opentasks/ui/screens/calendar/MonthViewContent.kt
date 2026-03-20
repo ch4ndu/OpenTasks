@@ -49,6 +49,10 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.no_tasks
+import opentasks.composeapp.generated.resources.today
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -250,7 +254,7 @@ internal fun MonthViewContent(
                                 selectedDay.month == todayMonth &&
                                 selectedDay.day == todayDay
                         Text(
-                            text = if (isToday) "TODAY"
+                            text = if (isToday) stringResource(Res.string.today).uppercase()
                             else "${
                                 monthName(selectedDay.month).uppercase().take(3)
                             } ${selectedDay.day}",
@@ -280,7 +284,7 @@ internal fun MonthViewContent(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "No tasks",
+                                    text = stringResource(Res.string.no_tasks),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

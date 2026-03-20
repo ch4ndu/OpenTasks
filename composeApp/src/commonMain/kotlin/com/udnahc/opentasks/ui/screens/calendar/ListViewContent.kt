@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.formatDateLabel
@@ -39,6 +40,16 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.fri
+import opentasks.composeapp.generated.resources.mon
+import opentasks.composeapp.generated.resources.sat
+import opentasks.composeapp.generated.resources.sun
+import opentasks.composeapp.generated.resources.thu
+import opentasks.composeapp.generated.resources.today
+import opentasks.composeapp.generated.resources.tue
+import opentasks.composeapp.generated.resources.wed
+import org.jetbrains.compose.resources.stringResource
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  LIST VIEW
@@ -74,7 +85,7 @@ internal fun ListViewContent(
             modifier = Modifier.fillMaxWidth(),
         ) { page ->
             val weekOffset = page - weekPagerCentre
-            val weekSunMillis = todayWeekSunMillis + weekOffset * 7 * 86400000L
+            val weekSunMillis = todayWeekSunMillis + weekOffset * 7 * MILLIS_PER_DAY
 
             WeekStripPage(
                 weekSundayMillis = weekSunMillis,
@@ -160,7 +171,7 @@ private fun CardTaskList(
 ) {
     val dimens = OpenTasksTheme.dimens
     Text(
-        text = if (isToday) "TODAY" else formatDateLabel(selectedDayMillis),
+        text = if (isToday) stringResource(Res.string.today).uppercase() else formatDateLabel(selectedDayMillis),
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -201,7 +212,15 @@ private fun WeekStripPage(
     tasksByDay: Map<Long, List<Task>>,
     onDaySelected: (Long) -> Unit,
 ) {
-    val dayLabels = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    val dayLabels = listOf(
+        stringResource(Res.string.sun),
+        stringResource(Res.string.mon),
+        stringResource(Res.string.tue),
+        stringResource(Res.string.wed),
+        stringResource(Res.string.thu),
+        stringResource(Res.string.fri),
+        stringResource(Res.string.sat),
+    )
 
     val dimens = OpenTasksTheme.dimens
     Row(
@@ -211,7 +230,7 @@ private fun WeekStripPage(
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         for (i in 0..6) {
-            val dayMillis = weekSundayMillis + i * 86400000L
+            val dayMillis = weekSundayMillis + i * MILLIS_PER_DAY
             val dayNum = extractDay(dayMillis)
             val isToday = dayMillis == todayMillis
             val isSelected = dayMillis == selectedDayMillis

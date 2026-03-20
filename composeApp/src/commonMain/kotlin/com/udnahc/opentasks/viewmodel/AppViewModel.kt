@@ -1,0 +1,91 @@
+package com.udnahc.opentasks.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.model.Note
+import com.udnahc.opentasks.data.model.NotifyBeforeUnit
+import com.udnahc.opentasks.data.model.RecurrenceType
+import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.TaskList
+import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.domain.action.note.AddNoteAction
+import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
+import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
+import com.udnahc.opentasks.domain.action.task.AddTaskAction
+import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
+import com.udnahc.opentasks.domain.action.tasklist.AddTaskListAction
+import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
+import com.udnahc.opentasks.domain.usecase.tasklist.ObserveAllTaskListsUseCase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class AppViewModel(
+    observeAllTasks: ObserveAllTasksUseCase,
+    observeAllTaskLists: ObserveAllTaskListsUseCase,
+    observeAllNotes: ObserveAllNotesUseCase,
+    private val addTaskAction: AddTaskAction,
+    private val updateTaskAction: UpdateTaskAction,
+    private val addTaskListAction: AddTaskListAction,
+    private val addNoteAction: AddNoteAction,
+    private val updateNoteAction: UpdateNoteAction,
+    private val deleteNoteAction: DeleteNoteAction,
+) : ViewModel() {
+
+    val tasks: StateFlow<List<Task>> = observeAllTasks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val taskLists: StateFlow<List<TaskList>> = observeAllTaskLists()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val notes: StateFlow<List<Note>> = observeAllNotes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun addTask(
+        title: String,
+        content: String,
+        priority: TaskPriority = TaskPriority.NONE,
+        deadline: Long? = null,
+        notifyBeforeValue: Int = 0,
+        notifyBeforeUnit: NotifyBeforeUnit = NotifyBeforeUnit.NONE,
+        recurrenceType: RecurrenceType = RecurrenceType.NONE,
+        listId: Long = 1L,
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            addTaskAction(
+                title = title,
+                content = content,
+                priority = priority,
+                deadline = deadline,
+                notifyBeforeValue = notifyBeforeValue,
+                notifyBeforeUnit = notifyBeforeUnit,
+                recurrenceType = recurrenceType,
+                listId = listId,
+            )
+        }
+    }
+
+    fun updateTask(task: Task) {
+        viewModelScope.launch(Dispatchers.IO) { updateTaskAction(task) }
+    }
+
+    fun addList(name: String) {
+        viewModelScope.launch(Dispatchers.IO) { addTaskListAction(name) }
+    }
+
+    fun addNote(title: String, content: String) {
+        viewModelScope.launch(Dispatchers.IO) { addNoteAction(title, content) }
+    }
+
+    fun updateNote(note: Note) {
+        viewModelScope.launch(Dispatchers.IO) { updateNoteAction(note) }
+    }
+
+    fun deleteNote(note: Note) {
+        viewModelScope.launch(Dispatchers.IO) { deleteNoteAction(note) }
+    }
+}

@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.currentMonth
 import com.udnahc.opentasks.data.extensions.currentYear
@@ -46,7 +47,7 @@ import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
-import com.udnahc.opentasks.viewmodel.TaskViewModel
+import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.back
@@ -70,7 +71,6 @@ import org.jetbrains.compose.resources.stringResource
 
 // ── Pager constants ─────────────────────────────────────────────────────────
 
-private const val MILLIS_PER_DAY = 86400000L
 private const val DAY_PAGER_RANGE = 7300
 private const val DAY_PAGER_CENTRE = DAY_PAGER_RANGE / 2
 private const val WEEK_PAGER_RANGE = 1040
@@ -97,7 +97,7 @@ internal enum class ListDisplayMode { TIMELINE, CARD }
 
 @Composable
 fun CalendarScreen(
-    viewModel: TaskViewModel,
+    viewModel: CalendarViewModel,
     onTaskClick: (Task) -> Unit,
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
 ) {

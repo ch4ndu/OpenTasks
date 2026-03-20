@@ -36,7 +36,7 @@ import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.utcMillisToLocalMillis
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.viewmodel.TaskViewModel
+import com.udnahc.opentasks.viewmodel.NoteViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.empty_notes
 import opentasks.composeapp.generated.resources.notes
@@ -58,7 +58,7 @@ private fun formatNoteDate(utcMillis: Long): String {
 
 @Composable
 fun NotesScreen(
-    viewModel: TaskViewModel,
+    viewModel: NoteViewModel,
     onNoteClick: (Note) -> Unit,
 ) {
     val notes by viewModel.notes.collectAsState()

@@ -40,7 +40,12 @@ import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.ic_alarm
 import opentasks.composeapp.generated.resources.ic_check_box
 import opentasks.composeapp.generated.resources.ic_check_box_outline
+import opentasks.composeapp.generated.resources.all_day
+import opentasks.composeapp.generated.resources.inbox
+import opentasks.composeapp.generated.resources.no_tasks
+import opentasks.composeapp.generated.resources.today
 import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 
 // ── Timeline task row (time | line+circle | card) ───────────────────────────
 
@@ -66,8 +71,8 @@ internal fun TimelineTaskRow(
         val timeText = if (task.deadline != null) {
             val h = extractHour(task.deadline)
             val m = extractMinute(task.deadline)
-            if (h == 0 && m == 0) "All day" else formatTimeFromLocalMillis(task.deadline)
-        } else "All day"
+            if (h == 0 && m == 0) stringResource(Res.string.all_day) else formatTimeFromLocalMillis(task.deadline)
+        } else stringResource(Res.string.all_day)
 
         Text(
             text = timeText,
@@ -209,7 +214,7 @@ internal fun CardTaskRow(
                 overflow = TextOverflow.Ellipsis,
             )
             if (task.deadline != null && !task.isCompleted) {
-                val dayPrefix = if (isToday) "Today" else formatDateShort(task.deadline)
+                val dayPrefix = if (isToday) stringResource(Res.string.today) else formatDateShort(task.deadline)
                 val h = extractHour(task.deadline)
                 val m = extractMinute(task.deadline)
                 val timeStr =
@@ -233,7 +238,7 @@ internal fun CardTaskRow(
             }
         }
         Text(
-            text = "Inbox",
+            text = stringResource(Res.string.inbox),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -291,7 +296,7 @@ internal fun CalendarTaskRow(
             }
         }
         Text(
-            text = "Inbox",
+            text = stringResource(Res.string.inbox),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -308,7 +313,7 @@ internal fun EmptyDayPlaceholder() {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "No tasks",
+            text = stringResource(Res.string.no_tasks),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

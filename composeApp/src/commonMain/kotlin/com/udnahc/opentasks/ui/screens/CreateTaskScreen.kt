@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -34,7 +35,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
@@ -192,6 +192,7 @@ import opentasks.composeapp.generated.resources.start
 import opentasks.composeapp.generated.resources.subtasks
 import opentasks.composeapp.generated.resources.sun
 import opentasks.composeapp.generated.resources.tags
+import opentasks.composeapp.generated.resources.task_completed
 import opentasks.composeapp.generated.resources.thu
 import opentasks.composeapp.generated.resources.time
 import opentasks.composeapp.generated.resources.title_hint
@@ -232,11 +233,9 @@ private enum class DurationReminderOption(val labelRes: StringResource) {
     AT_THE_END(Res.string.reminder_at_the_end),
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateTaskBottomSheet(
-    sheetState: SheetState,
-    onDismiss: () -> Unit,
+fun CreateTaskScreen(
+    onBack: () -> Unit,
     initialPriority: TaskPriority = TaskPriority.HIGH,
     initialListId: Long = 1L,
     initialDay: Int = 0,
@@ -245,19 +244,47 @@ fun CreateTaskBottomSheet(
     editTask: Task? = null,
     taskLists: List<TaskList> = emptyList(),
     onAddList: (String) -> Unit = {},
-    onSave: (title: String, content: String, priority: TaskPriority, deadline: Long?, reminder: Int, recurrence: RecurrenceType, listId: Long) -> Unit = { _, _, _, _, _, _, _ -> },
+    onSave: (title: String, content: String, priority: TaskPriority, deadline: Long?, reminder: Int, recurrence: RecurrenceType, listId: Long, isCompleted: Boolean) -> Unit = { _, _, _, _, _, _, _, _ -> },
+) {
+    CreateTaskContent(
+        onBack = onBack,
+        initialPriority = initialPriority,
+        initialListId = initialListId,
+        initialDay = initialDay,
+        initialMonth = initialMonth,
+        initialYear = initialYear,
+        editTask = editTask,
+        taskLists = taskLists,
+        onAddList = onAddList,
+        onSave = onSave,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CreateTaskContent(
+    onBack: () -> Unit,
+    initialPriority: TaskPriority = TaskPriority.HIGH,
+    initialListId: Long = 1L,
+    initialDay: Int = 0,
+    initialMonth: Int = 0,
+    initialYear: Int = 0,
+    editTask: Task? = null,
+    taskLists: List<TaskList> = emptyList(),
+    onAddList: (String) -> Unit = {},
+    onSave: (title: String, content: String, priority: TaskPriority, deadline: Long?, reminder: Int, recurrence: RecurrenceType, listId: Long, isCompleted: Boolean) -> Unit = { _, _, _, _, _, _, _, _ -> },
 ) {
     val stateKey = editTask?.id ?: 0L
     var title by remember(stateKey) { mutableStateOf(editTask?.title ?: "") }
     var description by remember(stateKey) { mutableStateOf(editTask?.content ?: "") }
     var priority by remember(stateKey) { mutableStateOf(editTask?.priority ?: initialPriority) }
+    var isCompleted by remember(stateKey) { mutableStateOf(editTask?.isCompleted ?: false) }
     var selectedListId by remember(stateKey) { mutableStateOf(editTask?.listId ?: initialListId) }
-    var showListPicker by remember { mutableStateOf(false) }
+    var showCategoryPicker by remember { mutableStateOf(false) }
     var showPriorityMenu by remember { mutableStateOf(false) }
     var isSubtaskMode by remember(stateKey) { mutableStateOf(false) }
     var subtaskToggleCount by remember { mutableIntStateOf(0) }
     val subtasks = remember { mutableStateListOf<SubtaskItem>() }
-    val scope = rememberCoroutineScope()
     val descriptionFocusRequester = remember { FocusRequester() }
     val subtaskFocusRequester = remember { FocusRequester() }
 
@@ -287,146 +314,143 @@ fun CreateTaskBottomSheet(
     var selectedReminder by remember(stateKey) { mutableStateOf(editTask?.let { reminderFromTask(it) } ?: ReminderOption.ON_THE_DAY) }
     var selectedRecurrence by remember(stateKey) { mutableStateOf(editTask?.recurrenceType ?: RecurrenceType.NONE) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.background,
-        dragHandle = null,
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .imePadding(),
     ) {
+        CreateTaskTopBar(
+            listName = taskLists.find { it.id == selectedListId }?.name ?: "Inbox",
+            priority = priority,
+            showPriorityMenu = showPriorityMenu,
+            onShowPriorityMenu = { showPriorityMenu = it },
+            onPrioritySelected = {
+                priority = it
+                showPriorityMenu = false
+            },
+            onBack = onBack,
+            onListClick = { showCategoryPicker = true },
+        )
+
+        val dimens = OpenTasksTheme.dimens
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .imePadding(),
+                .weight(1f)
+                .padding(horizontal = dimens.paddingXLarge)
         ) {
-            CreateTaskTopBar(
-                listName = taskLists.find { it.id == selectedListId }?.name ?: "Inbox",
-                priority = priority,
-                showPriorityMenu = showPriorityMenu,
-                onShowPriorityMenu = { showPriorityMenu = it },
-                onPrioritySelected = {
-                    priority = it
-                    showPriorityMenu = false
-                },
-                onBack = onDismiss,
-                onListClick = { showListPicker = true },
+            // Date and Reminder row
+            DateReminderRow(
+                selectedDay = selectedDay,
+                selectedMonth = selectedMonth,
+                selectedYear = selectedYear,
+                selectedHour = selectedHour,
+                selectedMinute = selectedMinute,
+                selectedReminder = selectedReminder,
+                selectedRecurrence = selectedRecurrence,
+                isCompleted = isCompleted,
+                onToggleComplete = { isCompleted = !isCompleted },
+                onClick = { showDateSheet = true },
             )
 
-            val dimens = OpenTasksTheme.dimens
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = dimens.paddingXLarge)
-            ) {
-                // Date and Reminder row
-                DateReminderRow(
-                    selectedDay = selectedDay,
-                    selectedMonth = selectedMonth,
-                    selectedYear = selectedYear,
-                    selectedHour = selectedHour,
-                    selectedMinute = selectedMinute,
-                    selectedReminder = selectedReminder,
-                    selectedRecurrence = selectedRecurrence,
-                    onClick = { showDateSheet = true },
-                )
+            Spacer(Modifier.height(dimens.spacerLarge))
 
-                Spacer(Modifier.height(dimens.spacerLarge))
+            TaskTitleField(
+                title = title,
+                onTitleChange = { title = it },
+                onFocused = { },
+            )
 
-                TaskTitleField(
-                    title = title,
-                    onTitleChange = { title = it },
-                    onFocused = { scope.launch { sheetState.expand() } },
-                )
+            Spacer(Modifier.height(dimens.spacerXLarge))
 
-                Spacer(Modifier.height(dimens.spacerXLarge))
-
-                if (isSubtaskMode) {
-                    Box(modifier = Modifier.defaultMinSize(minHeight = dimens.minPagerHeight)) {
-                        SubtaskList(
-                            subtasks = subtasks,
-                            onSubtaskTextChange = { index, text ->
-                                subtasks[index] = subtasks[index].copy(text = text)
-                            },
-                            onSubtaskCheckedChange = { index, checked ->
-                                subtasks[index] = subtasks[index].copy(isChecked = checked)
-                            },
-                            onDeleteSubtask = { index ->
-                                subtasks.removeAt(index)
-                            },
-                            onAddSubtask = {
-                                subtasks.add(SubtaskItem())
-                            },
-                            firstItemFocusRequester = subtaskFocusRequester,
-                        )
-                    }
-                    if (subtaskToggleCount > 0) {
-                        LaunchedEffect(subtaskToggleCount) {
-                            if (subtasks.isNotEmpty()) {
-                                subtaskFocusRequester.requestFocus()
-                            }
-                        }
-                    }
-                } else {
-                    if (subtaskToggleCount > 0) {
-                        LaunchedEffect(subtaskToggleCount) {
-                            descriptionFocusRequester.requestFocus()
-                        }
-                    }
-                    TaskDescriptionField(
-                        description = description,
-                        onDescriptionChange = { description = it },
-                        focusRequester = descriptionFocusRequester,
-                        onFocused = { scope.launch { sheetState.expand() } },
-                        modifier = Modifier.weight(1f),
+            if (isSubtaskMode) {
+                Box(modifier = Modifier.defaultMinSize(minHeight = dimens.minPagerHeight)) {
+                    SubtaskList(
+                        subtasks = subtasks,
+                        onSubtaskTextChange = { index, text ->
+                            subtasks[index] = subtasks[index].copy(text = text)
+                        },
+                        onSubtaskCheckedChange = { index, checked ->
+                            subtasks[index] = subtasks[index].copy(isChecked = checked)
+                        },
+                        onDeleteSubtask = { index ->
+                            subtasks.removeAt(index)
+                        },
+                        onAddSubtask = {
+                            subtasks.add(SubtaskItem())
+                        },
+                        firstItemFocusRequester = subtaskFocusRequester,
                     )
                 }
-            }
-
-            CreateTaskBottomBar(
-                isSubtaskMode = isSubtaskMode,
-                onToggleSubtaskMode = {
-                    if (isSubtaskMode) {
-                        syncSubtasksToDescription()
-                    } else {
-                        syncDescriptionToSubtasks()
-                    }
-                    isSubtaskMode = !isSubtaskMode
-                    subtaskToggleCount++
-                },
-                onDone = {
-                    if (title.isNotBlank()) {
-                        val deadlineMs: Long? =
-                            if (selectedYear > 0 && selectedMonth > 0 && selectedDay > 0) {
-                                computeDeadlineMillis(
-                                    selectedYear,
-                                    selectedMonth,
-                                    selectedDay,
-                                    selectedHour,
-                                    selectedMinute
-                                )
-                            } else null
-                        val reminderDays = when (selectedReminder) {
-                            ReminderOption.NONE -> 0
-                            ReminderOption.ON_THE_DAY -> 0
-                            ReminderOption.ONE_DAY_EARLY -> 1
-                            ReminderOption.TWO_DAYS_EARLY -> 2
-                            ReminderOption.THREE_DAYS_EARLY -> 3
-                            ReminderOption.ONE_WEEK_EARLY -> 7
+                if (subtaskToggleCount > 0) {
+                    LaunchedEffect(subtaskToggleCount) {
+                        if (subtasks.isNotEmpty()) {
+                            subtaskFocusRequester.requestFocus()
                         }
-                        if (isSubtaskMode) syncSubtasksToDescription()
-                        onSave(
-                            title,
-                            description,
-                            priority,
-                            deadlineMs,
-                            reminderDays,
-                            selectedRecurrence,
-                            selectedListId,
-                        )
                     }
-                    onDismiss()
-                },
-            )
+                }
+            } else {
+                if (subtaskToggleCount > 0) {
+                    LaunchedEffect(subtaskToggleCount) {
+                        descriptionFocusRequester.requestFocus()
+                    }
+                }
+                TaskDescriptionField(
+                    description = description,
+                    onDescriptionChange = { description = it },
+                    focusRequester = descriptionFocusRequester,
+                    onFocused = { },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
+
+        CreateTaskBottomBar(
+            isSubtaskMode = isSubtaskMode,
+            onToggleSubtaskMode = {
+                if (isSubtaskMode) {
+                    syncSubtasksToDescription()
+                } else {
+                    syncDescriptionToSubtasks()
+                }
+                isSubtaskMode = !isSubtaskMode
+                subtaskToggleCount++
+            },
+            onDone = {
+                if (title.isNotBlank()) {
+                    val deadlineMs: Long? =
+                        if (selectedYear > 0 && selectedMonth > 0 && selectedDay > 0) {
+                            computeDeadlineMillis(
+                                selectedYear,
+                                selectedMonth,
+                                selectedDay,
+                                selectedHour,
+                                selectedMinute
+                            )
+                        } else null
+                    val reminderDays = when (selectedReminder) {
+                        ReminderOption.NONE -> 0
+                        ReminderOption.ON_THE_DAY -> 0
+                        ReminderOption.ONE_DAY_EARLY -> 1
+                        ReminderOption.TWO_DAYS_EARLY -> 2
+                        ReminderOption.THREE_DAYS_EARLY -> 3
+                        ReminderOption.ONE_WEEK_EARLY -> 7
+                    }
+                    if (isSubtaskMode) syncSubtasksToDescription()
+                    onSave(
+                        title,
+                        description,
+                        priority,
+                        deadlineMs,
+                        reminderDays,
+                        selectedRecurrence,
+                        selectedListId,
+                        isCompleted,
+                    )
+                }
+                onBack()
+            },
+        )
     }
 
     if (showDateSheet) {
@@ -454,18 +478,18 @@ fun CreateTaskBottomSheet(
         )
     }
 
-    if (showListPicker) {
+    if (showCategoryPicker) {
         val listPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ListPickerBottomSheet(
+        CategoryPickerBottomSheet(
             sheetState = listPickerState,
             lists = taskLists,
             selectedListId = selectedListId,
             onListSelected = { taskList ->
                 selectedListId = taskList.id
-                showListPicker = false
+                showCategoryPicker = false
             },
             onAddList = onAddList,
-            onDismiss = { showListPicker = false },
+            onDismiss = { showCategoryPicker = false },
         )
     }
 }
@@ -713,6 +737,8 @@ private fun DateReminderRow(
     selectedMinute: Int,
     selectedReminder: ReminderOption,
     selectedRecurrence: RecurrenceType,
+    isCompleted: Boolean,
+    onToggleComplete: () -> Unit,
     onClick: () -> Unit,
 ) {
     val hasDate = selectedDay > 0 && selectedMonth > 0 && selectedYear > 0
@@ -734,8 +760,25 @@ private fun DateReminderRow(
             Box(
                 modifier = Modifier
                     .size(dimens.priorityIndicatorSize)
-                    .border(dimens.priorityIndicatorBorder, PriorityHigh, RoundedCornerShape(dimens.cornerMedium)),
-            )
+                    .then(
+                        if (isCompleted) {
+                            Modifier.background(PriorityHigh, RoundedCornerShape(dimens.cornerMedium))
+                        } else {
+                            Modifier.border(dimens.priorityIndicatorBorder, PriorityHigh, RoundedCornerShape(dimens.cornerMedium))
+                        }
+                    )
+                    .clickable(onClick = onToggleComplete),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isCompleted) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_check),
+                        contentDescription = stringResource(Res.string.task_completed),
+                        tint = Color.White,
+                        modifier = Modifier.size(dimens.iconSmall),
+                    )
+                }
+            }
             Spacer(Modifier.width(dimens.spacerXLarge))
             Text(
                 text = stringResource(Res.string.date_and_reminder),
@@ -2222,14 +2265,12 @@ private fun computeDeadlineMillis(
     minute: Int
 ): Long = computeDeadlineUtcMillis(year, month, day, hour, minute)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Preview
 private fun CreateTaskScreenPreview() {
     OpenTasksTheme {
-        CreateTaskBottomSheet(
-            sheetState = rememberModalBottomSheetState(),
-            onDismiss = { },
+        CreateTaskScreen(
+            onBack = { },
         )
     }
 }

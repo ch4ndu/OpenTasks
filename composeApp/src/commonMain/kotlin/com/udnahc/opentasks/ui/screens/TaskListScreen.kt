@@ -55,7 +55,7 @@ import com.udnahc.opentasks.ui.theme.PriorityHigh
 import com.udnahc.opentasks.ui.theme.PriorityLow
 import com.udnahc.opentasks.ui.theme.PriorityMedium
 import com.udnahc.opentasks.ui.theme.PriorityNone
-import com.udnahc.opentasks.viewmodel.TaskViewModel
+import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.completed
@@ -74,7 +74,7 @@ import org.jetbrains.compose.resources.stringResource
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskListScreen(
-    viewModel: TaskViewModel,
+    viewModel: TaskListViewModel,
     selectedListId: Long,
     onSelectedListChanged: (Long) -> Unit,
     onTaskClick: (Task) -> Unit,
@@ -84,7 +84,7 @@ fun TaskListScreen(
 
     val activeTasks by viewModel.activeTasksForSelectedList.collectAsState()
     val completedTasks by viewModel.completedTasksForSelectedList.collectAsState()
-    var showListPicker by remember { mutableStateOf(false) }
+    var showCategoryPicker by remember { mutableStateOf(false) }
 
     val taskLists by viewModel.taskLists.collectAsState()
     val defaultListName = stringResource(Res.string.inbox)
@@ -98,21 +98,23 @@ fun TaskListScreen(
         completedTasks = completedTasks,
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
-        onListClick = { showListPicker = true },
+        onListClick = { showCategoryPicker = true },
     )
 
-    if (showListPicker) {
+    if (showCategoryPicker) {
         val listPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ListPickerBottomSheet(
+        CategoryPickerBottomSheet(
             sheetState = listPickerState,
             lists = taskLists,
             selectedListId = selectedListId,
             onListSelected = { taskList ->
                 onSelectedListChanged(taskList.id)
-                showListPicker = false
+                showCategoryPicker = false
             },
             onAddList = { name -> viewModel.addList(name) },
-            onDismiss = { showListPicker = false },
+            onDismiss = { showCategoryPicker = false },
+            showTitle = false,
+            showSearch = false,
         )
     }
 }
