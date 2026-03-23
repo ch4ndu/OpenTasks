@@ -22,6 +22,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
@@ -48,6 +49,7 @@ import com.udnahc.opentasks.navigation.AppNavController
 import com.udnahc.opentasks.navigation.Screen
 import com.udnahc.opentasks.ui.screens.CreateNoteBottomSheet
 import com.udnahc.opentasks.ui.screens.CreateTaskScreen
+import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
 import com.udnahc.opentasks.ui.screens.EisenhowerMatrixScreen
 import com.udnahc.opentasks.ui.screens.NotesScreen
 import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
@@ -84,11 +86,16 @@ import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
 @Preview
-fun App() {
+fun App(sharedText: String = "") {
     OpenTasksTheme {
         val backStack = remember { NavBackStack<NavKey>(Screen.Matrix) }
         val navController = remember { AppNavController(backStack) }
         val appViewModel: AppViewModel = koinViewModel()
+        if (sharedText.isNotEmpty()) {
+            LaunchedEffect(Unit) {
+                navController.navigate(Screen.CreateTask(title = sharedText))
+            }
+        }
         MainScreen(navController = navController, backStack = backStack, appViewModel = appViewModel)
     }
 }
@@ -223,10 +230,13 @@ private fun MainScreen(
 
                 entry<Screen.CreateTask> { screen ->
                     val categories by appViewModel.categories.collectAsState()
+                    val requestNotificationPermission = rememberNotificationPermissionLauncher {}
+                    LaunchedEffect(Unit) { requestNotificationPermission() }
                     CreateTaskScreen(
                         onBack = { navController.popBackStack() },
                         initialPriority = TaskPriority.entries[screen.priorityOrdinal],
                         initialCategoryId = screen.categoryId,
+                        initialTitle = screen.title,
                         initialDay = screen.day,
                         initialMonth = screen.month,
                         initialYear = screen.year,
@@ -249,6 +259,8 @@ private fun MainScreen(
                                 organizer = formData.organizer,
                                 eventStatus = formData.eventStatus,
                                 attendees = formData.attendees,
+                                durationReminders = formData.durationReminders,
+                                dateReminders = formData.dateReminders,
                             )
                         },
                     )
@@ -283,6 +295,8 @@ private fun MainScreen(
                                         organizer = formData.organizer,
                                         eventStatus = formData.eventStatus,
                                         attendees = formData.attendees,
+                                        durationReminders = formData.durationReminders,
+                                        dateReminders = formData.dateReminders,
                                     )
                                 )
                             },

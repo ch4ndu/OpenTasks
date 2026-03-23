@@ -13,6 +13,7 @@ import com.udnahc.opentasks.domain.action.note.AddNoteAction
 import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
 import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
 import com.udnahc.opentasks.domain.action.task.AddTaskAction
+import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
@@ -30,6 +31,7 @@ class AppViewModel(
     observeAllNotes: ObserveAllNotesUseCase,
     private val addTaskAction: AddTaskAction,
     private val updateTaskAction: UpdateTaskAction,
+    private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
     private val addCategoryAction: AddCategoryAction,
     private val addNoteAction: AddNoteAction,
     private val updateNoteAction: UpdateNoteAction,
@@ -59,9 +61,11 @@ class AppViewModel(
         organizer: String = "",
         eventStatus: String = "",
         attendees: String = "",
+        durationReminders: String = "",
+        dateReminders: String = "",
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            addTaskAction(
+            val task = addTaskAction(
                 title = title,
                 content = content,
                 priority = priority,
@@ -75,12 +79,18 @@ class AppViewModel(
                 organizer = organizer,
                 eventStatus = eventStatus,
                 attendees = attendees,
+                durationReminders = durationReminders,
+                dateReminders = dateReminders,
             )
+            scheduleTaskRemindersAction(task)
         }
     }
 
     fun updateTask(task: Task) {
-        viewModelScope.launch(Dispatchers.IO) { updateTaskAction(task) }
+        viewModelScope.launch(Dispatchers.IO) {
+            updateTaskAction(task)
+            scheduleTaskRemindersAction(task)
+        }
     }
 
     fun addCategory(name: String) {

@@ -1,5 +1,6 @@
 package com.udnahc.opentasks
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -22,8 +23,14 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
 
+        val sharedText = if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        } else {
+            ""
+        }
+
         setContent {
-            App()
+            App(sharedText = sharedText)
         }
     }
 }

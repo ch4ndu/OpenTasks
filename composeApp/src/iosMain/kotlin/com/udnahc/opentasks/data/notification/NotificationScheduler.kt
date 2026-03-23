@@ -1,0 +1,106 @@
+package com.udnahc.opentasks.data.notification
+
+import platform.UserNotifications.UNCalendarNotificationTrigger
+import platform.UserNotifications.UNMutableNotificationContent
+import platform.UserNotifications.UNNotificationRequest
+import platform.UserNotifications.UNNotificationSound
+import platform.UserNotifications.UNUserNotificationCenter
+import platform.UserNotifications.UNTimeIntervalNotificationTrigger
+import platform.Foundation.NSCalendar
+import platform.Foundation.NSDate
+import platform.Foundation.NSDateComponents
+import platform.Foundation.dateWithTimeIntervalSince1970
+
+actual class NotificationScheduler {
+
+    private val center = UNUserNotificationCenter.currentNotificationCenter()
+
+    actual fun schedule(
+        taskId: Long,
+        title: String,
+        body: String,
+        triggerAtMillis: Long,
+        reminderId: Int,
+    ) {
+        val content = UNMutableNotificationContent().apply {
+            setTitle(title)
+            setBody(body)
+            setSound(UNNotificationSound.defaultSound)
+        }
+
+        val triggerDate = NSDate.dateWithTimeIntervalSince1970(triggerAtMillis / 1000.0)
+        val calendar = NSCalendar.currentCalendar
+        val components = calendar.components(
+            NSCalendar.currentCalendar.let {
+                platform.Foundation.NSCalendarUnitYear or
+                    platform.Foundation.NSCalendarUnitMonth or
+                    platform.Foundation.NSCalendarUnitDay or
+                    platform.Foundation.NSCalendarUnitHour or
+                    platform.Foundation.NSCalendarUnitMinute or
+                    platform.Foundation.NSCalendarUnitSecond
+            },
+            fromDate = triggerDate,
+        )
+
+        val trigger = UNCalendarNotificationTrigger.triggerWithDateMatchingComponents(
+            dateComponents = components,
+            repeats = false,
+        )
+
+        val request = UNNotificationRequest.requestWithIdentifier(
+            identifier = requestId(taskId, reminderId),
+            content = content,
+            trigger = trigger,
+        )
+
+        center.addNotificationRequest(request, withCompletionHandler = null)
+    }
+
+    actual fun cancel(taskId: Long, reminderId: Int) {
+        center.removePendingNotificationRequestsWithIdentifiers(
+            listOf(requestId(taskId, reminderId))
+        )
+    }
+
+    actual fun cancelAll(taskId: Long) {
+        // Cancel up to 100 possible reminder slots
+        val ids = (0 until 100).map { requestId(taskId, it) }
+        center.removePendingNotificationRequestsWithIdentifiers(ids)
+        stopOngoing(taskId)
+    }
+
+    actual fun startOngoing(taskId: Long, title: String) {
+        // iOS doesn't support true ongoing notifications.
+        // Schedule repeated notifications every 2 hours (up to 8 per day).
+        val content = UNMutableNotificationContent().apply {
+            setTitle(title)
+            setBody("All-day task in progress")
+            setSound(UNNotificationSound.defaultSound)
+        }
+
+        for (hour in 8..22 step 2) {
+            val components = NSDateComponents().apply {
+                setHour(hour.toLong())
+                setMinute(0)
+            }
+            val trigger = UNCalendarNotificationTrigger.triggerWithDateMatchingComponents(
+                dateComponents = components,
+                repeats = false,
+            )
+            val request = UNNotificationRequest.requestWithIdentifier(
+                identifier = "task_${taskId}_ongoing_$hour",
+                content = content,
+                trigger = trigger,
+            )
+            center.addNotificationRequest(request, withCompletionHandler = null)
+        }
+    }
+
+    actual fun stopOngoing(taskId: Long) {
+        val ids = (8..22 step 2).map { "task_${taskId}_ongoing_$it" }
+        center.removePendingNotificationRequestsWithIdentifiers(ids)
+    }
+
+    private fun requestId(taskId: Long, reminderId: Int): String =
+        "task_${taskId}_reminder_$reminderId"
+}

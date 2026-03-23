@@ -14,4 +14,6 @@ data class TaskFormData(
     val organizer: String = "",
     val eventStatus: String = "",
     val attendees: String = "",
+    val durationReminders: String = "",
+    val dateReminders: String = "",
 )

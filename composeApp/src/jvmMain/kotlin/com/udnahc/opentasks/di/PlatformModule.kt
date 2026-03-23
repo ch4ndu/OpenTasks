@@ -5,6 +5,7 @@ import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.database.getDatabaseBuilder
 import com.udnahc.opentasks.data.calendar.CalendarProvider
 import com.udnahc.opentasks.data.calendar.JvmCalendarProvider
+import com.udnahc.opentasks.data.notification.NotificationScheduler
 import org.koin.dsl.module
 
 actual val platformModule = module {
@@ -12,4 +13,5 @@ actual val platformModule = module {
         getDatabaseBuilder()
     }
     single<CalendarProvider> { JvmCalendarProvider() }
+    single { NotificationScheduler() }
 }

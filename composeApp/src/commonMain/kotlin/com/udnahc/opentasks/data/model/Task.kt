@@ -27,6 +27,8 @@ data class Task(
     val organizer: String = "",
     val eventStatus: String = "",
     val attendees: String = "",
+    val durationReminders: String = "",
+    val dateReminders: String = "",
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 )

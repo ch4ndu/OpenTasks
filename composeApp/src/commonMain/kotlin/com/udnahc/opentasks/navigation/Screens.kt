@@ -15,6 +15,7 @@ sealed class Screen : NavClass() {
         val day: Int = 0,
         val month: Int = 0,
         val year: Int = 0,
+        val title: String = "",
     ) : Screen()
     @Serializable data class EditTask(val taskId: Long) : Screen()
 }

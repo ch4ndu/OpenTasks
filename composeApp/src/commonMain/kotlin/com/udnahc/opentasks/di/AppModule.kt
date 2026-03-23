@@ -33,6 +33,7 @@ import com.udnahc.opentasks.domain.usecase.tag.ObserveTagsForTaskUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
 import com.udnahc.opentasks.data.calendar.CalendarProvider
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
+import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.viewmodel.AppViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.ImportCalendarViewModel
@@ -92,9 +93,10 @@ val sharedModule = module {
     single { AddTagAction(get()) }
     single { TagTaskAction(get()) }
     single { ImportCalendarEventsAction(get(), get(), get(), get()) }
+    single { ScheduleTaskRemindersAction(get()) }
 
     // ViewModels
-    viewModel { AppViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { AppViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { TaskListViewModel(get(), get(), get(), get()) }
     viewModel { CalendarViewModel(get(), get(), get()) }

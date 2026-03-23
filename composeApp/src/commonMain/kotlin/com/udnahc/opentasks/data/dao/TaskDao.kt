@@ -23,6 +23,9 @@ interface TaskDao {
     @Query("SELECT * FROM tasks ORDER BY updatedAt DESC")
     fun getAllTasks(): Flow<List<Task>>
 
+    @Query("SELECT * FROM tasks WHERE isCompleted = 0 AND deadline IS NOT NULL")
+    suspend fun getTasksWithDeadlines(): List<Task>
+
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: Long): Task?
 

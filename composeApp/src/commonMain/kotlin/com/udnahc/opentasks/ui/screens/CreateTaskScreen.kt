@@ -81,7 +81,6 @@ import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.localToUtc
-import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskFormData
@@ -232,23 +231,47 @@ data class SubtaskItem(
     val isChecked: Boolean = false,
 )
 
-internal enum class ReminderOption(val labelRes: StringResource) {
-    NONE(Res.string.none),
-    ON_THE_DAY(Res.string.reminder_on_the_day),
-    ONE_DAY_EARLY(Res.string.reminder_1_day_early),
-    TWO_DAYS_EARLY(Res.string.reminder_2_days_early),
-    THREE_DAYS_EARLY(Res.string.reminder_3_days_early),
-    ONE_WEEK_EARLY(Res.string.reminder_1_week_early),
+internal enum class ReminderOption(val labelRes: StringResource, val daysValue: Int) {
+    NONE(Res.string.none, Int.MIN_VALUE),
+    ON_THE_DAY(Res.string.reminder_on_the_day, 0),
+    ONE_DAY_EARLY(Res.string.reminder_1_day_early, 1),
+    TWO_DAYS_EARLY(Res.string.reminder_2_days_early, 2),
+    THREE_DAYS_EARLY(Res.string.reminder_3_days_early, 3),
+    ONE_WEEK_EARLY(Res.string.reminder_1_week_early, 7),
 }
 
-private enum class DurationReminderOption(val labelRes: StringResource) {
-    NONE(Res.string.none),
-    ON_TIME(Res.string.reminder_on_time),
-    FIVE_MINS_EARLY(Res.string.reminder_5_mins_early),
-    THIRTY_MINS_EARLY(Res.string.reminder_30_mins_early),
-    ONE_HOUR_EARLY(Res.string.reminder_1_hour_early),
-    ONE_DAY_EARLY(Res.string.reminder_1_day_early_duration),
-    AT_THE_END(Res.string.reminder_at_the_end),
+private fun Set<ReminderOption>.toDateRemindersString(): String =
+    filter { it != ReminderOption.NONE }
+        .joinToString(",") { it.daysValue.toString() }
+
+private fun String.toReminderSet(): Set<ReminderOption> {
+    if (isBlank()) return emptySet()
+    val daysValues = split(",").mapNotNull { it.trim().toIntOrNull() }
+    return ReminderOption.entries
+        .filter { it != ReminderOption.NONE && it.daysValue in daysValues }
+        .toSet()
+}
+
+private enum class DurationReminderOption(val labelRes: StringResource, val minutesValue: Int) {
+    NONE(Res.string.none, Int.MIN_VALUE),
+    ON_TIME(Res.string.reminder_on_time, 0),
+    FIVE_MINS_EARLY(Res.string.reminder_5_mins_early, 5),
+    THIRTY_MINS_EARLY(Res.string.reminder_30_mins_early, 30),
+    ONE_HOUR_EARLY(Res.string.reminder_1_hour_early, 60),
+    ONE_DAY_EARLY(Res.string.reminder_1_day_early_duration, 1440),
+    AT_THE_END(Res.string.reminder_at_the_end, -1),
+}
+
+private fun Set<DurationReminderOption>.toStorageString(): String =
+    filter { it != DurationReminderOption.NONE }
+        .joinToString(",") { it.minutesValue.toString() }
+
+private fun String.toDurationReminderSet(): Set<DurationReminderOption> {
+    if (isBlank()) return emptySet()
+    val minutesValues = split(",").mapNotNull { it.trim().toIntOrNull() }
+    return DurationReminderOption.entries
+        .filter { it != DurationReminderOption.NONE && it.minutesValue in minutesValues }
+        .toSet()
 }
 
 @Composable
@@ -256,6 +279,7 @@ fun CreateTaskScreen(
     onBack: () -> Unit,
     initialPriority: TaskPriority = TaskPriority.HIGH,
     initialCategoryId: Long = 1L,
+    initialTitle: String = "",
     initialDay: Int = 0,
     initialMonth: Int = 0,
     initialYear: Int = 0,
@@ -268,6 +292,7 @@ fun CreateTaskScreen(
         onBack = onBack,
         initialPriority = initialPriority,
         initialCategoryId = initialCategoryId,
+        initialTitle = initialTitle,
         initialDay = initialDay,
         initialMonth = initialMonth,
         initialYear = initialYear,
@@ -284,6 +309,7 @@ private fun CreateTaskContent(
     onBack: () -> Unit,
     initialPriority: TaskPriority = TaskPriority.HIGH,
     initialCategoryId: Long = 1L,
+    initialTitle: String = "",
     initialDay: Int = 0,
     initialMonth: Int = 0,
     initialYear: Int = 0,
@@ -293,7 +319,7 @@ private fun CreateTaskContent(
     onSave: (TaskFormData) -> Unit = {},
 ) {
     val stateKey = editTask?.id ?: 0L
-    var title by remember(stateKey) { mutableStateOf(editTask?.title ?: "") }
+    var title by remember(stateKey) { mutableStateOf(editTask?.title ?: initialTitle) }
     var description by remember(stateKey) { mutableStateOf(editTask?.content ?: "") }
     var priority by remember(stateKey) { mutableStateOf(editTask?.priority ?: initialPriority) }
     var isCompleted by remember(stateKey) { mutableStateOf(editTask?.isCompleted ?: false) }
@@ -334,8 +360,12 @@ private fun CreateTaskContent(
     var selectedYear by remember(stateKey) { mutableIntStateOf(editTask?.deadline?.let { extractYear(it) } ?: initialYear) }
     var selectedHour by remember(stateKey) { mutableIntStateOf(editTask?.deadline?.let { extractHour(it) } ?: 8) }
     var selectedMinute by remember(stateKey) { mutableIntStateOf(editTask?.deadline?.let { extractMinute(it) } ?: 0) }
-    var selectedReminder by remember(stateKey) { mutableStateOf(editTask?.let { reminderFromTask(it) } ?: ReminderOption.ON_THE_DAY) }
+    var selectedReminders by remember(stateKey) {
+        val initial = editTask?.dateReminders?.toReminderSet() ?: emptySet()
+        mutableStateOf(initial.ifEmpty { setOf(ReminderOption.ON_THE_DAY) })
+    }
     var selectedRecurrence by remember(stateKey) { mutableStateOf(editTask?.recurrenceType ?: RecurrenceType.NONE) }
+    var durationReminders by remember(stateKey) { mutableStateOf(editTask?.durationReminders ?: "") }
 
     Column(
         modifier = Modifier
@@ -369,7 +399,7 @@ private fun CreateTaskContent(
                 selectedYear = selectedYear,
                 selectedHour = selectedHour,
                 selectedMinute = selectedMinute,
-                selectedReminder = selectedReminder,
+                selectedReminders = selectedReminders,
                 selectedRecurrence = selectedRecurrence,
                 isCompleted = isCompleted,
                 onToggleComplete = { isCompleted = !isCompleted },
@@ -478,14 +508,6 @@ private fun CreateTaskContent(
                                 selectedMinute
                             )
                         } else null
-                    val reminderDays = when (selectedReminder) {
-                        ReminderOption.NONE -> 0
-                        ReminderOption.ON_THE_DAY -> 0
-                        ReminderOption.ONE_DAY_EARLY -> 1
-                        ReminderOption.TWO_DAYS_EARLY -> 2
-                        ReminderOption.THREE_DAYS_EARLY -> 3
-                        ReminderOption.ONE_WEEK_EARLY -> 7
-                    }
                     if (isSubtaskMode) syncSubtasksToDescription()
                     onSave(
                         TaskFormData(
@@ -493,7 +515,6 @@ private fun CreateTaskContent(
                             content = description,
                             priority = priority,
                             deadline = deadlineMs,
-                            reminderDays = reminderDays,
                             recurrence = selectedRecurrence,
                             categoryId = selectedCategoryId,
                             isCompleted = isCompleted,
@@ -502,6 +523,8 @@ private fun CreateTaskContent(
                             organizer = organizer,
                             eventStatus = eventStatus,
                             attendees = attendees,
+                            durationReminders = durationReminders,
+                            dateReminders = selectedReminders.toDateRemindersString(),
                         )
                     )
                 }
@@ -517,8 +540,9 @@ private fun CreateTaskContent(
             selectedYear = selectedYear,
             selectedHour = selectedHour,
             selectedMinute = selectedMinute,
-            selectedReminder = selectedReminder,
+            selectedReminders = selectedReminders,
             selectedRecurrence = selectedRecurrence,
+            initialDurationReminders = durationReminders,
             onDaySelected = { day, month, year ->
                 selectedDay = day
                 selectedMonth = month
@@ -528,8 +552,9 @@ private fun CreateTaskContent(
                 selectedHour = hour
                 selectedMinute = minute
             },
-            onReminderSelected = { selectedReminder = it },
+            onRemindersSelected = { selectedReminders = it },
             onRecurrenceSelected = { selectedRecurrence = it },
+            onDurationRemindersChanged = { durationReminders = it },
             onDismiss = { showDateSheet = false },
             onConfirm = { showDateSheet = false },
         )
@@ -792,7 +817,7 @@ private fun DateReminderRow(
     selectedYear: Int,
     selectedHour: Int,
     selectedMinute: Int,
-    selectedReminder: ReminderOption,
+    selectedReminders: Set<ReminderOption>,
     selectedRecurrence: RecurrenceType,
     isCompleted: Boolean,
     onToggleComplete: () -> Unit,
@@ -800,7 +825,7 @@ private fun DateReminderRow(
 ) {
     val hasDate = selectedDay > 0 && selectedMonth > 0 && selectedYear > 0
     val hasTime = selectedHour >= 0
-    val hasReminder = selectedReminder != ReminderOption.NONE
+    val hasReminder = selectedReminders.isNotEmpty()
     val hasRecurrence = selectedRecurrence != RecurrenceType.NONE
 
     val dimens = OpenTasksTheme.dimens
@@ -1075,12 +1100,14 @@ internal fun DateReminderBottomSheet(
     selectedYear: Int,
     selectedHour: Int,
     selectedMinute: Int,
-    selectedReminder: ReminderOption,
+    selectedReminders: Set<ReminderOption>,
     selectedRecurrence: RecurrenceType,
+    initialDurationReminders: String = "",
     onDaySelected: (day: Int, month: Int, year: Int) -> Unit,
     onTimeSelected: (hour: Int, minute: Int) -> Unit,
-    onReminderSelected: (ReminderOption) -> Unit,
+    onRemindersSelected: (Set<ReminderOption>) -> Unit,
     onRecurrenceSelected: (RecurrenceType) -> Unit,
+    onDurationRemindersChanged: (String) -> Unit = {},
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
@@ -1099,7 +1126,10 @@ internal fun DateReminderBottomSheet(
     var durEndHour by remember { mutableIntStateOf(17) }
     var durEndMinute by remember { mutableIntStateOf(0) }
     var durAllDay by remember { mutableStateOf(false) }
-    var durReminder by remember { mutableStateOf(DurationReminderOption.NONE) }
+    var durReminders by remember {
+        val initial = initialDurationReminders.toDurationReminderSet()
+        mutableStateOf(initial.ifEmpty { setOf(DurationReminderOption.ON_TIME) })
+    }
     var durRecurrence by remember { mutableStateOf(RecurrenceType.NONE) }
     var showDurDateDialog by remember { mutableStateOf(false) }
     var showDurTimeDialog by remember { mutableStateOf(false) }
@@ -1177,6 +1207,7 @@ internal fun DateReminderBottomSheet(
                             // Propagate the start time from the duration tab
                             onTimeSelected(durStartHour, durStartMinute)
                         }
+                        onDurationRemindersChanged(durReminders.toStorageString())
                     }
                     onConfirm()
                 }) {
@@ -1195,7 +1226,7 @@ internal fun DateReminderBottomSheet(
                     selectedYear = selectedYear,
                     selectedHour = selectedHour,
                     selectedMinute = selectedMinute,
-                    selectedReminder = selectedReminder,
+                    selectedReminders = selectedReminders,
                     selectedRecurrence = selectedRecurrence,
                     onDaySelected = onDaySelected,
                     onShowTimePicker = { showTimePicker = true },
@@ -1212,14 +1243,14 @@ internal fun DateReminderBottomSheet(
                     endHour = durEndHour,
                     endMinute = durEndMinute,
                     isAllDay = durAllDay,
-                    selectedReminder = durReminder,
+                    selectedReminders = durReminders,
                     selectedRecurrence = durRecurrence,
                     onAllDayChanged = { durAllDay = it },
                     onShowDateDialog = { showDurDateDialog = true },
                     onShowTimeDialog = { showDurTimeDialog = true },
                     onShowReminderDialog = { showDurReminderDialog = true },
                     onShowRepeatDialog = { showDurRepeatDialog = true },
-                    onClearReminder = { durReminder = DurationReminderOption.NONE },
+                    onClearReminders = { durReminders = emptySet() },
                 )
             }
 
@@ -1260,9 +1291,9 @@ internal fun DateReminderBottomSheet(
 
     if (showDurReminderDialog) {
         DurationReminderDialog(
-            selected = durReminder,
-            onSelected = {
-                durReminder = it
+            selected = durReminders,
+            onConfirm = {
+                durReminders = it
                 showDurReminderDialog = false
             },
             onDismiss = { showDurReminderDialog = false },
@@ -1296,9 +1327,9 @@ internal fun DateReminderBottomSheet(
 
     if (showReminderDialog) {
         ReminderDialog(
-            selected = selectedReminder,
-            onSelected = {
-                onReminderSelected(it)
+            selected = selectedReminders,
+            onConfirm = {
+                onRemindersSelected(it)
                 showReminderDialog = false
             },
             onDismiss = { showReminderDialog = false },
@@ -1335,7 +1366,7 @@ private fun DateTabContent(
     selectedYear: Int,
     selectedHour: Int,
     selectedMinute: Int,
-    selectedReminder: ReminderOption,
+    selectedReminders: Set<ReminderOption>,
     selectedRecurrence: RecurrenceType,
     onDaySelected: (day: Int, month: Int, year: Int) -> Unit,
     onShowTimePicker: () -> Unit,
@@ -1442,7 +1473,11 @@ private fun DateTabContent(
         SettingRow(
             icon = Res.drawable.ic_alarm,
             label = stringResource(Res.string.reminder),
-            value = stringResource(selectedReminder.labelRes),
+            value = if (selectedReminders.isNotEmpty()) {
+                selectedReminders.map { stringResource(it.labelRes) }.joinToString(", ")
+            } else {
+                stringResource(Res.string.none)
+            },
             onClick = onShowReminderDialog,
         )
 
@@ -1531,14 +1566,14 @@ private fun DurationTabContent(
     endHour: Int,
     endMinute: Int,
     isAllDay: Boolean,
-    selectedReminder: DurationReminderOption,
+    selectedReminders: Set<DurationReminderOption>,
     selectedRecurrence: RecurrenceType,
     onAllDayChanged: (Boolean) -> Unit,
     onShowDateDialog: () -> Unit,
     onShowTimeDialog: () -> Unit,
     onShowReminderDialog: () -> Unit,
     onShowRepeatDialog: () -> Unit,
-    onClearReminder: () -> Unit,
+    onClearReminders: () -> Unit,
 ) {
     val isToday =
         selectedDay == currentDay() && selectedMonth == currentMonth() && selectedYear == currentYear()
@@ -1662,6 +1697,13 @@ private fun DurationTabContent(
         Spacer(Modifier.height(dimens.spacerLarge))
 
         // Reminder row with clear button
+        val hasReminders = selectedReminders.isNotEmpty()
+        val reminderLabels = selectedReminders.map { stringResource(it.labelRes) }
+        val reminderLabel = if (hasReminders) {
+            reminderLabels.joinToString(", ")
+        } else {
+            stringResource(Res.string.none)
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1683,12 +1725,12 @@ private fun DurationTabContent(
             )
             Spacer(Modifier.weight(1f))
             Text(
-                stringResource(selectedReminder.labelRes),
-                color = if (selectedReminder != DurationReminderOption.NONE) PrimaryBlue
+                reminderLabel,
+                color = if (hasReminders) PrimaryBlue
                 else MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )
-            if (selectedReminder != DurationReminderOption.NONE) {
+            if (hasReminders) {
                 Spacer(Modifier.width(dimens.spacerSmall))
                 Icon(
                     painter = painterResource(Res.drawable.ic_close),
@@ -1696,7 +1738,7 @@ private fun DurationTabContent(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .size(dimens.iconSmall)
-                        .clickable(onClick = onClearReminder),
+                        .clickable(onClick = onClearReminders),
                 )
             } else {
                 Spacer(Modifier.width(dimens.spacerSmall))
@@ -1791,10 +1833,11 @@ private fun TimePickerDialog(
 
 @Composable
 private fun ReminderDialog(
-    selected: ReminderOption,
-    onSelected: (ReminderOption) -> Unit,
+    selected: Set<ReminderOption>,
+    onConfirm: (Set<ReminderOption>) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var localSelected by remember { mutableStateOf(selected) }
     val dimens = OpenTasksTheme.dimens
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1802,19 +1845,34 @@ private fun ReminderDialog(
         text = {
             Column {
                 ReminderOption.entries.forEach { option ->
+                    val isSelected = if (option == ReminderOption.NONE) {
+                        localSelected.isEmpty()
+                    } else {
+                        option in localSelected
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelected(option) }
+                            .clickable {
+                                localSelected = if (option == ReminderOption.NONE) {
+                                    emptySet()
+                                } else {
+                                    if (option in localSelected) {
+                                        localSelected - option
+                                    } else {
+                                        localSelected + option
+                                    }
+                                }
+                            }
                             .padding(vertical = dimens.listRowCompletedVerticalPadding),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = stringResource(option.labelRes),
-                            color = if (option == selected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
+                            color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        if (option == selected) {
+                        if (isSelected) {
                             Spacer(Modifier.weight(1f))
                             Icon(
                                 painter = painterResource(Res.drawable.ic_check),
@@ -1828,7 +1886,7 @@ private fun ReminderDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = { onConfirm(localSelected) }) {
                 Text(stringResource(Res.string.ok), color = PrimaryBlue)
             }
         },
@@ -2138,10 +2196,11 @@ private fun DurationTimeRangeDialog(
 
 @Composable
 private fun DurationReminderDialog(
-    selected: DurationReminderOption,
-    onSelected: (DurationReminderOption) -> Unit,
+    selected: Set<DurationReminderOption>,
+    onConfirm: (Set<DurationReminderOption>) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var localSelected by remember { mutableStateOf(selected) }
     var constantReminder by remember { mutableStateOf(false) }
     val dimens = OpenTasksTheme.dimens
 
@@ -2151,19 +2210,34 @@ private fun DurationReminderDialog(
         text = {
             Column {
                 DurationReminderOption.entries.forEach { option ->
+                    val isSelected = if (option == DurationReminderOption.NONE) {
+                        localSelected.isEmpty()
+                    } else {
+                        option in localSelected
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSelected(option) }
+                            .clickable {
+                                localSelected = if (option == DurationReminderOption.NONE) {
+                                    emptySet()
+                                } else {
+                                    if (option in localSelected) {
+                                        localSelected - option
+                                    } else {
+                                        localSelected + option
+                                    }
+                                }
+                            }
                             .padding(vertical = dimens.listRowCompletedVerticalPadding),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text = stringResource(option.labelRes),
-                            color = if (option == selected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
+                            color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
                             style = MaterialTheme.typography.bodyMedium,
                         )
-                        if (option == selected) {
+                        if (isSelected) {
                             Spacer(Modifier.weight(1f))
                             Icon(
                                 painter = painterResource(Res.drawable.ic_check),
@@ -2205,7 +2279,7 @@ private fun DurationReminderDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = { onConfirm(localSelected) }) {
                 Text(stringResource(Res.string.ok), color = PrimaryBlue)
             }
         },
@@ -2478,15 +2552,4 @@ private fun CreateTaskScreenPreview() {
             onBack = { },
         )
     }
-}
-
-
-private fun reminderFromTask(task: Task): ReminderOption = when (task.notifyBeforeValue) {
-    0 -> if (task.notifyBeforeUnit != NotifyBeforeUnit.NONE)
-        ReminderOption.ON_THE_DAY else ReminderOption.NONE
-    1 -> ReminderOption.ONE_DAY_EARLY
-    2 -> ReminderOption.TWO_DAYS_EARLY
-    3 -> ReminderOption.THREE_DAYS_EARLY
-    7 -> ReminderOption.ONE_WEEK_EARLY
-    else -> ReminderOption.NONE
 }

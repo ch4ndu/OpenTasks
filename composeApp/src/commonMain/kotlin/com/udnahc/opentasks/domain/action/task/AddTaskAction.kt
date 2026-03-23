@@ -25,10 +25,11 @@ class AddTaskAction(private val repository: TaskRepository) {
         organizer: String = "",
         eventStatus: String = "",
         attendees: String = "",
-    ) {
+        durationReminders: String = "",
+        dateReminders: String = "",
+    ): Task {
         val now = utcNow()
-        repository.insert(
-            Task(
+        val task = Task(
                 title = title,
                 content = content,
                 priority = priority,
@@ -45,9 +46,12 @@ class AddTaskAction(private val repository: TaskRepository) {
                 organizer = organizer,
                 eventStatus = eventStatus,
                 attendees = attendees,
+                durationReminders = durationReminders,
+                dateReminders = dateReminders,
                 createdAt = now,
                 updatedAt = now,
             )
-        )
+        val id = repository.insert(task)
+        return task.copy(id = id)
     }
 }
