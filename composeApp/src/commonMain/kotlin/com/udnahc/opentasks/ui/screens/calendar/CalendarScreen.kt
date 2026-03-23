@@ -57,6 +57,8 @@ import opentasks.composeapp.generated.resources.calendar_view_month
 import opentasks.composeapp.generated.resources.calendar_view_three_day
 import opentasks.composeapp.generated.resources.calendar_view_week
 import opentasks.composeapp.generated.resources.calendar_view_year
+import opentasks.composeapp.generated.resources.import_from_calendar
+import opentasks.composeapp.generated.resources.import_from_ics
 import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.ic_check
 import opentasks.composeapp.generated.resources.ic_grid_view
@@ -100,6 +102,8 @@ fun CalendarScreen(
     viewModel: CalendarViewModel,
     onTaskClick: (Task) -> Unit,
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
+    onImportCalendar: () -> Unit = {},
+    onImportIcs: () -> Unit = {},
 ) {
     val tasks by viewModel.tasks.collectAsState()
     val tasksByDay by viewModel.tasksByDay.collectAsState()
@@ -109,6 +113,8 @@ fun CalendarScreen(
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onSelectedDateChanged = onSelectedDateChanged,
+        onImportCalendar = onImportCalendar,
+        onImportIcs = onImportIcs,
     )
 }
 
@@ -122,6 +128,8 @@ private fun CalendarContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
+    onImportCalendar: () -> Unit = {},
+    onImportIcs: () -> Unit = {},
 ) {
     val density = LocalDensity.current
     val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
@@ -455,6 +463,8 @@ private fun CalendarContent(
                 currentView = view
             },
             onViewPickerDismiss = { showViewPicker = false },
+            onImportCalendar = onImportCalendar,
+            onImportIcs = onImportIcs,
         )
     }
 }
@@ -474,6 +484,8 @@ private fun CalendarTopBar(
     onViewPickerToggle: () -> Unit,
     onViewSelected: (CalendarViewType) -> Unit,
     onViewPickerDismiss: () -> Unit,
+    onImportCalendar: () -> Unit = {},
+    onImportIcs: () -> Unit = {},
 ) {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
@@ -522,12 +534,34 @@ private fun CalendarTopBar(
                 )
             }
 
-            IconButton(onClick = { }) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_more_vert),
-                    contentDescription = stringResource(Res.string.more),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Box {
+                var showOverflowMenu by remember { mutableStateOf(false) }
+                IconButton(onClick = { showOverflowMenu = true }) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_more_vert),
+                        contentDescription = stringResource(Res.string.more),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(
+                    expanded = showOverflowMenu,
+                    onDismissRequest = { showOverflowMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(Res.string.import_from_calendar)) },
+                        onClick = {
+                            showOverflowMenu = false
+                            onImportCalendar()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(Res.string.import_from_ics)) },
+                        onClick = {
+                            showOverflowMenu = false
+                            onImportIcs()
+                        },
+                    )
+                }
             }
         },
     )
@@ -616,6 +650,8 @@ private fun CalendarTopBarPreview() {
             onViewPickerToggle = {},
             onViewSelected = {},
             onViewPickerDismiss = {},
+            onImportCalendar = {},
+            onImportIcs = {},
         )
     }
 }

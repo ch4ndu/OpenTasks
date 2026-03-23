@@ -32,7 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
-import com.udnahc.opentasks.data.model.TaskList
+import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
@@ -55,10 +55,10 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun CategoryPickerBottomSheet(
     sheetState: SheetState,
-    lists: List<TaskList>,
-    selectedListId: Long,
-    onListSelected: (TaskList) -> Unit,
-    onAddList: (String) -> Unit,
+    categories: List<Category>,
+    selectedCategoryId: Long,
+    onCategorySelected: (Category) -> Unit,
+    onAddCategory: (String) -> Unit,
     onDismiss: () -> Unit,
     showTitle: Boolean = true,
     showSearch: Boolean = true,
@@ -67,9 +67,9 @@ fun CategoryPickerBottomSheet(
     var searchQuery by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    val filteredLists = remember(lists, searchQuery) {
-        if (searchQuery.isBlank()) lists
-        else lists.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    val filteredCategories = remember(categories, searchQuery) {
+        if (searchQuery.isBlank()) categories
+        else categories.filter { it.name.contains(searchQuery, ignoreCase = true) }
     }
 
     ModalBottomSheet(
@@ -79,23 +79,23 @@ fun CategoryPickerBottomSheet(
         dragHandle = null,
     ) {
         CategoryPickerContent(
-            lists = filteredLists,
-            selectedListId = selectedListId,
+            categories = filteredCategories,
+            selectedCategoryId = selectedCategoryId,
             showTitle = showTitle,
             showSearch = showSearch,
             searchQuery = searchQuery,
             onSearchQueryChange = { searchQuery = it },
-            onListSelected = onListSelected,
-            onAddListClick = { showAddDialog = true },
+            onCategorySelected = onCategorySelected,
+            onAddCategoryClick = { showAddDialog = true },
             onDismiss = onDismiss,
         )
     }
 
     if (showAddDialog) {
-        AddListDialog(
+        AddCategoryDialog(
             onDismiss = { showAddDialog = false },
             onConfirm = { name ->
-                onAddList(name)
+                onAddCategory(name)
                 showAddDialog = false
             },
         )
@@ -104,14 +104,14 @@ fun CategoryPickerBottomSheet(
 
 @Composable
 private fun CategoryPickerContent(
-    lists: List<TaskList>,
-    selectedListId: Long,
+    categories: List<Category>,
+    selectedCategoryId: Long,
     showTitle: Boolean,
     showSearch: Boolean = true,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
-    onListSelected: (TaskList) -> Unit,
-    onAddListClick: () -> Unit,
+    onCategorySelected: (Category) -> Unit,
+    onAddCategoryClick: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -177,21 +177,21 @@ private fun CategoryPickerContent(
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
         ) {
-            items(lists, key = { it.id }) { taskList ->
-                val isSelected = taskList.id == selectedListId
+            items(categories, key = { it.id }) { category ->
+                val isSelected = category.id == selectedCategoryId
                 CategoryPickerRow(
-                    taskList = taskList,
+                    category = category,
                     isSelected = isSelected,
-                    onClick = { onListSelected(taskList) },
+                    onClick = { onCategorySelected(category) },
                 )
             }
 
-            // Add List row
+            // Add Category row
             item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(onClick = onAddListClick)
+                        .clickable(onClick = onAddCategoryClick)
                         .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -215,7 +215,7 @@ private fun CategoryPickerContent(
 
 @Composable
 private fun CategoryPickerRow(
-    taskList: TaskList,
+    category: Category,
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -227,7 +227,7 @@ private fun CategoryPickerRow(
             .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val iconRes = if (taskList.icon == "inbox") {
+        val iconRes = if (category.icon == "inbox") {
             Res.drawable.ic_inbox
         } else {
             Res.drawable.ic_list
@@ -240,7 +240,7 @@ private fun CategoryPickerRow(
         )
         Spacer(Modifier.width(dimens.spacerXXLarge))
         Text(
-            text = taskList.name,
+            text = category.name,
             style = MaterialTheme.typography.bodyLarge,
             color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
@@ -257,7 +257,7 @@ private fun CategoryPickerRow(
 }
 
 @Composable
-private fun AddListDialog(
+private fun AddCategoryDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
@@ -306,20 +306,20 @@ private fun AddListDialog(
 @Composable
 @Preview
 private fun CategoryPickerPreview() {
-    val sampleLists = listOf(
-        TaskList(id = 1, name = "Inbox", icon = "inbox"),
-        TaskList(id = 2, name = "Work"),
-        TaskList(id = 3, name = "Personal"),
+    val sampleCategories = listOf(
+        Category(id = 1, name = "Inbox", icon = "inbox"),
+        Category(id = 2, name = "Work"),
+        Category(id = 3, name = "Personal"),
     )
     OpenTasksTheme {
         CategoryPickerContent(
-            lists = sampleLists,
-            selectedListId = 1L,
+            categories = sampleCategories,
+            selectedCategoryId = 1L,
             showTitle = true,
             searchQuery = "",
             onSearchQueryChange = {},
-            onListSelected = {},
-            onAddListClick = {},
+            onCategorySelected = {},
+            onAddCategoryClick = {},
             onDismiss = {},
         )
     }

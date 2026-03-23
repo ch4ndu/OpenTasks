@@ -11,7 +11,7 @@ sealed class Screen : NavClass() {
     @Serializable data class QuadrantDetail(val priorityOrdinal: Int) : Screen()
     @Serializable data class CreateTask(
         val priorityOrdinal: Int = 0,
-        val listId: Long = 1L,
+        val categoryId: Long = 1L,
         val day: Int = 0,
         val month: Int = 0,
         val year: Int = 0,

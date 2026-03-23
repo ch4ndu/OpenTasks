@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.Flow
 interface TaskDao {
 
     @Insert
-    suspend fun insert(task: Task)
+    suspend fun insert(task: Task): Long
 
     @Update
     suspend fun update(task: Task)
@@ -25,4 +25,7 @@ interface TaskDao {
 
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: Long): Task?
+
+    @Query("SELECT * FROM tasks WHERE sourceExternalId = :externalId LIMIT 1")
+    suspend fun getTaskByExternalId(externalId: String): Task?
 }

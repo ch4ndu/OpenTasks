@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +59,8 @@ import com.udnahc.opentasks.ui.theme.PriorityMedium
 import com.udnahc.opentasks.ui.theme.PriorityNone
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.import_from_calendar
+import opentasks.composeapp.generated.resources.import_from_ics
 import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.completed
 import opentasks.composeapp.generated.resources.ic_check_box
@@ -75,21 +79,23 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun TaskListScreen(
     viewModel: TaskListViewModel,
-    selectedListId: Long,
-    onSelectedListChanged: (Long) -> Unit,
+    selectedCategoryId: Long,
+    onSelectedCategoryChanged: (Long) -> Unit,
     onTaskClick: (Task) -> Unit,
+    onImportCalendar: () -> Unit = {},
+    onImportIcs: () -> Unit = {},
 ) {
-    // Sync parent's selectedListId into ViewModel for the derived flow
-    LaunchedEffect(selectedListId) { viewModel.selectList(selectedListId) }
+    // Sync parent's selectedCategoryId into ViewModel for the derived flow
+    LaunchedEffect(selectedCategoryId) { viewModel.selectCategory(selectedCategoryId) }
 
-    val activeTasks by viewModel.activeTasksForSelectedList.collectAsState()
-    val completedTasks by viewModel.completedTasksForSelectedList.collectAsState()
+    val activeTasks by viewModel.activeTasksForSelectedCategory.collectAsState()
+    val completedTasks by viewModel.completedTasksForSelectedCategory.collectAsState()
     var showCategoryPicker by remember { mutableStateOf(false) }
 
-    val taskLists by viewModel.taskLists.collectAsState()
+    val categories by viewModel.categories.collectAsState()
     val defaultListName = stringResource(Res.string.inbox)
-    val selectedListName = remember(taskLists, selectedListId, defaultListName) {
-        taskLists.find { it.id == selectedListId }?.name ?: defaultListName
+    val selectedListName = remember(categories, selectedCategoryId, defaultListName) {
+        categories.find { it.id == selectedCategoryId }?.name ?: defaultListName
     }
 
     TaskListContent(
@@ -99,19 +105,21 @@ fun TaskListScreen(
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onListClick = { showCategoryPicker = true },
+        onImportCalendar = onImportCalendar,
+        onImportIcs = onImportIcs,
     )
 
     if (showCategoryPicker) {
         val listPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         CategoryPickerBottomSheet(
             sheetState = listPickerState,
-            lists = taskLists,
-            selectedListId = selectedListId,
-            onListSelected = { taskList ->
-                onSelectedListChanged(taskList.id)
+            categories = categories,
+            selectedCategoryId = selectedCategoryId,
+            onCategorySelected = { category ->
+                onSelectedCategoryChanged(category.id)
                 showCategoryPicker = false
             },
-            onAddList = { name -> viewModel.addList(name) },
+            onAddCategory = { name -> viewModel.addCategory(name) },
             onDismiss = { showCategoryPicker = false },
             showTitle = false,
             showSearch = false,
@@ -128,6 +136,8 @@ private fun TaskListContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onListClick: () -> Unit = {},
+    onImportCalendar: () -> Unit = {},
+    onImportIcs: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val density = LocalDensity.current
@@ -197,6 +207,8 @@ private fun TaskListContent(
         TaskListTopBar(
             listName = listName,
             onListClick = onListClick,
+            onImportCalendar = onImportCalendar,
+            onImportIcs = onImportIcs,
         )
     }
 }
@@ -220,6 +232,8 @@ private fun EmptyTasksPlaceholder() {
 private fun TaskListTopBar(
     listName: String,
     onListClick: () -> Unit,
+    onImportCalendar: () -> Unit = {},
+    onImportIcs: () -> Unit = {},
 ) {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
@@ -245,12 +259,34 @@ private fun TaskListTopBar(
             }
         },
         actions = {
-            IconButton(onClick = { /* TODO: implement menu */ }) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_more_vert),
-                    contentDescription = stringResource(Res.string.more),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Box {
+                var showOverflowMenu by remember { mutableStateOf(false) }
+                IconButton(onClick = { showOverflowMenu = true }) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_more_vert),
+                        contentDescription = stringResource(Res.string.more),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(
+                    expanded = showOverflowMenu,
+                    onDismissRequest = { showOverflowMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(Res.string.import_from_calendar)) },
+                        onClick = {
+                            showOverflowMenu = false
+                            onImportCalendar()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(Res.string.import_from_ics)) },
+                        onClick = {
+                            showOverflowMenu = false
+                            onImportIcs()
+                        },
+                    )
+                }
             }
         },
     )

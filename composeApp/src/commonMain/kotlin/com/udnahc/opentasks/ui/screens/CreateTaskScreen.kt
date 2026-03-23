@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -82,7 +84,8 @@ import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
-import com.udnahc.opentasks.data.model.TaskList
+import com.udnahc.opentasks.data.model.TaskFormData
+import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -90,6 +93,7 @@ import com.udnahc.opentasks.ui.theme.PriorityHigh
 import com.udnahc.opentasks.ui.theme.PriorityLow
 import com.udnahc.opentasks.ui.theme.PriorityMedium
 import com.udnahc.opentasks.ui.theme.PriorityNone
+import com.udnahc.opentasks.ui.util.rememberOpenInMapsAction
 import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_subtask
@@ -98,6 +102,7 @@ import opentasks.composeapp.generated.resources.am
 import opentasks.composeapp.generated.resources.apr
 import opentasks.composeapp.generated.resources.april
 import opentasks.composeapp.generated.resources.attach
+import opentasks.composeapp.generated.resources.attendees_hint
 import opentasks.composeapp.generated.resources.aug
 import opentasks.composeapp.generated.resources.august
 import opentasks.composeapp.generated.resources.back
@@ -117,6 +122,7 @@ import opentasks.composeapp.generated.resources.description_hint
 import opentasks.composeapp.generated.resources.done
 import opentasks.composeapp.generated.resources.duration
 import opentasks.composeapp.generated.resources.duration_hours
+import opentasks.composeapp.generated.resources.event_status_hint
 import opentasks.composeapp.generated.resources.duration_hours_minutes
 import opentasks.composeapp.generated.resources.duration_hours_plural
 import opentasks.composeapp.generated.resources.duration_minutes
@@ -134,10 +140,17 @@ import opentasks.composeapp.generated.resources.ic_check
 import opentasks.composeapp.generated.resources.ic_chevron_left
 import opentasks.composeapp.generated.resources.ic_chevron_right
 import opentasks.composeapp.generated.resources.ic_close
+import opentasks.composeapp.generated.resources.ic_dropdown
 import opentasks.composeapp.generated.resources.ic_flag
+import opentasks.composeapp.generated.resources.ic_group
+import opentasks.composeapp.generated.resources.ic_info
 import opentasks.composeapp.generated.resources.ic_label
+import opentasks.composeapp.generated.resources.ic_link
 import opentasks.composeapp.generated.resources.ic_list
+import opentasks.composeapp.generated.resources.ic_location_on
 import opentasks.composeapp.generated.resources.ic_more_vert
+import opentasks.composeapp.generated.resources.ic_open_in_new
+import opentasks.composeapp.generated.resources.ic_person
 import opentasks.composeapp.generated.resources.ic_redo
 import opentasks.composeapp.generated.resources.ic_repeat
 import opentasks.composeapp.generated.resources.ic_schedule
@@ -149,6 +162,7 @@ import opentasks.composeapp.generated.resources.jul
 import opentasks.composeapp.generated.resources.july
 import opentasks.composeapp.generated.resources.jun
 import opentasks.composeapp.generated.resources.june
+import opentasks.composeapp.generated.resources.location_hint
 import opentasks.composeapp.generated.resources.low_priority
 import opentasks.composeapp.generated.resources.mar
 import opentasks.composeapp.generated.resources.march
@@ -159,6 +173,7 @@ import opentasks.composeapp.generated.resources.mon
 import opentasks.composeapp.generated.resources.monthly
 import opentasks.composeapp.generated.resources.monthly_with_day
 import opentasks.composeapp.generated.resources.more
+import opentasks.composeapp.generated.resources.more_details
 import opentasks.composeapp.generated.resources.next_month
 import opentasks.composeapp.generated.resources.no_priority
 import opentasks.composeapp.generated.resources.none
@@ -167,6 +182,8 @@ import opentasks.composeapp.generated.resources.november
 import opentasks.composeapp.generated.resources.oct
 import opentasks.composeapp.generated.resources.october
 import opentasks.composeapp.generated.resources.ok
+import opentasks.composeapp.generated.resources.open_in_maps
+import opentasks.composeapp.generated.resources.organizer_hint
 import opentasks.composeapp.generated.resources.pm
 import opentasks.composeapp.generated.resources.previous_month
 import opentasks.composeapp.generated.resources.priority
@@ -199,6 +216,7 @@ import opentasks.composeapp.generated.resources.title_hint
 import opentasks.composeapp.generated.resources.today
 import opentasks.composeapp.generated.resources.tue
 import opentasks.composeapp.generated.resources.undo
+import opentasks.composeapp.generated.resources.url_hint
 import opentasks.composeapp.generated.resources.wed
 import opentasks.composeapp.generated.resources.weekly
 import opentasks.composeapp.generated.resources.weekly_with_day
@@ -237,25 +255,25 @@ private enum class DurationReminderOption(val labelRes: StringResource) {
 fun CreateTaskScreen(
     onBack: () -> Unit,
     initialPriority: TaskPriority = TaskPriority.HIGH,
-    initialListId: Long = 1L,
+    initialCategoryId: Long = 1L,
     initialDay: Int = 0,
     initialMonth: Int = 0,
     initialYear: Int = 0,
     editTask: Task? = null,
-    taskLists: List<TaskList> = emptyList(),
-    onAddList: (String) -> Unit = {},
-    onSave: (title: String, content: String, priority: TaskPriority, deadline: Long?, reminder: Int, recurrence: RecurrenceType, listId: Long, isCompleted: Boolean) -> Unit = { _, _, _, _, _, _, _, _ -> },
+    categories: List<Category> = emptyList(),
+    onAddCategory: (String) -> Unit = {},
+    onSave: (TaskFormData) -> Unit = {},
 ) {
     CreateTaskContent(
         onBack = onBack,
         initialPriority = initialPriority,
-        initialListId = initialListId,
+        initialCategoryId = initialCategoryId,
         initialDay = initialDay,
         initialMonth = initialMonth,
         initialYear = initialYear,
         editTask = editTask,
-        taskLists = taskLists,
-        onAddList = onAddList,
+        categories = categories,
+        onAddCategory = onAddCategory,
         onSave = onSave,
     )
 }
@@ -265,26 +283,31 @@ fun CreateTaskScreen(
 private fun CreateTaskContent(
     onBack: () -> Unit,
     initialPriority: TaskPriority = TaskPriority.HIGH,
-    initialListId: Long = 1L,
+    initialCategoryId: Long = 1L,
     initialDay: Int = 0,
     initialMonth: Int = 0,
     initialYear: Int = 0,
     editTask: Task? = null,
-    taskLists: List<TaskList> = emptyList(),
-    onAddList: (String) -> Unit = {},
-    onSave: (title: String, content: String, priority: TaskPriority, deadline: Long?, reminder: Int, recurrence: RecurrenceType, listId: Long, isCompleted: Boolean) -> Unit = { _, _, _, _, _, _, _, _ -> },
+    categories: List<Category> = emptyList(),
+    onAddCategory: (String) -> Unit = {},
+    onSave: (TaskFormData) -> Unit = {},
 ) {
     val stateKey = editTask?.id ?: 0L
     var title by remember(stateKey) { mutableStateOf(editTask?.title ?: "") }
     var description by remember(stateKey) { mutableStateOf(editTask?.content ?: "") }
     var priority by remember(stateKey) { mutableStateOf(editTask?.priority ?: initialPriority) }
     var isCompleted by remember(stateKey) { mutableStateOf(editTask?.isCompleted ?: false) }
-    var selectedListId by remember(stateKey) { mutableStateOf(editTask?.listId ?: initialListId) }
+    var selectedCategoryId by remember(stateKey) { mutableStateOf(editTask?.categoryId ?: initialCategoryId) }
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showPriorityMenu by remember { mutableStateOf(false) }
     var isSubtaskMode by remember(stateKey) { mutableStateOf(false) }
     var subtaskToggleCount by remember { mutableIntStateOf(0) }
     val subtasks = remember { mutableStateListOf<SubtaskItem>() }
+    var location by remember(stateKey) { mutableStateOf(editTask?.location ?: "") }
+    var taskUrl by remember(stateKey) { mutableStateOf(editTask?.url ?: "") }
+    var organizer by remember(stateKey) { mutableStateOf(editTask?.organizer ?: "") }
+    var eventStatus by remember(stateKey) { mutableStateOf(editTask?.eventStatus ?: "") }
+    var attendees by remember(stateKey) { mutableStateOf(editTask?.attendees ?: "") }
     val descriptionFocusRequester = remember { FocusRequester() }
     val subtaskFocusRequester = remember { FocusRequester() }
 
@@ -321,7 +344,7 @@ private fun CreateTaskContent(
             .imePadding(),
     ) {
         CreateTaskTopBar(
-            listName = taskLists.find { it.id == selectedListId }?.name ?: "Inbox",
+            listName = categories.find { it.id == selectedCategoryId }?.name ?: "Inbox",
             priority = priority,
             showPriorityMenu = showPriorityMenu,
             onShowPriorityMenu = { showPriorityMenu = it },
@@ -403,7 +426,34 @@ private fun CreateTaskContent(
                     modifier = Modifier.weight(1f),
                 )
             }
+
         }
+
+        // ── Detail Fields (outside weighted Column so no nested scroll conflict) ──
+        val openInMaps = rememberOpenInMapsAction()
+        var showDetails by remember {
+            mutableStateOf(
+                location.isNotBlank() || taskUrl.isNotBlank() || organizer.isNotBlank() ||
+                    eventStatus.isNotBlank() || attendees.isNotBlank()
+            )
+        }
+
+        TaskDetailFields(
+            showDetails = showDetails,
+            onToggleDetails = { showDetails = !showDetails },
+            location = location,
+            onLocationChange = { location = it },
+            onOpenInMaps = { openInMaps(location) },
+            taskUrl = taskUrl,
+            onUrlChange = { taskUrl = it },
+            organizer = organizer,
+            onOrganizerChange = { organizer = it },
+            eventStatus = eventStatus,
+            onStatusChange = { eventStatus = it },
+            attendees = attendees,
+            onAttendeesChange = { attendees = it },
+            modifier = Modifier.padding(horizontal = dimens.paddingXLarge),
+        )
 
         CreateTaskBottomBar(
             isSubtaskMode = isSubtaskMode,
@@ -438,14 +488,21 @@ private fun CreateTaskContent(
                     }
                     if (isSubtaskMode) syncSubtasksToDescription()
                     onSave(
-                        title,
-                        description,
-                        priority,
-                        deadlineMs,
-                        reminderDays,
-                        selectedRecurrence,
-                        selectedListId,
-                        isCompleted,
+                        TaskFormData(
+                            title = title,
+                            content = description,
+                            priority = priority,
+                            deadline = deadlineMs,
+                            reminderDays = reminderDays,
+                            recurrence = selectedRecurrence,
+                            categoryId = selectedCategoryId,
+                            isCompleted = isCompleted,
+                            location = location,
+                            url = taskUrl,
+                            organizer = organizer,
+                            eventStatus = eventStatus,
+                            attendees = attendees,
+                        )
                     )
                 }
                 onBack()
@@ -482,13 +539,13 @@ private fun CreateTaskContent(
         val listPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         CategoryPickerBottomSheet(
             sheetState = listPickerState,
-            lists = taskLists,
-            selectedListId = selectedListId,
-            onListSelected = { taskList ->
-                selectedListId = taskList.id
+            categories = categories,
+            selectedCategoryId = selectedCategoryId,
+            onCategorySelected = { category ->
+                selectedCategoryId = category.id
                 showCategoryPicker = false
             },
-            onAddList = onAddList,
+            onAddCategory = onAddCategory,
             onDismiss = { showCategoryPicker = false },
         )
     }
@@ -2255,6 +2312,154 @@ private fun DurationRepeatDialog(
             }
         },
     )
+}
+
+@Composable
+private fun TaskDetailFields(
+    showDetails: Boolean,
+    onToggleDetails: () -> Unit,
+    location: String,
+    onLocationChange: (String) -> Unit,
+    onOpenInMaps: () -> Unit,
+    taskUrl: String,
+    onUrlChange: (String) -> Unit,
+    organizer: String,
+    onOrganizerChange: (String) -> Unit,
+    eventStatus: String,
+    onStatusChange: (String) -> Unit,
+    attendees: String,
+    onAttendeesChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val dimens = OpenTasksTheme.dimens
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        // Toggle button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggleDetails)
+                .padding(vertical = dimens.paddingSmall),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(
+                    if (showDetails) Res.drawable.ic_dropdown else Res.drawable.ic_chevron_right
+                ),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(dimens.iconDefault),
+            )
+            Spacer(Modifier.width(dimens.spacerSmall))
+            Text(
+                text = stringResource(Res.string.more_details),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        AnimatedVisibility(visible = showDetails) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(dimens.spacerMedium),
+            ) {
+                // Location
+                OutlinedTextField(
+                    value = location,
+                    onValueChange = onLocationChange,
+                    placeholder = { Text(stringResource(Res.string.location_hint)) },
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_location_on),
+                            contentDescription = null,
+                            modifier = Modifier.size(dimens.iconDefault),
+                        )
+                    },
+                    trailingIcon = {
+                        if (location.isNotBlank()) {
+                            IconButton(onClick = onOpenInMaps) {
+                                Icon(
+                                    painter = painterResource(Res.drawable.ic_open_in_new),
+                                    contentDescription = stringResource(Res.string.open_in_maps),
+                                    tint = PrimaryBlue,
+                                    modifier = Modifier.size(dimens.iconDefault),
+                                )
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                // URL
+                OutlinedTextField(
+                    value = taskUrl,
+                    onValueChange = onUrlChange,
+                    placeholder = { Text(stringResource(Res.string.url_hint)) },
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_link),
+                            contentDescription = null,
+                            modifier = Modifier.size(dimens.iconDefault),
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                // Organizer
+                OutlinedTextField(
+                    value = organizer,
+                    onValueChange = onOrganizerChange,
+                    placeholder = { Text(stringResource(Res.string.organizer_hint)) },
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_person),
+                            contentDescription = null,
+                            modifier = Modifier.size(dimens.iconDefault),
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                // Status
+                OutlinedTextField(
+                    value = eventStatus,
+                    onValueChange = onStatusChange,
+                    placeholder = { Text(stringResource(Res.string.event_status_hint)) },
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_info),
+                            contentDescription = null,
+                            modifier = Modifier.size(dimens.iconDefault),
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                // Attendees
+                OutlinedTextField(
+                    value = attendees,
+                    onValueChange = onAttendeesChange,
+                    placeholder = { Text(stringResource(Res.string.attendees_hint)) },
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_group),
+                            contentDescription = null,
+                            modifier = Modifier.size(dimens.iconDefault),
+                        )
+                    },
+                    singleLine = false,
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(Modifier.height(dimens.spacerSmall))
+            }
+        }
+    }
 }
 
 private fun computeDeadlineMillis(

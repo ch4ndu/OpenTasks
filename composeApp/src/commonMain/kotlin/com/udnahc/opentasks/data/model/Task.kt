@@ -19,7 +19,14 @@ data class Task(
     val isCompleted: Boolean = false,
     val isUrgent: Boolean = false,
     val isImportant: Boolean = false,
-    val listId: Long = 1L,
+    val categoryId: Long = 1L,
+    val isAllDay: Boolean = false,
+    val sourceExternalId: String? = null,
+    val location: String = "",
+    val url: String = "",
+    val organizer: String = "",
+    val eventStatus: String = "",
+    val attendees: String = "",
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 )

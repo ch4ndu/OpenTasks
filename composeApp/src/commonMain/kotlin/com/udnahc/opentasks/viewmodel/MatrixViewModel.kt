@@ -2,17 +2,17 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
-import com.udnahc.opentasks.data.model.TaskList
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.task.AddTaskAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
-import com.udnahc.opentasks.domain.action.tasklist.AddTaskListAction
+import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
-import com.udnahc.opentasks.domain.usecase.tasklist.ObserveAllTaskListsUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,10 +25,10 @@ import kotlinx.coroutines.launch
 class MatrixViewModel(
     observeTasksByPriority: ObserveTasksByPriorityUseCase,
     observeTasksForPriority: ObserveTasksForPriorityUseCase,
-    observeAllTaskLists: ObserveAllTaskListsUseCase,
+    observeAllCategories: ObserveAllCategoriesUseCase,
     private val toggleTaskCompleteAction: ToggleTaskCompleteAction,
     private val addTaskAction: AddTaskAction,
-    private val addTaskListAction: AddTaskListAction,
+    private val addCategoryAction: AddCategoryAction,
 ) : ViewModel() {
 
     private val _selectedPriority = MutableStateFlow(TaskPriority.HIGH)
@@ -41,7 +41,7 @@ class MatrixViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val taskLists: StateFlow<List<TaskList>> = observeAllTaskLists()
+    val categories: StateFlow<List<Category>> = observeAllCategories()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun selectPriority(priority: TaskPriority) { _selectedPriority.value = priority }
@@ -58,7 +58,7 @@ class MatrixViewModel(
         notifyBeforeValue: Int = 0,
         notifyBeforeUnit: NotifyBeforeUnit = NotifyBeforeUnit.NONE,
         recurrenceType: RecurrenceType = RecurrenceType.NONE,
-        listId: Long = 1L,
+        categoryId: Long = 1L,
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             addTaskAction(
@@ -69,12 +69,12 @@ class MatrixViewModel(
                 notifyBeforeValue = notifyBeforeValue,
                 notifyBeforeUnit = notifyBeforeUnit,
                 recurrenceType = recurrenceType,
-                listId = listId,
+                categoryId = categoryId,
             )
         }
     }
 
-    fun addList(name: String) {
-        viewModelScope.launch(Dispatchers.IO) { addTaskListAction(name) }
+    fun addCategory(name: String) {
+        viewModelScope.launch(Dispatchers.IO) { addCategoryAction(name) }
     }
 }

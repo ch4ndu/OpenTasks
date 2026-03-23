@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 2,
-    "identityHash": "3c54299dd7a8da944ee7887cd8bc2fba",
+    "identityHash": "042a75e5682bafa59f4b2339f5443d5d",
     "entities": [
       {
         "tableName": "tasks",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `content` TEXT NOT NULL, `priority` TEXT NOT NULL, `deadline` INTEGER, `notifyBeforeValue` INTEGER NOT NULL, `notifyBeforeUnit` TEXT NOT NULL, `recurrenceType` TEXT NOT NULL, `recurrenceInterval` INTEGER NOT NULL, `isCompleted` INTEGER NOT NULL, `isUrgent` INTEGER NOT NULL, `isImportant` INTEGER NOT NULL, `listId` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `content` TEXT NOT NULL, `priority` TEXT NOT NULL, `deadline` INTEGER, `notifyBeforeValue` INTEGER NOT NULL, `notifyBeforeUnit` TEXT NOT NULL, `recurrenceType` TEXT NOT NULL, `recurrenceInterval` INTEGER NOT NULL, `isCompleted` INTEGER NOT NULL, `isUrgent` INTEGER NOT NULL, `isImportant` INTEGER NOT NULL, `categoryId` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -80,8 +80,8 @@
             "notNull": true
           },
           {
-            "fieldPath": "listId",
-            "columnName": "listId",
+            "fieldPath": "categoryId",
+            "columnName": "categoryId",
             "affinity": "INTEGER",
             "notNull": true
           },
@@ -106,7 +106,7 @@
         }
       },
       {
-        "tableName": "task_lists",
+        "tableName": "categories",
         "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `icon` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL)",
         "fields": [
           {
@@ -192,7 +192,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3c54299dd7a8da944ee7887cd8bc2fba')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '042a75e5682bafa59f4b2339f5443d5d')"
     ]
   }
 }

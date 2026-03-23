@@ -19,7 +19,12 @@ class AddTaskAction(private val repository: TaskRepository) {
         recurrenceInterval: Int = 0,
         isUrgent: Boolean = false,
         isImportant: Boolean = false,
-        listId: Long = 1L,
+        categoryId: Long = 1L,
+        location: String = "",
+        url: String = "",
+        organizer: String = "",
+        eventStatus: String = "",
+        attendees: String = "",
     ) {
         val now = utcNow()
         repository.insert(
@@ -34,7 +39,12 @@ class AddTaskAction(private val repository: TaskRepository) {
                 recurrenceInterval = recurrenceInterval,
                 isUrgent = isUrgent,
                 isImportant = isImportant,
-                listId = listId,
+                categoryId = categoryId,
+                location = location,
+                url = url,
+                organizer = organizer,
+                eventStatus = eventStatus,
+                attendees = attendees,
                 createdAt = now,
                 updatedAt = now,
             )

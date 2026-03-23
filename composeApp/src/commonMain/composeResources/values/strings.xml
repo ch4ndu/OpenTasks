@@ -151,7 +151,7 @@
 
     <!-- Lists -->
     <string name="move_to">Categories</string>
-    <string name="add_list">Add List</string>
+    <string name="add_list">Add Category</string>
     <string name="list_name">Name</string>
     <string name="search">Search</string>
 
@@ -171,4 +171,37 @@
     <string name="bullet_list">Bullet list</string>
     <string name="numbered_list">Numbered list</string>
     <string name="code">Code</string>
+
+    <!-- Calendar Import -->
+    <string name="import_from_calendar">Import from Calendar</string>
+    <string name="import_range_label">Import events from the past and next</string>
+    <string name="days">Days</string>
+    <string name="weeks">Weeks</string>
+    <string name="months">Months</string>
+    <string name="years">Years</string>
+    <string name="importing">Importing…</string>
+    <string name="import_success">%1$d events imported</string>
+    <string name="import_error">Import failed: %1$s</string>
+    <string name="grant_calendar_permission">Grant calendar permission to import events</string>
+    <string name="calendar_permission_denied">Calendar permission was denied. Please enable it in Settings.</string>
+    <string name="calendar_not_available">Calendar import is not available on this platform</string>
+    <string name="import_button">Import</string>
+
+    <!-- ICS Import -->
+    <string name="import_from_ics">Import from .ics file</string>
+    <string name="choose_ics_file">Choose File</string>
+    <string name="ics_import_description">Select an .ics calendar file to import events as tasks</string>
+    <string name="no_events_in_file">No events found in the selected file</string>
+
+    <!-- Task Details -->
+    <string name="location_hint">Add location</string>
+    <string name="url_hint">Add URL</string>
+    <string name="organizer_hint">Organizer</string>
+    <string name="event_status_hint">Status</string>
+    <string name="attendees_hint">Attendees (comma-separated)</string>
+    <string name="open_in_maps">Open in Maps</string>
+    <string name="more_details">More details</string>
+    <string name="status_confirmed">Confirmed</string>
+    <string name="status_tentative">Tentative</string>
+    <string name="status_cancelled">Cancelled</string>
 </resources>

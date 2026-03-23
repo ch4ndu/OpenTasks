@@ -16,7 +16,10 @@ class TaskRepositoryImpl(
     override suspend fun getTaskById(id: Long): Task? =
         taskDao.getTaskById(id)?.withLocalTimestamps()
 
-    override suspend fun insert(task: Task) = taskDao.insert(task)
+    override suspend fun getTaskByExternalId(externalId: String): Task? =
+        taskDao.getTaskByExternalId(externalId)
+
+    override suspend fun insert(task: Task): Long = taskDao.insert(task)
 
     override suspend fun update(task: Task) = taskDao.update(task)
 

@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,7 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
+import com.udnahc.opentasks.data.model.TaskFormData
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.navigation.AppNavController
 import com.udnahc.opentasks.navigation.Screen
@@ -53,7 +55,13 @@ import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
 import com.udnahc.opentasks.ui.screens.TaskListScreen
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.screens.ImportCalendarDialog
+import com.udnahc.opentasks.ui.screens.ImportIcsDialog
+import com.udnahc.opentasks.ui.util.pickIcsFileContent
 import com.udnahc.opentasks.viewmodel.AppViewModel
+import com.udnahc.opentasks.viewmodel.ImportCalendarViewModel
+import com.udnahc.opentasks.viewmodel.ImportIcsViewModel
+import kotlinx.coroutines.launch
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.NoteViewModel
@@ -103,6 +111,8 @@ private fun MainScreen(
     var calendarSelectedDay by remember { mutableIntStateOf(0) }
     var showCreateNote by remember { mutableStateOf(false) }
     var editNoteId by remember { mutableStateOf<Long?>(null) }
+    var showImportCalendar by remember { mutableStateOf(false) }
+    var showImportIcs by remember { mutableStateOf(false) }
 
     val tabs = remember {
         listOf(
@@ -156,11 +166,13 @@ private fun MainScreen(
                     val taskListViewModel: TaskListViewModel = koinViewModel()
                     TaskListScreen(
                         viewModel = taskListViewModel,
-                        selectedListId = selectedListId,
-                        onSelectedListChanged = { selectedListId = it },
+                        selectedCategoryId = selectedListId,
+                        onSelectedCategoryChanged = { selectedListId = it },
                         onTaskClick = { task ->
                             navController.navigate(Screen.EditTask(task.id))
                         },
+                        onImportCalendar = { showImportCalendar = true },
+                        onImportIcs = { showImportIcs = true },
                     )
                 }
 
@@ -176,6 +188,8 @@ private fun MainScreen(
                             calendarSelectedMonth = month
                             calendarSelectedDay = day
                         },
+                        onImportCalendar = { showImportCalendar = true },
+                        onImportIcs = { showImportIcs = true },
                     )
                 }
 
@@ -208,28 +222,33 @@ private fun MainScreen(
                 }
 
                 entry<Screen.CreateTask> { screen ->
-                    val taskLists by appViewModel.taskLists.collectAsState()
+                    val categories by appViewModel.categories.collectAsState()
                     CreateTaskScreen(
                         onBack = { navController.popBackStack() },
                         initialPriority = TaskPriority.entries[screen.priorityOrdinal],
-                        initialListId = screen.listId,
+                        initialCategoryId = screen.categoryId,
                         initialDay = screen.day,
                         initialMonth = screen.month,
                         initialYear = screen.year,
-                        taskLists = taskLists,
-                        onAddList = { name -> appViewModel.addList(name) },
-                        onSave = { title, content, priority, deadline, reminderDays, recurrence, listId, _ ->
+                        categories = categories,
+                        onAddCategory = { name -> appViewModel.addCategory(name) },
+                        onSave = { formData ->
                             val notifyUnit =
-                                if (reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
+                                if (formData.reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
                             appViewModel.addTask(
-                                title = title,
-                                content = content,
-                                priority = priority,
-                                deadline = deadline,
-                                notifyBeforeValue = reminderDays,
+                                title = formData.title,
+                                content = formData.content,
+                                priority = formData.priority,
+                                deadline = formData.deadline,
+                                notifyBeforeValue = formData.reminderDays,
                                 notifyBeforeUnit = notifyUnit,
-                                recurrenceType = recurrence,
-                                listId = listId,
+                                recurrenceType = formData.recurrence,
+                                categoryId = formData.categoryId,
+                                location = formData.location,
+                                url = formData.url,
+                                organizer = formData.organizer,
+                                eventStatus = formData.eventStatus,
+                                attendees = formData.attendees,
                             )
                         },
                     )
@@ -237,28 +256,33 @@ private fun MainScreen(
 
                 entry<Screen.EditTask> { screen ->
                     val tasks by appViewModel.tasks.collectAsState()
-                    val taskLists by appViewModel.taskLists.collectAsState()
+                    val categories by appViewModel.categories.collectAsState()
                     val editTask = tasks.find { it.id == screen.taskId }
                     if (editTask != null) {
                         CreateTaskScreen(
                             onBack = { navController.popBackStack() },
                             editTask = editTask,
-                            taskLists = taskLists,
-                            onAddList = { name -> appViewModel.addList(name) },
-                            onSave = { title, content, priority, deadline, reminderDays, recurrence, listId, isCompleted ->
+                            categories = categories,
+                            onAddCategory = { name -> appViewModel.addCategory(name) },
+                            onSave = { formData ->
                                 val notifyUnit =
-                                    if (reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
+                                    if (formData.reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
                                 appViewModel.updateTask(
                                     editTask.copy(
-                                        title = title,
-                                        content = content,
-                                        priority = priority,
-                                        deadline = deadline,
-                                        notifyBeforeValue = reminderDays,
+                                        title = formData.title,
+                                        content = formData.content,
+                                        priority = formData.priority,
+                                        deadline = formData.deadline,
+                                        notifyBeforeValue = formData.reminderDays,
                                         notifyBeforeUnit = notifyUnit,
-                                        recurrenceType = recurrence,
-                                        listId = listId,
-                                        isCompleted = isCompleted,
+                                        recurrenceType = formData.recurrence,
+                                        categoryId = formData.categoryId,
+                                        isCompleted = formData.isCompleted,
+                                        location = formData.location,
+                                        url = formData.url,
+                                        organizer = formData.organizer,
+                                        eventStatus = formData.eventStatus,
+                                        attendees = formData.attendees,
                                     )
                                 )
                             },
@@ -305,7 +329,7 @@ private fun MainScreen(
                     } else {
                         navController.navigate(
                             Screen.CreateTask(
-                                listId = if (selectedTab == 1) selectedListId else 1L,
+                                categoryId = if (selectedTab == 1) selectedListId else 1L,
                                 day = if (selectedTab == 2) calendarSelectedDay else 0,
                                 month = if (selectedTab == 2) calendarSelectedMonth else 0,
                                 year = if (selectedTab == 2) calendarSelectedYear else 0,
@@ -349,6 +373,33 @@ private fun MainScreen(
         } else {
             editNoteId = null
         }
+    }
+
+    // Import calendar dialog
+    if (showImportCalendar) {
+        val importCalendarViewModel: ImportCalendarViewModel = koinViewModel()
+        ImportCalendarDialog(
+            viewModel = importCalendarViewModel,
+            onDismiss = { showImportCalendar = false },
+        )
+    }
+
+    // Import ICS file dialog
+    if (showImportIcs) {
+        val importIcsViewModel: ImportIcsViewModel = koinViewModel()
+        val icsScope = rememberCoroutineScope()
+        ImportIcsDialog(
+            viewModel = importIcsViewModel,
+            onPickFile = {
+                icsScope.launch {
+                    val result = pickIcsFileContent()
+                    if (result != null) {
+                        importIcsViewModel.importFromIcsContent(result.first, result.second)
+                    }
+                }
+            },
+            onDismiss = { showImportIcs = false },
+        )
     }
 }
 
