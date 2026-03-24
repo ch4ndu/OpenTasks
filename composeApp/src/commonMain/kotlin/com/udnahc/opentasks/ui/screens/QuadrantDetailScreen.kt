@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.currentMonth
 import com.udnahc.opentasks.data.extensions.currentYear
@@ -293,12 +294,14 @@ private fun CollapsibleCategoryContent(
         ) {
             Column {
                 tasks.forEachIndexed { index, task ->
+                    val onToggle = remember(task.id) { { onToggleComplete(task) } }
+                    val onClick = remember(task.id) { { onTaskClick(task) } }
                     DetailTaskRow(
                         task = task,
                         priority = priority,
                         isOverdue = isOverdue,
-                        onToggleComplete = { onToggleComplete(task) },
-                        onClick = { onTaskClick(task) },
+                        onToggleComplete = onToggle,
+                        onClick = onClick,
                     )
                     if (index < tasks.lastIndex) {
                         HorizontalDivider(
@@ -512,8 +515,8 @@ private fun QuadrantDetailPreview() {
             onToggleComplete = {},
             now = PreviewSampleData.sampleTodayMillis,
             startOfToday = PreviewSampleData.sampleTodayMillis,
-            startOfTomorrow = PreviewSampleData.sampleTodayMillis + 86400000L,
-            endOfNext7Days = PreviewSampleData.sampleTodayMillis + 7 * 86400000L,
+            startOfTomorrow = PreviewSampleData.sampleTodayMillis + MILLIS_PER_DAY,
+            endOfNext7Days = PreviewSampleData.sampleTodayMillis + 7 * MILLIS_PER_DAY,
         )
     }
 }

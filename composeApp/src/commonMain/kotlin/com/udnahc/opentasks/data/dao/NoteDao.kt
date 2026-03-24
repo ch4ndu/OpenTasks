@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import com.udnahc.opentasks.data.model.Note
 import kotlinx.coroutines.flow.Flow
 
@@ -24,5 +25,14 @@ interface NoteDao {
     fun getAllNotes(): Flow<List<Note>>
 
     @Query("SELECT * FROM notes WHERE id = :id")
-    suspend fun getNoteById(id: Long): Note?
+    suspend fun getNoteById(id: String): Note?
+
+    @Query("SELECT * FROM notes WHERE isSynced = 0")
+    suspend fun getUnsynced(): List<Note>
+
+    @Query("UPDATE notes SET isSynced = 1 WHERE id = :id")
+    suspend fun markSynced(id: String)
+
+    @Upsert
+    suspend fun upsert(note: Note)
 }

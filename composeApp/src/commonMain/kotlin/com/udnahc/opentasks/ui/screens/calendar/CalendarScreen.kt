@@ -2,15 +2,15 @@ package com.udnahc.opentasks.ui.screens.calendar
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -57,16 +57,17 @@ import opentasks.composeapp.generated.resources.calendar_view_month
 import opentasks.composeapp.generated.resources.calendar_view_three_day
 import opentasks.composeapp.generated.resources.calendar_view_week
 import opentasks.composeapp.generated.resources.calendar_view_year
-import opentasks.composeapp.generated.resources.import_from_calendar
-import opentasks.composeapp.generated.resources.import_from_ics
 import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.ic_check
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_more_vert
 import opentasks.composeapp.generated.resources.ic_schedule
+import opentasks.composeapp.generated.resources.ic_settings
+import opentasks.composeapp.generated.resources.import_from_calendar
+import opentasks.composeapp.generated.resources.import_from_ics
 import opentasks.composeapp.generated.resources.more
-import opentasks.composeapp.generated.resources.view_coming_soon
+import opentasks.composeapp.generated.resources.settings
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -104,6 +105,7 @@ fun CalendarScreen(
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
 ) {
     val tasks by viewModel.tasks.collectAsState()
     val tasksByDay by viewModel.tasksByDay.collectAsState()
@@ -115,6 +117,7 @@ fun CalendarScreen(
         onSelectedDateChanged = onSelectedDateChanged,
         onImportCalendar = onImportCalendar,
         onImportIcs = onImportIcs,
+        onSettingsClick = onSettingsClick,
     )
 }
 
@@ -130,6 +133,7 @@ private fun CalendarContent(
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
 ) {
     val density = LocalDensity.current
     val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
@@ -214,7 +218,8 @@ private fun CalendarContent(
     }
 
     // ── Week-view pager state ───
-    val weekViewPagerState = rememberPagerState(initialPage = WEEK_PAGER_CENTRE) { WEEK_PAGER_RANGE }
+    val weekViewPagerState =
+        rememberPagerState(initialPage = WEEK_PAGER_CENTRE) { WEEK_PAGER_RANGE }
 
     val weekViewSundayMillis by remember {
         derivedStateOf {
@@ -261,28 +266,48 @@ private fun CalendarContent(
     // Propagate selected date to parent (per-view effects)
     LaunchedEffect(currentView, listSelectedDayMillis) {
         if (currentView == CalendarViewType.LIST) {
-            onSelectedDateChanged(extractYear(listSelectedDayMillis), extractMonth(listSelectedDayMillis), extractDay(listSelectedDayMillis))
+            onSelectedDateChanged(
+                extractYear(listSelectedDayMillis),
+                extractMonth(listSelectedDayMillis),
+                extractDay(listSelectedDayMillis)
+            )
         }
     }
     LaunchedEffect(currentView, selectedDay, displayedYear, displayedMonth) {
         if (currentView == CalendarViewType.MONTH) {
-            if (selectedDay != null) onSelectedDateChanged(selectedDay!!.year, selectedDay!!.month, selectedDay!!.day)
+            if (selectedDay != null) onSelectedDateChanged(
+                selectedDay!!.year,
+                selectedDay!!.month,
+                selectedDay!!.day
+            )
             else onSelectedDateChanged(displayedYear, displayedMonth, 0)
         }
     }
     LaunchedEffect(currentView, weekViewSundayMillis) {
         if (currentView == CalendarViewType.WEEK) {
-            onSelectedDateChanged(extractYear(weekViewSundayMillis), extractMonth(weekViewSundayMillis), extractDay(weekViewSundayMillis))
+            onSelectedDateChanged(
+                extractYear(weekViewSundayMillis),
+                extractMonth(weekViewSundayMillis),
+                extractDay(weekViewSundayMillis)
+            )
         }
     }
     LaunchedEffect(currentView, threeDayStartMillis) {
         if (currentView == CalendarViewType.THREE_DAY) {
-            onSelectedDateChanged(extractYear(threeDayStartMillis), extractMonth(threeDayStartMillis), extractDay(threeDayStartMillis))
+            onSelectedDateChanged(
+                extractYear(threeDayStartMillis),
+                extractMonth(threeDayStartMillis),
+                extractDay(threeDayStartMillis)
+            )
         }
     }
     LaunchedEffect(currentView, dayViewSelectedMillis) {
         if (currentView == CalendarViewType.DAY) {
-            onSelectedDateChanged(extractYear(dayViewSelectedMillis), extractMonth(dayViewSelectedMillis), extractDay(dayViewSelectedMillis))
+            onSelectedDateChanged(
+                extractYear(dayViewSelectedMillis),
+                extractMonth(dayViewSelectedMillis),
+                extractDay(dayViewSelectedMillis)
+            )
         }
     }
     LaunchedEffect(currentView, displayedYear, displayedMonth) {
@@ -311,7 +336,7 @@ private fun CalendarContent(
         CalendarViewType.DAY -> monthName(dayViewMonth)
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // ── Body ─────────────────────────────────────────────────────
         when (currentView) {
             CalendarViewType.LIST -> {
@@ -389,7 +414,8 @@ private fun CalendarContent(
                     onTaskClick = onTaskClick,
                     onWeekSelected = { sundayMillis ->
                         val thisWeekSunMillis = startOfWeekLocalMillis(todayMillis)
-                        val offset = ((sundayMillis - thisWeekSunMillis) / (7 * MILLIS_PER_DAY)).toInt()
+                        val offset =
+                            ((sundayMillis - thisWeekSunMillis) / (7 * MILLIS_PER_DAY)).toInt()
                         scope.launch {
                             weekViewPagerState.animateScrollToPage(WEEK_PAGER_CENTRE + offset)
                         }
@@ -465,6 +491,7 @@ private fun CalendarContent(
             onViewPickerDismiss = { showViewPicker = false },
             onImportCalendar = onImportCalendar,
             onImportIcs = onImportIcs,
+            onSettingsClick = onSettingsClick,
         )
     }
 }
@@ -486,6 +513,7 @@ private fun CalendarTopBar(
     onViewPickerDismiss: () -> Unit,
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
 ) {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
@@ -531,6 +559,14 @@ private fun CalendarTopBar(
                     currentView = currentView,
                     onViewSelected = onViewSelected,
                     onDismiss = onViewPickerDismiss,
+                )
+            }
+
+            IconButton(onClick = onSettingsClick) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_settings),
+                    contentDescription = stringResource(Res.string.settings),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 

@@ -10,6 +10,7 @@ import platform.EventKit.EKAuthorizationStatusDenied
 import platform.EventKit.EKAuthorizationStatusNotDetermined
 import platform.Foundation.NSDate
 import platform.Foundation.dateWithTimeIntervalSince1970
+import platform.Foundation.timeIntervalSince1970
 import kotlin.coroutines.resume
 
 class IosCalendarProvider : CalendarProvider {
@@ -69,9 +70,9 @@ class IosCalendarProvider : CalendarProvider {
                 externalId = "ios_${ekEvent.eventIdentifier}",
                 title = title,
                 description = ekEvent.notes ?: "",
-                startTimeUtcMillis = (ekEvent.startDate?.timeIntervalSince1970?.times(1000))?.toLong()
+                startTimeUtcMillis = ekEvent.startDate?.let { (it.timeIntervalSince1970 * 1000).toLong() }
                     ?: return@mapNotNull null,
-                endTimeUtcMillis = ekEvent.endDate?.timeIntervalSince1970?.times(1000)?.toLong(),
+                endTimeUtcMillis = ekEvent.endDate?.let { (it.timeIntervalSince1970 * 1000).toLong() },
                 calendarName = ekEvent.calendar?.title ?: "",
                 isAllDay = ekEvent.allDay,
                 location = ekEvent.location ?: "",

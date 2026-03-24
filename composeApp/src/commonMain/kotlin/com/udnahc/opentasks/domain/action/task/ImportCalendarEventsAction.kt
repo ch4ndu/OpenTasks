@@ -25,17 +25,16 @@ class ImportCalendarEventsAction(
         // Find or create "Calendar Imports" category
         val category = categoryRepository.getCategoryByName(CATEGORY_NAME)
             ?: run {
-                val id = categoryRepository.insert(
-                    Category(name = CATEGORY_NAME, icon = "calendar", createdAt = utcNow())
-                )
-                categoryRepository.getCategoryById(id)!!
+                val newCategory = Category(name = CATEGORY_NAME, icon = "calendar", createdAt = utcNow())
+                categoryRepository.insert(newCategory)
+                newCategory
             }
 
         // Find or create "Imported" tag
         val tag = tagRepository.getTagByName(TAG_NAME)
             ?: run {
-                val id = addTagAction(TAG_NAME)
-                tagRepository.getTagById(id)!!
+                val tagId = addTagAction(TAG_NAME)
+                tagRepository.getTagById(tagId)!!
             }
 
         val now = utcNow()
@@ -48,26 +47,25 @@ class ImportCalendarEventsAction(
             // Build content with time range
             val content = buildEventContent(event)
 
-            val taskId = taskRepository.insert(
-                Task(
-                    title = event.title,
-                    content = content,
-                    deadline = event.startTimeUtcMillis,
-                    isAllDay = event.isAllDay,
-                    sourceExternalId = event.externalId,
-                    categoryId = category.id,
-                    location = event.location,
-                    url = event.url,
-                    organizer = event.organizer,
-                    eventStatus = event.status,
-                    attendees = event.attendees.joinToString(", "),
-                    createdAt = now,
-                    updatedAt = now,
-                )
+            val task = Task(
+                title = event.title,
+                content = content,
+                deadline = event.startTimeUtcMillis,
+                isAllDay = event.isAllDay,
+                sourceExternalId = event.externalId,
+                categoryId = category.id,
+                location = event.location,
+                url = event.url,
+                organizer = event.organizer,
+                eventStatus = event.status,
+                attendees = event.attendees.joinToString(", "),
+                createdAt = now,
+                updatedAt = now,
             )
+            taskRepository.insert(task)
 
             // Tag the task
-            tagRepository.insertTaskTag(TaskTag(taskId = taskId, tagId = tag.id))
+            tagRepository.insertTaskTag(TaskTag(taskId = task.id, tagId = tag.id))
             importedCount++
         }
 

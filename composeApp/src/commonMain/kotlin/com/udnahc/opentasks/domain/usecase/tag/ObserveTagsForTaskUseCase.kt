@@ -5,5 +5,5 @@ import com.udnahc.opentasks.data.repository.TagRepository
 import kotlinx.coroutines.flow.Flow
 
 class ObserveTagsForTaskUseCase(private val repository: TagRepository) {
-    operator fun invoke(taskId: Long): Flow<List<Tag>> = repository.getTagsForTask(taskId)
+    operator fun invoke(taskId: String): Flow<List<Tag>> = repository.getTagsForTask(taskId)
 }

@@ -135,7 +135,7 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
     }
 
     companion object {
-        private val log = logging()
+        private val log = logging("AppNavController")
         fun previewController(): AppNavController = AppNavController(NavBackStack<NavKey>())
     }
 }

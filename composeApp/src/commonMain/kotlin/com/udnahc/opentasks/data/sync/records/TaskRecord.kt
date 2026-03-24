@@ -1,0 +1,97 @@
+package com.udnahc.opentasks.data.sync.records
+
+import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.model.NotifyBeforeUnit
+import com.udnahc.opentasks.data.model.RecurrenceType
+import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
+import kotlinx.serialization.Serializable
+
+@Serializable
+class TaskRecord(
+    val localId: String = "",
+    val title: String = "",
+    val content: String = "",
+    val priority: String = "NONE",
+    val deadline: Long? = null,
+    val endDeadline: Long? = null,
+    val notifyBeforeValue: Int = 0,
+    val notifyBeforeUnit: String = "NONE",
+    val recurrenceType: String = "NONE",
+    val recurrenceInterval: Int = 0,
+    val isCompleted: Boolean = false,
+    val isUrgent: Boolean = false,
+    val isImportant: Boolean = false,
+    val categoryId: String = "",
+    val isAllDay: Boolean = false,
+    val sourceExternalId: String? = null,
+    val location: String = "",
+    val url: String = "",
+    val organizer: String = "",
+    val eventStatus: String = "",
+    val attendees: String = "",
+    val durationReminders: String = "",
+    val dateReminders: String = "",
+    val isDeleted: Boolean = false,
+    val localCreatedAt: Long = 0L,
+    val localUpdatedAt: Long = 0L,
+) : BaseModel()
+
+fun Task.toTaskRecord(): TaskRecord = TaskRecord(
+    localId = id,
+    title = title,
+    content = content,
+    priority = priority.name,
+    deadline = deadline,
+    endDeadline = endDeadline,
+    notifyBeforeValue = notifyBeforeValue,
+    notifyBeforeUnit = notifyBeforeUnit.name,
+    recurrenceType = recurrenceType.name,
+    recurrenceInterval = recurrenceInterval,
+    isCompleted = isCompleted,
+    isUrgent = isUrgent,
+    isImportant = isImportant,
+    categoryId = categoryId,
+    isAllDay = isAllDay,
+    sourceExternalId = sourceExternalId,
+    location = location,
+    url = url,
+    organizer = organizer,
+    eventStatus = eventStatus,
+    attendees = attendees,
+    durationReminders = durationReminders,
+    dateReminders = dateReminders,
+    isDeleted = isDeleted,
+    localCreatedAt = createdAt,
+    localUpdatedAt = updatedAt,
+)
+
+fun TaskRecord.toTask(): Task = Task(
+    id = localId,
+    title = title,
+    content = content,
+    priority = TaskPriority.entries.firstOrNull { it.name == priority } ?: TaskPriority.NONE,
+    deadline = deadline,
+    endDeadline = endDeadline,
+    notifyBeforeValue = notifyBeforeValue,
+    notifyBeforeUnit = NotifyBeforeUnit.entries.firstOrNull { it.name == notifyBeforeUnit } ?: NotifyBeforeUnit.NONE,
+    recurrenceType = RecurrenceType.entries.firstOrNull { it.name == recurrenceType } ?: RecurrenceType.NONE,
+    recurrenceInterval = recurrenceInterval,
+    isCompleted = isCompleted,
+    isUrgent = isUrgent,
+    isImportant = isImportant,
+    categoryId = categoryId,
+    isAllDay = isAllDay,
+    sourceExternalId = sourceExternalId,
+    location = location,
+    url = url,
+    organizer = organizer,
+    eventStatus = eventStatus,
+    attendees = attendees,
+    durationReminders = durationReminders,
+    dateReminders = dateReminders,
+    isDeleted = isDeleted,
+    isSynced = true,
+    createdAt = localCreatedAt,
+    updatedAt = localUpdatedAt,
+)

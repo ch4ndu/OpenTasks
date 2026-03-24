@@ -58,7 +58,7 @@ class MatrixViewModel(
         notifyBeforeValue: Int = 0,
         notifyBeforeUnit: NotifyBeforeUnit = NotifyBeforeUnit.NONE,
         recurrenceType: RecurrenceType = RecurrenceType.NONE,
-        categoryId: Long = 1L,
+        categoryId: String = "00000000-0000-0000-0000-000000000001",
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             addTaskAction(

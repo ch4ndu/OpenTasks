@@ -25,8 +25,8 @@ class TaskListViewModel(
     private val addCategoryAction: AddCategoryAction,
 ) : ViewModel() {
 
-    private val _selectedCategoryId = MutableStateFlow(1L)
-    val selectedCategoryId: StateFlow<Long> = _selectedCategoryId
+    private val _selectedCategoryId = MutableStateFlow("00000000-0000-0000-0000-000000000001")
+    val selectedCategoryId: StateFlow<String> = _selectedCategoryId
 
     val tasksForSelectedCategory: StateFlow<List<Task>> = observeTasksForCategory(_selectedCategoryId)
         .flowOn(Dispatchers.Default)
@@ -45,7 +45,7 @@ class TaskListViewModel(
     val categories: StateFlow<List<Category>> = observeAllCategories()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun selectCategory(categoryId: Long) { _selectedCategoryId.value = categoryId }
+    fun selectCategory(categoryId: String) { _selectedCategoryId.value = categoryId }
 
     fun toggleComplete(task: Task) {
         viewModelScope.launch(Dispatchers.IO) { toggleTaskCompleteAction(task) }

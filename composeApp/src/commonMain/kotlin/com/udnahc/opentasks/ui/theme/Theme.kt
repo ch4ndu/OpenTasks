@@ -1,6 +1,5 @@
 package com.udnahc.opentasks.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -42,7 +41,7 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun OpenTasksTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = isInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
     BoxWithConstraints {

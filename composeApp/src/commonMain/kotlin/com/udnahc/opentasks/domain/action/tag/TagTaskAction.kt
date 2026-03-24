@@ -4,7 +4,7 @@ import com.udnahc.opentasks.data.model.TaskTag
 import com.udnahc.opentasks.data.repository.TagRepository
 
 class TagTaskAction(private val repository: TagRepository) {
-    suspend operator fun invoke(taskId: Long, tagId: Long) {
+    suspend operator fun invoke(taskId: String, tagId: String) {
         repository.insertTaskTag(TaskTag(taskId = taskId, tagId = tagId))
     }
 }

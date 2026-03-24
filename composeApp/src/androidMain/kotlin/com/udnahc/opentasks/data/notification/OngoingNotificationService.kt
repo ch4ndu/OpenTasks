@@ -14,17 +14,27 @@ class OngoingNotificationService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == NotificationScheduler.ACTION_STOP_ONGOING) {
+            // Must call startForeground before stopping to satisfy the contract
+            // in case this service was started via startForegroundService()
+            val placeholder = NotificationCompat.Builder(this, NotificationScheduler.ONGOING_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("Stopping")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
+            startForeground(1, placeholder)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
 
-        val taskId = intent?.getLongExtra(NotificationScheduler.EXTRA_TASK_ID, 0L) ?: 0L
+        val taskId = intent?.getStringExtra(NotificationScheduler.EXTRA_TASK_ID) ?: ""
         val title = intent?.getStringExtra(NotificationScheduler.EXTRA_TITLE) ?: "All-day task"
         val notificationId = NotificationScheduler.notificationId(taskId, 99)
 
+        // Tap → open app and navigate to task details
         val tapIntent = Intent(this, MainActivity::class.java).apply {
             this.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(NotificationScheduler.EXTRA_TASK_ID, taskId)
         }
         val tapPendingIntent = PendingIntent.getActivity(
             this,
@@ -33,25 +43,39 @@ class OngoingNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val deleteIntent = Intent(this, OngoingNotificationService::class.java).apply {
+        // "Mark Done" action
+        val markDoneIntent = Intent(this, NotificationActionReceiver::class.java).apply {
+            action = NotificationScheduler.ACTION_MARK_DONE
             putExtra(NotificationScheduler.EXTRA_TASK_ID, taskId)
-            putExtra(NotificationScheduler.EXTRA_TITLE, title)
         }
-        val deletePendingIntent = PendingIntent.getService(
+        val markDonePendingIntent = PendingIntent.getBroadcast(
             this,
             notificationId + 1,
-            deleteIntent,
+            markDoneIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        // "Got It" action
+        val gotItIntent = Intent(this, NotificationActionReceiver::class.java).apply {
+            action = NotificationScheduler.ACTION_GOT_IT
+            putExtra(NotificationScheduler.EXTRA_TASK_ID, taskId)
+        }
+        val gotItPendingIntent = PendingIntent.getBroadcast(
+            this,
+            notificationId + 2,
+            gotItIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
         val notification = NotificationCompat.Builder(this, NotificationScheduler.ONGOING_CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText("All-day task in progress")
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(tapPendingIntent)
-            .setDeleteIntent(deletePendingIntent)
+            .addAction(0, "Mark Done", markDonePendingIntent)
+            .addAction(0, "Got It", gotItPendingIntent)
             .build()
 
         startForeground(notificationId, notification)

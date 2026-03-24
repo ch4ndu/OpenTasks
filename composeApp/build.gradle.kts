@@ -15,7 +15,7 @@ plugins {
 kotlin {
     androidTarget {
         compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_11)
+            jvmTarget.set(JvmTarget.JVM_17)
         }
     }
     
@@ -36,6 +36,7 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
             implementation(libs.koin.android)
+            implementation(libs.androidx.work.runtime)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -69,15 +70,22 @@ kotlin {
 
             // Rich Text Editor
             implementation(libs.richeditor.compose)
+
+            // PocketBase
+            implementation(libs.pocketbase)
+
+            // SLF4J API (required by Ktor / PocketBase SDK)
+            implementation(libs.slf4j.api)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
+        androidMain.dependencies {
+            implementation(libs.slf4j.simple)
+        }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
-
-            implementation(libs.slf4j.api)
             implementation(libs.logback.classic)
         }
     }
@@ -97,6 +105,7 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/INDEX.LIST"
         }
     }
     buildTypes {
@@ -106,8 +115,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 }
 
@@ -131,6 +140,15 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "com.udnahc.opentasks"
             packageVersion = "1.0.0"
+            macOS {
+                iconFile.set(project.file("src/jvmMain/resources/ic_launcher.png"))
+            }
+            windows {
+                iconFile.set(project.file("src/jvmMain/resources/ic_launcher.png"))
+            }
+            linux {
+                iconFile.set(project.file("src/jvmMain/resources/ic_launcher.png"))
+            }
         }
     }
 }

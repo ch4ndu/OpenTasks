@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
+import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -316,3 +317,41 @@ private fun ToolbarButton(
         )
     }
 }
+
+// region Previews
+
+@Composable
+@Preview
+private fun CreateNoteTopBarPreview() {
+    OpenTasksTheme {
+        CreateNoteTopBar(
+            onBack = {},
+            onSave = {},
+            onDelete = null,
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun CreateNoteTopBarWithDeletePreview() {
+    OpenTasksTheme {
+        CreateNoteTopBar(
+            onBack = {},
+            onSave = {},
+            onDelete = {},
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun MarkdownToolbarPreview() {
+    OpenTasksTheme {
+        MarkdownToolbar(
+            richTextState = rememberRichTextState(),
+        )
+    }
+}
+
+// endregion

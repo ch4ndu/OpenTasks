@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 
 class ObserveTasksForCategoryUseCase(private val repository: TaskRepository) {
-    operator fun invoke(categoryId: StateFlow<Long>): Flow<List<Task>> =
+    operator fun invoke(categoryId: StateFlow<String>): Flow<List<Task>> =
         combine(repository.getAllTasks(), categoryId) { tasks, id ->
             tasks.filter { it.categoryId == id }
         }

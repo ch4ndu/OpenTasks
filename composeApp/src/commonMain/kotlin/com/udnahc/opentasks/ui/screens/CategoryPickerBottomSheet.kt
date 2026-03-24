@@ -56,7 +56,7 @@ import org.jetbrains.compose.resources.stringResource
 fun CategoryPickerBottomSheet(
     sheetState: SheetState,
     categories: List<Category>,
-    selectedCategoryId: Long,
+    selectedCategoryId: String,
     onCategorySelected: (Category) -> Unit,
     onAddCategory: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -105,7 +105,7 @@ fun CategoryPickerBottomSheet(
 @Composable
 private fun CategoryPickerContent(
     categories: List<Category>,
-    selectedCategoryId: Long,
+    selectedCategoryId: String,
     showTitle: Boolean,
     showSearch: Boolean = true,
     searchQuery: String,
@@ -307,14 +307,14 @@ private fun AddCategoryDialog(
 @Preview
 private fun CategoryPickerPreview() {
     val sampleCategories = listOf(
-        Category(id = 1, name = "Inbox", icon = "inbox"),
-        Category(id = 2, name = "Work"),
-        Category(id = 3, name = "Personal"),
+        Category(id = "1", name = "Inbox", icon = "inbox"),
+        Category(id = "2", name = "Work"),
+        Category(id = "3", name = "Personal"),
     )
     OpenTasksTheme {
         CategoryPickerContent(
             categories = sampleCategories,
-            selectedCategoryId = 1L,
+            selectedCategoryId = "1",
             showTitle = true,
             searchQuery = "",
             onSearchQueryChange = {},

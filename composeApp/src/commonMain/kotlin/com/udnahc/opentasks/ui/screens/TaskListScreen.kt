@@ -3,6 +3,7 @@ package com.udnahc.opentasks.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,9 +70,11 @@ import opentasks.composeapp.generated.resources.ic_dropdown
 import opentasks.composeapp.generated.resources.ic_more_vert
 import opentasks.composeapp.generated.resources.ic_check_box_outline
 import opentasks.composeapp.generated.resources.ic_unfold
+import opentasks.composeapp.generated.resources.ic_settings
 import opentasks.composeapp.generated.resources.more
 import opentasks.composeapp.generated.resources.no_tasks
 import opentasks.composeapp.generated.resources.select
+import opentasks.composeapp.generated.resources.settings
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -79,11 +82,12 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun TaskListScreen(
     viewModel: TaskListViewModel,
-    selectedCategoryId: Long,
-    onSelectedCategoryChanged: (Long) -> Unit,
+    selectedCategoryId: String,
+    onSelectedCategoryChanged: (String) -> Unit,
     onTaskClick: (Task) -> Unit,
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
 ) {
     // Sync parent's selectedCategoryId into ViewModel for the derived flow
     LaunchedEffect(selectedCategoryId) { viewModel.selectCategory(selectedCategoryId) }
@@ -107,6 +111,7 @@ fun TaskListScreen(
         onListClick = { showCategoryPicker = true },
         onImportCalendar = onImportCalendar,
         onImportIcs = onImportIcs,
+        onSettingsClick = onSettingsClick,
     )
 
     if (showCategoryPicker) {
@@ -138,6 +143,7 @@ private fun TaskListContent(
     onListClick: () -> Unit = {},
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val density = LocalDensity.current
@@ -152,7 +158,7 @@ private fun TaskListContent(
 
     var completedCollapsed by remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // Task list — fills entire screen, scrolls behind top bar and bottom nav
         if (activeTasks.isEmpty() && completedTasks.isEmpty()) {
             EmptyTasksPlaceholder()
@@ -209,6 +215,7 @@ private fun TaskListContent(
             onListClick = onListClick,
             onImportCalendar = onImportCalendar,
             onImportIcs = onImportIcs,
+            onSettingsClick = onSettingsClick,
         )
     }
 }
@@ -234,6 +241,7 @@ private fun TaskListTopBar(
     onListClick: () -> Unit,
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
 ) {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
@@ -259,6 +267,13 @@ private fun TaskListTopBar(
             }
         },
         actions = {
+            IconButton(onClick = onSettingsClick) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_settings),
+                    contentDescription = stringResource(Res.string.settings),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Box {
                 var showOverflowMenu by remember { mutableStateOf(false) }
                 IconButton(onClick = { showOverflowMenu = true }) {
@@ -347,10 +362,12 @@ private fun CompletedTasksList(
         ) {
             Column {
                 tasks.forEachIndexed { index, task ->
+                    val onToggle = remember(task.id) { { onToggleComplete(task) } }
+                    val onClick = remember(task.id) { { onTaskClick(task) } }
                     CompletedTaskRow(
                         task = task,
-                        onToggleComplete = { onToggleComplete(task) },
-                        onClick = { onTaskClick(task) },
+                        onToggleComplete = onToggle,
+                        onClick = onClick,
                     )
                     if (index < tasks.lastIndex) {
                         HorizontalDivider(

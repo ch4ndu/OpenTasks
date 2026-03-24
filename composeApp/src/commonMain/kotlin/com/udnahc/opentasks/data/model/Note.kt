@@ -3,13 +3,16 @@ package com.udnahc.opentasks.data.model
 import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.udnahc.opentasks.data.extensions.uuid4
 
 @Immutable
 @Entity(tableName = "notes")
 data class Note(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @PrimaryKey val id: String = uuid4(),
     val title: String = "",
     val content: String = "",
+    val isSynced: Boolean = false,
+    val isDeleted: Boolean = false,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
 )

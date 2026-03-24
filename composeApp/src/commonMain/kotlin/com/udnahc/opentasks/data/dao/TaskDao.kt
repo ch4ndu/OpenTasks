@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import com.udnahc.opentasks.data.model.Task
 import kotlinx.coroutines.flow.Flow
 
@@ -27,8 +28,17 @@ interface TaskDao {
     suspend fun getTasksWithDeadlines(): List<Task>
 
     @Query("SELECT * FROM tasks WHERE id = :id")
-    suspend fun getTaskById(id: Long): Task?
+    suspend fun getTaskById(id: String): Task?
 
     @Query("SELECT * FROM tasks WHERE sourceExternalId = :externalId LIMIT 1")
     suspend fun getTaskByExternalId(externalId: String): Task?
+
+    @Query("SELECT * FROM tasks WHERE isSynced = 0")
+    suspend fun getUnsynced(): List<Task>
+
+    @Query("UPDATE tasks SET isSynced = 1 WHERE id = :id")
+    suspend fun markSynced(id: String)
+
+    @Upsert
+    suspend fun upsert(task: Task)
 }

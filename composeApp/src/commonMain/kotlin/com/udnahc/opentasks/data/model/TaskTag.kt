@@ -24,6 +24,6 @@ import androidx.room.ForeignKey
     ],
 )
 data class TaskTag(
-    val taskId: Long,
-    val tagId: Long,
+    val taskId: String,
+    val tagId: String,
 )

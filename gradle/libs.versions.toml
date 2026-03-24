@@ -33,6 +33,8 @@ kotlinxSerializationCore = "1.10.0"
 compose-multiplatform-lifecycle = "2.10.0-alpha08"
 compose-multiplatform-adaptive = "1.3.0-alpha04"
 richeditor = "1.0.0-rc13"
+pocketbase = "2.7.3"
+work = "2.10.1"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -80,8 +82,12 @@ koin-android = { module = "io.insert-koin:koin-android" }
 richeditor-compose = { module = "com.mohamedrejeb.richeditor:richeditor-compose", version.ref = "richeditor" }
 
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4jApi" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4jApi" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 kmlog = { module = "org.lighthousegames:logging", version.ref = "kmlog" }
+
+pocketbase = { module = "io.github.agrevster:pocketbase-kotlin", version.ref = "pocketbase" }
+androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

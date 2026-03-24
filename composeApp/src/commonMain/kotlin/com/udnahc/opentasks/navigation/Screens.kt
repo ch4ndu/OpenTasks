@@ -11,11 +11,12 @@ sealed class Screen : NavClass() {
     @Serializable data class QuadrantDetail(val priorityOrdinal: Int) : Screen()
     @Serializable data class CreateTask(
         val priorityOrdinal: Int = 0,
-        val categoryId: Long = 1L,
+        val categoryId: String = "00000000-0000-0000-0000-000000000001",
         val day: Int = 0,
         val month: Int = 0,
         val year: Int = 0,
         val title: String = "",
     ) : Screen()
-    @Serializable data class EditTask(val taskId: Long) : Screen()
+    @Serializable data class EditTask(val taskId: String) : Screen()
+    @Serializable data object Settings : Screen()
 }

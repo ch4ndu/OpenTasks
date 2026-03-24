@@ -10,9 +10,12 @@ private const val DURATION_REMINDER_OFFSET = 50
 
 class ScheduleTaskRemindersAction(private val scheduler: NotificationScheduler) {
     operator fun invoke(task: Task) {
-        scheduler.cancelAll(task.id)
+        scheduler.cancelReminders(task.id)
 
-        if (task.isCompleted || task.deadline == null) return
+        if (task.isCompleted || task.deadline == null) {
+            scheduler.stopOngoing(task.id)
+            return
+        }
 
         val now = utcNow()
 
@@ -56,9 +59,11 @@ class ScheduleTaskRemindersAction(private val scheduler: NotificationScheduler) 
             }
         }
 
-        // Ongoing notification for all-day tasks with today's deadline
+        // Ongoing notification for all-day tasks
         if (task.isAllDay) {
             scheduler.startOngoing(task.id, task.title)
+        } else {
+            scheduler.stopOngoing(task.id)
         }
     }
 }

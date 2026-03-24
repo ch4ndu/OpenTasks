@@ -22,13 +22,13 @@ interface TagDao {
     fun getAllTags(): Flow<List<Tag>>
 
     @Query("SELECT * FROM tags WHERE id = :id")
-    suspend fun getTagById(id: Long): Tag?
+    suspend fun getTagById(id: String): Tag?
 
     @Query("SELECT * FROM tags WHERE name = :name LIMIT 1")
     suspend fun getTagByName(name: String): Tag?
 
     @Query("SELECT t.* FROM tags t INNER JOIN task_tags tt ON t.id = tt.tagId WHERE tt.taskId = :taskId")
-    fun getTagsForTask(taskId: Long): Flow<List<Tag>>
+    fun getTagsForTask(taskId: String): Flow<List<Tag>>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTaskTag(taskTag: TaskTag)

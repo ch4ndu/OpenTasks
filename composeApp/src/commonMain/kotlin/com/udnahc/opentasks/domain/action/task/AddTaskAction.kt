@@ -13,13 +13,15 @@ class AddTaskAction(private val repository: TaskRepository) {
         content: String,
         priority: TaskPriority = TaskPriority.NONE,
         deadline: Long? = null,
+        endDeadline: Long? = null,
+        isAllDay: Boolean = false,
         notifyBeforeValue: Int = 0,
         notifyBeforeUnit: NotifyBeforeUnit = NotifyBeforeUnit.NONE,
         recurrenceType: RecurrenceType = RecurrenceType.NONE,
         recurrenceInterval: Int = 0,
         isUrgent: Boolean = false,
         isImportant: Boolean = false,
-        categoryId: Long = 1L,
+        categoryId: String = "00000000-0000-0000-0000-000000000001",
         location: String = "",
         url: String = "",
         organizer: String = "",
@@ -34,6 +36,8 @@ class AddTaskAction(private val repository: TaskRepository) {
                 content = content,
                 priority = priority,
                 deadline = deadline,
+                endDeadline = endDeadline,
+                isAllDay = isAllDay,
                 notifyBeforeValue = notifyBeforeValue,
                 notifyBeforeUnit = notifyBeforeUnit,
                 recurrenceType = recurrenceType,
@@ -51,7 +55,7 @@ class AddTaskAction(private val repository: TaskRepository) {
                 createdAt = now,
                 updatedAt = now,
             )
-        val id = repository.insert(task)
-        return task.copy(id = id)
+        repository.insert(task)
+        return task
     }
 }

@@ -57,6 +57,8 @@ import opentasks.composeapp.generated.resources.not_urgent_important
 import opentasks.composeapp.generated.resources.not_urgent_unimportant
 import opentasks.composeapp.generated.resources.urgent_important
 import opentasks.composeapp.generated.resources.urgent_unimportant
+import opentasks.composeapp.generated.resources.ic_settings
+import opentasks.composeapp.generated.resources.settings
 import opentasks.composeapp.generated.resources.view_more
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -66,6 +68,7 @@ fun EisenhowerMatrixScreen(
     viewModel: MatrixViewModel,
     onTaskClick: (Task) -> Unit,
     onQuadrantClick: (TaskPriority) -> Unit,
+    onSettingsClick: () -> Unit = {},
 ) {
     val tasksByPriority by viewModel.tasksByPriority.collectAsState()
     EisenhowerMatrixContent(
@@ -73,6 +76,7 @@ fun EisenhowerMatrixScreen(
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onQuadrantClick = onQuadrantClick,
+        onSettingsClick = onSettingsClick,
     )
 }
 
@@ -82,9 +86,10 @@ private fun EisenhowerMatrixContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onQuadrantClick: (TaskPriority) -> Unit = {},
+    onSettingsClick: () -> Unit = {},
 ) {
-    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        MatrixHeader()
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
+        MatrixHeader(onSettingsClick = onSettingsClick)
 
         // 2x2 Grid
         val highTasks = tasksByPriority[TaskPriority.HIGH].orEmpty()
@@ -105,7 +110,9 @@ private fun EisenhowerMatrixContent(
 }
 
 @Composable
-private fun MatrixHeader() {
+private fun MatrixHeader(
+    onSettingsClick: () -> Unit = {},
+) {
     val dimens = OpenTasksTheme.dimens
     Row(
         modifier = Modifier
@@ -120,12 +127,21 @@ private fun MatrixHeader() {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        IconButton(onClick = { /* TODO: implement menu */ }) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_more_vert),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Row {
+            IconButton(onClick = onSettingsClick) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_settings),
+                    contentDescription = stringResource(Res.string.settings),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = { /* TODO: implement menu */ }) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_more_vert),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

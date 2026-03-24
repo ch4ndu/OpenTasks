@@ -11,11 +11,11 @@ class TagRepositoryImpl(
 
     override fun getAllTags(): Flow<List<Tag>> = tagDao.getAllTags()
 
-    override suspend fun getTagById(id: Long): Tag? = tagDao.getTagById(id)
+    override suspend fun getTagById(id: String): Tag? = tagDao.getTagById(id)
 
     override suspend fun getTagByName(name: String): Tag? = tagDao.getTagByName(name)
 
-    override fun getTagsForTask(taskId: Long): Flow<List<Tag>> = tagDao.getTagsForTask(taskId)
+    override fun getTagsForTask(taskId: String): Flow<List<Tag>> = tagDao.getTagsForTask(taskId)
 
     override suspend fun insertTag(tag: Tag): Long = tagDao.insertTag(tag)
 

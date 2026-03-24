@@ -5,13 +5,13 @@ import com.udnahc.opentasks.data.model.Tag
 import com.udnahc.opentasks.data.repository.TagRepository
 
 class AddTagAction(private val repository: TagRepository) {
-    suspend operator fun invoke(name: String, color: String? = null): Long {
-        return repository.insertTag(
-            Tag(
-                name = name,
-                color = color,
-                createdAt = utcNow(),
-            )
+    suspend operator fun invoke(name: String, color: String? = null): String {
+        val tag = Tag(
+            name = name,
+            color = color,
+            createdAt = utcNow(),
         )
+        repository.insertTag(tag)
+        return tag.id
     }
 }

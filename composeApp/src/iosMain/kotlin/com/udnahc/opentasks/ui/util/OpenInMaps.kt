@@ -11,10 +11,15 @@ import platform.UIKit.UIApplication
 @Composable
 actual fun rememberOpenInMapsAction(): (String) -> Unit {
     return { location ->
+        @Suppress("CAST_NEVER_SUCCEEDS")
         val encoded = (location as NSString).stringByAddingPercentEncodingWithAllowedCharacters(
             NSCharacterSet.URLQueryAllowedCharacterSet
-        ) ?: return@return
-        val url = NSURL.URLWithString("maps://?q=$encoded") ?: return@return
-        UIApplication.sharedApplication.openURL(url)
+        )
+        if (encoded != null) {
+            val url = NSURL.URLWithString("maps://?q=$encoded")
+            if (url != null) {
+                UIApplication.sharedApplication.openURL(url)
+            }
+        }
     }
 }

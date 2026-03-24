@@ -21,7 +21,7 @@ object PreviewSampleData {
 
     val sampleTasks = listOf(
         Task(
-            id = 1,
+            id = "preview-1",
             title = "Fix critical production bug",
             content = "The login flow is broken on Android 14 devices",
             priority = TaskPriority.HIGH,
@@ -32,7 +32,7 @@ object PreviewSampleData {
             notifyBeforeUnit = NotifyBeforeUnit.DAYS,
         ),
         Task(
-            id = 2,
+            id = "preview-2",
             title = "Prepare quarterly report",
             content = "Compile metrics from Q1 and create presentation slides",
             priority = TaskPriority.HIGH,
@@ -42,7 +42,7 @@ object PreviewSampleData {
             recurrenceType = RecurrenceType.MONTHLY,
         ),
         Task(
-            id = 3,
+            id = "preview-3",
             title = "Review PR #428",
             content = "Database migration changes need review",
             priority = TaskPriority.MEDIUM,
@@ -51,7 +51,7 @@ object PreviewSampleData {
             deadline = DEADLINE_APR_1,
         ),
         Task(
-            id = 4,
+            id = "preview-4",
             title = "Update documentation",
             content = "API docs are outdated after the refactor",
             priority = TaskPriority.MEDIUM,
@@ -59,7 +59,7 @@ object PreviewSampleData {
             isImportant = true,
         ),
         Task(
-            id = 5,
+            id = "preview-5",
             title = "Reply to vendor email",
             content = "They need confirmation on the contract terms",
             priority = TaskPriority.LOW,
@@ -68,7 +68,7 @@ object PreviewSampleData {
             deadline = DEADLINE_MAR_20,
         ),
         Task(
-            id = 6,
+            id = "preview-6",
             title = "Book team lunch",
             content = "",
             priority = TaskPriority.LOW,
@@ -76,7 +76,7 @@ object PreviewSampleData {
             isImportant = false,
         ),
         Task(
-            id = 7,
+            id = "preview-7",
             title = "Organize desktop files",
             content = "Clean up downloads folder",
             priority = TaskPriority.NONE,
@@ -84,7 +84,7 @@ object PreviewSampleData {
             isImportant = false,
         ),
         Task(
-            id = 8,
+            id = "preview-8",
             title = "Learn Kotlin Multiplatform",
             content = "Watch the KotlinConf talks",
             priority = TaskPriority.NONE,

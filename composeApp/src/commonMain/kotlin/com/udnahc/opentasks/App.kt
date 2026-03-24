@@ -1,6 +1,11 @@
 package com.udnahc.opentasks
 
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -53,6 +58,7 @@ import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
 import com.udnahc.opentasks.ui.screens.EisenhowerMatrixScreen
 import com.udnahc.opentasks.ui.screens.NotesScreen
 import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
+import com.udnahc.opentasks.ui.screens.SettingsScreen
 import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
 import com.udnahc.opentasks.ui.screens.TaskListScreen
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
@@ -84,16 +90,27 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 
+private val IosTransitionEasing = CubicBezierEasing(0.2833f, 0.99f, 0.31833f, 0.99f)
+
+private fun isTabScreen(key: Any): Boolean =
+    key is Screen.Matrix || key is Screen.TaskList || key is Screen.Calendar || key is Screen.Notes
+
 @Composable
 @Preview
-fun App(sharedText: String = "") {
+fun App(sharedText: String = "", deepLinkTaskId: String = "") {
     OpenTasksTheme {
         val backStack = remember { NavBackStack<NavKey>(Screen.Matrix) }
         val navController = remember { AppNavController(backStack) }
         val appViewModel: AppViewModel = koinViewModel()
+        LaunchedEffect(Unit) { appViewModel.sync() }
         if (sharedText.isNotEmpty()) {
             LaunchedEffect(Unit) {
                 navController.navigate(Screen.CreateTask(title = sharedText))
+            }
+        }
+        if (deepLinkTaskId.isNotEmpty()) {
+            LaunchedEffect(deepLinkTaskId) {
+                navController.navigate(Screen.EditTask(deepLinkTaskId))
             }
         }
         MainScreen(navController = navController, backStack = backStack, appViewModel = appViewModel)
@@ -112,12 +129,12 @@ private fun MainScreen(
     backStack: NavBackStack<NavKey>,
     appViewModel: AppViewModel,
 ) {
-    var selectedListId by rememberSaveable { mutableStateOf(1L) }
+    var selectedListId by rememberSaveable { mutableStateOf("00000000-0000-0000-0000-000000000001") }
     var calendarSelectedYear by remember { mutableIntStateOf(0) }
     var calendarSelectedMonth by remember { mutableIntStateOf(0) }
     var calendarSelectedDay by remember { mutableIntStateOf(0) }
     var showCreateNote by remember { mutableStateOf(false) }
-    var editNoteId by remember { mutableStateOf<Long?>(null) }
+    var editNoteId by remember { mutableStateOf<String?>(null) }
     var showImportCalendar by remember { mutableStateOf(false) }
     var showImportIcs by remember { mutableStateOf(false) }
 
@@ -144,6 +161,9 @@ private fun MainScreen(
     val showBottomNav = currentScreen !is Screen.QuadrantDetail
             && currentScreen !is Screen.CreateTask
             && currentScreen !is Screen.EditTask
+            && currentScreen !is Screen.Settings
+
+    val onSettingsClick = remember { { navController.navigate(Screen.Settings) } }
 
     Box(
         modifier = Modifier
@@ -155,6 +175,46 @@ private fun MainScreen(
             onBack = { navController.popBackStack() },
             modifier = Modifier.fillMaxSize(),
             entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
+            transitionSpec = {
+                if (isTabScreen(initialState.key) && isTabScreen(targetState.key)) {
+                    ContentTransform(
+                        fadeIn(animationSpec = snap()),
+                        fadeOut(animationSpec = snap()),
+                    )
+                } else {
+                    ContentTransform(
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(500, easing = IosTransitionEasing),
+                        ),
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                            targetOffset = { it / 4 },
+                            animationSpec = tween(500, easing = IosTransitionEasing),
+                        ),
+                    )
+                }
+            },
+            popTransitionSpec = {
+                if (isTabScreen(initialState.key) && isTabScreen(targetState.key)) {
+                    ContentTransform(
+                        fadeIn(animationSpec = snap()),
+                        fadeOut(animationSpec = snap()),
+                    )
+                } else {
+                    ContentTransform(
+                        slideIntoContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            initialOffset = { it / 4 },
+                            animationSpec = tween(500, easing = IosTransitionEasing),
+                        ),
+                        slideOutOfContainer(
+                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(500, easing = IosTransitionEasing),
+                        ),
+                    )
+                }
+            },
             entryProvider = entryProvider {
                 entry<Screen.Matrix> {
                     val matrixViewModel: MatrixViewModel = koinViewModel()
@@ -166,6 +226,7 @@ private fun MainScreen(
                         onQuadrantClick = { priority ->
                             navController.navigate(Screen.QuadrantDetail(priority.ordinal))
                         },
+                        onSettingsClick = onSettingsClick,
                     )
                 }
 
@@ -180,6 +241,7 @@ private fun MainScreen(
                         },
                         onImportCalendar = { showImportCalendar = true },
                         onImportIcs = { showImportIcs = true },
+                        onSettingsClick = onSettingsClick,
                     )
                 }
 
@@ -197,6 +259,7 @@ private fun MainScreen(
                         },
                         onImportCalendar = { showImportCalendar = true },
                         onImportIcs = { showImportIcs = true },
+                        onSettingsClick = onSettingsClick,
                     )
                 }
 
@@ -205,7 +268,12 @@ private fun MainScreen(
                     NotesScreen(
                         viewModel = noteViewModel,
                         onNoteClick = { note -> editNoteId = note.id },
+                        onSettingsClick = onSettingsClick,
                     )
+                }
+
+                entry<Screen.Settings> {
+                    SettingsScreen(onBack = { navController.popBackStack() })
                 }
 
                 entry<Screen.QuadrantDetail> { screen ->
@@ -250,6 +318,8 @@ private fun MainScreen(
                                 content = formData.content,
                                 priority = formData.priority,
                                 deadline = formData.deadline,
+                                endDeadline = formData.endDeadline,
+                                isAllDay = formData.isAllDay,
                                 notifyBeforeValue = formData.reminderDays,
                                 notifyBeforeUnit = notifyUnit,
                                 recurrenceType = formData.recurrence,
@@ -285,6 +355,8 @@ private fun MainScreen(
                                         content = formData.content,
                                         priority = formData.priority,
                                         deadline = formData.deadline,
+                                        endDeadline = formData.endDeadline,
+                                        isAllDay = formData.isAllDay,
                                         notifyBeforeValue = formData.reminderDays,
                                         notifyBeforeUnit = notifyUnit,
                                         recurrenceType = formData.recurrence,
@@ -343,7 +415,7 @@ private fun MainScreen(
                     } else {
                         navController.navigate(
                             Screen.CreateTask(
-                                categoryId = if (selectedTab == 1) selectedListId else 1L,
+                                categoryId = if (selectedTab == 1) selectedListId else "00000000-0000-0000-0000-000000000001",
                                 day = if (selectedTab == 2) calendarSelectedDay else 0,
                                 month = if (selectedTab == 2) calendarSelectedMonth else 0,
                                 year = if (selectedTab == 2) calendarSelectedYear else 0,

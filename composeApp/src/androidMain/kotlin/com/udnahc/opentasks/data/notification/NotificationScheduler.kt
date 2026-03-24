@@ -6,7 +6,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 
 actual class NotificationScheduler(private val context: Context) {
 
@@ -37,13 +39,21 @@ actual class NotificationScheduler(private val context: Context) {
     }
 
     actual fun schedule(
-        taskId: Long,
+        taskId: String,
         title: String,
         body: String,
         triggerAtMillis: Long,
         reminderId: Int,
     ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+            val settingsIntent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = Uri.parse("package:${context.packageName}")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(settingsIntent)
+            return
+        }
         val intent = Intent(context, NotificationReceiver::class.java).apply {
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_TITLE, title)
@@ -63,7 +73,7 @@ actual class NotificationScheduler(private val context: Context) {
         )
     }
 
-    actual fun cancel(taskId: Long, reminderId: Int) {
+    actual fun cancel(taskId: String, reminderId: Int) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, NotificationReceiver::class.java)
         val pendingIntent = PendingIntent.getBroadcast(
@@ -75,15 +85,18 @@ actual class NotificationScheduler(private val context: Context) {
         pendingIntent?.let { alarmManager.cancel(it) }
     }
 
-    actual fun cancelAll(taskId: Long) {
-        // Cancel up to 100 possible reminder slots per task
+    actual fun cancelReminders(taskId: String) {
         for (i in 0 until MAX_REMINDERS_PER_TASK) {
             cancel(taskId, i)
         }
+    }
+
+    actual fun cancelAll(taskId: String) {
+        cancelReminders(taskId)
         stopOngoing(taskId)
     }
 
-    actual fun startOngoing(taskId: Long, title: String) {
+    actual fun startOngoing(taskId: String, title: String) {
         val intent = Intent(context, OngoingNotificationService::class.java).apply {
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_TITLE, title)
@@ -95,7 +108,7 @@ actual class NotificationScheduler(private val context: Context) {
         }
     }
 
-    actual fun stopOngoing(taskId: Long) {
+    actual fun stopOngoing(taskId: String) {
         val intent = Intent(context, OngoingNotificationService::class.java).apply {
             action = ACTION_STOP_ONGOING
             putExtra(EXTRA_TASK_ID, taskId)
@@ -111,9 +124,11 @@ actual class NotificationScheduler(private val context: Context) {
         const val EXTRA_BODY = "body"
         const val EXTRA_NOTIFICATION_ID = "notification_id"
         const val ACTION_STOP_ONGOING = "com.udnahc.opentasks.STOP_ONGOING"
+        const val ACTION_MARK_DONE = "com.udnahc.opentasks.ACTION_MARK_DONE"
+        const val ACTION_GOT_IT = "com.udnahc.opentasks.ACTION_GOT_IT"
         private const val MAX_REMINDERS_PER_TASK = 100
 
-        fun notificationId(taskId: Long, reminderId: Int): Int =
-            (taskId.toInt() * 100 + reminderId)
+        fun notificationId(taskId: String, reminderId: Int): Int =
+            (taskId.hashCode().and(0x7FFFFFFF) / 100 * 100 + reminderId)
     }
 }

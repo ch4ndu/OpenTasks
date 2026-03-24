@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
 import com.udnahc.opentasks.data.calendar.CalendarProvider
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.nowUtcMillis
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import kotlinx.coroutines.Dispatchers
@@ -92,6 +93,6 @@ class ImportCalendarViewModel(
             ImportRangeUnit.MONTHS -> value.toLong() * 30
             ImportRangeUnit.YEARS -> value.toLong() * 365
         }
-        return days * 86400000L
+        return days * MILLIS_PER_DAY
     }
 }

@@ -13,8 +13,10 @@ import com.udnahc.opentasks.domain.action.note.AddNoteAction
 import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
 import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
 import com.udnahc.opentasks.domain.action.task.AddTaskAction
+import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
+import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
@@ -36,6 +38,8 @@ class AppViewModel(
     private val addNoteAction: AddNoteAction,
     private val updateNoteAction: UpdateNoteAction,
     private val deleteNoteAction: DeleteNoteAction,
+    private val initializeSyncAction: InitializeSyncAction,
+    private val rescheduleAllRemindersAction: RescheduleAllRemindersAction,
 ) : ViewModel() {
 
     val tasks: StateFlow<List<Task>> = observeAllTasks()
@@ -52,10 +56,12 @@ class AppViewModel(
         content: String,
         priority: TaskPriority = TaskPriority.NONE,
         deadline: Long? = null,
+        endDeadline: Long? = null,
+        isAllDay: Boolean = false,
         notifyBeforeValue: Int = 0,
         notifyBeforeUnit: NotifyBeforeUnit = NotifyBeforeUnit.NONE,
         recurrenceType: RecurrenceType = RecurrenceType.NONE,
-        categoryId: Long = 1L,
+        categoryId: String = "00000000-0000-0000-0000-000000000001",
         location: String = "",
         url: String = "",
         organizer: String = "",
@@ -70,6 +76,8 @@ class AppViewModel(
                 content = content,
                 priority = priority,
                 deadline = deadline,
+                endDeadline = endDeadline,
+                isAllDay = isAllDay,
                 notifyBeforeValue = notifyBeforeValue,
                 notifyBeforeUnit = notifyBeforeUnit,
                 recurrenceType = recurrenceType,
@@ -94,18 +102,33 @@ class AppViewModel(
     }
 
     fun addCategory(name: String) {
-        viewModelScope.launch(Dispatchers.IO) { addCategoryAction(name) }
+        viewModelScope.launch(Dispatchers.IO) {
+            addCategoryAction(name)
+        }
     }
 
     fun addNote(title: String, content: String) {
-        viewModelScope.launch(Dispatchers.IO) { addNoteAction(title, content) }
+        viewModelScope.launch(Dispatchers.IO) {
+            addNoteAction(title, content)
+        }
     }
 
     fun updateNote(note: Note) {
-        viewModelScope.launch(Dispatchers.IO) { updateNoteAction(note) }
+        viewModelScope.launch(Dispatchers.IO) {
+            updateNoteAction(note)
+        }
     }
 
     fun deleteNote(note: Note) {
-        viewModelScope.launch(Dispatchers.IO) { deleteNoteAction(note) }
+        viewModelScope.launch(Dispatchers.IO) {
+            deleteNoteAction(note)
+        }
+    }
+
+    fun sync() {
+        viewModelScope.launch(Dispatchers.IO) {
+            initializeSyncAction()
+            rescheduleAllRemindersAction()
+        }
     }
 }

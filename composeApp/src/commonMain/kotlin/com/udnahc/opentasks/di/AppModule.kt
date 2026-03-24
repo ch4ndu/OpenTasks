@@ -23,6 +23,10 @@ import com.udnahc.opentasks.domain.action.task.AddTaskAction
 import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
+import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
+import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
+import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
+import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
@@ -31,9 +35,14 @@ import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
 import com.udnahc.opentasks.domain.usecase.tag.ObserveTagsForTaskUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
+import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import com.udnahc.opentasks.data.calendar.CalendarProvider
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
+import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
+import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
+import com.udnahc.opentasks.data.sync.SyncService
+import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.AppViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.ImportCalendarViewModel
@@ -56,7 +65,7 @@ val sharedModule = module {
                 override fun onCreate(connection: SQLiteConnection) {
                     super.onCreate(connection)
                     connection.execSQL(
-                        "INSERT OR IGNORE INTO `categories` (`id`, `name`, `icon`, `sortOrder`, `createdAt`) VALUES (1, 'Inbox', 'inbox', 0, 0)"
+                        "INSERT OR IGNORE INTO `categories` (`id`, `name`, `icon`, `sortOrder`, `createdAt`) VALUES ('00000000-0000-0000-0000-000000000001', 'Inbox', 'inbox', 0, 0)"
                     )
                 }
             })
@@ -65,10 +74,11 @@ val sharedModule = module {
     single { get<AppDatabase>().taskDao() }
     single { get<AppDatabase>().categoryDao() }
     single { get<AppDatabase>().noteDao() }
-    single<TaskRepository> { TaskRepositoryImpl(get()) }
-    single<CategoryRepository> { CategoryRepositoryImpl(get()) }
-    single<NoteRepository> { NoteRepositoryImpl(get()) }
+    single<TaskRepository> { TaskRepositoryImpl(get(), get()) }
+    single<CategoryRepository> { CategoryRepositoryImpl(get(), get()) }
+    single<NoteRepository> { NoteRepositoryImpl(get(), get()) }
     single { get<AppDatabase>().tagDao() }
+    single { get<AppDatabase>().appSettingsDao() }
     single<TagRepository> { TagRepositoryImpl(get()) }
 
     // UseCases
@@ -80,6 +90,7 @@ val sharedModule = module {
     single { ObserveAllCategoriesUseCase(get()) }
     single { ObserveAllNotesUseCase(get()) }
     factory { ObserveTagsForTaskUseCase(get()) }
+    single { ObservePocketBaseUrlUseCase(get()) }
 
     // Actions
     single { AddTaskAction(get()) }
@@ -94,13 +105,23 @@ val sharedModule = module {
     single { TagTaskAction(get()) }
     single { ImportCalendarEventsAction(get(), get(), get(), get()) }
     single { ScheduleTaskRemindersAction(get()) }
+    single { RescheduleAllRemindersAction(get(), get()) }
+    single { SavePocketBaseUrlAction(get(), get(), get()) }
+    single { ClearPocketBaseUrlAction(get(), get()) }
+    single { TriggerSyncAction(get(), get()) }
+    single { InitializeSyncAction(get(), get(), get()) }
+
+    // Sync
+    single { PocketBaseClientProvider() }
+    single { SyncService(get(), get(), get(), get()) }
 
     // ViewModels
-    viewModel { AppViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { AppViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { TaskListViewModel(get(), get(), get(), get()) }
     viewModel { CalendarViewModel(get(), get(), get()) }
     viewModel { NoteViewModel(get(), get(), get(), get()) }
     viewModel { ImportCalendarViewModel(get(), get()) }
     viewModel { ImportIcsViewModel(get()) }
+    viewModel { SettingsViewModel(get(), get(), get(), get()) }
 }

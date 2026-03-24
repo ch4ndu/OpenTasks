@@ -5,9 +5,10 @@ import kotlinx.coroutines.flow.Flow
 
 interface TaskRepository {
     fun getAllTasks(): Flow<List<Task>>
-    suspend fun getTaskById(id: Long): Task?
+    suspend fun getTaskById(id: String): Task?
     suspend fun getTaskByExternalId(externalId: String): Task?
     suspend fun insert(task: Task): Long
     suspend fun update(task: Task)
     suspend fun delete(task: Task)
+    suspend fun getTasksWithDeadlines(): List<Task>
 }
