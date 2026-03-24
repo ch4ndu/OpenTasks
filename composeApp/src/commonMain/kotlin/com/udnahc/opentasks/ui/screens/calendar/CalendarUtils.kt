@@ -49,6 +49,8 @@ internal fun buildMonthWeeks(
 
 // ── Month names ─────────────────────────────────────────────────────────────
 
+internal val DAY_NAMES_SHORT = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+
 internal val MONTH_NAMES = arrayOf(
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",

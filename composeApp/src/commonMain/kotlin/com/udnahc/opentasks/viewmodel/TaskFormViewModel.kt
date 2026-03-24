@@ -3,53 +3,51 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.model.Category
-import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
-import com.udnahc.opentasks.domain.action.note.AddNoteAction
-import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
-import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
 import com.udnahc.opentasks.domain.action.task.AddTaskAction
-import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
-import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
+import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
-import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
-import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class AppViewModel(
-    observeAllTasks: ObserveAllTasksUseCase,
+class TaskFormViewModel(
+    private val observeTaskByIdUseCase: ObserveTaskByIdUseCase,
     observeAllCategories: ObserveAllCategoriesUseCase,
-    observeAllNotes: ObserveAllNotesUseCase,
     private val addTaskAction: AddTaskAction,
     private val updateTaskAction: UpdateTaskAction,
-    private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
+    private val deleteTaskAction: DeleteTaskAction,
     private val addCategoryAction: AddCategoryAction,
-    private val addNoteAction: AddNoteAction,
-    private val updateNoteAction: UpdateNoteAction,
-    private val deleteNoteAction: DeleteNoteAction,
-    private val initializeSyncAction: InitializeSyncAction,
-    private val rescheduleAllRemindersAction: RescheduleAllRemindersAction,
 ) : ViewModel() {
 
-    val tasks: StateFlow<List<Task>> = observeAllTasks()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _taskId = MutableStateFlow<String?>(null)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val editTask: StateFlow<Task?> = _taskId
+        .flatMapLatest { id ->
+            if (id != null) observeTaskByIdUseCase(id) else flowOf(null)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val categories: StateFlow<List<Category>> = observeAllCategories()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val notes: StateFlow<List<Note>> = observeAllNotes()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    fun setTaskId(taskId: String) {
+        _taskId.value = taskId
+    }
 
     fun addTask(
         title: String,
@@ -71,7 +69,7 @@ class AppViewModel(
         dateReminders: String = "",
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val task = addTaskAction(
+            addTaskAction(
                 title = title,
                 content = content,
                 priority = priority,
@@ -90,45 +88,18 @@ class AppViewModel(
                 durationReminders = durationReminders,
                 dateReminders = dateReminders,
             )
-            scheduleTaskRemindersAction(task)
         }
     }
 
     fun updateTask(task: Task) {
-        viewModelScope.launch(Dispatchers.IO) {
-            updateTaskAction(task)
-            scheduleTaskRemindersAction(task)
-        }
+        viewModelScope.launch(Dispatchers.IO) { updateTaskAction(task) }
+    }
+
+    fun deleteTask(task: Task) {
+        viewModelScope.launch(Dispatchers.IO) { deleteTaskAction(task) }
     }
 
     fun addCategory(name: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            addCategoryAction(name)
-        }
-    }
-
-    fun addNote(title: String, content: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            addNoteAction(title, content)
-        }
-    }
-
-    fun updateNote(note: Note) {
-        viewModelScope.launch(Dispatchers.IO) {
-            updateNoteAction(note)
-        }
-    }
-
-    fun deleteNote(note: Note) {
-        viewModelScope.launch(Dispatchers.IO) {
-            deleteNoteAction(note)
-        }
-    }
-
-    fun sync() {
-        viewModelScope.launch(Dispatchers.IO) {
-            initializeSyncAction()
-            rescheduleAllRemindersAction()
-        }
+        viewModelScope.launch(Dispatchers.IO) { addCategoryAction(name) }
     }
 }

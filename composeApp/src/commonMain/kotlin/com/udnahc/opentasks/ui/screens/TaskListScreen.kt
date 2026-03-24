@@ -1,8 +1,5 @@
 package com.udnahc.opentasks.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -20,9 +17,6 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,7 +43,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.ui.preview.PreviewSampleData
@@ -65,8 +58,6 @@ import opentasks.composeapp.generated.resources.import_from_ics
 import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.completed
 import opentasks.composeapp.generated.resources.ic_check_box
-import opentasks.composeapp.generated.resources.ic_chevron_right
-import opentasks.composeapp.generated.resources.ic_dropdown
 import opentasks.composeapp.generated.resources.ic_more_vert
 import opentasks.composeapp.generated.resources.ic_check_box_outline
 import opentasks.composeapp.generated.resources.ic_unfold
@@ -85,8 +76,6 @@ fun TaskListScreen(
     selectedCategoryId: String,
     onSelectedCategoryChanged: (String) -> Unit,
     onTaskClick: (Task) -> Unit,
-    onImportCalendar: () -> Unit = {},
-    onImportIcs: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
 ) {
     // Sync parent's selectedCategoryId into ViewModel for the derived flow
@@ -109,8 +98,6 @@ fun TaskListScreen(
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onListClick = { showCategoryPicker = true },
-        onImportCalendar = onImportCalendar,
-        onImportIcs = onImportIcs,
         onSettingsClick = onSettingsClick,
     )
 
@@ -141,8 +128,6 @@ private fun TaskListContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onListClick: () -> Unit = {},
-    onImportCalendar: () -> Unit = {},
-    onImportIcs: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -161,7 +146,10 @@ private fun TaskListContent(
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // Task list — fills entire screen, scrolls behind top bar and bottom nav
         if (activeTasks.isEmpty() && completedTasks.isEmpty()) {
-            EmptyTasksPlaceholder()
+            EmptyPlaceholder(
+                text = stringResource(Res.string.no_tasks),
+                modifier = Modifier.fillMaxSize(),
+            )
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -189,21 +177,34 @@ private fun TaskListContent(
                         Spacer(Modifier.size(dimens.spacerXLarge))
                     }
 
-                    item(key = "completed_header") {
-                        CompletedSectionCard(
+                    item(key = "completed_section") {
+                        CollapsibleSection(
+                            label = stringResource(Res.string.completed).uppercase(),
                             count = completedTasks.size,
                             isCollapsed = completedCollapsed,
                             onToggle = { completedCollapsed = !completedCollapsed },
-                        )
-                    }
-
-                    item(key = "completed_content") {
-                        CompletedTasksList(
-                            tasks = completedTasks,
-                            isCollapsed = completedCollapsed,
-                            onTaskClick = onTaskClick,
-                            onToggleComplete = onToggleComplete,
-                        )
+                            headerCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                            contentCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                        ) {
+                            Column {
+                                completedTasks.forEachIndexed { index, task ->
+                                    val onToggle = remember(task.id) { { onToggleComplete(task) } }
+                                    val onClick = remember(task.id) { { onTaskClick(task) } }
+                                    CompletedTaskRow(
+                                        task = task,
+                                        onToggleComplete = onToggle,
+                                        onClick = onClick,
+                                    )
+                                    if (index < completedTasks.lastIndex) {
+                                        HorizontalDivider(
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                            thickness = dimens.dividerThin,
+                                            modifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -213,23 +214,7 @@ private fun TaskListContent(
         TaskListTopBar(
             listName = listName,
             onListClick = onListClick,
-            onImportCalendar = onImportCalendar,
-            onImportIcs = onImportIcs,
             onSettingsClick = onSettingsClick,
-        )
-    }
-}
-
-@Composable
-private fun EmptyTasksPlaceholder() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = stringResource(Res.string.no_tasks),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -239,8 +224,6 @@ private fun EmptyTasksPlaceholder() {
 private fun TaskListTopBar(
     listName: String,
     onListClick: () -> Unit,
-    onImportCalendar: () -> Unit = {},
-    onImportIcs: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
 ) {
     TopAppBar(
@@ -274,151 +257,8 @@ private fun TaskListTopBar(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Box {
-                var showOverflowMenu by remember { mutableStateOf(false) }
-                IconButton(onClick = { showOverflowMenu = true }) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_more_vert),
-                        contentDescription = stringResource(Res.string.more),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                DropdownMenu(
-                    expanded = showOverflowMenu,
-                    onDismissRequest = { showOverflowMenu = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(Res.string.import_from_calendar)) },
-                        onClick = {
-                            showOverflowMenu = false
-                            onImportCalendar()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(Res.string.import_from_ics)) },
-                        onClick = {
-                            showOverflowMenu = false
-                            onImportIcs()
-                        },
-                    )
-                }
-            }
         },
     )
-}
-
-@Composable
-private fun CompletedSectionCard(
-    count: Int,
-    isCollapsed: Boolean,
-    onToggle: () -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = dimens.paddingLarge),
-        shape = if (isCollapsed) {
-            RoundedCornerShape(dimens.cornerXLarge)
-        } else {
-            RoundedCornerShape(topStart = dimens.cornerXLarge, topEnd = dimens.cornerXLarge)
-        },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-    ) {
-        CompletedSectionHeader(
-            count = count,
-            isCollapsed = isCollapsed,
-            onClick = onToggle,
-        )
-    }
-}
-
-@Composable
-private fun CompletedTasksList(
-    tasks: List<Task>,
-    isCollapsed: Boolean,
-    onTaskClick: (Task) -> Unit,
-    onToggleComplete: (Task) -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    AnimatedVisibility(
-        visible = !isCollapsed,
-        enter = expandVertically(),
-        exit = shrinkVertically(),
-    ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = dimens.paddingLarge),
-            shape = RoundedCornerShape(
-                bottomStart = dimens.cornerXLarge,
-                bottomEnd = dimens.cornerXLarge,
-            ),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
-        ) {
-            Column {
-                tasks.forEachIndexed { index, task ->
-                    val onToggle = remember(task.id) { { onToggleComplete(task) } }
-                    val onClick = remember(task.id) { { onTaskClick(task) } }
-                    CompletedTaskRow(
-                        task = task,
-                        onToggleComplete = onToggle,
-                        onClick = onClick,
-                    )
-                    if (index < tasks.lastIndex) {
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            thickness = dimens.dividerThin,
-                            modifier = Modifier.padding(horizontal = dimens.paddingLarge),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CompletedSectionHeader(
-    count: Int,
-    isCollapsed: Boolean,
-    onClick: () -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = stringResource(Res.string.completed).uppercase(),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.width(dimens.spacerSmall))
-        Icon(
-            painter = painterResource(
-                if (isCollapsed) Res.drawable.ic_chevron_right
-                else Res.drawable.ic_dropdown
-            ),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(dimens.iconMedium),
-        )
-    }
 }
 
 @Composable
@@ -491,7 +331,7 @@ private fun CompletedTaskRow(
             Icon(
                 painter = painterResource(Res.drawable.ic_check_box),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                 modifier = Modifier.size(dimens.iconLarge),
             )
         }

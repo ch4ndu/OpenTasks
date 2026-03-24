@@ -38,4 +38,10 @@ interface CategoryDao {
 
     @Upsert
     suspend fun upsert(category: Category)
+
+    @Query("SELECT * FROM categories")
+    suspend fun getAllCategoriesOnce(): List<Category>
+
+    @Query("DELETE FROM categories")
+    suspend fun deleteAll()
 }

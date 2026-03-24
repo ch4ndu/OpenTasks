@@ -11,5 +11,10 @@ class ObserveTasksForPriorityUseCase(private val repository: TaskRepository) {
     operator fun invoke(priority: StateFlow<TaskPriority>): Flow<List<Task>> =
         combine(repository.getAllTasks(), priority) { tasks, p ->
             tasks.filter { it.priority == p }
+                .sortedWith(
+                    compareBy<Task> { it.isCompleted }
+                        .thenBy { it.deadline == null }
+                        .thenBy { it.deadline ?: Long.MAX_VALUE }
+                )
         }
 }

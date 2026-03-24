@@ -53,8 +53,8 @@ class SyncService(
             try {
                 val body = Json.encodeToString(task.toTaskRecord())
                 if (task.isDeleted) {
-                    runCatching { client.records.delete("tasks", task.id) }
-                    taskDao.delete(task)
+                    val deleted = runCatching { client.records.delete("tasks", task.id) }
+                    if (deleted.isSuccess) taskDao.delete(task)
                 } else {
                     try {
                         client.records.update<TaskRecord>("tasks", task.id, body)
@@ -75,8 +75,8 @@ class SyncService(
             try {
                 val body = Json.encodeToString(category.toCategoryRecord())
                 if (category.isDeleted) {
-                    runCatching { client.records.delete("categories", category.id) }
-                    categoryDao.delete(category)
+                    val deleted = runCatching { client.records.delete("categories", category.id) }
+                    if (deleted.isSuccess) categoryDao.delete(category)
                 } else {
                     try {
                         client.records.update<CategoryRecord>("categories", category.id, body)
@@ -97,8 +97,8 @@ class SyncService(
             try {
                 val body = Json.encodeToString(note.toNoteRecord())
                 if (note.isDeleted) {
-                    runCatching { client.records.delete("notes", note.id) }
-                    noteDao.delete(note)
+                    val deleted = runCatching { client.records.delete("notes", note.id) }
+                    if (deleted.isSuccess) noteDao.delete(note)
                 } else {
                     try {
                         client.records.update<NoteRecord>("notes", note.id, body)
@@ -126,6 +126,13 @@ class SyncService(
                     taskDao.upsert(record.toTask())
                 }
             }
+            // Remove local synced tasks that no longer exist on server
+            val remoteIds = remoteRecords.filter { !it.isDeleted }.map { it.localId }.toSet()
+            for (local in taskDao.getAllTasksOnce()) {
+                if (local.isSynced && local.id !in remoteIds && !local.isDeleted) {
+                    taskDao.delete(local)
+                }
+            }
         } catch (e: Exception) {
             log.e { "Failed to pull tasks: ${e.message}" }
         }
@@ -142,6 +149,13 @@ class SyncService(
                     categoryDao.upsert(record.toCategory())
                 }
             }
+            // Remove local synced categories that no longer exist on server
+            val remoteIds = remoteRecords.filter { !it.isDeleted }.map { it.localId }.toSet()
+            for (local in categoryDao.getAllCategoriesOnce()) {
+                if (local.isSynced && local.id !in remoteIds && !local.isDeleted) {
+                    categoryDao.delete(local)
+                }
+            }
         } catch (e: Exception) {
             log.e { "Failed to pull categories: ${e.message}" }
         }
@@ -156,6 +170,13 @@ class SyncService(
                     if (local != null) noteDao.delete(local)
                 } else if (local == null || record.localUpdatedAt > local.updatedAt) {
                     noteDao.upsert(record.toNote())
+                }
+            }
+            // Remove local synced notes that no longer exist on server
+            val remoteIds = remoteRecords.filter { !it.isDeleted }.map { it.localId }.toSet()
+            for (local in noteDao.getAllNotesOnce()) {
+                if (local.isSynced && local.id !in remoteIds && !local.isDeleted) {
+                    noteDao.delete(local)
                 }
             }
         } catch (e: Exception) {

@@ -14,6 +14,8 @@ import kotlinx.datetime.toLocalDateTime
 import kotlinx.datetime.until
 
 const val MILLIS_PER_DAY = 86400000L
+const val MILLIS_PER_HOUR = 3600000L
+const val MILLIS_PER_MINUTE = 60000L
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  CURRENT TIME
@@ -64,15 +66,15 @@ fun localMillisToLocalDate(localMillis: Long): LocalDate =
 
 // ── Pure-arithmetic component extractors (no kotlinx-datetime, safe for previews) ──
 
-fun extractHour(localMillis: Long): Int = ((localMillis % 86400000L + 86400000L) % 86400000L / 3600000L).toInt()
-fun extractMinute(localMillis: Long): Int = ((localMillis % 3600000L + 3600000L) % 3600000L / 60000L).toInt()
+fun extractHour(localMillis: Long): Int = ((localMillis % MILLIS_PER_DAY + MILLIS_PER_DAY) % MILLIS_PER_DAY / MILLIS_PER_HOUR).toInt()
+fun extractMinute(localMillis: Long): Int = ((localMillis % MILLIS_PER_HOUR + MILLIS_PER_HOUR) % MILLIS_PER_HOUR / MILLIS_PER_MINUTE).toInt()
 
 /**
  * Extract year, month, day from local-shifted epoch millis using civil date arithmetic.
  * Algorithm adapted from Howard Hinnant's `civil_from_days`.
  */
 private fun civilFromMillis(localMillis: Long): Triple<Int, Int, Int> {
-    val z = (localMillis / 86400000L) + 719468
+    val z = (localMillis / MILLIS_PER_DAY) + 719468
     val era = (if (z >= 0) z else z - 146096) / 146097
     val doe = (z - era * 146097).toInt()                 // day of era [0, 146096]
     val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
@@ -140,14 +142,14 @@ fun daysInMonth(year: Int, month: Int): Int {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Day key from local-shifted millis. Matches old `millis / 86400000L`. */
-fun dayKey(localMillis: Long): Long = localMillis / 86400000L
+fun dayKey(localMillis: Long): Long = localMillis / MILLIS_PER_DAY
 
 /** Day key from a year/month/day. */
 fun dayKeyFromDate(year: Int, month: Int, day: Int): Long =
-    startOfDayLocalMillis(year, month, day) / 86400000L
+    startOfDayLocalMillis(year, month, day) / MILLIS_PER_DAY
 
 /** Local-shifted millis from a day key. */
-fun dayKeyToMillis(dayKey: Long): Long = dayKey * 86400000L
+fun dayKeyToMillis(dayKey: Long): Long = dayKey * MILLIS_PER_DAY
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  WEEK UTILITIES

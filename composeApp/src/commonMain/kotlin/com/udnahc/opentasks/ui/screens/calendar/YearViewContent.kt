@@ -1,12 +1,9 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,28 +12,19 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.ui.theme.PrimaryBlue
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  YEAR VIEW
@@ -109,7 +97,6 @@ private fun MiniMonthCard(
     modifier: Modifier = Modifier,
 ) {
     val dimens = OpenTasksTheme.dimens
-    val isCurrentMonth = year == todayYear && month == todayMonth
 
     Card(
         onClick = onClick,
@@ -122,74 +109,17 @@ private fun MiniMonthCard(
         Column(
             modifier = Modifier.padding(dimens.paddingMedium),
         ) {
-            // Month name header
-            Text(
-                text = monthNameShort(month),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = if (isCurrentMonth) PrimaryBlue
-                else MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(bottom = dimens.paddingSmall),
+            MiniCalendarGrid(
+                year = year,
+                month = month,
+                todayYear = todayYear,
+                todayMonth = todayMonth,
+                todayDay = todayDay,
+                tasksByDay = tasksByDay,
+                onDayClick = null,
+                showMonthHeader = true,
+                useAspectRatioCells = true,
             )
-
-            // Day headers
-            val headers = listOf("S", "M", "T", "W", "T", "F", "S")
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-            ) {
-                headers.forEach {
-                    Text(
-                        text = it,
-                        style = OpenTasksTheme.typography.calendarEventOverflow,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(dimens.spacerTiny))
-
-            // Mini calendar grid
-            val weeks = remember(year, month) { buildMonthWeeks(year, month) }
-            weeks.forEach { week ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    week.forEach { day ->
-                        val isToday =
-                            day.year == todayYear && day.month == todayMonth && day.day == todayDay
-                        val dayKey = dayKeyFromDate(day.year, day.month, day.day)
-                        val hasTasks = tasksByDay.containsKey(dayKey)
-
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f)
-                                .then(
-                                    if (isToday) Modifier.background(PrimaryBlue, CircleShape)
-                                    else Modifier
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = if (day.isCurrentMonth) day.day.toString() else "",
-                                style = OpenTasksTheme.typography.calendarEventOverflow,
-                                fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                                color = when {
-                                    isToday -> Color.White
-                                    hasTasks && day.isCurrentMonth -> PrimaryBlue
-                                    day.isCurrentMonth -> MaterialTheme.colorScheme.onBackground
-                                    else -> Color.Transparent
-                                },
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }

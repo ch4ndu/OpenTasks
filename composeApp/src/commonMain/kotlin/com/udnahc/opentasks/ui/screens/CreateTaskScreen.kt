@@ -116,6 +116,9 @@ import opentasks.composeapp.generated.resources.date_and_reminder
 import opentasks.composeapp.generated.resources.dec
 import opentasks.composeapp.generated.resources.december
 import opentasks.composeapp.generated.resources.delete
+import opentasks.composeapp.generated.resources.delete_task_message
+import opentasks.composeapp.generated.resources.delete_task_title
+import opentasks.composeapp.generated.resources.ic_delete
 import opentasks.composeapp.generated.resources.description_hint
 import opentasks.composeapp.generated.resources.done
 import opentasks.composeapp.generated.resources.duration
@@ -266,6 +269,7 @@ fun CreateTaskScreen(
     categories: List<Category> = emptyList(),
     onAddCategory: (String) -> Unit = {},
     onSave: (TaskFormData) -> Unit = {},
+    onDelete: (() -> Unit)? = null,
 ) {
     CreateTaskContent(
         onBack = onBack,
@@ -279,6 +283,7 @@ fun CreateTaskScreen(
         categories = categories,
         onAddCategory = onAddCategory,
         onSave = onSave,
+        onDelete = onDelete,
     )
 }
 
@@ -296,6 +301,7 @@ private fun CreateTaskContent(
     categories: List<Category> = emptyList(),
     onAddCategory: (String) -> Unit = {},
     onSave: (TaskFormData) -> Unit = {},
+    onDelete: (() -> Unit)? = null,
 ) {
     val stateKey = editTask?.id ?: ""
     var title by remember(stateKey) { mutableStateOf(editTask?.title ?: initialTitle) }
@@ -372,6 +378,7 @@ private fun CreateTaskContent(
             },
             onBack = onBack,
             onListClick = { showCategoryPicker = true },
+            onDelete = onDelete,
         )
 
         val dimens = OpenTasksTheme.dimens
@@ -668,7 +675,9 @@ private fun CreateTaskTopBar(
     onPrioritySelected: (TaskPriority) -> Unit,
     onBack: () -> Unit,
     onListClick: () -> Unit = {},
+    onDelete: (() -> Unit)? = null,
 ) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent,
@@ -718,15 +727,41 @@ private fun CreateTaskTopBar(
                     onSelected = onPrioritySelected,
                 )
             }
-            IconButton(onClick = { }) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_more_vert),
-                    contentDescription = stringResource(Res.string.more),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            if (onDelete != null) {
+                IconButton(onClick = { showDeleteConfirm = true }) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_delete),
+                        contentDescription = stringResource(Res.string.delete),
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         },
     )
+
+    if (showDeleteConfirm && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(stringResource(Res.string.delete_task_title)) },
+            text = { Text(stringResource(Res.string.delete_task_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete()
+                }) {
+                    Text(
+                        stringResource(Res.string.delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(stringResource(Res.string.cancel))
+                }
+            },
+        )
+    }
 }
 
 @Composable

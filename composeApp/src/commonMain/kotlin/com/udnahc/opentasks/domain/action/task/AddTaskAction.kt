@@ -7,7 +7,10 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.repository.TaskRepository
 
-class AddTaskAction(private val repository: TaskRepository) {
+class AddTaskAction(
+    private val repository: TaskRepository,
+    private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
+) {
     suspend operator fun invoke(
         title: String,
         content: String,
@@ -56,6 +59,7 @@ class AddTaskAction(private val repository: TaskRepository) {
                 updatedAt = now,
             )
         repository.insert(task)
+        scheduleTaskRemindersAction(task)
         return task
     }
 }

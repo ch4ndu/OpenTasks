@@ -21,7 +21,7 @@ interface TaskDao {
     @Delete
     suspend fun delete(task: Task)
 
-    @Query("SELECT * FROM tasks ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM tasks WHERE isDeleted = 0 ORDER BY updatedAt DESC")
     fun getAllTasks(): Flow<List<Task>>
 
     @Query("SELECT * FROM tasks WHERE isCompleted = 0 AND deadline IS NOT NULL")
@@ -29,6 +29,9 @@ interface TaskDao {
 
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getTaskById(id: String): Task?
+
+    @Query("SELECT * FROM tasks WHERE id = :id")
+    fun observeTaskById(id: String): Flow<Task?>
 
     @Query("SELECT * FROM tasks WHERE sourceExternalId = :externalId LIMIT 1")
     suspend fun getTaskByExternalId(externalId: String): Task?
@@ -41,4 +44,10 @@ interface TaskDao {
 
     @Upsert
     suspend fun upsert(task: Task)
+
+    @Query("SELECT * FROM tasks")
+    suspend fun getAllTasksOnce(): List<Task>
+
+    @Query("DELETE FROM tasks")
+    suspend fun deleteAll()
 }

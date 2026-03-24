@@ -22,6 +22,11 @@ class TaskRepositoryImpl(
     override suspend fun getTaskById(id: String): Task? =
         taskDao.getTaskById(id)?.withLocalTimestamps()
 
+    override fun observeTaskById(id: String): Flow<Task?> =
+        taskDao.observeTaskById(id)
+            .map { it?.withLocalTimestamps() }
+            .flowOn(Dispatchers.Default)
+
     override suspend fun getTaskByExternalId(externalId: String): Task? =
         taskDao.getTaskByExternalId(externalId)
 

@@ -30,10 +30,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.formatDateShort
+import com.udnahc.opentasks.data.extensions.formatTime12Hr
 import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.preview.PreviewSampleData
+import com.udnahc.opentasks.ui.screens.EmptyPlaceholder
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
@@ -111,7 +115,7 @@ internal fun TimelineTaskRow(
                     else Res.drawable.ic_check_box_outline
                 ),
                 contentDescription = null,
-                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                 else taskPriorityColor(task.priority),
                 modifier = Modifier
                     .size(dimens.calendarTimelineMarkerSize)
@@ -197,7 +201,7 @@ internal fun CardTaskRow(
                     else Res.drawable.ic_check_box_outline
                 ),
                 contentDescription = null,
-                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                 else taskPriorityColor(task.priority),
                 modifier = Modifier.size(dimens.iconLarge),
             )
@@ -213,7 +217,7 @@ internal fun CardTaskRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (task.deadline != null && !task.isCompleted) {
+            if (task.deadline != null) {
                 val dayPrefix = if (isToday) stringResource(Res.string.today) else formatDateShort(task.deadline)
                 val h = extractHour(task.deadline)
                 val m = extractMinute(task.deadline)
@@ -271,7 +275,7 @@ internal fun CalendarTaskRow(
                     else Res.drawable.ic_check_box_outline
                 ),
                 contentDescription = null,
-                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                 else taskPriorityColor(task.priority),
                 modifier = Modifier.size(dimens.iconLarge),
             )
@@ -287,7 +291,7 @@ internal fun CalendarTaskRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (task.deadline != null && !task.isCompleted) {
+            if (task.deadline != null) {
                 Text(
                     text = formatTimeFromLocalMillis(task.deadline),
                     style = MaterialTheme.typography.labelMedium,
@@ -303,21 +307,113 @@ internal fun CalendarTaskRow(
     }
 }
 
+// ── Timeline event bar (shared by Day, 3-Day, and Week views) ───────────────
+
+/**
+ * Compact event bar used inside Day, 3-Day, and Week timeline grids.
+ *
+ * @param task           The task to display.
+ * @param modifier       Outer modifier (size, offset, padding applied by caller).
+ * @param onClick        Called when the bar is tapped.
+ * @param onToggleComplete Called when the checkbox icon is tapped. When null the
+ *                         checkbox icon is omitted entirely (Week view).
+ * @param iconSize       Size of the checkbox icon. Ignored when [onToggleComplete] is null.
+ * @param horizontalPadding Inner horizontal padding of the bar content.
+ * @param iconSpacing    Space between the checkbox icon and the title text.
+ * @param showTime       Whether to display the formatted time at the trailing edge.
+ */
+@Composable
+internal fun TimelineEventBar(
+    task: Task,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    onToggleComplete: (() -> Unit)? = null,
+    iconSize: Dp = OpenTasksTheme.dimens.iconSmall,
+    horizontalPadding: Dp = 2.dp,
+    iconSpacing: Dp = 2.dp,
+    showTime: Boolean = false,
+) {
+    val dimens = OpenTasksTheme.dimens
+    val priorityColor = taskPriorityColor(task.priority)
+    val bgAlpha = if (onToggleComplete != null && task.isCompleted) 0.1f else 0.2f
+    val contentColor = if (onToggleComplete != null && task.isCompleted)
+        MaterialTheme.colorScheme.onSurfaceVariant else priorityColor
+
+    if (onToggleComplete != null) {
+        // Day view & 3-Day view: Row with checkbox icon + title (+ optional time)
+        Row(
+            modifier = modifier
+                .clip(RoundedCornerShape(dimens.cornerTiny))
+                .background(priorityColor.copy(alpha = bgAlpha))
+                .clickable(onClick = onClick)
+                .padding(horizontal = horizontalPadding),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(
+                    if (task.isCompleted) Res.drawable.ic_check_box
+                    else Res.drawable.ic_check_box_outline
+                ),
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier
+                    .size(iconSize)
+                    .clickable(onClick = onToggleComplete),
+            )
+            Spacer(Modifier.width(iconSpacing))
+            Text(
+                text = task.title,
+                style = OpenTasksTheme.typography.calendarEventTitle,
+                color = contentColor,
+                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = if (showTime) Modifier.weight(1f) else Modifier,
+            )
+            if (showTime && task.deadline != null) {
+                val hour = extractHour(task.deadline)
+                val minute = extractMinute(task.deadline)
+                if (hour != 0 || minute != 0) {
+                    Spacer(Modifier.width(dimens.paddingSmall))
+                    Text(
+                        text = formatTime12Hr(hour, minute),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    } else {
+        // Week view: simple Box with title only, no checkbox
+        Box(
+            modifier = modifier
+                .clip(RoundedCornerShape(dimens.cornerTiny))
+                .background(priorityColor.copy(alpha = 0.4f))
+                .clickable(onClick = onClick)
+                .padding(horizontal = horizontalPadding),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                text = task.title,
+                style = OpenTasksTheme.typography.calendarEventTitle,
+                color = priorityColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
 // ── Empty day placeholder ───────────────────────────────────────────────────
 
 @Composable
 internal fun EmptyDayPlaceholder() {
     val dimens = OpenTasksTheme.dimens
-    Box(
+    EmptyPlaceholder(
+        text = stringResource(Res.string.no_tasks),
         modifier = Modifier.fillMaxWidth().padding(vertical = dimens.calendarEmptyPadding),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = stringResource(Res.string.no_tasks),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    )
 }
 
 // ── Previews ─────────────────────────────────────────────────────────────────
@@ -356,6 +452,38 @@ private fun CalendarTaskRowPreview() {
         CalendarTaskRow(
             task = PreviewSampleData.sampleTasks[0],
             onToggleComplete = {},
+            onClick = {},
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun TimelineEventBarDayPreview() {
+    OpenTasksTheme {
+        TimelineEventBar(
+            task = PreviewSampleData.sampleTasks[0],
+            modifier = Modifier.fillMaxWidth().height(24.dp),
+            onClick = {},
+            onToggleComplete = {},
+            iconSize = OpenTasksTheme.dimens.iconMedium,
+            horizontalPadding = OpenTasksTheme.dimens.paddingSmall,
+            iconSpacing = OpenTasksTheme.dimens.paddingSmall,
+            showTime = true,
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun TimelineEventBarWeekPreview() {
+    OpenTasksTheme {
+        TimelineEventBar(
+            task = PreviewSampleData.sampleTasks[0],
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(OpenTasksTheme.dimens.calendarMonthGridEventHeight)
+                .padding(vertical = 1.dp),
             onClick = {},
         )
     }

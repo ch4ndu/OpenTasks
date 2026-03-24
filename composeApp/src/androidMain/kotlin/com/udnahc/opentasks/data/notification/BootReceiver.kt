@@ -3,8 +3,7 @@ package com.udnahc.opentasks.data.notification
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.udnahc.opentasks.data.database.AppDatabase
-import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
+import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -13,8 +12,7 @@ import org.koin.core.component.inject
 
 class BootReceiver : BroadcastReceiver(), KoinComponent {
 
-    private val database: AppDatabase by inject()
-    private val scheduleAction: ScheduleTaskRemindersAction by inject()
+    private val rescheduleAllRemindersAction: RescheduleAllRemindersAction by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
@@ -22,8 +20,7 @@ class BootReceiver : BroadcastReceiver(), KoinComponent {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val tasks = database.taskDao().getTasksWithDeadlines()
-                tasks.forEach { task -> scheduleAction(task) }
+                rescheduleAllRemindersAction()
             } finally {
                 pendingResult.finish()
             }

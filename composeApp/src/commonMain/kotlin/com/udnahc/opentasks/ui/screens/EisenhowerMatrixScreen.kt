@@ -127,21 +127,12 @@ private fun MatrixHeader(
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        Row {
-            IconButton(onClick = onSettingsClick) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_settings),
-                    contentDescription = stringResource(Res.string.settings),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(onClick = { /* TODO: implement menu */ }) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_more_vert),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        IconButton(onClick = onSettingsClick) {
+            Icon(
+                painter = painterResource(Res.drawable.ic_settings),
+                contentDescription = stringResource(Res.string.settings),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -342,7 +333,7 @@ private fun QuadrantTaskRow(
                 .size(dimens.checkboxSize)
                 .then(
                     if (task.isCompleted) {
-                        Modifier.background(color, RoundedCornerShape(dimens.checkboxCorner))
+                        Modifier.background(color.copy(alpha = 0.4f), RoundedCornerShape(dimens.checkboxCorner))
                     } else {
                         Modifier.border(dimens.checkboxBorder, color, RoundedCornerShape(dimens.checkboxCorner))
                     }
@@ -354,7 +345,7 @@ private fun QuadrantTaskRow(
                 Icon(
                     painter = painterResource(Res.drawable.ic_check),
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(dimens.checkboxIconSize),
                 )
             }
@@ -366,7 +357,7 @@ private fun QuadrantTaskRow(
             Text(
                 text = task.title,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                         else MaterialTheme.colorScheme.onBackground,
                 textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
                 maxLines = 2,

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.map
 class ObserveTasksByDayUseCase(private val repository: TaskRepository) {
     operator fun invoke(): Flow<Map<Long, List<Task>>> =
         repository.getAllTasks().map { list ->
-            list.filter { it.deadline != null }.groupBy { dayKey(it.deadline!!) }
+            list.mapNotNull { task -> task.deadline?.let { dl -> dayKey(dl) to task } }
+                .groupBy({ it.first }, { it.second })
         }
 }

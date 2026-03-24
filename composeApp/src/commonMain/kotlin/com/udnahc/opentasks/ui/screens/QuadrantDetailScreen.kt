@@ -1,8 +1,5 @@
 package com.udnahc.opentasks.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,9 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -41,15 +35,10 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
-import com.udnahc.opentasks.data.extensions.currentDay
-import com.udnahc.opentasks.data.extensions.currentMonth
-import com.udnahc.opentasks.data.extensions.currentYear
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.extensions.utcNow
-import kotlinx.datetime.DateTimeUnit
-import kotlinx.datetime.plus
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
@@ -62,19 +51,18 @@ import com.udnahc.opentasks.ui.theme.PriorityLow
 import com.udnahc.opentasks.ui.theme.PriorityMedium
 import com.udnahc.opentasks.ui.theme.PriorityNone
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.plus
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
 import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.completed
-import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.ic_add
 import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.ic_check_box
-import opentasks.composeapp.generated.resources.ic_chevron_right
-import opentasks.composeapp.generated.resources.ic_dropdown
-import opentasks.composeapp.generated.resources.ic_more_vert
 import opentasks.composeapp.generated.resources.ic_check_box_outline
 import opentasks.composeapp.generated.resources.ic_repeat
+import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.later
 import opentasks.composeapp.generated.resources.next_7_days
 import opentasks.composeapp.generated.resources.no_date
@@ -185,15 +173,6 @@ private fun QuadrantDetailContent(
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                 },
-                actions = {
-                    IconButton(onClick = { /* TODO: implement menu */ }) {
-                        Icon(
-                            painter = painterResource(Res.drawable.ic_more_vert),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
             )
         },
     ) { innerPadding ->
@@ -208,25 +187,37 @@ private fun QuadrantDetailContent(
 
                 val isCollapsed = collapsedState[category] == true
 
-                item(key = "header_$category") {
+                item(key = "section_$category") {
                     val label = categoryLabel(category)
-                    CollapsibleCategoryHeader(
+                    CollapsibleSection(
                         label = label,
                         count = categoryTasks.size,
                         isCollapsed = isCollapsed,
                         onToggle = { collapsedState[category] = !isCollapsed },
-                    )
-                }
-
-                item(key = "content_$category") {
-                    CollapsibleCategoryContent(
-                        tasks = categoryTasks,
-                        isCollapsed = isCollapsed,
-                        priority = priority,
-                        isOverdue = category == TaskCategory.OVERDUE,
-                        onTaskClick = onTaskClick,
-                        onToggleComplete = onToggleComplete,
-                    )
+                        headerCardModifier = Modifier.padding(top = dimens.paddingMedium),
+                        labelColor = MaterialTheme.colorScheme.onBackground,
+                    ) {
+                        Column {
+                            categoryTasks.forEachIndexed { index, task ->
+                                val onToggle = remember(task.id) { { onToggleComplete(task) } }
+                                val onClick = remember(task.id) { { onTaskClick(task) } }
+                                DetailTaskRow(
+                                    task = task,
+                                    priority = priority,
+                                    isOverdue = category == TaskCategory.OVERDUE,
+                                    onToggleComplete = onToggle,
+                                    onClick = onClick,
+                                )
+                                if (index < categoryTasks.lastIndex) {
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        thickness = dimens.dividerThin,
+                                        modifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 item(key = "spacer_$category") {
@@ -234,125 +225,6 @@ private fun QuadrantDetailContent(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun CollapsibleCategoryHeader(
-    label: String,
-    count: Int,
-    isCollapsed: Boolean,
-    onToggle: () -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = dimens.paddingMedium),
-        shape = if (isCollapsed) {
-            RoundedCornerShape(dimens.cornerXLarge)
-        } else {
-            RoundedCornerShape(topStart = dimens.cornerXLarge, topEnd = dimens.cornerXLarge)
-        },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-    ) {
-        CategoryHeader(
-            label = label,
-            count = count,
-            isCollapsed = isCollapsed,
-            onClick = onToggle,
-        )
-    }
-}
-
-@Composable
-private fun CollapsibleCategoryContent(
-    tasks: List<Task>,
-    isCollapsed: Boolean,
-    priority: TaskPriority,
-    isOverdue: Boolean,
-    onTaskClick: (Task) -> Unit,
-    onToggleComplete: (Task) -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    AnimatedVisibility(
-        visible = !isCollapsed,
-        enter = expandVertically(),
-        exit = shrinkVertically(),
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(
-                bottomStart = dimens.cornerXLarge,
-                bottomEnd = dimens.cornerXLarge,
-            ),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
-        ) {
-            Column {
-                tasks.forEachIndexed { index, task ->
-                    val onToggle = remember(task.id) { { onToggleComplete(task) } }
-                    val onClick = remember(task.id) { { onTaskClick(task) } }
-                    DetailTaskRow(
-                        task = task,
-                        priority = priority,
-                        isOverdue = isOverdue,
-                        onToggleComplete = onToggle,
-                        onClick = onClick,
-                    )
-                    if (index < tasks.lastIndex) {
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            thickness = dimens.dividerThin,
-                            modifier = Modifier.padding(horizontal = dimens.paddingLarge),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CategoryHeader(
-    label: String,
-    count: Int,
-    isCollapsed: Boolean,
-    onClick: () -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.width(dimens.spacerSmall))
-        Icon(
-            painter = painterResource(
-                if (isCollapsed) Res.drawable.ic_chevron_right
-                else Res.drawable.ic_dropdown
-            ),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(dimens.iconMedium),
-        )
     }
 }
 
@@ -369,7 +241,10 @@ private fun DetailTaskRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = dimens.paddingLarge, vertical = dimens.listRowCompletedVerticalPadding),
+            .padding(
+                horizontal = dimens.paddingLarge,
+                vertical = dimens.listRowCompletedVerticalPadding
+            ),
         verticalAlignment = Alignment.Top,
     ) {
         IconButton(
@@ -382,8 +257,8 @@ private fun DetailTaskRow(
                     else Res.drawable.ic_check_box_outline
                 ),
                 contentDescription = null,
-                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant
-                    else priorityColor(priority),
+                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                else priorityColor(priority),
                 modifier = Modifier.size(dimens.iconLarge),
             )
         }

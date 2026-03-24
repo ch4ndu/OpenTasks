@@ -1,10 +1,7 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -14,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,34 +24,27 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
-import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
-import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 
-private val MINI_CAL_HEADERS = arrayOf("S", "M", "T", "W", "T", "F", "S")
+// Day name headers moved to CalendarComposables.kt (DayNameHeaders)
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  WEEK VIEW
@@ -189,8 +178,6 @@ private fun WeekViewDayPagerContent(
 
 // ── Single day cell ─────────────────────────────────────────────────────────
 
-private val DAY_NAMES = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-
 @Composable
 private fun WeekViewDayCell(
     dayMillis: Long,
@@ -247,7 +234,7 @@ private fun WeekViewDayCell(
         ) {
             // Header: day name + date number
             Text(
-                text = DAY_NAMES[dayIndex],
+                text = DAY_NAMES_SHORT[dayIndex],
                 style = MaterialTheme.typography.labelSmall,
                 color = if (isSelected) PrimaryBlue
                 else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -294,7 +281,14 @@ private fun WeekViewDayCell(
 
                     visibleTasks.forEach { task ->
                         val onClick = remember(task.id) { { onTaskClick(task) } }
-                        WeekViewEventBar(task = task, onClick = onClick)
+                        TimelineEventBar(
+                            task = task,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(dimens.calendarMonthGridEventHeight)
+                                .padding(vertical = 1.dp),
+                            onClick = onClick,
+                        )
                     }
                     if (overflow > 0) {
                         Text(
@@ -307,35 +301,6 @@ private fun WeekViewDayCell(
                 }
             }
         }
-    }
-}
-
-// ── Event bar ───────────────────────────────────────────────────────────────
-
-@Composable
-private fun WeekViewEventBar(
-    task: Task,
-    onClick: () -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(dimens.calendarMonthGridEventHeight)
-            .padding(vertical = 1.dp)
-            .clip(RoundedCornerShape(dimens.cornerTiny))
-            .background(taskPriorityColor(task.priority).copy(alpha = 0.2f))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 2.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Text(
-            text = task.title,
-            style = OpenTasksTheme.typography.calendarEventTitle,
-            color = taskPriorityColor(task.priority),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -353,26 +318,6 @@ private fun WeekViewMiniCalendar(
     onDayClick: (dayMillis: Long) -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
-    val weeks = remember(year, month) { buildMonthWeeks(year, month) }
-
-    // Find which week row contains the highlighted week
-    val highlightedWeekRowIndex = remember(weeks, highlightedWeekSundayMillis) {
-        weeks.indexOfFirst { week ->
-            val weekSunMillis = startOfDayLocalMillis(week[0].year, week[0].month, week[0].day)
-            weekSunMillis == highlightedWeekSundayMillis
-        }
-    }
-
-    // Animate the highlight band position
-    val animatedRowIndex = remember { Animatable(highlightedWeekRowIndex.coerceAtLeast(0).toFloat()) }
-    LaunchedEffect(highlightedWeekRowIndex) {
-        if (highlightedWeekRowIndex >= 0) {
-            animatedRowIndex.animateTo(
-                highlightedWeekRowIndex.toFloat(),
-                animationSpec = tween(300),
-            )
-        }
-    }
 
     Card(
         modifier = Modifier.fillMaxSize().padding(2.dp),
@@ -394,99 +339,19 @@ private fun WeekViewMiniCalendar(
                 modifier = Modifier.padding(bottom = dimens.spacerTiny),
             )
 
-            // Day headers
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-            ) {
-                MINI_CAL_HEADERS.forEach {
-                    Text(
-                        text = it,
-                        style = OpenTasksTheme.typography.calendarEventOverflow,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(dimens.spacerTiny))
-
-            // Calendar grid with animated week highlight
-            BoxWithConstraints(
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                val rowCount = weeks.size
-                if (rowCount == 0) return@BoxWithConstraints
-                val rowHeightDp = maxHeight / rowCount
-                val rowHeightPx = with(LocalDensity.current) { rowHeightDp.toPx() }
-
-                // Animated highlight band
-                if (highlightedWeekRowIndex >= 0) {
-                    val bandOffsetPx = animatedRowIndex.value * rowHeightPx
-                    val bandOffsetDp = with(LocalDensity.current) { bandOffsetPx.toDp() }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(rowHeightDp)
-                            .padding(horizontal = 1.dp)
-                            .offset(y = bandOffsetDp)
-                            .background(
-                                PrimaryBlue.copy(alpha = 0.12f),
-                                RoundedCornerShape(dimens.cornerSmall),
-                            ),
-                    )
-                }
-
-                // Day cells
-                Column(modifier = Modifier.fillMaxSize()) {
-                    weeks.forEach { week ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().height(rowHeightDp),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                        ) {
-                            week.forEach { day ->
-                                val isToday =
-                                    day.year == todayYear && day.month == todayMonth && day.day == todayDay
-                                val dk = dayKeyFromDate(day.year, day.month, day.day)
-                                val hasTasks = tasksByDay.containsKey(dk)
-                                val dayMillis = startOfDayLocalMillis(day.year, day.month, day.day)
-
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight()
-                                        .clickable { onDayClick(dayMillis) },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(dimens.miniCalTodayCircle)
-                                            .then(
-                                                if (isToday) Modifier.background(PrimaryBlue, CircleShape)
-                                                else Modifier
-                                            ),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = if (day.isCurrentMonth) day.day.toString() else "",
-                                            style = OpenTasksTheme.typography.calendarEventOverflow,
-                                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                                            color = when {
-                                                isToday -> Color.White
-                                                hasTasks && day.isCurrentMonth -> PrimaryBlue
-                                                day.isCurrentMonth -> MaterialTheme.colorScheme.onBackground
-                                                else -> Color.Transparent
-                                            },
-                                            textAlign = TextAlign.Center,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // Grid (delegated to shared MiniCalendarGrid)
+            MiniCalendarGrid(
+                year = year,
+                month = month,
+                todayYear = todayYear,
+                todayMonth = todayMonth,
+                todayDay = todayDay,
+                highlightedWeekSundayMillis = highlightedWeekSundayMillis,
+                tasksByDay = tasksByDay,
+                onDayClick = onDayClick,
+                showMonthHeader = false,
+                useAspectRatioCells = false,
+            )
         }
     }
 }
@@ -494,14 +359,6 @@ private fun WeekViewMiniCalendar(
 // ═══════════════════════════════════════════════════════════════════════════
 //  PREVIEWS
 // ═══════════════════════════════════════════════════════════════════════════
-
-@Composable
-@Preview
-private fun WeekViewEventBarPreview() {
-    OpenTasksTheme {
-        WeekViewEventBar(task = PreviewSampleData.sampleTasks[0], onClick = {})
-    }
-}
 
 @Composable
 @Preview

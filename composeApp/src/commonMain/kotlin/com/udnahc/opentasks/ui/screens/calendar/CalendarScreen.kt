@@ -103,8 +103,6 @@ fun CalendarScreen(
     viewModel: CalendarViewModel,
     onTaskClick: (Task) -> Unit,
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
-    onImportCalendar: () -> Unit = {},
-    onImportIcs: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
 ) {
     val tasks by viewModel.tasks.collectAsState()
@@ -115,8 +113,6 @@ fun CalendarScreen(
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onSelectedDateChanged = onSelectedDateChanged,
-        onImportCalendar = onImportCalendar,
-        onImportIcs = onImportIcs,
         onSettingsClick = onSettingsClick,
     )
 }
@@ -131,8 +127,6 @@ private fun CalendarContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
-    onImportCalendar: () -> Unit = {},
-    onImportIcs: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
 ) {
     val density = LocalDensity.current
@@ -275,11 +269,8 @@ private fun CalendarContent(
     }
     LaunchedEffect(currentView, selectedDay, displayedYear, displayedMonth) {
         if (currentView == CalendarViewType.MONTH) {
-            if (selectedDay != null) onSelectedDateChanged(
-                selectedDay!!.year,
-                selectedDay!!.month,
-                selectedDay!!.day
-            )
+            val sd = selectedDay
+            if (sd != null) onSelectedDateChanged(sd.year, sd.month, sd.day)
             else onSelectedDateChanged(displayedYear, displayedMonth, 0)
         }
     }
@@ -489,8 +480,6 @@ private fun CalendarContent(
                 currentView = view
             },
             onViewPickerDismiss = { showViewPicker = false },
-            onImportCalendar = onImportCalendar,
-            onImportIcs = onImportIcs,
             onSettingsClick = onSettingsClick,
         )
     }
@@ -511,8 +500,6 @@ private fun CalendarTopBar(
     onViewPickerToggle: () -> Unit,
     onViewSelected: (CalendarViewType) -> Unit,
     onViewPickerDismiss: () -> Unit,
-    onImportCalendar: () -> Unit = {},
-    onImportIcs: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
 ) {
     TopAppBar(
@@ -570,35 +557,6 @@ private fun CalendarTopBar(
                 )
             }
 
-            Box {
-                var showOverflowMenu by remember { mutableStateOf(false) }
-                IconButton(onClick = { showOverflowMenu = true }) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_more_vert),
-                        contentDescription = stringResource(Res.string.more),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                DropdownMenu(
-                    expanded = showOverflowMenu,
-                    onDismissRequest = { showOverflowMenu = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(Res.string.import_from_calendar)) },
-                        onClick = {
-                            showOverflowMenu = false
-                            onImportCalendar()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(Res.string.import_from_ics)) },
-                        onClick = {
-                            showOverflowMenu = false
-                            onImportIcs()
-                        },
-                    )
-                }
-            }
         },
     )
 }
@@ -686,8 +644,6 @@ private fun CalendarTopBarPreview() {
             onViewPickerToggle = {},
             onViewSelected = {},
             onViewPickerDismiss = {},
-            onImportCalendar = {},
-            onImportIcs = {},
         )
     }
 }

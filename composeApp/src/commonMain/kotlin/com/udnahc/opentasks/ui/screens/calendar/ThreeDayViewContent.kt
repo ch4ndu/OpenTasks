@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,22 +21,17 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -50,12 +44,7 @@ import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.formatTime12Hr
-import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.model.Task
-import opentasks.composeapp.generated.resources.Res
-import opentasks.composeapp.generated.resources.ic_check_box
-import opentasks.composeapp.generated.resources.ic_check_box_outline
-import org.jetbrains.compose.resources.painterResource
 import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -63,8 +52,6 @@ import com.udnahc.opentasks.ui.theme.PrimaryBlue
 // ═══════════════════════════════════════════════════════════════════════════
 //  THREE-DAY VIEW
 // ═══════════════════════════════════════════════════════════════════════════
-
-private val DAY_NAMES_SHORT = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
 @Composable
 internal fun ThreeDayViewContent(
@@ -242,7 +229,7 @@ private fun ThreeDayColumn(
                 allDayTasks.take(3).forEach { task ->
                     val onClick = remember(task.id) { { onTaskClick(task) } }
                     val onToggle = remember(task.id) { { onToggleComplete(task) } }
-                    ThreeDayEventBar(
+                    TimelineEventBar(
                         task = task,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -294,13 +281,14 @@ private fun ThreeDayColumn(
 
             // Positioned timed events
             timedTasks.forEach { task ->
-                val hour = extractHour(task.deadline!!)
-                val minute = extractMinute(task.deadline!!)
+                val dl = task.deadline ?: return@forEach
+                val hour = extractHour(dl)
+                val minute = extractMinute(dl)
                 val yOffset = hourHeight * hour + hourHeight * (minute / 60f)
                 val onClick = remember(task.id) { { onTaskClick(task) } }
                 val onToggle = remember(task.id) { { onToggleComplete(task) } }
 
-                ThreeDayEventBar(
+                TimelineEventBar(
                     task = task,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -315,66 +303,9 @@ private fun ThreeDayColumn(
     }
 }
 
-// ── Event bar ───────────────────────────────────────────────────────────────
-
-@Composable
-private fun ThreeDayEventBar(
-    task: Task,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    onToggleComplete: () -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    val priorityColor = taskPriorityColor(task.priority)
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(dimens.cornerTiny))
-            .background(priorityColor.copy(alpha = if (task.isCompleted) 0.1f else 0.2f))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painter = painterResource(
-                if (task.isCompleted) Res.drawable.ic_check_box
-                else Res.drawable.ic_check_box_outline
-            ),
-            contentDescription = null,
-            tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant
-            else priorityColor,
-            modifier = Modifier
-                .size(dimens.iconSmall)
-                .clickable(onClick = onToggleComplete),
-        )
-        Spacer(Modifier.width(2.dp))
-        Text(
-            text = task.title,
-            style = OpenTasksTheme.typography.calendarEventTitle,
-            color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant
-            else priorityColor,
-            textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  PREVIEWS
 // ═══════════════════════════════════════════════════════════════════════════
-
-@Composable
-@Preview
-private fun ThreeDayEventBarPreview() {
-    OpenTasksTheme {
-        ThreeDayEventBar(
-            task = PreviewSampleData.sampleTasks[0],
-            modifier = Modifier.fillMaxWidth().height(20.dp),
-            onClick = {},
-            onToggleComplete = {},
-        )
-    }
-}
 
 @Composable
 @Preview

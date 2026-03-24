@@ -35,4 +35,10 @@ interface NoteDao {
 
     @Upsert
     suspend fun upsert(note: Note)
+
+    @Query("SELECT * FROM notes")
+    suspend fun getAllNotesOnce(): List<Note>
+
+    @Query("DELETE FROM notes")
+    suspend fun deleteAll()
 }

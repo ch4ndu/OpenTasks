@@ -64,16 +64,27 @@ import com.udnahc.opentasks.ui.screens.TaskListScreen
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.screens.ImportCalendarDialog
+import com.udnahc.opentasks.ui.screens.ImportCsvDialog
 import com.udnahc.opentasks.ui.screens.ImportIcsDialog
+import com.udnahc.opentasks.ui.util.pickCsvFileContent
 import com.udnahc.opentasks.ui.util.pickIcsFileContent
-import com.udnahc.opentasks.viewmodel.AppViewModel
+import com.udnahc.opentasks.data.model.ThemeMode
 import com.udnahc.opentasks.viewmodel.ImportCalendarViewModel
+import com.udnahc.opentasks.viewmodel.SettingsViewModel
+import com.udnahc.opentasks.viewmodel.ImportCsvViewModel
 import com.udnahc.opentasks.viewmodel.ImportIcsViewModel
+import com.udnahc.opentasks.viewmodel.TaskFormViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.NoteViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
+import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
+import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
+import org.koin.compose.koinInject
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
 import opentasks.composeapp.generated.resources.ic_add
@@ -98,11 +109,19 @@ private fun isTabScreen(key: Any): Boolean =
 @Composable
 @Preview
 fun App(sharedText: String = "", deepLinkTaskId: String = "") {
-    OpenTasksTheme {
+    val settingsViewModel: SettingsViewModel = koinViewModel()
+    val themeMode by settingsViewModel.themePreference.collectAsState()
+    OpenTasksTheme(themeMode = themeMode) {
         val backStack = remember { NavBackStack<NavKey>(Screen.Matrix) }
         val navController = remember { AppNavController(backStack) }
-        val appViewModel: AppViewModel = koinViewModel()
-        LaunchedEffect(Unit) { appViewModel.sync() }
+        val initializeSyncAction = koinInject<InitializeSyncAction>()
+        val rescheduleAllRemindersAction = koinInject<RescheduleAllRemindersAction>()
+        LaunchedEffect(Unit) {
+            withContext(Dispatchers.IO) {
+                initializeSyncAction()
+                rescheduleAllRemindersAction()
+            }
+        }
         if (sharedText.isNotEmpty()) {
             LaunchedEffect(Unit) {
                 navController.navigate(Screen.CreateTask(title = sharedText))
@@ -113,7 +132,7 @@ fun App(sharedText: String = "", deepLinkTaskId: String = "") {
                 navController.navigate(Screen.EditTask(deepLinkTaskId))
             }
         }
-        MainScreen(navController = navController, backStack = backStack, appViewModel = appViewModel)
+        MainScreen(navController = navController, backStack = backStack)
     }
 }
 
@@ -127,8 +146,8 @@ private data class BottomNavItem(
 private fun MainScreen(
     navController: AppNavController,
     backStack: NavBackStack<NavKey>,
-    appViewModel: AppViewModel,
 ) {
+    val noteViewModel: NoteViewModel = koinViewModel()
     var selectedListId by rememberSaveable { mutableStateOf("00000000-0000-0000-0000-000000000001") }
     var calendarSelectedYear by remember { mutableIntStateOf(0) }
     var calendarSelectedMonth by remember { mutableIntStateOf(0) }
@@ -137,6 +156,7 @@ private fun MainScreen(
     var editNoteId by remember { mutableStateOf<String?>(null) }
     var showImportCalendar by remember { mutableStateOf(false) }
     var showImportIcs by remember { mutableStateOf(false) }
+    var showImportCsv by remember { mutableStateOf(false) }
 
     val tabs = remember {
         listOf(
@@ -239,8 +259,6 @@ private fun MainScreen(
                         onTaskClick = { task ->
                             navController.navigate(Screen.EditTask(task.id))
                         },
-                        onImportCalendar = { showImportCalendar = true },
-                        onImportIcs = { showImportIcs = true },
                         onSettingsClick = onSettingsClick,
                     )
                 }
@@ -257,14 +275,11 @@ private fun MainScreen(
                             calendarSelectedMonth = month
                             calendarSelectedDay = day
                         },
-                        onImportCalendar = { showImportCalendar = true },
-                        onImportIcs = { showImportIcs = true },
                         onSettingsClick = onSettingsClick,
                     )
                 }
 
                 entry<Screen.Notes> {
-                    val noteViewModel: NoteViewModel = koinViewModel()
                     NotesScreen(
                         viewModel = noteViewModel,
                         onNoteClick = { note -> editNoteId = note.id },
@@ -273,7 +288,13 @@ private fun MainScreen(
                 }
 
                 entry<Screen.Settings> {
-                    SettingsScreen(onBack = { navController.popBackStack() })
+                    SettingsScreen(
+                        onBack = { navController.popBackStack() },
+                        onImportCalendar = { showImportCalendar = true },
+                        onImportIcs = { showImportIcs = true },
+                        onImportCsv = { showImportCsv = true },
+                        onLogout = { navController.navigateToTab(Screen.Matrix) },
+                    )
                 }
 
                 entry<Screen.QuadrantDetail> { screen ->
@@ -297,7 +318,8 @@ private fun MainScreen(
                 }
 
                 entry<Screen.CreateTask> { screen ->
-                    val categories by appViewModel.categories.collectAsState()
+                    val taskFormViewModel: TaskFormViewModel = koinViewModel()
+                    val categories by taskFormViewModel.categories.collectAsState()
                     val requestNotificationPermission = rememberNotificationPermissionLauncher {}
                     LaunchedEffect(Unit) { requestNotificationPermission() }
                     CreateTaskScreen(
@@ -309,11 +331,11 @@ private fun MainScreen(
                         initialMonth = screen.month,
                         initialYear = screen.year,
                         categories = categories,
-                        onAddCategory = { name -> appViewModel.addCategory(name) },
+                        onAddCategory = { name -> taskFormViewModel.addCategory(name) },
                         onSave = { formData ->
                             val notifyUnit =
                                 if (formData.reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
-                            appViewModel.addTask(
+                            taskFormViewModel.addTask(
                                 title = formData.title,
                                 content = formData.content,
                                 priority = formData.priority,
@@ -337,20 +359,22 @@ private fun MainScreen(
                 }
 
                 entry<Screen.EditTask> { screen ->
-                    val tasks by appViewModel.tasks.collectAsState()
-                    val categories by appViewModel.categories.collectAsState()
-                    val editTask = tasks.find { it.id == screen.taskId }
-                    if (editTask != null) {
+                    val taskFormViewModel: TaskFormViewModel = koinViewModel()
+                    LaunchedEffect(screen.taskId) { taskFormViewModel.setTaskId(screen.taskId) }
+                    val editTask by taskFormViewModel.editTask.collectAsState()
+                    val categories by taskFormViewModel.categories.collectAsState()
+                    val currentEditTask = editTask
+                    if (currentEditTask != null) {
                         CreateTaskScreen(
                             onBack = { navController.popBackStack() },
-                            editTask = editTask,
+                            editTask = currentEditTask,
                             categories = categories,
-                            onAddCategory = { name -> appViewModel.addCategory(name) },
+                            onAddCategory = { name -> taskFormViewModel.addCategory(name) },
                             onSave = { formData ->
                                 val notifyUnit =
                                     if (formData.reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
-                                appViewModel.updateTask(
-                                    editTask.copy(
+                                taskFormViewModel.updateTask(
+                                    currentEditTask.copy(
                                         title = formData.title,
                                         content = formData.content,
                                         priority = formData.priority,
@@ -371,6 +395,10 @@ private fun MainScreen(
                                         dateReminders = formData.dateReminders,
                                     )
                                 )
+                            },
+                            onDelete = {
+                                taskFormViewModel.deleteTask(currentEditTask)
+                                navController.popBackStack()
                             },
                         )
                     }
@@ -433,14 +461,14 @@ private fun MainScreen(
         CreateNoteBottomSheet(
             sheetState = createNoteSheetState,
             onDismiss = { showCreateNote = false },
-            onSave = { title, content -> appViewModel.addNote(title, content) },
+            onSave = { title, content -> noteViewModel.addNote(title, content) },
         )
     }
 
     // Edit note bottom sheet
     val editNoteIdVal = editNoteId
     if (editNoteIdVal != null) {
-        val notes by appViewModel.notes.collectAsState()
+        val notes by noteViewModel.notes.collectAsState()
         val editNote = remember(editNoteIdVal, notes) { notes.find { it.id == editNoteIdVal } }
         if (editNote != null) {
             val editNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -449,10 +477,10 @@ private fun MainScreen(
                 editNote = editNote,
                 onDismiss = { editNoteId = null },
                 onSave = { title, content ->
-                    appViewModel.updateNote(editNote.copy(title = title, content = content))
+                    noteViewModel.updateNote(editNote.copy(title = title, content = content))
                 },
                 onDelete = {
-                    appViewModel.deleteNote(editNote)
+                    noteViewModel.deleteNote(editNote)
                     editNoteId = null
                 },
             )
@@ -485,6 +513,24 @@ private fun MainScreen(
                 }
             },
             onDismiss = { showImportIcs = false },
+        )
+    }
+
+    // Import CSV (TickTick) dialog
+    if (showImportCsv) {
+        val importCsvViewModel: ImportCsvViewModel = koinViewModel()
+        val csvScope = rememberCoroutineScope()
+        ImportCsvDialog(
+            viewModel = importCsvViewModel,
+            onPickFile = {
+                csvScope.launch {
+                    val result = pickCsvFileContent()
+                    if (result != null) {
+                        importCsvViewModel.importFromCsvContent(result.first, result.second)
+                    }
+                }
+            },
+            onDismiss = { showImportCsv = false },
         )
     }
 }

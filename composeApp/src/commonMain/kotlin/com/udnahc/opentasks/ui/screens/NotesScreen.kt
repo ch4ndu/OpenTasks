@@ -33,9 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import com.udnahc.opentasks.data.extensions.extractDay
-import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
+import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.utcMillisToLocalMillis
 import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.model.Note
@@ -48,11 +47,6 @@ import opentasks.composeapp.generated.resources.notes
 import opentasks.composeapp.generated.resources.settings
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-
-private val MONTH_NAMES_SHORT = arrayOf(
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-)
 
 /** Strips markdown formatting and returns the first line as a preview. */
 internal fun noteContentPreview(content: String): String =
@@ -67,9 +61,7 @@ private fun formatNoteDate(utcMillis: Long): String {
     if (utcMillis == 0L) return ""
     val local = utcMillisToLocalMillis(utcMillis)
     val y = extractYear(local)
-    val m = extractMonth(local)
-    val d = extractDay(local)
-    return "$d ${MONTH_NAMES_SHORT[m - 1]} $y"
+    return "${formatDateShort(local)} $y"
 }
 
 @Composable

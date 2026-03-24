@@ -95,7 +95,7 @@ internal fun MonthViewContent(
 
         Column(modifier = Modifier.fillMaxSize()) {
             Spacer(Modifier.height(topBarHeight))
-            DayHeaders()
+            DayNameHeaders()
 
             // ── Animated month pager ───
             HorizontalPager(
@@ -238,7 +238,7 @@ internal fun MonthViewContent(
             if (progress > 0f && selectedDay != null) {
                 val selectedTasks = remember(selectedDay, tasks) {
                     val dk = dayKeyFromDate(selectedDay.year, selectedDay.month, selectedDay.day)
-                    tasks.filter { it.deadline != null && dayKey(it.deadline!!) == dk }
+                    tasks.filter { val dl = it.deadline; dl != null && dayKey(dl) == dk }
                         .sortedBy { it.deadline }
                 }
 
@@ -300,32 +300,7 @@ internal fun MonthViewContent(
     }
 }
 
-// ── Day headers (S M T W T F S) ────────────────────────────────────────────
-
-@Composable
-internal fun DayHeaders() {
-    val dimens = OpenTasksTheme.dimens
-    val headers = listOf("S", "M", "T", "W", "T", "F", "S")
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = dimens.paddingSmall),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-    ) {
-        headers.forEach { label ->
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    style = OpenTasksTheme.typography.calendarDayNumber,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-    Spacer(Modifier.height(dimens.spacerSmall))
-}
+// DayHeaders extracted to CalendarComposables.kt as DayNameHeaders()
 
 // ── Animated month grid ─────────────────────────────────────────────────────
 
@@ -464,7 +439,7 @@ private fun WeekRowContent(
                                     PrimaryBlue, CircleShape
                                 )
                                 isToday -> Modifier.background(
-                                    MaterialTheme.colorScheme.onBackground,
+                                    MaterialTheme.colorScheme.surfaceVariant,
                                     CircleShape
                                 )
                                 else -> Modifier
@@ -547,7 +522,7 @@ private fun WeekRowContent(
 @Preview
 private fun DayHeadersPreview() {
     OpenTasksTheme {
-        DayHeaders()
+        DayNameHeaders()
     }
 }
 

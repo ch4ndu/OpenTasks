@@ -38,7 +38,8 @@ class ScheduleTaskRemindersAction(private val scheduler: NotificationScheduler) 
 
         // Duration reminders (minutes before deadline)
         if (task.durationReminders.isNotBlank()) {
-            val minuteValues = task.durationReminders.split(",").mapNotNull { it.trim().toIntOrNull() }
+            val minuteValues =
+                task.durationReminders.split(",").mapNotNull { it.trim().toIntOrNull() }
             minuteValues.forEachIndexed { index, mins ->
                 if (mins == -1) return@forEachIndexed // AT_THE_END handled separately if needed
                 val triggerAt = task.deadline - (mins * MILLIS_PER_MINUTE)

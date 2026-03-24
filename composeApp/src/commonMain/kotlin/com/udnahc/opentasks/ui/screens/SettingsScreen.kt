@@ -1,6 +1,6 @@
 package com.udnahc.opentasks.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,23 +8,28 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.udnahc.opentasks.data.model.ThemeMode
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
@@ -39,6 +44,20 @@ import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.clear
 import opentasks.composeapp.generated.resources.connected
 import opentasks.composeapp.generated.resources.ic_arrow_back
+import opentasks.composeapp.generated.resources.cancel
+import opentasks.composeapp.generated.resources.appearance
+import opentasks.composeapp.generated.resources.account
+import opentasks.composeapp.generated.resources.import_csv_ticktick
+import opentasks.composeapp.generated.resources.logout
+import opentasks.composeapp.generated.resources.logout_confirm_message
+import opentasks.composeapp.generated.resources.logout_confirm_title
+import opentasks.composeapp.generated.resources.logout_description
+import opentasks.composeapp.generated.resources.theme
+import opentasks.composeapp.generated.resources.theme_dark
+import opentasks.composeapp.generated.resources.theme_light
+import opentasks.composeapp.generated.resources.theme_system
+import opentasks.composeapp.generated.resources.import_from_calendar
+import opentasks.composeapp.generated.resources.import_from_ics
 import opentasks.composeapp.generated.resources.not_configured
 import opentasks.composeapp.generated.resources.pocketbase_url
 import opentasks.composeapp.generated.resources.pocketbase_url_hint
@@ -51,17 +70,29 @@ import opentasks.composeapp.generated.resources.syncing
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onImportCalendar: () -> Unit = {},
+    onImportIcs: () -> Unit = {},
+    onImportCsv: () -> Unit = {},
+    onLogout: () -> Unit = {},
 ) {
     val viewModel: SettingsViewModel = koinViewModel()
     val currentUrl by viewModel.pocketBaseUrl.collectAsState()
     val syncStatus by viewModel.syncStatus.collectAsState()
+    val themePreference by viewModel.themePreference.collectAsState()
 
     SettingsContent(
         currentUrl = currentUrl,
         syncStatus = syncStatus,
+        themePreference = themePreference,
         onBack = onBack,
         onSaveUrl = { viewModel.savePocketBaseUrl(it) },
         onClearUrl = { viewModel.clearPocketBaseUrl() },
+        onSyncNow = { viewModel.triggerSync() },
+        onThemeChanged = { viewModel.saveThemePreference(it) },
+        onImportCalendar = onImportCalendar,
+        onImportIcs = onImportIcs,
+        onImportCsv = onImportCsv,
+        onLogout = { viewModel.clearLocalData(onLogout) },
     )
 }
 
@@ -70,52 +101,247 @@ fun SettingsScreen(
 private fun SettingsContent(
     currentUrl: String?,
     syncStatus: SyncStatus,
+    themePreference: ThemeMode = ThemeMode.SYSTEM,
     onBack: () -> Unit,
     onSaveUrl: (String) -> Unit,
     onClearUrl: () -> Unit,
+    onSyncNow: () -> Unit = {},
+    onThemeChanged: (ThemeMode) -> Unit = {},
+    onImportCalendar: () -> Unit = {},
+    onImportIcs: () -> Unit = {},
+    onImportCsv: () -> Unit = {},
+    onLogout: () -> Unit = {},
 ) {
-    var urlInput by rememberSaveable(currentUrl) { mutableStateOf(currentUrl ?: "") }
-
     val dimens = OpenTasksTheme.dimens
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        // Top bar
-        TopAppBar(
-            title = { Text(stringResource(Res.string.settings)) },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_arrow_back),
-                        contentDescription = stringResource(Res.string.back),
+    var showUrlDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(Res.string.settings),
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_arrow_back),
+                            contentDescription = stringResource(Res.string.back),
+                        )
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            // ── Appearance ──
+            item(key = "appearance_header") {
+                SettingsCategoryHeader(stringResource(Res.string.appearance))
+            }
+            item(key = "theme_preference") {
+                val themeName = when (themePreference) {
+                    ThemeMode.SYSTEM -> stringResource(Res.string.theme_system)
+                    ThemeMode.LIGHT -> stringResource(Res.string.theme_light)
+                    ThemeMode.DARK -> stringResource(Res.string.theme_dark)
+                }
+                SettingsRow(
+                    title = stringResource(Res.string.theme),
+                    summary = themeName,
+                    onClick = { showThemeDialog = true },
+                )
+            }
+
+            // ── Sync ──
+            item(key = "sync_header") {
+                SettingsCategoryHeader(stringResource(Res.string.sync))
+            }
+            item(key = "pocketbase_url") {
+                val summary = currentUrl ?: stringResource(Res.string.not_configured)
+                SettingsRow(
+                    title = stringResource(Res.string.pocketbase_url),
+                    summary = summary,
+                    onClick = { showUrlDialog = true },
+                )
+            }
+            if (currentUrl != null) {
+                item(key = "sync_now") {
+                    val summary = when (syncStatus) {
+                        SyncStatus.SYNCING -> stringResource(Res.string.syncing)
+                        SyncStatus.ERROR -> stringResource(Res.string.sync_error)
+                        SyncStatus.SUCCESS -> stringResource(Res.string.connected)
+                        SyncStatus.IDLE -> stringResource(Res.string.connected)
+                    }
+                    SettingsRow(
+                        title = stringResource(Res.string.sync),
+                        summary = summary,
+                        onClick = onSyncNow,
+                    )
+                }
+            }
+
+            // ── Import ──
+            item(key = "import_header") {
+                SettingsCategoryHeader("Import")
+            }
+            item(key = "import_calendar") {
+                SettingsRow(
+                    title = stringResource(Res.string.import_from_calendar),
+                    onClick = onImportCalendar,
+                )
+            }
+            item(key = "import_ics") {
+                SettingsRow(
+                    title = stringResource(Res.string.import_from_ics),
+                    onClick = onImportIcs,
+                )
+            }
+            item(key = "import_csv") {
+                SettingsRow(
+                    title = stringResource(Res.string.import_csv_ticktick),
+                    onClick = onImportCsv,
+                )
+            }
+
+            // ── Account ──
+            item(key = "account_header") {
+                SettingsCategoryHeader(stringResource(Res.string.account))
+            }
+            item(key = "logout") {
+                SettingsRow(
+                    title = stringResource(Res.string.logout),
+                    summary = stringResource(Res.string.logout_description),
+                    onClick = { showLogoutConfirm = true },
+                )
+            }
+        }
+    }
+
+    // Logout confirmation dialog
+    if (showLogoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLogoutConfirm = false },
+            title = { Text(stringResource(Res.string.logout_confirm_title)) },
+            text = { Text(stringResource(Res.string.logout_confirm_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLogoutConfirm = false
+                    onLogout()
+                }) {
+                    Text(
+                        stringResource(Res.string.logout),
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             },
+            dismissButton = {
+                TextButton(onClick = { showLogoutConfirm = false }) {
+                    Text(stringResource(Res.string.cancel))
+                }
+            },
         )
+    }
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = dimens.paddingXLarge),
-        ) {
-            // Sync section header
-            Spacer(Modifier.height(dimens.spacerXLarge))
-            Text(
-                text = stringResource(Res.string.sync),
-                style = MaterialTheme.typography.titleMedium,
-                color = PrimaryBlue,
-            )
-            Spacer(Modifier.height(dimens.spacerLarge))
+    // Theme picker dialog
+    if (showThemeDialog) {
+        ThemePickerDialog(
+            currentTheme = themePreference,
+            onThemeSelected = { mode ->
+                onThemeChanged(mode)
+                showThemeDialog = false
+            },
+            onDismiss = { showThemeDialog = false },
+        )
+    }
 
-            // PocketBase URL field
+    // PocketBase URL dialog
+    if (showUrlDialog) {
+        PocketBaseUrlDialog(
+            currentUrl = currentUrl,
+            onSave = { url ->
+                onSaveUrl(url)
+                showUrlDialog = false
+            },
+            onClear = {
+                onClearUrl()
+                showUrlDialog = false
+            },
+            onDismiss = { showUrlDialog = false },
+        )
+    }
+}
+
+// ── Reusable settings composables ────────────────────────────────────────────
+
+@Composable
+private fun SettingsCategoryHeader(title: String) {
+    val dimens = OpenTasksTheme.dimens
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        color = PrimaryBlue,
+        modifier = Modifier.padding(
+            start = dimens.paddingXLarge,
+            end = dimens.paddingXLarge,
+            top = dimens.paddingXLarge,
+            bottom = dimens.paddingSmall,
+        ),
+    )
+}
+
+@Composable
+private fun SettingsRow(
+    title: String,
+    summary: String? = null,
+    onClick: () -> Unit,
+) {
+    val dimens = OpenTasksTheme.dimens
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        if (summary != null) {
+            Spacer(Modifier.height(dimens.spacerTiny))
             Text(
-                text = stringResource(Res.string.pocketbase_url),
+                text = summary,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(dimens.spacerSmall))
+        }
+    }
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.padding(horizontal = dimens.paddingXLarge),
+    )
+}
+
+@Composable
+private fun PocketBaseUrlDialog(
+    currentUrl: String?,
+    onSave: (String) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var urlInput by rememberSaveable(currentUrl) { mutableStateOf(currentUrl ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(Res.string.pocketbase_url)) },
+        text = {
             OutlinedTextField(
                 value = urlInput,
                 onValueChange = { urlInput = it },
@@ -123,54 +349,77 @@ private fun SettingsContent(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-
-            Spacer(Modifier.height(dimens.spacerLarge))
-
-            // Status + Save row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(urlInput) },
+                enabled = urlInput.isNotBlank(),
             ) {
-                // Status text
-                val statusText = when {
-                    syncStatus == SyncStatus.SYNCING -> stringResource(Res.string.syncing)
-                    syncStatus == SyncStatus.ERROR -> stringResource(Res.string.sync_error)
-                    currentUrl != null -> stringResource(Res.string.connected)
-                    else -> stringResource(Res.string.not_configured)
-                }
-                val statusColor = when {
-                    syncStatus == SyncStatus.SYNCING -> MaterialTheme.colorScheme.onSurfaceVariant
-                    syncStatus == SyncStatus.ERROR -> MaterialTheme.colorScheme.error
-                    currentUrl != null -> PrimaryBlue
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                }
-                Text(
-                    text = statusText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = statusColor,
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(dimens.spacerSmall)) {
-                    if (currentUrl != null) {
-                        OutlinedButton(onClick = {
-                            urlInput = ""
-                            onClearUrl()
-                        }) {
-                            Text(stringResource(Res.string.clear))
-                        }
+                Text(stringResource(Res.string.save))
+            }
+        },
+        dismissButton = {
+            Row {
+                if (currentUrl != null) {
+                    TextButton(onClick = onClear) {
+                        Text(stringResource(Res.string.clear))
                     }
-                    Button(
-                        onClick = { onSaveUrl(urlInput) },
-                        enabled = urlInput.isNotBlank(),
+                    Spacer(Modifier.width(OpenTasksTheme.dimens.spacerSmall))
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(Res.string.back))
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun ThemePickerDialog(
+    currentTheme: ThemeMode,
+    onThemeSelected: (ThemeMode) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(Res.string.theme)) },
+        text = {
+            Column {
+                ThemeMode.entries.forEach { mode ->
+                    val label = when (mode) {
+                        ThemeMode.SYSTEM -> stringResource(Res.string.theme_system)
+                        ThemeMode.LIGHT -> stringResource(Res.string.theme_light)
+                        ThemeMode.DARK -> stringResource(Res.string.theme_dark)
+                    }
+                    Row(
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onThemeSelected(mode) }
+                            .padding(vertical = OpenTasksTheme.dimens.paddingSmall),
                     ) {
-                        Text(stringResource(Res.string.save))
+                        RadioButton(
+                            selected = mode == currentTheme,
+                            onClick = { onThemeSelected(mode) },
+                        )
+                        Spacer(Modifier.width(OpenTasksTheme.dimens.spacerLarge))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
                     }
                 }
             }
-        }
-    }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.cancel))
+            }
+        },
+    )
 }
+
+// ── Previews ─────────────────────────────────────────────────────────────────
 
 @Composable
 @Preview

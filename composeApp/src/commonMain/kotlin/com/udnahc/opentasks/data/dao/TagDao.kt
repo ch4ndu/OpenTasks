@@ -35,4 +35,10 @@ interface TagDao {
 
     @Delete
     suspend fun deleteTaskTag(taskTag: TaskTag)
+
+    @Query("DELETE FROM task_tags")
+    suspend fun deleteAllTaskTags()
+
+    @Query("DELETE FROM tags")
+    suspend fun deleteAllTags()
 }

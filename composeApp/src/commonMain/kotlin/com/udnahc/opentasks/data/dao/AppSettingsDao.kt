@@ -19,4 +19,7 @@ interface AppSettingsDao {
 
     @Query("DELETE FROM app_settings WHERE `key` = :key")
     suspend fun removeValue(key: String)
+
+    @Query("DELETE FROM app_settings")
+    suspend fun deleteAll()
 }

@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.data.model.ThemeMode
 
 private val DarkColorScheme = darkColorScheme(
     primary = PrimaryBlue,
@@ -41,9 +42,14 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun OpenTasksTheme(
-    darkTheme: Boolean = isInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
     content: @Composable () -> Unit,
 ) {
+    val darkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> isInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
     BoxWithConstraints {
         val sizeCategory = when {
             maxWidth < 600.dp -> WindowSizeCategory.COMPACT

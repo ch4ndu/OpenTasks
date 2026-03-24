@@ -95,6 +95,7 @@ object PreviewSampleData {
     )
 
     val sampleTasksByDay: Map<Long, List<Task>> by lazy {
-        sampleTasks.filter { it.deadline != null }.groupBy { dayKey(it.deadline!!) }
+        sampleTasks.mapNotNull { task -> task.deadline?.let { dl -> dayKey(dl) to task } }
+            .groupBy({ it.first }, { it.second })
     }
 }

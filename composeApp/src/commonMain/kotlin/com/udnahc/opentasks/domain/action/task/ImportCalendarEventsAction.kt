@@ -34,7 +34,7 @@ class ImportCalendarEventsAction(
         val tag = tagRepository.getTagByName(TAG_NAME)
             ?: run {
                 val tagId = addTagAction(TAG_NAME)
-                tagRepository.getTagById(tagId)!!
+                tagRepository.getTagById(tagId) ?: return 0
             }
 
         val now = utcNow()

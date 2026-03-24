@@ -26,6 +26,8 @@
     <string name="select">Select</string>
     <string name="more">More</string>
     <string name="delete">Delete</string>
+    <string name="delete_task_title">Delete task?</string>
+    <string name="delete_task_message">This task will be permanently deleted.</string>
     <string name="start">Start</string>
     <string name="end">End</string>
 
@@ -193,6 +195,12 @@
     <string name="ics_import_description">Select an .ics calendar file to import events as tasks</string>
     <string name="no_events_in_file">No events found in the selected file</string>
 
+    <!-- CSV Import -->
+    <string name="import_csv_ticktick">Import CSV (TickTick)</string>
+    <string name="choose_csv_file">Choose File</string>
+    <string name="csv_import_description">Select a TickTick CSV export file to import tasks</string>
+    <string name="no_tasks_in_file">No tasks found in the selected file</string>
+
     <!-- Task Details -->
     <string name="location_hint">Add location</string>
     <string name="url_hint">Add URL</string>
@@ -205,6 +213,13 @@
     <string name="status_tentative">Tentative</string>
     <string name="status_cancelled">Cancelled</string>
 
+    <!-- Settings / Appearance -->
+    <string name="appearance">Appearance</string>
+    <string name="theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+
     <!-- Settings / Sync -->
     <string name="sync">Sync</string>
     <string name="pocketbase_url">PocketBase URL</string>
@@ -214,4 +229,11 @@
     <string name="sync_error">Sync error</string>
     <string name="syncing">Syncing...</string>
     <string name="clear">Clear</string>
+
+    <!-- Settings / Account -->
+    <string name="account">Account</string>
+    <string name="logout">Logout</string>
+    <string name="logout_description">Delete all local data. Server data will not be affected.</string>
+    <string name="logout_confirm_title">Logout?</string>
+    <string name="logout_confirm_message">This will permanently delete all local tasks, categories, notes, and settings. Data on the server will not be touched. This action cannot be undone.</string>
 </resources>

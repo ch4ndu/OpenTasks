@@ -106,7 +106,7 @@ internal fun ListViewContent(
         val isToday = selectedDayMillis == todayMillis
 
         val dayTasks = remember(selectedDayKey, tasks) {
-            tasks.filter { it.deadline != null && dayKey(it.deadline!!) == selectedDayKey }
+            tasks.filter { val dl = it.deadline; dl != null && dayKey(dl) == selectedDayKey }
                 .sortedBy { it.deadline }
         }
 
@@ -310,7 +310,7 @@ private fun WeekStripPagePreview() {
 
 @Composable
 @Preview
-private fun ListViewContentPreview() {
+private fun ListViewContentTimelinePreview() {
     OpenTasksTheme {
         val weekPagerState = rememberPagerState(initialPage = 520) { 1040 }
         ListViewContent(
@@ -327,6 +327,31 @@ private fun ListViewContentPreview() {
             topBarHeight = 64.dp,
             navBarHeight = 0.dp,
             displayMode = ListDisplayMode.TIMELINE,
+            onTaskClick = {},
+            onToggleComplete = {},
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun ListViewContentCardPreview() {
+    OpenTasksTheme {
+        val weekPagerState = rememberPagerState(initialPage = 520) { 1040 }
+        ListViewContent(
+            tasks = PreviewSampleData.sampleTasks,
+            todayMillis = PreviewSampleData.sampleTodayMillis,
+            todayYear = PreviewSampleData.SAMPLE_YEAR,
+            todayMonth = PreviewSampleData.SAMPLE_MONTH,
+            todayDay = PreviewSampleData.SAMPLE_DAY,
+            selectedDayMillis = PreviewSampleData.sampleTodayMillis,
+            onDaySelected = {},
+            weekPagerState = weekPagerState,
+            weekPagerCentre = 520,
+            tasksByDay = PreviewSampleData.sampleTasksByDay,
+            topBarHeight = 64.dp,
+            navBarHeight = 0.dp,
+            displayMode = ListDisplayMode.CARD,
             onTaskClick = {},
             onToggleComplete = {},
         )
