@@ -25,6 +25,7 @@ fun Note.toNoteRecord(): NoteRecord = NoteRecord(
 
 fun NoteRecord.toNote(): Note = Note(
     id = localId,
+    pbId = id,
     title = title,
     content = content,
     isDeleted = isDeleted,

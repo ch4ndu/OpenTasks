@@ -8,6 +8,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import org.lighthousegames.logging.logging
+
+private val log = logging("TaskRepository")
 
 class TaskRepositoryImpl(
     private val taskDao: TaskDao,
@@ -31,17 +34,20 @@ class TaskRepositoryImpl(
         taskDao.getTaskByExternalId(externalId)
 
     override suspend fun insert(task: Task): Long {
+        log.v { "Inserting task: ${task.id}" }
         val result = taskDao.insert(task)
         triggerSyncAction()
         return result
     }
 
     override suspend fun update(task: Task) {
-        taskDao.update(task)
+        log.v { "Updating task: ${task.id}" }
+        taskDao.update(task.copy(isSynced = false))
         triggerSyncAction()
     }
 
     override suspend fun delete(task: Task) {
+        log.v { "Deleting task: ${task.id}" }
         taskDao.delete(task)
         triggerSyncAction()
     }

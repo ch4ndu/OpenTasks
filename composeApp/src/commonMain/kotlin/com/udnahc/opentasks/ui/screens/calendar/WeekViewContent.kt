@@ -246,9 +246,7 @@ private fun WeekViewDayCell(
                     .then(
                         when {
                             isSelected -> Modifier.background(PrimaryBlue, CircleShape)
-                            isToday -> Modifier.background(
-                                MaterialTheme.colorScheme.onBackground, CircleShape
-                            )
+                            isToday -> Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
                             else -> Modifier
                         }
                     ),

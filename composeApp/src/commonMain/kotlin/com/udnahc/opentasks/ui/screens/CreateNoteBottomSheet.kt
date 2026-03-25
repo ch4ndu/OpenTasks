@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.ui.screens
 
+import org.lighthousegames.logging.logging
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -21,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,7 +49,11 @@ import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.bold
 import opentasks.composeapp.generated.resources.bullet_list
 import opentasks.composeapp.generated.resources.code
+import opentasks.composeapp.generated.resources.cancel
+import opentasks.composeapp.generated.resources.delete
 import opentasks.composeapp.generated.resources.delete_note
+import opentasks.composeapp.generated.resources.delete_note_message
+import opentasks.composeapp.generated.resources.delete_note_title
 import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.ic_delete
 import opentasks.composeapp.generated.resources.ic_code
@@ -67,6 +74,8 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
+private val log = logging("CreateNoteBottomSheet")
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateNoteBottomSheet(
@@ -79,11 +88,36 @@ fun CreateNoteBottomSheet(
     val stateKey = editNote?.id ?: 0L
     var title by remember(stateKey) { mutableStateOf(editNote?.title ?: "") }
     val richTextState = rememberRichTextState()
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(stateKey) {
         if (editNote != null) {
-            richTextState.setMarkdown(editNote.content)
+            log.d { "Loading note content: length=${editNote.content.length}, has newlines=${'\n' in editNote.content}" }
+            log.v { "Raw content: ${editNote.content.take(200)}" }
+            richTextState.setHtml(editNote.content)
         }
+    }
+
+    if (showDeleteConfirm && onDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(stringResource(Res.string.delete_note_title)) },
+            text = { Text(stringResource(Res.string.delete_note_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete()
+                    onDismiss()
+                }) {
+                    Text(stringResource(Res.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(stringResource(Res.string.cancel))
+                }
+            },
+        )
     }
 
     ModalBottomSheet(
@@ -100,17 +134,15 @@ fun CreateNoteBottomSheet(
             CreateNoteTopBar(
                 onBack = onDismiss,
                 onSave = {
-                    val content = richTextState.toMarkdown()
+                    val content = richTextState.toHtml()
+                    log.d { "Saving note content: length=${content.length}, has newlines=${'\n' in content}" }
                     if (title.isNotBlank() || content.isNotBlank()) {
                         onSave(title, content)
                     }
                     onDismiss()
                 },
                 onDelete = if (editNote != null) {
-                    {
-                        onDelete?.invoke()
-                        onDismiss()
-                    }
+                    { showDeleteConfirm = true }
                 } else {
                     null
                 },

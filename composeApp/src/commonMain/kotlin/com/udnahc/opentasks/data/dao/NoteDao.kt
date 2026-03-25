@@ -21,7 +21,7 @@ interface NoteDao {
     @Delete
     suspend fun delete(note: Note)
 
-    @Query("SELECT * FROM notes ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM notes WHERE isDeleted = 0 ORDER BY updatedAt DESC")
     fun getAllNotes(): Flow<List<Note>>
 
     @Query("SELECT * FROM notes WHERE id = :id")
@@ -32,6 +32,9 @@ interface NoteDao {
 
     @Query("UPDATE notes SET isSynced = 1 WHERE id = :id")
     suspend fun markSynced(id: String)
+
+    @Query("UPDATE notes SET pbId = :pbId WHERE id = :id")
+    suspend fun updatePbId(id: String, pbId: String)
 
     @Upsert
     suspend fun upsert(note: Note)

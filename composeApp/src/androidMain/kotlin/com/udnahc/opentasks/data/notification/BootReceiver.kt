@@ -9,6 +9,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import org.lighthousegames.logging.logging
+
+private val log = logging("BootReceiver")
 
 class BootReceiver : BroadcastReceiver(), KoinComponent {
 
@@ -16,11 +19,14 @@ class BootReceiver : BroadcastReceiver(), KoinComponent {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        log.d { "Boot completed, rescheduling all reminders" }
 
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 rescheduleAllRemindersAction()
+            } catch (e: Exception) {
+                log.e { "Failed to reschedule reminders on boot: ${e.message}" }
             } finally {
                 pendingResult.finish()
             }

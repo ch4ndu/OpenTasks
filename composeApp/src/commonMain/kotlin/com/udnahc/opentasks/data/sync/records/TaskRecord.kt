@@ -68,6 +68,7 @@ fun Task.toTaskRecord(): TaskRecord = TaskRecord(
 
 fun TaskRecord.toTask(): Task = Task(
     id = localId,
+    pbId = id,
     title = title,
     content = content,
     priority = TaskPriority.entries.firstOrNull { it.name == priority } ?: TaskPriority.NONE,

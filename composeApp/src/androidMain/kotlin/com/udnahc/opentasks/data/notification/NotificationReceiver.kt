@@ -8,6 +8,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.udnahc.opentasks.MainActivity
 import com.udnahc.opentasks.R
+import org.lighthousegames.logging.logging
+
+private val log = logging("NotificationReceiver")
 
 class NotificationReceiver : BroadcastReceiver() {
 
@@ -26,6 +29,8 @@ class NotificationReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
+        log.d { "Showing notification: title='$title' id=$notificationId" }
+
         val notification = NotificationCompat.Builder(context, NotificationScheduler.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -37,8 +42,8 @@ class NotificationReceiver : BroadcastReceiver() {
 
         try {
             NotificationManagerCompat.from(context).notify(notificationId, notification)
-        } catch (_: SecurityException) {
-            // POST_NOTIFICATIONS permission not granted
+        } catch (e: SecurityException) {
+            log.e { "Failed to show notification (permission denied): ${e.message}" }
         }
     }
 }

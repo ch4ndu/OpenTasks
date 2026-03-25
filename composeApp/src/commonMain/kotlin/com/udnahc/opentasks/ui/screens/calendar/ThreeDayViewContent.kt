@@ -201,7 +201,7 @@ private fun ThreeDayColumn(
                 modifier = Modifier
                     .size(dimens.calendarWeekDayCircle)
                     .then(
-                        if (isToday) Modifier.background(PrimaryBlue, CircleShape)
+                        if (isToday) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
                         else Modifier
                     ),
                 contentAlignment = Alignment.Center,
@@ -210,7 +210,7 @@ private fun ThreeDayColumn(
                     text = dayOfMonth.toString(),
                     style = OpenTasksTheme.typography.calendarDayNumber,
                     fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isToday) Color.White else MaterialTheme.colorScheme.onBackground,
+                    color = if (isToday) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
                 )
             }
         }

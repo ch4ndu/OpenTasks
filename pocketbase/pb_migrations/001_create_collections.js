@@ -28,6 +28,7 @@ migrate(
                 { name: "sortOrder",      type: "number" },
                 { name: "isDeleted",      type: "bool" },
                 { name: "localCreatedAt", type: "number" },
+                { name: "localUpdatedAt", type: "number" },
             ],
         })
         // Index on localId for fast lookups during sync

@@ -10,6 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import org.lighthousegames.logging.logging
+
+private val log = logging("NotificationActionReceiver")
 
 class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
 
@@ -18,6 +21,7 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
 
     override fun onReceive(context: Context, intent: Intent) {
         val taskId = intent.getStringExtra(NotificationScheduler.EXTRA_TASK_ID) ?: return
+        log.d { "Notification action received: ${intent.action} for task $taskId" }
 
         when (intent.action) {
             NotificationScheduler.ACTION_GOT_IT -> {
@@ -33,7 +37,9 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
                                 task.copy(isCompleted = true, updatedAt = utcNow())
                             )
                         }
-                        notificationScheduler.stopOngoing(taskId)
+                        notificationScheduler.cancelAll(taskId)
+                    } catch (e: Exception) {
+                        log.e { "Failed to handle Mark Done action for task $taskId: ${e.message}" }
                     } finally {
                         pendingResult.finish()
                     }

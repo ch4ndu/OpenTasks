@@ -246,7 +246,7 @@ private fun WeekStripPage(
                 Text(
                     text = dayLabels[i],
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isSelected && !isToday) PrimaryBlue
+                    color = if (isSelected || isToday) PrimaryBlue
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(dimens.spacerSmall))
@@ -255,11 +255,8 @@ private fun WeekStripPage(
                         .size(dimens.calendarDaySize)
                         .then(
                             when {
-                                isToday -> Modifier.background(PrimaryBlue, CircleShape)
-                                isSelected -> Modifier.background(
-                                    PrimaryBlue.copy(alpha = 0.12f), CircleShape
-                                )
-
+                                isSelected -> Modifier.background(PrimaryBlue, CircleShape)
+                                isToday -> Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
                                 else -> Modifier
                             }
                         ),
@@ -270,8 +267,8 @@ private fun WeekStripPage(
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
                         color = when {
-                            isToday -> Color.White
-                            isSelected -> PrimaryBlue
+                            isSelected -> Color.White
+                            isToday -> PrimaryBlue
                             else -> MaterialTheme.colorScheme.onBackground
                         },
                     )
@@ -281,10 +278,7 @@ private fun WeekStripPage(
                     Box(
                         modifier = Modifier
                             .size(dimens.calendarDotSize)
-                            .background(
-                                if (isToday) Color.White else PrimaryBlue,
-                                CircleShape,
-                            ),
+                            .background(PrimaryBlue, CircleShape),
                     )
                 } else {
                     Spacer(Modifier.height(dimens.spacerMedium))

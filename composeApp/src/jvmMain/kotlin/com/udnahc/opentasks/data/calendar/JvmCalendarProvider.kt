@@ -9,6 +9,9 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
+import org.lighthousegames.logging.logging
+
+private val log = logging("JvmCalendarProvider")
 private val IS_MAC = System.getProperty("os.name").orEmpty().startsWith("Mac", ignoreCase = true)
 
 class JvmCalendarProvider : CalendarProvider {
@@ -26,7 +29,8 @@ class JvmCalendarProvider : CalendarProvider {
                 val exited = process.waitFor(10, TimeUnit.SECONDS)
                 if (exited && process.exitValue() == 0) CalendarPermissionStatus.GRANTED
                 else CalendarPermissionStatus.DENIED
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                log.e { "Calendar permission check failed: ${e.message}" }
                 CalendarPermissionStatus.DENIED
             }
         }
@@ -89,7 +93,8 @@ class JvmCalendarProvider : CalendarProvider {
                 if (process.exitValue() != 0) return@withContext emptyList()
 
                 parseAppleScriptOutput(outputText)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                log.e { "Calendar fetch failed: ${e.message}" }
                 emptyList()
             }
         }

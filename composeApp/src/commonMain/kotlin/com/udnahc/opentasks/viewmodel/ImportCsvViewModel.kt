@@ -11,7 +11,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.Immutable
+import org.lighthousegames.logging.logging
 
+private val log = logging("ImportCsvViewModel")
+
+@Immutable
 data class ImportCsvUiState(
     val isLoading: Boolean = false,
     val importedCount: Int? = null,
@@ -27,6 +32,7 @@ class ImportCsvViewModel(
     val uiState: StateFlow<ImportCsvUiState> = _uiState.asStateFlow()
 
     fun importFromCsvContent(fileName: String, content: String) {
+        log.d { "Importing CSV tasks" }
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isLoading = true, error = null, importedCount = null, fileName = fileName) }
             try {
@@ -38,6 +44,7 @@ class ImportCsvViewModel(
                 val count = importAction(tasks)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: Exception) {
+                log.e { "CSV import failed: ${e.message}" }
                 _uiState.update { it.copy(isLoading = false, error = e.message ?: "Import failed") }
             }
         }

@@ -2,6 +2,9 @@ package com.udnahc.opentasks.data.sync
 
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.ktor.http.URLProtocol
+import org.lighthousegames.logging.logging
+
+private val log = logging("PocketBaseClientProvider")
 
 class PocketBaseClientProvider {
     private var _client: PocketbaseClient? = null
@@ -24,6 +27,7 @@ class PocketBaseClientProvider {
             this.host = host
             this.port = port
         })
+        log.d { "PocketBase client configured" }
     }
 
     fun disconnect() {

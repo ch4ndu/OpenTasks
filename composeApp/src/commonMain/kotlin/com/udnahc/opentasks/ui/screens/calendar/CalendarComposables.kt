@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
@@ -84,6 +85,51 @@ internal fun DayNameHeaders(compact: Boolean = false) {
     }
     if (!compact) {
         Spacer(Modifier.height(dimens.spacerSmall))
+    }
+}
+
+// ── Shared day circle (uniform today/selected/normal styling) ─────────────────
+
+/**
+ * Renders a day number inside a circle with uniform styling across all calendar views.
+ *
+ * - **Today**: `surfaceVariant` circle, `PrimaryBlue` text, bold
+ * - **Selected**: `PrimaryBlue` circle, white text, bold
+ * - **Normal (current month)**: no circle, `onBackground` text, normal weight
+ * - **Other month**: no circle, `onSurfaceVariant` at 40% alpha, normal weight
+ */
+@Composable
+internal fun CalendarDayCircle(
+    text: String,
+    isToday: Boolean,
+    isSelected: Boolean,
+    isCurrentMonth: Boolean = true,
+    size: Dp,
+) {
+    val textColor = when {
+        isSelected -> Color.White
+        isToday -> PrimaryBlue
+        isCurrentMonth -> MaterialTheme.colorScheme.onBackground
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+    }
+    Box(
+        modifier = Modifier
+            .size(size)
+            .then(
+                when {
+                    isSelected -> Modifier.background(PrimaryBlue, CircleShape)
+                    isToday -> Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                    else -> Modifier
+                }
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = OpenTasksTheme.typography.calendarDayNumber,
+            fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
+            color = textColor,
+        )
     }
 }
 
@@ -190,7 +236,7 @@ private fun MiniCalendarAspectRatioGrid(
                         .weight(1f)
                         .aspectRatio(1f)
                         .then(
-                            if (isToday) Modifier.background(PrimaryBlue, CircleShape)
+                            if (isToday) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
                             else Modifier
                         ),
                     contentAlignment = Alignment.Center,
@@ -200,7 +246,7 @@ private fun MiniCalendarAspectRatioGrid(
                         style = OpenTasksTheme.typography.calendarEventOverflow,
                         fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                         color = when {
-                            isToday -> Color.White
+                            isToday -> PrimaryBlue
                             hasTasks && day.isCurrentMonth -> PrimaryBlue
                             day.isCurrentMonth -> MaterialTheme.colorScheme.onBackground
                             else -> Color.Transparent
@@ -300,7 +346,7 @@ private fun MiniCalendarFillGrid(
                                 modifier = Modifier
                                     .size(dimens.miniCalTodayCircle)
                                     .then(
-                                        if (isToday) Modifier.background(PrimaryBlue, CircleShape)
+                                        if (isToday) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
                                         else Modifier
                                     ),
                                 contentAlignment = Alignment.Center,
@@ -310,7 +356,7 @@ private fun MiniCalendarFillGrid(
                                     style = OpenTasksTheme.typography.calendarEventOverflow,
                                     fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                                     color = when {
-                                        isToday -> Color.White
+                                        isToday -> PrimaryBlue
                                         hasTasks && day.isCurrentMonth -> PrimaryBlue
                                         day.isCurrentMonth -> MaterialTheme.colorScheme.onBackground
                                         else -> Color.Transparent

@@ -6,12 +6,17 @@ import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
+import org.lighthousegames.logging.logging
+
+private val log = logging("ImportCsvTasksAction")
 
 class ImportCsvTasksAction(
     private val taskRepository: TaskRepository,
     private val categoryRepository: CategoryRepository,
+    private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
 ) {
     suspend operator fun invoke(tasks: List<CsvTask>): Int {
+        log.d { "Importing ${tasks.size} CSV tasks" }
         if (tasks.isEmpty()) return 0
 
         val categoryCache = mutableMapOf<String, String>()
@@ -40,9 +45,11 @@ class ImportCsvTasksAction(
                 updatedAt = now,
             )
             taskRepository.insert(task)
+            scheduleTaskRemindersAction(task)
             importedCount++
         }
 
+        log.d { "Imported $importedCount CSV tasks" }
         return importedCount
     }
 

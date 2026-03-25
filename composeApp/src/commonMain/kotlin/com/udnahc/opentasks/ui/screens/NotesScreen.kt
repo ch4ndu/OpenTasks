@@ -48,14 +48,17 @@ import opentasks.composeapp.generated.resources.settings
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
-/** Strips markdown formatting and returns the first line as a preview. */
+/** Strips HTML tags and returns the first meaningful line as a preview. */
 internal fun noteContentPreview(content: String): String =
     content
-        .replace(Regex("[#*_~`>\\-\\[\\]()]"), "")
+        .replace(Regex("<[^>]*>"), " ")
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace(Regex("\\s+"), " ")
         .trim()
-        .lines()
-        .firstOrNull()
-        ?: ""
+        .take(120)
 
 private fun formatNoteDate(utcMillis: Long): String {
     if (utcMillis == 0L) return ""

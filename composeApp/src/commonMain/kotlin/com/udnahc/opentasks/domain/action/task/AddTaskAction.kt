@@ -6,6 +6,9 @@ import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.repository.TaskRepository
+import org.lighthousegames.logging.logging
+
+private val log = logging("AddTaskAction")
 
 class AddTaskAction(
     private val repository: TaskRepository,
@@ -33,6 +36,7 @@ class AddTaskAction(
         durationReminders: String = "",
         dateReminders: String = "",
     ): Task {
+        log.d { "Adding task: '$title'" }
         val now = utcNow()
         val task = Task(
                 title = title,
@@ -59,6 +63,7 @@ class AddTaskAction(
                 updatedAt = now,
             )
         repository.insert(task)
+        log.v { "Task created: id=${task.id}" }
         scheduleTaskRemindersAction(task)
         return task
     }

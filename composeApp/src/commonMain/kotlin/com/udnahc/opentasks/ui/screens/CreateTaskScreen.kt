@@ -346,7 +346,11 @@ private fun CreateTaskContent(
     var selectedHour by remember(stateKey) { mutableIntStateOf(editTask?.deadline?.let { extractHour(it) } ?: 8) }
     var selectedMinute by remember(stateKey) { mutableIntStateOf(editTask?.deadline?.let { extractMinute(it) } ?: 0) }
     var selectedReminders by remember(stateKey) {
-        val initial = editTask?.dateReminders?.toReminderSet() ?: emptySet()
+        val initial = if ((editTask?.durationReminders ?: "").isNotBlank()) {
+            editTask?.durationReminders?.toReminderSet() ?: emptySet()
+        } else {
+            editTask?.dateReminders?.toReminderSet() ?: emptySet()
+        }
         mutableStateOf(initial.ifEmpty { setOf(ReminderOption.ON_TIME) })
     }
     var selectedRecurrence by remember(stateKey) { mutableStateOf(editTask?.recurrenceType ?: RecurrenceType.NONE) }
@@ -525,7 +529,7 @@ private fun CreateTaskContent(
                             eventStatus = eventStatus,
                             attendees = attendees,
                             durationReminders = durationReminders,
-                            dateReminders = selectedReminders.toRemindersString(),
+                            dateReminders = if (durationReminders.isBlank()) selectedReminders.toRemindersString() else "",
                         )
                     )
                 }
@@ -1174,6 +1178,15 @@ internal fun DateReminderBottomSheet(
     var showReminderDialog by remember { mutableStateOf(false) }
     var showRepeatDialog by remember { mutableStateOf(false) }
 
+    // Per-tab reminder state (prevents cross-tab contamination)
+    var dateTabReminders by remember {
+        mutableStateOf(if (initialTab == 0) selectedReminders else setOf(ReminderOption.ON_TIME))
+    }
+    var durationTabReminders by remember {
+        mutableStateOf(if (initialTab == 1) selectedReminders else setOf(ReminderOption.ON_TIME))
+    }
+    val activeReminders = if (selectedTab == 0) dateTabReminders else durationTabReminders
+
     // Duration tab state
     var durDay by remember { mutableIntStateOf(if (initialTab == 1 && selectedDay > 0) selectedDay else currentDay()) }
     var durMonth by remember { mutableIntStateOf(if (initialTab == 1 && selectedMonth > 0) selectedMonth else currentMonth()) }
@@ -1261,7 +1274,11 @@ internal fun DateReminderBottomSheet(
                         }
                         onEndTimeSelected(durEndHour, durEndMinute)
                         onAllDayChanged(durAllDay)
-                        onDurationRemindersChanged("duration")
+                        onRemindersSelected(durationTabReminders)
+                        onDurationRemindersChanged(durationTabReminders.toRemindersString())
+                    } else {
+                        onRemindersSelected(dateTabReminders)
+                        onDurationRemindersChanged("")
                     }
                     onConfirm()
                 }) {
@@ -1280,7 +1297,7 @@ internal fun DateReminderBottomSheet(
                     selectedYear = selectedYear,
                     selectedHour = selectedHour,
                     selectedMinute = selectedMinute,
-                    selectedReminders = selectedReminders,
+                    selectedReminders = activeReminders,
                     selectedRecurrence = selectedRecurrence,
                     onDaySelected = onDaySelected,
                     onShowTimePicker = { showTimePicker = true },
@@ -1297,14 +1314,14 @@ internal fun DateReminderBottomSheet(
                     endHour = durEndHour,
                     endMinute = durEndMinute,
                     isAllDay = durAllDay,
-                    selectedReminders = selectedReminders,
+                    selectedReminders = activeReminders,
                     selectedRecurrence = durRecurrence,
                     onAllDayChanged = { durAllDay = it },
                     onShowDateDialog = { showDurDateDialog = true },
                     onShowTimeDialog = { showDurTimeDialog = true },
                     onShowReminderDialog = { showReminderDialog = true },
                     onShowRepeatDialog = { showDurRepeatDialog = true },
-                    onClearReminders = { onRemindersSelected(emptySet()) },
+                    onClearReminders = { durationTabReminders = emptySet() },
                 )
             }
 
@@ -1370,9 +1387,13 @@ internal fun DateReminderBottomSheet(
 
     if (showReminderDialog) {
         ReminderDialog(
-            selected = selectedReminders,
-            onConfirm = {
-                onRemindersSelected(it)
+            selected = activeReminders,
+            onConfirm = { newReminders ->
+                if (selectedTab == 0) {
+                    dateTabReminders = newReminders
+                } else {
+                    durationTabReminders = newReminders
+                }
                 showReminderDialog = false
             },
             onDismiss = { showReminderDialog = false },

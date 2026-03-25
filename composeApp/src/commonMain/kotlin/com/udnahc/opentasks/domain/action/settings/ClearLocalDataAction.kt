@@ -6,6 +6,9 @@ import com.udnahc.opentasks.data.dao.NoteDao
 import com.udnahc.opentasks.data.dao.TagDao
 import com.udnahc.opentasks.data.dao.TaskDao
 import com.udnahc.opentasks.data.model.Category
+import org.lighthousegames.logging.logging
+
+private val log = logging("ClearLocalDataAction")
 
 class ClearLocalDataAction(
     private val taskDao: TaskDao,
@@ -15,6 +18,7 @@ class ClearLocalDataAction(
     private val appSettingsDao: AppSettingsDao,
 ) {
     suspend operator fun invoke() {
+        log.d { "Clearing all local data" }
         // Delete in FK dependency order
         tagDao.deleteAllTaskTags()
         tagDao.deleteAllTags()

@@ -11,7 +11,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.Immutable
+import org.lighthousegames.logging.logging
 
+private val log = logging("ImportIcsViewModel")
+
+@Immutable
 data class ImportIcsUiState(
     val isLoading: Boolean = false,
     val importedCount: Int? = null,
@@ -27,6 +32,7 @@ class ImportIcsViewModel(
     val uiState: StateFlow<ImportIcsUiState> = _uiState.asStateFlow()
 
     fun importFromIcsContent(fileName: String, content: String) {
+        log.d { "Importing ICS events" }
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isLoading = true, error = null, importedCount = null, fileName = fileName) }
             try {
@@ -38,6 +44,7 @@ class ImportIcsViewModel(
                 val count = importAction(events)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: Exception) {
+                log.e { "ICS import failed: ${e.message}" }
                 _uiState.update { it.copy(isLoading = false, error = e.message ?: "Import failed") }
             }
         }

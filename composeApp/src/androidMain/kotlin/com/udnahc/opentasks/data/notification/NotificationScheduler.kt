@@ -6,9 +6,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
-import android.provider.Settings
+import org.lighthousegames.logging.logging
+
+private val log = logging("NotificationScheduler")
 
 actual class NotificationScheduler(private val context: Context) {
 
@@ -46,14 +47,11 @@ actual class NotificationScheduler(private val context: Context) {
         reminderId: Int,
     ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-            val settingsIntent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                data = Uri.parse("package:${context.packageName}")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(settingsIntent)
-            return
-        }
+        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            alarmManager.canScheduleExactAlarms()
+
+        log.d { "Scheduling alarm for task=$taskId reminderId=$reminderId at $triggerAtMillis (exact=$canExact)" }
+
         val intent = Intent(context, NotificationReceiver::class.java).apply {
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_TITLE, title)
@@ -66,11 +64,19 @@ actual class NotificationScheduler(private val context: Context) {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            triggerAtMillis,
-            pendingIntent,
-        )
+        if (canExact) {
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMillis,
+                pendingIntent,
+            )
+        } else {
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMillis,
+                pendingIntent,
+            )
+        }
     }
 
     actual fun cancel(taskId: String, reminderId: Int) {
@@ -97,18 +103,25 @@ actual class NotificationScheduler(private val context: Context) {
     }
 
     actual fun startOngoing(taskId: String, title: String) {
+        log.d { "Starting ongoing notification for task=$taskId" }
         val intent = Intent(context, OngoingNotificationService::class.java).apply {
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_TITLE, title)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent)
-        } else {
-            context.startService(intent)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        } catch (e: Exception) {
+            // Android 12+ blocks foreground service starts from the background
+            log.e { "Cannot start ongoing notification from background: ${e.message}" }
         }
     }
 
     actual fun stopOngoing(taskId: String) {
+        log.d { "Stopping ongoing notification for task=$taskId" }
         val intent = Intent(context, OngoingNotificationService::class.java).apply {
             action = ACTION_STOP_ONGOING
             putExtra(EXTRA_TASK_ID, taskId)

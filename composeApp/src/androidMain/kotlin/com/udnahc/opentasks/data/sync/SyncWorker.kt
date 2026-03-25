@@ -6,6 +6,9 @@ import androidx.work.WorkerParameters
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import org.lighthousegames.logging.logging
+
+private val log = logging("SyncWorker")
 
 class SyncWorker(
     context: Context,
@@ -16,11 +19,13 @@ class SyncWorker(
     private val rescheduleAllRemindersAction: RescheduleAllRemindersAction by inject()
 
     override suspend fun doWork(): Result {
+        log.d { "SyncWorker starting" }
         return try {
             syncService.syncAll()
             rescheduleAllRemindersAction()
             Result.success()
         } catch (e: Exception) {
+            log.e { "SyncWorker failed, retrying: ${e.message}" }
             Result.retry()
         }
     }

@@ -83,6 +83,8 @@ import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.NoteViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
+import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import org.koin.compose.koinInject
 import opentasks.composeapp.generated.resources.Res
@@ -116,11 +118,21 @@ fun App(sharedText: String = "", deepLinkTaskId: String = "") {
         val navController = remember { AppNavController(backStack) }
         val initializeSyncAction = koinInject<InitializeSyncAction>()
         val rescheduleAllRemindersAction = koinInject<RescheduleAllRemindersAction>()
+        val triggerSyncAction = koinInject<TriggerSyncAction>()
+        val isSyncInitialized = remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) {
                 initializeSyncAction()
                 rescheduleAllRemindersAction()
+                isSyncInitialized.value = true
             }
+        }
+        val syncScope = rememberCoroutineScope()
+        LifecycleResumeEffect(isSyncInitialized.value) {
+            if (isSyncInitialized.value) {
+                syncScope.launch(Dispatchers.IO) { triggerSyncAction() }
+            }
+            onPauseOrDispose { }
         }
         if (sharedText.isNotEmpty()) {
             LaunchedEffect(Unit) {

@@ -3,6 +3,9 @@ package com.udnahc.opentasks.data.calendar
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskPriority
 import kotlinx.datetime.Instant
+import org.lighthousegames.logging.logging
+
+private val log = logging("CsvParser")
 
 /**
  * Parsed row from a TickTick CSV export.
@@ -146,7 +149,8 @@ object CsvParser {
             // Normalize offset: +0000 → +00:00
             val normalized = value.replace(Regex("([+-])(\\d{2})(\\d{2})$"), "$1$2:$3")
             Instant.parse(normalized).toEpochMilliseconds()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            log.d { "Failed to parse date '$value': ${e.message}" }
             null
         }
     }

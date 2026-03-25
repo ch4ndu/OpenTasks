@@ -33,6 +33,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
+import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.SyncStatus
@@ -52,6 +54,11 @@ import opentasks.composeapp.generated.resources.logout
 import opentasks.composeapp.generated.resources.logout_confirm_message
 import opentasks.composeapp.generated.resources.logout_confirm_title
 import opentasks.composeapp.generated.resources.logout_description
+import opentasks.composeapp.generated.resources.notifications
+import opentasks.composeapp.generated.resources.calendar_access
+import opentasks.composeapp.generated.resources.permission_granted
+import opentasks.composeapp.generated.resources.permission_not_granted
+import opentasks.composeapp.generated.resources.permissions
 import opentasks.composeapp.generated.resources.theme
 import opentasks.composeapp.generated.resources.theme_dark
 import opentasks.composeapp.generated.resources.theme_light
@@ -79,16 +86,38 @@ fun SettingsScreen(
     val currentUrl by viewModel.pocketBaseUrl.collectAsState()
     val syncStatus by viewModel.syncStatus.collectAsState()
     val themePreference by viewModel.themePreference.collectAsState()
+    val notificationGranted by viewModel.notificationGranted.collectAsState()
+    val calendarGranted by viewModel.calendarGranted.collectAsState()
+
+    val requestNotification = rememberNotificationPermissionLauncher { granted ->
+        if (granted) {
+            // POST_NOTIFICATIONS granted, but exact alarms might still be denied
+            viewModel.openNotificationSettings()
+        }
+        viewModel.recheckPermissions()
+    }
+    val requestCalendar = rememberCalendarPermissionLauncher { granted ->
+        viewModel.onCalendarPermissionResult(granted)
+    }
 
     SettingsContent(
         currentUrl = currentUrl,
         syncStatus = syncStatus,
         themePreference = themePreference,
+        notificationGranted = notificationGranted,
+        calendarGranted = calendarGranted,
         onBack = onBack,
-        onSaveUrl = { viewModel.savePocketBaseUrl(it) },
+        onSaveUrl = {
+            viewModel.savePocketBaseUrl(it)
+            requestNotification()
+        },
         onClearUrl = { viewModel.clearPocketBaseUrl() },
         onSyncNow = { viewModel.triggerSync() },
         onThemeChanged = { viewModel.saveThemePreference(it) },
+        onRequestNotificationPermission = {
+            requestNotification()
+        },
+        onRequestCalendarPermission = requestCalendar,
         onImportCalendar = onImportCalendar,
         onImportIcs = onImportIcs,
         onImportCsv = onImportCsv,
@@ -102,11 +131,15 @@ private fun SettingsContent(
     currentUrl: String?,
     syncStatus: SyncStatus,
     themePreference: ThemeMode = ThemeMode.SYSTEM,
+    notificationGranted: Boolean = true,
+    calendarGranted: Boolean = false,
     onBack: () -> Unit,
     onSaveUrl: (String) -> Unit,
     onClearUrl: () -> Unit,
     onSyncNow: () -> Unit = {},
     onThemeChanged: (ThemeMode) -> Unit = {},
+    onRequestNotificationPermission: () -> Unit = {},
+    onRequestCalendarPermission: () -> Unit = {},
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
     onImportCsv: () -> Unit = {},
@@ -156,6 +189,27 @@ private fun SettingsContent(
                     title = stringResource(Res.string.theme),
                     summary = themeName,
                     onClick = { showThemeDialog = true },
+                )
+            }
+
+            // ── Permissions ──
+            item(key = "permissions_header") {
+                SettingsCategoryHeader(stringResource(Res.string.permissions))
+            }
+            item(key = "perm_notifications") {
+                SettingsRow(
+                    title = stringResource(Res.string.notifications),
+                    summary = if (notificationGranted) stringResource(Res.string.permission_granted)
+                    else stringResource(Res.string.permission_not_granted),
+                    onClick = { if (!notificationGranted) onRequestNotificationPermission() },
+                )
+            }
+            item(key = "perm_calendar") {
+                SettingsRow(
+                    title = stringResource(Res.string.calendar_access),
+                    summary = if (calendarGranted) stringResource(Res.string.permission_granted)
+                    else stringResource(Res.string.permission_not_granted),
+                    onClick = { if (!calendarGranted) onRequestCalendarPermission() },
                 )
             }
 

@@ -71,7 +71,7 @@ val sharedModule = module {
                 override fun onCreate(connection: SQLiteConnection) {
                     super.onCreate(connection)
                     connection.execSQL(
-                        "INSERT OR IGNORE INTO `categories` (`id`, `name`, `icon`, `sortOrder`, `isSynced`, `isDeleted`, `createdAt`) VALUES ('00000000-0000-0000-0000-000000000001', 'Inbox', 'inbox', 0, 0, 0, 0)"
+                        "INSERT OR IGNORE INTO `categories` (`id`, `name`, `icon`, `sortOrder`, `isSynced`, `isDeleted`, `createdAt`, `updatedAt`) VALUES ('00000000-0000-0000-0000-000000000001', 'Inbox', 'inbox', 0, 0, 0, 0, 0)"
                     )
                 }
             })
@@ -103,7 +103,7 @@ val sharedModule = module {
     // Actions
     single { AddTaskAction(get(), get()) }
     single { UpdateTaskAction(get(), get()) }
-    single { DeleteTaskAction(get()) }
+    single { DeleteTaskAction(get(), get()) }
     single { ToggleTaskCompleteAction(get(), get()) }
     single { AddCategoryAction(get()) }
     single { AddNoteAction(get()) }
@@ -111,8 +111,8 @@ val sharedModule = module {
     single { DeleteNoteAction(get()) }
     single { AddTagAction(get()) }
     single { TagTaskAction(get()) }
-    single { ImportCalendarEventsAction(get(), get(), get(), get()) }
-    single { ImportCsvTasksAction(get(), get()) }
+    single { ImportCalendarEventsAction(get(), get(), get(), get(), get()) }
+    single { ImportCsvTasksAction(get(), get(), get()) }
     single { ScheduleTaskRemindersAction(get()) }
     single { RescheduleAllRemindersAction(get(), get()) }
     single { SavePocketBaseUrlAction(get(), get(), get()) }
@@ -135,5 +135,5 @@ val sharedModule = module {
     viewModel { ImportCalendarViewModel(get(), get()) }
     viewModel { ImportIcsViewModel(get()) }
     viewModel { ImportCsvViewModel(get()) }
-    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }

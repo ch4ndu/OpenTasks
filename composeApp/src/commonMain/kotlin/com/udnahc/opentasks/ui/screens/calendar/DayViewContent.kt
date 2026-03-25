@@ -242,15 +242,8 @@ private fun DayViewStripItem(
                 .size(dimens.calendarDaySize)
                 .then(
                     when {
-                        isSelected -> Modifier.background(
-                            PrimaryBlue, CircleShape
-                        )
-
-                        isToday -> Modifier.background(
-                            MaterialTheme.colorScheme.onBackground,
-                            CircleShape
-                        )
-
+                        isSelected -> Modifier.background(PrimaryBlue, CircleShape)
+                        isToday -> Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
                         else -> Modifier
                     }
                 ),
@@ -272,10 +265,7 @@ private fun DayViewStripItem(
             Box(
                 modifier = Modifier
                     .size(dimens.calendarDotSize)
-                    .background(
-                        if (isToday) Color.White else PrimaryBlue,
-                        CircleShape,
-                    ),
+                    .background(PrimaryBlue, CircleShape),
             )
         } else {
             Spacer(Modifier.height(dimens.spacerMedium))

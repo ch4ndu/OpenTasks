@@ -28,6 +28,8 @@
     <string name="delete">Delete</string>
     <string name="delete_task_title">Delete task?</string>
     <string name="delete_task_message">This task will be permanently deleted.</string>
+    <string name="delete_note_title">Delete note?</string>
+    <string name="delete_note_message">This note will be permanently deleted.</string>
     <string name="start">Start</string>
     <string name="end">End</string>
 
@@ -219,6 +221,13 @@
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+
+    <!-- Settings / Permissions -->
+    <string name="permissions">Permissions</string>
+    <string name="notifications">Notifications</string>
+    <string name="calendar_access">Calendar</string>
+    <string name="permission_granted">Granted</string>
+    <string name="permission_not_granted">Not granted</string>
 
     <!-- Settings / Sync -->
     <string name="sync">Sync</string>

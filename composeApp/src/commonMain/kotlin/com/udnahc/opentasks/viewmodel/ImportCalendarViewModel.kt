@@ -14,9 +14,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.Immutable
+import org.lighthousegames.logging.logging
+
+private val log = logging("ImportCalendarViewModel")
 
 enum class ImportRangeUnit { DAYS, WEEKS, MONTHS, YEARS }
 
+@Immutable
 data class ImportCalendarUiState(
     val permissionStatus: CalendarPermissionStatus = CalendarPermissionStatus.NOT_DETERMINED,
     val isLoading: Boolean = false,
@@ -61,6 +66,8 @@ class ImportCalendarViewModel(
     }
 
     fun importEvents() {
+        val selectedEvents = _uiState.value
+        log.d { "Importing ${selectedEvents.rangeValue} ${selectedEvents.rangeUnit} of calendar events" }
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isLoading = true, error = null, importedCount = null) }
             try {
@@ -73,6 +80,7 @@ class ImportCalendarViewModel(
                 val count = importAction(events)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: Exception) {
+                log.e { "Calendar import failed: ${e.message}" }
                 _uiState.update {
                     it.copy(isLoading = false, error = e.message ?: "Import failed")
                 }

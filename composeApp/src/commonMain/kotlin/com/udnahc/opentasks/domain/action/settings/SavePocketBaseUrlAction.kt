@@ -5,6 +5,9 @@ import com.udnahc.opentasks.data.model.AppSettings
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.SyncService
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase.Companion.KEY_POCKETBASE_URL
+import org.lighthousegames.logging.logging
+
+private val log = logging("SavePocketBaseUrlAction")
 
 class SavePocketBaseUrlAction(
     private val appSettingsDao: AppSettingsDao,
@@ -13,6 +16,7 @@ class SavePocketBaseUrlAction(
 ) {
     /** Saves the URL, configures the sync client, and triggers a full sync. */
     suspend operator fun invoke(url: String) {
+        log.d { "Saving PocketBase URL" }
         appSettingsDao.setValue(AppSettings(KEY_POCKETBASE_URL, url))
         pbProvider.configure(url)
         syncService.syncAll()

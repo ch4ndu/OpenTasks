@@ -12,14 +12,19 @@ import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.TagRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.domain.action.tag.AddTagAction
+import org.lighthousegames.logging.logging
+
+private val log = logging("ImportCalendarEventsAction")
 
 class ImportCalendarEventsAction(
     private val taskRepository: TaskRepository,
     private val categoryRepository: CategoryRepository,
     private val tagRepository: TagRepository,
     private val addTagAction: AddTagAction,
+    private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
 ) {
     suspend operator fun invoke(events: List<CalendarEvent>): Int {
+        log.d { "Importing ${events.size} calendar events" }
         if (events.isEmpty()) return 0
 
         // Find or create "Calendar Imports" category
@@ -42,7 +47,10 @@ class ImportCalendarEventsAction(
 
         for (event in events) {
             // Skip duplicates
-            if (taskRepository.getTaskByExternalId(event.externalId) != null) continue
+            if (taskRepository.getTaskByExternalId(event.externalId) != null) {
+                log.v { "Skipping duplicate: ${event.externalId}" }
+                continue
+            }
 
             // Build content with time range
             val content = buildEventContent(event)
@@ -63,12 +71,14 @@ class ImportCalendarEventsAction(
                 updatedAt = now,
             )
             taskRepository.insert(task)
+            scheduleTaskRemindersAction(task)
 
             // Tag the task
             tagRepository.insertTaskTag(TaskTag(taskId = task.id, tagId = tag.id))
             importedCount++
         }
 
+        log.d { "Imported $importedCount calendar events" }
         return importedCount
     }
 

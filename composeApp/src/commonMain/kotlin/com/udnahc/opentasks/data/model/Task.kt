@@ -31,6 +31,7 @@ data class Task(
     val attendees: String = "",
     val durationReminders: String = "",
     val dateReminders: String = "",
+    val pbId: String? = null,
     val isSynced: Boolean = false,
     val isDeleted: Boolean = false,
     val createdAt: Long = 0L,

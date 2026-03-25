@@ -3,9 +3,18 @@ package com.udnahc.opentasks.domain.action.task
 import com.udnahc.opentasks.data.extensions.utcNow
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.repository.TaskRepository
+import org.lighthousegames.logging.logging
 
-class DeleteTaskAction(private val repository: TaskRepository) {
+private val log = logging("DeleteTaskAction")
+
+class DeleteTaskAction(
+    private val repository: TaskRepository,
+    private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
+) {
     suspend operator fun invoke(task: Task) {
-        repository.update(task.copy(isDeleted = true, updatedAt = utcNow()))
+        log.d { "Soft-deleting task: ${task.id}" }
+        val deleted = task.copy(isDeleted = true, updatedAt = utcNow())
+        repository.update(deleted)
+        scheduleTaskRemindersAction(deleted)
     }
 }

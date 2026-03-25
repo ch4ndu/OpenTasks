@@ -36,6 +36,9 @@ interface CategoryDao {
     @Query("UPDATE categories SET isSynced = 1 WHERE id = :id")
     suspend fun markSynced(id: String)
 
+    @Query("UPDATE categories SET pbId = :pbId WHERE id = :id")
+    suspend fun updatePbId(id: String, pbId: String)
+
     @Upsert
     suspend fun upsert(category: Category)
 

@@ -11,6 +11,7 @@ data class Note(
     @PrimaryKey val id: String = uuid4(),
     val title: String = "",
     val content: String = "",
+    val pbId: String? = null,
     val isSynced: Boolean = false,
     val isDeleted: Boolean = false,
     val createdAt: Long = 0L,

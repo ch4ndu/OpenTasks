@@ -2,7 +2,10 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
+import com.udnahc.opentasks.data.calendar.CalendarProvider
 import com.udnahc.opentasks.data.model.ThemeMode
+import com.udnahc.opentasks.data.notification.NotificationPermissionChecker
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
@@ -19,6 +22,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.lighthousegames.logging.logging
+
+private val log = logging("SettingsViewModel")
 
 enum class SyncStatus { IDLE, SYNCING, SUCCESS, ERROR }
 
@@ -30,6 +36,8 @@ class SettingsViewModel(
     private val triggerSyncAction: TriggerSyncAction,
     private val saveThemePreferenceAction: SaveThemePreferenceAction,
     private val clearLocalDataAction: ClearLocalDataAction,
+    private val notificationPermissionChecker: NotificationPermissionChecker,
+    private val calendarProvider: CalendarProvider,
 ) : ViewModel() {
 
     val pocketBaseUrl: StateFlow<String?> = observePocketBaseUrl()
@@ -40,6 +48,14 @@ class SettingsViewModel(
 
     private val _syncStatus = MutableStateFlow(SyncStatus.IDLE)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
+
+    private val _notificationGranted = MutableStateFlow(true)
+    val notificationGranted: StateFlow<Boolean> = _notificationGranted.asStateFlow()
+
+    private val _calendarGranted = MutableStateFlow(false)
+    val calendarGranted: StateFlow<Boolean> = _calendarGranted.asStateFlow()
+
+    init { recheckPermissions() }
 
     fun savePocketBaseUrl(url: String) {
         val trimmed = url.trim()
@@ -52,12 +68,14 @@ class SettingsViewModel(
         } else {
             trimmed
         }
+        log.d { "Saving PocketBase URL: $normalized" }
         viewModelScope.launch(Dispatchers.IO) {
             _syncStatus.value = SyncStatus.SYNCING
             try {
                 savePocketBaseUrlAction(normalized)
                 _syncStatus.value = SyncStatus.SUCCESS
             } catch (e: Exception) {
+                log.e { "Failed to save PocketBase URL: ${e.message}" }
                 _syncStatus.value = SyncStatus.ERROR
             }
         }
@@ -71,12 +89,14 @@ class SettingsViewModel(
     }
 
     fun triggerSync() {
+        log.d { "Manual sync triggered" }
         viewModelScope.launch(Dispatchers.IO) {
             _syncStatus.value = SyncStatus.SYNCING
             try {
                 triggerSyncAction()
                 _syncStatus.value = SyncStatus.SUCCESS
             } catch (e: Exception) {
+                log.e { "Sync failed: ${e.message}" }
                 _syncStatus.value = SyncStatus.ERROR
             }
         }
@@ -84,6 +104,21 @@ class SettingsViewModel(
 
     fun saveThemePreference(mode: ThemeMode) {
         viewModelScope.launch(Dispatchers.IO) { saveThemePreferenceAction(mode) }
+    }
+
+    fun openNotificationSettings() {
+        notificationPermissionChecker.openSettings()
+    }
+
+    fun recheckPermissions() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _notificationGranted.value = notificationPermissionChecker.isGranted()
+            _calendarGranted.value = calendarProvider.checkPermission() == CalendarPermissionStatus.GRANTED
+        }
+    }
+
+    fun onCalendarPermissionResult(granted: Boolean) {
+        _calendarGranted.value = granted
     }
 
     fun clearLocalData(onComplete: () -> Unit) {

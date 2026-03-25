@@ -6,6 +6,9 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toInstant
+import org.lighthousegames.logging.logging
+
+private val log = logging("IcsParser")
 
 /**
  * Parses ICS (iCalendar RFC 5545) content into [CalendarEvent] objects.
@@ -176,7 +179,7 @@ object IcsParser {
                 // TZID-qualified or floating time
                 val tzid = params["TZID"]
                 val tz = if (tzid != null) {
-                    try { TimeZone.of(tzid) } catch (_: Exception) { TimeZone.currentSystemDefault() }
+                    try { TimeZone.of(tzid) } catch (e: Exception) { log.d { "Unknown timezone '$tzid', using system default: ${e.message}" }; TimeZone.currentSystemDefault() }
                 } else {
                     TimeZone.currentSystemDefault()
                 }
@@ -184,7 +187,8 @@ object IcsParser {
                 val millis = dt.toInstant(tz).toEpochMilliseconds()
                 millis to false
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            log.d { "Failed to parse ICS datetime '$value': ${e.message}" }
             null
         }
     }

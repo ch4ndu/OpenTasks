@@ -17,7 +17,7 @@ import com.udnahc.opentasks.data.model.Tag
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskTag
 
-@Database(entities = [Task::class, Category::class, Note::class, Tag::class, TaskTag::class, AppSettings::class], version = 1)
+@Database(entities = [Task::class, Category::class, Note::class, Tag::class, TaskTag::class, AppSettings::class], version = 2)
 @TypeConverters(Converters::class)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {

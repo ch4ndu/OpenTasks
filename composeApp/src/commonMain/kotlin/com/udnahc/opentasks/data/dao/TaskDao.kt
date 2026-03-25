@@ -24,7 +24,7 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE isDeleted = 0 ORDER BY updatedAt DESC")
     fun getAllTasks(): Flow<List<Task>>
 
-    @Query("SELECT * FROM tasks WHERE isCompleted = 0 AND deadline IS NOT NULL")
+    @Query("SELECT * FROM tasks WHERE isCompleted = 0 AND isDeleted = 0 AND deadline IS NOT NULL")
     suspend fun getTasksWithDeadlines(): List<Task>
 
     @Query("SELECT * FROM tasks WHERE id = :id")
@@ -41,6 +41,9 @@ interface TaskDao {
 
     @Query("UPDATE tasks SET isSynced = 1 WHERE id = :id")
     suspend fun markSynced(id: String)
+
+    @Query("UPDATE tasks SET pbId = :pbId WHERE id = :id")
+    suspend fun updatePbId(id: String, pbId: String)
 
     @Upsert
     suspend fun upsert(task: Task)

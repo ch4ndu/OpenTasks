@@ -12,6 +12,7 @@ class CategoryRecord(
     val sortOrder: Int = 0,
     val isDeleted: Boolean = false,
     val localCreatedAt: Long = 0L,
+    val localUpdatedAt: Long = 0L,
 ) : BaseModel()
 
 fun Category.toCategoryRecord(): CategoryRecord = CategoryRecord(
@@ -21,14 +22,17 @@ fun Category.toCategoryRecord(): CategoryRecord = CategoryRecord(
     sortOrder = sortOrder,
     isDeleted = isDeleted,
     localCreatedAt = createdAt,
+    localUpdatedAt = updatedAt,
 )
 
 fun CategoryRecord.toCategory(): Category = Category(
     id = localId,
+    pbId = id,
     name = name,
     icon = icon,
     sortOrder = sortOrder,
     isDeleted = isDeleted,
     isSynced = true,
     createdAt = localCreatedAt,
+    updatedAt = localUpdatedAt,
 )

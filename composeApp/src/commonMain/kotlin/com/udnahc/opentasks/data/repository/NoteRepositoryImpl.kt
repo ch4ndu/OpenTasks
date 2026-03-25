@@ -8,6 +8,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import org.lighthousegames.logging.logging
+
+private val log = logging("NoteRepository")
 
 class NoteRepositoryImpl(
     private val noteDao: NoteDao,
@@ -23,16 +26,19 @@ class NoteRepositoryImpl(
         noteDao.getNoteById(id)?.withLocalTimestamps()
 
     override suspend fun insert(note: Note) {
+        log.v { "Inserting note: ${note.id}" }
         noteDao.insert(note)
         triggerSyncAction()
     }
 
     override suspend fun update(note: Note) {
-        noteDao.update(note)
+        log.v { "Updating note: ${note.id}, content has newlines=${'\n' in note.content}" }
+        noteDao.update(note.copy(isSynced = false))
         triggerSyncAction()
     }
 
     override suspend fun delete(note: Note) {
+        log.v { "Deleting note: ${note.id}" }
         noteDao.delete(note)
         triggerSyncAction()
     }
