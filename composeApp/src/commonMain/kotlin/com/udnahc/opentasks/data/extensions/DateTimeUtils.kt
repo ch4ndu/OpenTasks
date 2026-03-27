@@ -119,6 +119,51 @@ fun computeDeadlineUtcMillis(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  RECURRENCE — NEXT DEADLINE COMPUTATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Compute the next deadline UTC millis for a recurring task.
+ * Advances in local time to handle DST correctly, then converts back to UTC.
+ * [interval] defaults to 1 (e.g., every 1 day, every 1 week).
+ */
+fun computeNextDeadlineUtc(
+    currentDeadlineUtcMillis: Long,
+    recurrenceType: String,
+    interval: Int = 1,
+): Long {
+    val tz = TimeZone.currentSystemDefault()
+    val instant = Instant.fromEpochMilliseconds(currentDeadlineUtcMillis)
+    val localDt = instant.toLocalDateTime(tz)
+    val effectiveInterval = if (interval > 0) interval else 1
+
+    val nextLocalDt = when (recurrenceType) {
+        "DAILY" -> localDt.date.plus(effectiveInterval, DateTimeUnit.DAY)
+            .let { LocalDateTime(it, localDt.time) }
+
+        "WEEKLY" -> localDt.date.plus(effectiveInterval * 7, DateTimeUnit.DAY)
+            .let { LocalDateTime(it, localDt.time) }
+
+        "MONTHLY" -> localDt.date.plus(effectiveInterval, DateTimeUnit.MONTH)
+            .let { LocalDateTime(it, localDt.time) }
+
+        "YEARLY" -> localDt.date.plus(effectiveInterval, DateTimeUnit.YEAR)
+            .let { LocalDateTime(it, localDt.time) }
+
+        "EVERY_WEEKDAY" -> {
+            var next = localDt.date.plus(1, DateTimeUnit.DAY)
+            while (next.dayOfWeek == DayOfWeek.SATURDAY || next.dayOfWeek == DayOfWeek.SUNDAY) {
+                next = next.plus(1, DateTimeUnit.DAY)
+            }
+            LocalDateTime(next, localDt.time)
+        }
+
+        else -> return currentDeadlineUtcMillis // NONE or unknown — no advancement
+    }
+    return nextLocalDt.toInstant(tz).toEpochMilliseconds()
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  CALENDAR UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════
 

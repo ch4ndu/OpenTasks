@@ -47,6 +47,7 @@ import opentasks.composeapp.generated.resources.clear
 import opentasks.composeapp.generated.resources.connected
 import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.cancel
+import opentasks.composeapp.generated.resources.import_header
 import opentasks.composeapp.generated.resources.appearance
 import opentasks.composeapp.generated.resources.account
 import opentasks.composeapp.generated.resources.import_csv_ticktick
@@ -243,7 +244,7 @@ private fun SettingsContent(
 
             // ── Import ──
             item(key = "import_header") {
-                SettingsCategoryHeader("Import")
+                SettingsCategoryHeader(stringResource(Res.string.import_header))
             }
             item(key = "import_calendar") {
                 SettingsRow(
@@ -500,5 +501,25 @@ private fun SettingsContentConnectedPreview() {
             onSaveUrl = {},
             onClearUrl = {},
         )
+    }
+}
+
+@Composable
+@Preview
+private fun SettingsRowPreview() {
+    OpenTasksTheme {
+        SettingsRow(
+            title = "PocketBase URL",
+            summary = "http://192.168.1.100:8090",
+            onClick = {},
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun SettingsCategoryHeaderPreview() {
+    OpenTasksTheme {
+        SettingsCategoryHeader(title = "Appearance")
     }
 }

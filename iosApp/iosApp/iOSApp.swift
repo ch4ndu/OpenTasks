@@ -25,6 +25,14 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        let id = notification.request.identifier
+        // When a new ongoing notification fires, clear previously delivered ones for the same task
+        if id.contains("_ongoing_") {
+            let prefix = id.components(separatedBy: "_ongoing_").dropLast().joined(separator: "_ongoing_")
+            let allOngoingIds = stride(from: 8, through: 22, by: 2).map { "\(prefix)_ongoing_\($0)" }
+            let otherIds = allOngoingIds.filter { $0 != id }
+            center.removeDeliveredNotifications(withIdentifiers: otherIds)
+        }
         completionHandler([.banner, .sound, .badge])
     }
 

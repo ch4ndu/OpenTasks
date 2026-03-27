@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
+import com.udnahc.opentasks.widget.TaskWidget
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.lighthousegames.logging.logging
@@ -23,6 +24,7 @@ class SyncWorker(
         return try {
             syncService.syncAll()
             rescheduleAllRemindersAction()
+            TaskWidget.refreshAllWidgets(applicationContext)
             Result.success()
         } catch (e: Exception) {
             log.e { "SyncWorker failed, retrying: ${e.message}" }

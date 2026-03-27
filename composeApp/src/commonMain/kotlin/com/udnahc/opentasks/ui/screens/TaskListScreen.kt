@@ -390,3 +390,39 @@ private fun TaskListScreenEmptyPreview() {
         )
     }
 }
+
+@Composable
+@Preview
+private fun TaskRowPreview() {
+    OpenTasksTheme {
+        TaskRow(
+            task = PreviewSampleData.sampleTasks.first(),
+            onToggleComplete = {},
+            onClick = {},
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun CompletedTaskRowPreview() {
+    OpenTasksTheme {
+        CompletedTaskRow(
+            task = PreviewSampleData.sampleTasks.first { it.isCompleted },
+            onToggleComplete = {},
+            onClick = {},
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun TaskListTopBarPreview() {
+    OpenTasksTheme {
+        TaskListTopBar(
+            listName = "Inbox",
+            onListClick = {},
+            onSettingsClick = {},
+        )
+    }
+}

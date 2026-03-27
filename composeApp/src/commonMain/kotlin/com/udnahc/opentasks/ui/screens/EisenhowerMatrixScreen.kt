@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -385,5 +386,43 @@ private fun EisenhowerMatrixScreenPreview() {
             onTaskClick = {},
             onToggleComplete = {},
         )
+    }
+}
+
+@Composable
+@Preview
+private fun QuadrantCardPreview() {
+    OpenTasksTheme {
+        QuadrantCard(
+            modifier = Modifier.fillMaxWidth().height(300.dp),
+            title = "Urgent & Important",
+            badge = "I",
+            color = PriorityHigh,
+            tasks = PreviewSampleData.sampleTasks.filter { it.priority == TaskPriority.HIGH },
+            onTaskClick = {},
+            onToggleComplete = {},
+            onCardClick = {},
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun QuadrantTaskRowPreview() {
+    OpenTasksTheme {
+        QuadrantTaskRow(
+            task = PreviewSampleData.sampleTasks.first(),
+            color = PriorityHigh,
+            onToggleComplete = {},
+            onClick = {},
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun MatrixHeaderPreview() {
+    OpenTasksTheme {
+        MatrixHeader(onSettingsClick = {})
     }
 }

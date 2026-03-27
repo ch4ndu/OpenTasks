@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget colors -->
+    <color name="widget_bg_dark">#FF1E1E1E</color>
+    <color name="widget_bg_light">#FFF5F5F5</color>
+    <color name="widget_text_white">#FFFFFFFF</color>
+    <color name="widget_text_black">#FF000000</color>
+    <color name="widget_date_red">#FFC83C3C</color>
+    <color name="widget_text_gray">#FF888888</color>
+
+    <!-- Calendar widget colors -->
+    <color name="calendar_widget_today_bg">#FF4D9EFF</color>
+    <color name="calendar_widget_today_text">#FFFFFFFF</color>
+    <color name="calendar_widget_dot">#FF4D9EFF</color>
+    <color name="calendar_widget_day_dimmed">#FF555555</color>
+    <color name="calendar_widget_day_dimmed_light">#FFAAAAAA</color>
+
+    <!-- Widget priority colors (task bar backgrounds) -->
+    <color name="widget_priority_high">#4DFF5F68</color>
+    <color name="widget_priority_medium">#4DFFB000</color>
+    <color name="widget_priority_low">#4D4772FA</color>
+    <color name="widget_priority_none">#4D0CCE9C</color>
+    <!-- Widget priority text colors -->
+    <color name="widget_priority_high_text">#FFFF5F68</color>
+    <color name="widget_priority_medium_text">#FFFFB000</color>
+    <color name="widget_priority_low_text">#FF4772FA</color>
+    <color name="widget_priority_none_text">#FF0CCE9C</color>
+</resources>

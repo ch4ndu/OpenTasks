@@ -53,4 +53,10 @@ interface TaskDao {
 
     @Query("DELETE FROM tasks")
     suspend fun deleteAll()
+
+    @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND isCompleted = 0 AND deadline IS NOT NULL AND deadline >= :startUtc AND deadline < :endUtc ORDER BY deadline ASC")
+    suspend fun getTasksInDateRange(startUtc: Long, endUtc: Long): List<Task>
+
+    @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND isCompleted = 0 ORDER BY deadline ASC, updatedAt DESC")
+    suspend fun getActiveTasksOnce(): List<Task>
 }

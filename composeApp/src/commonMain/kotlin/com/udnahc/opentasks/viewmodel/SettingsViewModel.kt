@@ -3,14 +3,14 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
-import com.udnahc.opentasks.data.calendar.CalendarProvider
 import com.udnahc.opentasks.data.model.ThemeMode
-import com.udnahc.opentasks.data.notification.NotificationPermissionChecker
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SaveThemePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
+import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
 import kotlinx.coroutines.Dispatchers
@@ -36,8 +36,8 @@ class SettingsViewModel(
     private val triggerSyncAction: TriggerSyncAction,
     private val saveThemePreferenceAction: SaveThemePreferenceAction,
     private val clearLocalDataAction: ClearLocalDataAction,
-    private val notificationPermissionChecker: NotificationPermissionChecker,
-    private val calendarProvider: CalendarProvider,
+    private val checkNotificationPermission: CheckNotificationPermissionUseCase,
+    private val checkCalendarPermission: CheckCalendarPermissionUseCase,
 ) : ViewModel() {
 
     val pocketBaseUrl: StateFlow<String?> = observePocketBaseUrl()
@@ -107,13 +107,13 @@ class SettingsViewModel(
     }
 
     fun openNotificationSettings() {
-        notificationPermissionChecker.openSettings()
+        checkNotificationPermission.openSettings()
     }
 
     fun recheckPermissions() {
         viewModelScope.launch(Dispatchers.IO) {
-            _notificationGranted.value = notificationPermissionChecker.isGranted()
-            _calendarGranted.value = calendarProvider.checkPermission() == CalendarPermissionStatus.GRANTED
+            _notificationGranted.value = checkNotificationPermission()
+            _calendarGranted.value = checkCalendarPermission() == CalendarPermissionStatus.GRANTED
         }
     }
 

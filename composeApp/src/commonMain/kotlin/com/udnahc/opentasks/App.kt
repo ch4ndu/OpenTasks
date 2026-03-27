@@ -110,7 +110,7 @@ private fun isTabScreen(key: Any): Boolean =
 
 @Composable
 @Preview
-fun App(sharedText: String = "", deepLinkTaskId: String = "") {
+fun App(sharedText: String = "", deepLinkTaskId: String = "", widgetAction: String = "") {
     val settingsViewModel: SettingsViewModel = koinViewModel()
     val themeMode by settingsViewModel.themePreference.collectAsState()
     OpenTasksTheme(themeMode = themeMode) {
@@ -142,6 +142,14 @@ fun App(sharedText: String = "", deepLinkTaskId: String = "") {
         if (deepLinkTaskId.isNotEmpty()) {
             LaunchedEffect(deepLinkTaskId) {
                 navController.navigate(Screen.EditTask(deepLinkTaskId))
+            }
+        }
+        if (widgetAction.isNotEmpty()) {
+            LaunchedEffect(widgetAction) {
+                when (widgetAction) {
+                    "create_task" -> navController.navigate(Screen.CreateTask())
+                    "view_list" -> navController.navigateToTab(Screen.TaskList)
+                }
             }
         }
         MainScreen(navController = navController, backStack = backStack)

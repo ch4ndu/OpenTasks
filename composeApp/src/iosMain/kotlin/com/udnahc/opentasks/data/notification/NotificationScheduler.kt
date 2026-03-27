@@ -65,6 +65,7 @@ actual class NotificationScheduler {
     actual fun cancelReminders(taskId: String) {
         val ids = (0 until 100).map { requestId(taskId, it) }
         center.removePendingNotificationRequestsWithIdentifiers(ids)
+        center.removeDeliveredNotificationsWithIdentifiers(ids)
     }
 
     actual fun cancelAll(taskId: String) {
@@ -73,12 +74,16 @@ actual class NotificationScheduler {
     }
 
     actual fun startOngoing(taskId: String, title: String) {
+        // Clear existing ongoing notifications (pending + delivered) before re-scheduling
+        stopOngoing(taskId)
+
         // iOS doesn't support true ongoing notifications.
         // Schedule repeated notifications every 2 hours (up to 8 per day).
         val content = UNMutableNotificationContent().apply {
             setTitle(title)
             setBody("All-day task in progress")
             setSound(UNNotificationSound.defaultSound)
+            setThreadIdentifier("task_${taskId}_ongoing")
         }
 
         for (hour in 8..22 step 2) {
@@ -102,6 +107,7 @@ actual class NotificationScheduler {
     actual fun stopOngoing(taskId: String) {
         val ids = (8..22 step 2).map { "task_${taskId}_ongoing_$it" }
         center.removePendingNotificationRequestsWithIdentifiers(ids)
+        center.removeDeliveredNotificationsWithIdentifiers(ids)
     }
 
     private fun requestId(taskId: String, reminderId: Int): String =

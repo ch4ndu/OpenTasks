@@ -2,8 +2,8 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.udnahc.opentasks.data.calendar.CsvParser
 import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
+import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +25,7 @@ data class ImportCsvUiState(
 )
 
 class ImportCsvViewModel(
+    private val parseCsv: ParseCsvUseCase,
     private val importAction: ImportCsvTasksAction,
 ) : ViewModel() {
 
@@ -36,7 +37,7 @@ class ImportCsvViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isLoading = true, error = null, importedCount = null, fileName = fileName) }
             try {
-                val tasks = CsvParser.parse(content)
+                val tasks = parseCsv(content)
                 if (tasks.isEmpty()) {
                     _uiState.update { it.copy(isLoading = false, error = "No tasks found in file") }
                     return@launch

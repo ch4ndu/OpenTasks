@@ -3,10 +3,11 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
-import com.udnahc.opentasks.data.calendar.CalendarProvider
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.nowUtcMillis
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
+import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
+import com.udnahc.opentasks.domain.usecase.task.FetchCalendarEventsUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,18 +33,19 @@ data class ImportCalendarUiState(
 )
 
 class ImportCalendarViewModel(
-    private val calendarProvider: CalendarProvider,
+    private val fetchCalendarEvents: FetchCalendarEventsUseCase,
+    private val checkCalendarPermission: CheckCalendarPermissionUseCase,
     private val importAction: ImportCalendarEventsAction,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ImportCalendarUiState())
     val uiState: StateFlow<ImportCalendarUiState> = _uiState.asStateFlow()
 
-    val isAvailable: Boolean = calendarProvider.isAvailable()
+    val isAvailable: Boolean = fetchCalendarEvents.isAvailable()
 
     fun checkPermission() {
         viewModelScope.launch {
-            val status = calendarProvider.checkPermission()
+            val status = checkCalendarPermission()
             _uiState.update { it.copy(permissionStatus = status) }
         }
     }
@@ -76,7 +78,7 @@ class ImportCalendarViewModel(
                     _uiState.value.rangeValue,
                     _uiState.value.rangeUnit,
                 )
-                val events = calendarProvider.fetchEvents(now - rangeMillis, now + rangeMillis)
+                val events = fetchCalendarEvents(now - rangeMillis, now + rangeMillis)
                 val count = importAction(events)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: Exception) {

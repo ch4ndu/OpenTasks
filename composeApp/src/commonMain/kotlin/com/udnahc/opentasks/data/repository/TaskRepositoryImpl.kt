@@ -52,6 +52,8 @@ class TaskRepositoryImpl(
         triggerSyncAction()
     }
 
+    /** Returns tasks with raw UTC timestamps (no local conversion) for notification scheduling.
+     *  ScheduleTaskRemindersAction and AlarmManager require UTC millis. */
     override suspend fun getTasksWithDeadlines(): List<Task> =
         taskDao.getTasksWithDeadlines()
 

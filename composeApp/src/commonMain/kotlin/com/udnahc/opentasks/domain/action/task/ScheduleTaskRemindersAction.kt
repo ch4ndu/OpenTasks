@@ -83,7 +83,11 @@ class ScheduleTaskRemindersAction(private val scheduler: NotificationScheduler) 
         }
 
         // Overdue notification — fires at the moment the deadline passes
-        if (task.deadline > now) {
+        // Skip if a "Due now" (0-minute) date reminder already fires at the same time
+        val hasDueNowReminder = task.dateReminders.isNotBlank() &&
+            task.dateReminders.split(",").mapNotNull { it.trim().toIntOrNull() }.any { it == 0 }
+
+        if (task.deadline > now && !hasDueNowReminder) {
             log.v { "Scheduled overdue notification at ${task.deadline}" }
             scheduler.schedule(
                 taskId = task.id,

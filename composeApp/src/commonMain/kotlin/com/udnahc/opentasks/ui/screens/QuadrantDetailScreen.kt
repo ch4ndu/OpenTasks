@@ -395,3 +395,17 @@ private fun QuadrantDetailPreview() {
         )
     }
 }
+
+@Composable
+@Preview
+private fun DetailTaskRowPreview() {
+    OpenTasksTheme {
+        DetailTaskRow(
+            task = PreviewSampleData.sampleTasks.first(),
+            priority = TaskPriority.HIGH,
+            isOverdue = false,
+            onToggleComplete = {},
+            onClick = {},
+        )
+    }
+}

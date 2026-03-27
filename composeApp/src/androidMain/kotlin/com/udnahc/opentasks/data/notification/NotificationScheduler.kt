@@ -92,8 +92,12 @@ actual class NotificationScheduler(private val context: Context) {
     }
 
     actual fun cancelReminders(taskId: String) {
-        for (i in 0 until MAX_REMINDERS_PER_TASK) {
+        val notificationManager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // Loop 0..98 — skip 99 (ongoing foreground service, managed by stopOngoing())
+        for (i in 0 until MAX_REMINDERS_PER_TASK - 1) {
             cancel(taskId, i)
+            notificationManager.cancel(notificationId(taskId, i))
         }
     }
 

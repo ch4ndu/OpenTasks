@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.notification
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
@@ -27,7 +28,10 @@ actual class NotificationPermissionChecker(private val context: Context) {
             }
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             // Open exact alarm settings
-            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+            Intent(
+                Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                Uri.parse("package:${context.packageName}"),
+            )
         } else {
             return
         }

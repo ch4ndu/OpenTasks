@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity() {
 
     private var deepLinkTaskId by mutableStateOf("")
+    private var widgetAction by mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -44,11 +45,16 @@ class MainActivity : ComponentActivity() {
         }
 
         deepLinkTaskId = intent?.getStringExtra(NotificationScheduler.EXTRA_TASK_ID).orEmpty()
+        widgetAction = intent?.getStringExtra("widget_action").orEmpty()
 
         schedulePeriodicSync()
 
         setContent {
-            App(sharedText = sharedText, deepLinkTaskId = deepLinkTaskId)
+            App(
+                sharedText = sharedText,
+                deepLinkTaskId = deepLinkTaskId,
+                widgetAction = widgetAction,
+            )
         }
     }
 
@@ -70,6 +76,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         deepLinkTaskId = intent.getStringExtra(NotificationScheduler.EXTRA_TASK_ID).orEmpty()
+        widgetAction = intent.getStringExtra("widget_action").orEmpty()
     }
 }
 

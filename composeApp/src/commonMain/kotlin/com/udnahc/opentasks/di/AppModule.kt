@@ -37,9 +37,13 @@ import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
 import com.udnahc.opentasks.domain.usecase.tag.ObserveTagsForTaskUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
+import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
+import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
-import com.udnahc.opentasks.data.calendar.CalendarProvider
+import com.udnahc.opentasks.domain.usecase.task.FetchCalendarEventsUseCase
+import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
+import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
@@ -99,6 +103,11 @@ val sharedModule = module {
     factory { ObserveTaskByIdUseCase(get()) }
     single { ObservePocketBaseUrlUseCase(get()) }
     single { ObserveThemePreferenceUseCase(get()) }
+    single { CheckNotificationPermissionUseCase(get()) }
+    single { CheckCalendarPermissionUseCase(get()) }
+    single { FetchCalendarEventsUseCase(get()) }
+    single { ParseCsvUseCase() }
+    single { ParseIcsUseCase() }
 
     // Actions
     single { AddTaskAction(get(), get()) }
@@ -132,8 +141,8 @@ val sharedModule = module {
     viewModel { TaskListViewModel(get(), get(), get(), get()) }
     viewModel { CalendarViewModel(get(), get(), get()) }
     viewModel { NoteViewModel(get(), get(), get(), get()) }
-    viewModel { ImportCalendarViewModel(get(), get()) }
-    viewModel { ImportIcsViewModel(get()) }
-    viewModel { ImportCsvViewModel(get()) }
+    viewModel { ImportCalendarViewModel(get(), get(), get()) }
+    viewModel { ImportIcsViewModel(get(), get()) }
+    viewModel { ImportCsvViewModel(get(), get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }
