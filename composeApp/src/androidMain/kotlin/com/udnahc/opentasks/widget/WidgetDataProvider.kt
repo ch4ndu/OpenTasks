@@ -1,7 +1,9 @@
 package com.udnahc.opentasks.widget
 
 import com.udnahc.opentasks.data.dao.CategoryDao
+import com.udnahc.opentasks.data.dao.CountdownDao
 import com.udnahc.opentasks.data.dao.TaskDao
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
@@ -11,6 +13,7 @@ import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.extensions.utcMillisToLocalMillis
 import com.udnahc.opentasks.data.model.Category
+import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import kotlinx.datetime.DateTimeUnit
@@ -34,6 +37,7 @@ data class CalendarDayTask(
 class WidgetDataProvider : KoinComponent {
     private val taskDao: TaskDao by inject()
     private val categoryDao: CategoryDao by inject()
+    private val countdownDao: CountdownDao by inject()
 
     suspend fun getCategories(): List<Category> = categoryDao.getAllCategoriesOnce()
 
@@ -101,11 +105,64 @@ class WidgetDataProvider : KoinComponent {
                 list.add(CalendarDayTask(title = task.title, priority = task.priority))
             }
         }
+        // Merge countdown items into the same map
+        val countdowns = countdownDao.getAllCountdownsOnce().filter { !it.isDeleted }
+        for (countdown in countdowns) {
+            val localMillis = utcMillisToLocalMillis(countdown.targetDate)
+            if (localMillis < startLocalMillis || localMillis >= endLocalMillis) continue
+            val day = extractDay(localMillis)
+            val list = result.getOrPut(day) { mutableListOf() }
+            if (list.size < maxPerDay) {
+                list.add(CalendarDayTask(title = countdown.title, priority = countdownTypeToPriority(countdown.countdownType)))
+            }
+        }
         return result
+    }
+
+    suspend fun getTasksByDayForWeek(
+        weekStartLocalMillis: Long,
+        maxPerDay: Int = MAX_TASKS_PER_WEEK_DAY,
+    ): Map<Int, List<CalendarDayTask>> {
+        val endLocalMillis = weekStartLocalMillis + 7 * MILLIS_PER_DAY
+        val startUtc = localMillisToUtcMillis(weekStartLocalMillis)
+        val endUtc = localMillisToUtcMillis(endLocalMillis)
+        val tasks = taskDao.getTasksInDateRange(startUtc, endUtc)
+        val result = mutableMapOf<Int, MutableList<CalendarDayTask>>()
+        for (task in tasks) {
+            val deadline = task.deadline ?: continue
+            val localMillis = utcMillisToLocalMillis(deadline)
+            // Key by day-of-week index (0=Sun..6=Sat) relative to week start
+            val dayIndex = ((localMillis - weekStartLocalMillis) / MILLIS_PER_DAY).toInt()
+            if (dayIndex !in 0..6) continue
+            val list = result.getOrPut(dayIndex) { mutableListOf() }
+            if (list.size < maxPerDay) {
+                list.add(CalendarDayTask(title = task.title, priority = task.priority))
+            }
+        }
+        // Merge countdown items into the same map
+        val countdowns = countdownDao.getAllCountdownsOnce().filter { !it.isDeleted }
+        for (countdown in countdowns) {
+            val localMillis = utcMillisToLocalMillis(countdown.targetDate)
+            val dayIndex = ((localMillis - weekStartLocalMillis) / MILLIS_PER_DAY).toInt()
+            if (dayIndex !in 0..6) continue
+            val list = result.getOrPut(dayIndex) { mutableListOf() }
+            if (list.size < maxPerDay) {
+                list.add(CalendarDayTask(title = countdown.title, priority = countdownTypeToPriority(countdown.countdownType)))
+            }
+        }
+        return result
+    }
+
+    private fun countdownTypeToPriority(type: CountdownType): TaskPriority = when (type) {
+        CountdownType.HOLIDAY -> TaskPriority.NONE        // green
+        CountdownType.BIRTHDAY -> TaskPriority.HIGH       // red
+        CountdownType.ANNIVERSARY -> TaskPriority.LOW     // blue
+        CountdownType.COUNTDOWN -> TaskPriority.MEDIUM    // amber
     }
 
     companion object {
         const val MAX_TASKS_PER_DAY = 2
+        const val MAX_TASKS_PER_WEEK_DAY = 1
     }
 
     private fun Task.toWidgetTask(): WidgetTask {

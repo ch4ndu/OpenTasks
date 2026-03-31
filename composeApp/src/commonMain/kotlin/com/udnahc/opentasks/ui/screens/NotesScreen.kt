@@ -35,7 +35,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.formatDateShort
-import com.udnahc.opentasks.data.extensions.utcMillisToLocalMillis
 import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
@@ -60,11 +59,10 @@ internal fun noteContentPreview(content: String): String =
         .trim()
         .take(120)
 
-private fun formatNoteDate(utcMillis: Long): String {
-    if (utcMillis == 0L) return ""
-    val local = utcMillisToLocalMillis(utcMillis)
-    val y = extractYear(local)
-    return "${formatDateShort(local)} $y"
+private fun formatNoteDate(localMillis: Long): String {
+    if (localMillis == 0L) return ""
+    val y = extractYear(localMillis)
+    return "${formatDateShort(localMillis)} $y"
 }
 
 @Composable

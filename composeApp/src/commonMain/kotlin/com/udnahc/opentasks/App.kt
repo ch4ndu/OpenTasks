@@ -80,6 +80,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
+import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
+import com.udnahc.opentasks.viewmodel.CountdownViewModel
 import com.udnahc.opentasks.viewmodel.NoteViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
@@ -94,10 +96,17 @@ import opentasks.composeapp.generated.resources.ic_calendar
 import opentasks.composeapp.generated.resources.ic_check_box
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_note
+import opentasks.composeapp.generated.resources.ic_schedule
 import opentasks.composeapp.generated.resources.not_urgent_important
 import opentasks.composeapp.generated.resources.not_urgent_unimportant
 import opentasks.composeapp.generated.resources.urgent_important
 import opentasks.composeapp.generated.resources.urgent_unimportant
+import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
+import com.udnahc.opentasks.data.model.CountdownType
+import com.udnahc.opentasks.data.model.isCountdownItem
+import com.udnahc.opentasks.ui.screens.countdown.CountdownDetailScreen
+import com.udnahc.opentasks.ui.screens.countdown.CountdownScreen
+import com.udnahc.opentasks.ui.screens.countdown.CreateCountdownScreen
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -106,7 +115,7 @@ import org.koin.compose.viewmodel.koinViewModel
 private val IosTransitionEasing = CubicBezierEasing(0.2833f, 0.99f, 0.31833f, 0.99f)
 
 private fun isTabScreen(key: Any): Boolean =
-    key is Screen.Matrix || key is Screen.TaskList || key is Screen.Calendar || key is Screen.Notes
+    key is Screen.Matrix || key is Screen.TaskList || key is Screen.Calendar || key is Screen.Notes || key is Screen.Countdown
 
 @Composable
 @Preview
@@ -184,6 +193,7 @@ private fun MainScreen(
             BottomNavItem(iconRes = Res.drawable.ic_check_box),
             BottomNavItem(iconRes = Res.drawable.ic_calendar, isCalendar = true),
             BottomNavItem(iconRes = Res.drawable.ic_note),
+            BottomNavItem(iconRes = Res.drawable.ic_schedule),
         )
     }
 
@@ -195,6 +205,7 @@ private fun MainScreen(
             is Screen.TaskList -> 1
             is Screen.Calendar -> 2
             is Screen.Notes -> 3
+            is Screen.Countdown -> 4
             else -> 0
         }
     }
@@ -202,6 +213,9 @@ private fun MainScreen(
             && currentScreen !is Screen.CreateTask
             && currentScreen !is Screen.EditTask
             && currentScreen !is Screen.Settings
+            && currentScreen !is Screen.CreateCountdown
+            && currentScreen !is Screen.CountdownDetail
+            && currentScreen !is Screen.EditCountdown
 
     val onSettingsClick = remember { { navController.navigate(Screen.Settings) } }
 
@@ -288,7 +302,12 @@ private fun MainScreen(
                     CalendarScreen(
                         viewModel = calendarViewModel,
                         onTaskClick = { task ->
-                            navController.navigate(Screen.EditTask(task.id))
+                            if (task.isCountdownItem) {
+                                val countdownId = task.id.removePrefix(COUNTDOWN_ID_PREFIX)
+                                navController.navigate(Screen.CountdownDetail(countdownId))
+                            } else {
+                                navController.navigate(Screen.EditTask(task.id))
+                            }
                         },
                         onSelectedDateChanged = { year, month, day ->
                             calendarSelectedYear = year
@@ -423,6 +442,66 @@ private fun MainScreen(
                         )
                     }
                 }
+
+                entry<Screen.Countdown> {
+                    val viewModel: CountdownViewModel = koinViewModel()
+                    CountdownScreen(
+                        viewModel = viewModel,
+                        onCountdownClick = { countdown ->
+                            navController.navigate(Screen.CountdownDetail(countdown.id))
+                        },
+                        onDeleteCountdown = viewModel::deleteCountdown,
+                        onSettingsClick = onSettingsClick,
+                    )
+                }
+
+                entry<Screen.CreateCountdown> { screen ->
+                    val viewModel: CountdownFormViewModel = koinViewModel()
+                    val initialType = CountdownType.entries.getOrElse(screen.typeOrdinal) { CountdownType.COUNTDOWN }
+                    CreateCountdownScreen(
+                        editCountdown = null,
+                        initialType = initialType,
+                        onSave = { countdown -> viewModel.addCountdown(countdown) },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+
+                entry<Screen.CountdownDetail> { screen ->
+                    val viewModel: CountdownFormViewModel = koinViewModel()
+                    LaunchedEffect(screen.countdownId) { viewModel.setCountdownId(screen.countdownId) }
+                    val countdown by viewModel.editCountdown.collectAsState()
+                    CountdownDetailScreen(
+                        countdown = countdown,
+                        onBack = { navController.popBackStack() },
+                        onEdit = {
+                            navController.navigate(Screen.EditCountdown(screen.countdownId))
+                        },
+                        onDelete = {
+                            val current = countdown ?: return@CountdownDetailScreen
+                            viewModel.deleteCountdown(current) {
+                            }
+                            navController.popBackStack()
+                        },
+                    )
+                }
+
+                entry<Screen.EditCountdown> { screen ->
+                    val viewModel: CountdownFormViewModel = koinViewModel()
+                    LaunchedEffect(screen.countdownId) { viewModel.setCountdownId(screen.countdownId) }
+                    val editCountdown by viewModel.editCountdown.collectAsState()
+                    editCountdown?.let { countdown ->
+                        CreateCountdownScreen(
+                            editCountdown = countdown,
+                            initialType = countdown.countdownType,
+                            onSave = { updated ->
+                                viewModel.updateCountdown(updated) {
+                                    navController.popBackStack()
+                                }
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                }
             },
         )
 
@@ -442,6 +521,7 @@ private fun MainScreen(
                         1 -> Screen.TaskList
                         2 -> Screen.Calendar
                         3 -> Screen.Notes
+                        4 -> Screen.Countdown
                         else -> Screen.Matrix
                     }
                     navController.navigateToTab(target)
@@ -458,7 +538,9 @@ private fun MainScreen(
         ) {
             CreateTaskFab(
                 onClick = {
-                    if (selectedTab == 3) {
+                    if (selectedTab == 4) {
+                        navController.navigate(Screen.CreateCountdown())
+                    } else if (selectedTab == 3) {
                         showCreateNote = true
                     } else {
                         navController.navigate(

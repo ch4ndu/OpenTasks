@@ -19,4 +19,8 @@ sealed class Screen : NavClass() {
     ) : Screen()
     @Serializable data class EditTask(val taskId: String) : Screen()
     @Serializable data object Settings : Screen()
+    @Serializable data object Countdown : Screen()
+    @Serializable data class CreateCountdown(val typeOrdinal: Int = 3) : Screen()
+    @Serializable data class CountdownDetail(val countdownId: String) : Screen()
+    @Serializable data class EditCountdown(val countdownId: String) : Screen()
 }

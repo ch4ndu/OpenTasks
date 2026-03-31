@@ -5,6 +5,8 @@ import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import com.udnahc.opentasks.data.database.AppDatabase
+import com.udnahc.opentasks.data.database.MIGRATION_2_3
+import com.udnahc.opentasks.data.database.MIGRATION_3_4
 import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
 import com.udnahc.opentasks.data.repository.NoteRepository
@@ -13,7 +15,12 @@ import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.data.repository.TaskRepositoryImpl
 import com.udnahc.opentasks.data.repository.TagRepository
 import com.udnahc.opentasks.data.repository.TagRepositoryImpl
+import com.udnahc.opentasks.data.repository.CountdownRepository
+import com.udnahc.opentasks.data.repository.CountdownRepositoryImpl
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
+import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
+import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
+import com.udnahc.opentasks.domain.action.countdown.UpdateCountdownAction
 import com.udnahc.opentasks.domain.action.tag.AddTagAction
 import com.udnahc.opentasks.domain.action.tag.TagTaskAction
 import com.udnahc.opentasks.domain.action.note.AddNoteAction
@@ -30,6 +37,8 @@ import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SaveThemePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
+import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
+import com.udnahc.opentasks.domain.usecase.countdown.ObserveCountdownByIdUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
@@ -50,6 +59,11 @@ import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.SyncService
+import com.udnahc.opentasks.data.sync.adapters.CategorySyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.CountdownSyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.NoteSyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.TagSyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.TaskSyncAdapter
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
@@ -58,6 +72,8 @@ import com.udnahc.opentasks.viewmodel.ImportCalendarViewModel
 import com.udnahc.opentasks.viewmodel.ImportCsvViewModel
 import com.udnahc.opentasks.viewmodel.ImportIcsViewModel
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
+import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
+import com.udnahc.opentasks.viewmodel.CountdownViewModel
 import com.udnahc.opentasks.viewmodel.NoteViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import org.koin.core.module.Module
@@ -69,7 +85,7 @@ expect val platformModule: Module
 val sharedModule = module {
     single<AppDatabase> {
         get<androidx.room.RoomDatabase.Builder<AppDatabase>>()
-            .fallbackToDestructiveMigration(true)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(connection: SQLiteConnection) {
@@ -89,7 +105,9 @@ val sharedModule = module {
     single<NoteRepository> { NoteRepositoryImpl(get(), get()) }
     single { get<AppDatabase>().tagDao() }
     single { get<AppDatabase>().appSettingsDao() }
-    single<TagRepository> { TagRepositoryImpl(get()) }
+    single { get<AppDatabase>().countdownDao() }
+    single<CountdownRepository> { CountdownRepositoryImpl(get(), get()) }
+    single<TagRepository> { TagRepositoryImpl(get(), get()) }
 
     // UseCases
     single { ObserveAllTasksUseCase(get()) }
@@ -99,6 +117,8 @@ val sharedModule = module {
     factory { ObserveTasksForPriorityUseCase(get()) }
     single { ObserveAllCategoriesUseCase(get()) }
     single { ObserveAllNotesUseCase(get()) }
+    single { ObserveAllCountdownsUseCase(get()) }
+    factory { ObserveCountdownByIdUseCase(get()) }
     factory { ObserveTagsForTaskUseCase(get()) }
     factory { ObserveTaskByIdUseCase(get()) }
     single { ObservePocketBaseUrlUseCase(get()) }
@@ -116,13 +136,16 @@ val sharedModule = module {
     single { ToggleTaskCompleteAction(get(), get()) }
     single { AddCategoryAction(get()) }
     single { AddNoteAction(get()) }
+    single { AddCountdownAction(get()) }
+    single { UpdateCountdownAction(get()) }
+    single { DeleteCountdownAction(get()) }
     single { UpdateNoteAction(get()) }
     single { DeleteNoteAction(get()) }
     single { AddTagAction(get()) }
     single { TagTaskAction(get()) }
     single { ImportCalendarEventsAction(get(), get(), get(), get(), get()) }
     single { ImportCsvTasksAction(get(), get(), get()) }
-    single { ScheduleTaskRemindersAction(get()) }
+    single { ScheduleTaskRemindersAction(get(), get()) }
     single { RescheduleAllRemindersAction(get(), get()) }
     single { SavePocketBaseUrlAction(get(), get(), get()) }
     single { ClearPocketBaseUrlAction(get(), get()) }
@@ -133,16 +156,34 @@ val sharedModule = module {
 
     // Sync
     single { PocketBaseClientProvider() }
-    single { SyncService(get(), get(), get(), get()) }
+    single { TaskSyncAdapter(get()) }
+    single { CategorySyncAdapter(get()) }
+    single { TagSyncAdapter(get()) }
+    single { NoteSyncAdapter(get()) }
+    single { CountdownSyncAdapter(get()) }
+    single {
+        SyncService(
+            get(),
+            listOf(
+                get<CategorySyncAdapter>(),
+                get<TagSyncAdapter>(),
+                get<TaskSyncAdapter>(),
+                get<NoteSyncAdapter>(),
+                get<CountdownSyncAdapter>(),
+            ),
+        )
+    }
 
     // ViewModels
     viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { MatrixViewModel(get(), get(), get()) }
     viewModel { TaskListViewModel(get(), get(), get(), get()) }
-    viewModel { CalendarViewModel(get(), get(), get()) }
+    viewModel { CalendarViewModel(get(), get(), get(), get()) }
     viewModel { NoteViewModel(get(), get(), get(), get()) }
     viewModel { ImportCalendarViewModel(get(), get(), get()) }
     viewModel { ImportIcsViewModel(get(), get()) }
     viewModel { ImportCsvViewModel(get(), get()) }
+    viewModel { CountdownViewModel(get(), get()) }
+    viewModel { CountdownFormViewModel(get(), get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }

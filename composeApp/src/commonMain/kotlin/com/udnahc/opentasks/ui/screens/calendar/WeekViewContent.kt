@@ -37,6 +37,7 @@ import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractMonth
+import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
@@ -273,9 +274,7 @@ private fun WeekViewDayCell(
                     .coerceAtLeast(1)
 
                 Column(modifier = Modifier.fillMaxSize()) {
-                    val visibleTasks = if (dayTasks.size <= maxVisible + 1) dayTasks
-                    else dayTasks.take(maxVisible)
-                    val overflow = dayTasks.size - visibleTasks.size
+                    val (visibleTasks, overflow) = truncateWithOverflow(dayTasks, maxVisible)
 
                     visibleTasks.forEach { task ->
                         val onClick = remember(task.id) { { onTaskClick(task) } }

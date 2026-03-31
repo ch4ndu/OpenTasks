@@ -51,6 +51,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -69,7 +70,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import com.udnahc.opentasks.data.extensions.computeDeadlineUtcMillis
+import com.udnahc.opentasks.data.extensions.computeLocalMillis
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.currentMonth
 import com.udnahc.opentasks.data.extensions.currentYear
@@ -226,6 +227,7 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
+@Immutable
 data class SubtaskItem(
     val text: String = "",
     val isChecked: Boolean = false,
@@ -2506,7 +2508,7 @@ private fun computeDeadlineMillis(
     day: Int,
     hour: Int,
     minute: Int
-): Long = computeDeadlineUtcMillis(year, month, day, hour, minute)
+): Long = computeLocalMillis(year, month, day, hour, minute)
 
 @Composable
 @Preview

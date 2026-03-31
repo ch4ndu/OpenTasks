@@ -47,6 +47,8 @@ import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.extractMonth
+import com.udnahc.opentasks.domain.usecase.task.splitAllDayAndTimed
+import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.formatTime12Hr
 import com.udnahc.opentasks.data.model.Task
@@ -292,11 +294,8 @@ private fun DayViewTimeline(
     val dimens = OpenTasksTheme.dimens
     val dk = remember(dayMillis) { dayKey(dayMillis) }
     val dayTasks = remember(dk, tasksByDay) { tasksByDay[dk] ?: emptyList() }
-    val allDayTasks = remember(dayTasks) {
-        dayTasks.filter { it.deadline != null && extractHour(it.deadline) == 0 && extractMinute(it.deadline) == 0 }
-    }
-    val timedTasks = remember(dayTasks) {
-        dayTasks.filter { it.deadline != null && !(extractHour(it.deadline) == 0 && extractMinute(it.deadline) == 0) }
+    val (allDayTasks, timedTasks) = remember(dayTasks) {
+        splitAllDayAndTimed(dayTasks)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -311,7 +310,8 @@ private fun DayViewTimeline(
                     .fillMaxSize()
                     .padding(horizontal = 1.dp),
             ) {
-                allDayTasks.take(3).forEach { task ->
+                val (visibleAllDay, allDayOverflow) = truncateWithOverflow(allDayTasks, 3)
+                visibleAllDay.forEach { task ->
                     val onClick = remember(task.id) { { onTaskClick(task) } }
                     val onToggle = remember(task.id) { { onToggleComplete(task) } }
                     TimelineEventBar(
@@ -328,9 +328,9 @@ private fun DayViewTimeline(
                         showTime = true,
                     )
                 }
-                if (allDayTasks.size > 3) {
+                if (allDayOverflow > 0) {
                     Text(
-                        text = "+${allDayTasks.size - 3}",
+                        text = "+$allDayOverflow",
                         style = OpenTasksTheme.typography.calendarEventOverflow,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 2.dp),

@@ -42,8 +42,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
+import com.udnahc.opentasks.domain.usecase.task.tasksForDay
+import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.preview.PreviewSampleData
@@ -190,7 +191,8 @@ internal fun MonthViewContent(
                                         .padding(horizontal = 1.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {
-                                    dayEvents.take(5).forEach { task ->
+                                    val (visibleEvents, overflow) = truncateWithOverflow(dayEvents, 5)
+                                    visibleEvents.forEach { task ->
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -214,9 +216,9 @@ internal fun MonthViewContent(
                                             )
                                         }
                                     }
-                                    if (dayEvents.size > 5) {
+                                    if (overflow > 0) {
                                         Text(
-                                            text = "+${dayEvents.size - 5}",
+                                            text = "+$overflow",
                                             style = OpenTasksTheme.typography.calendarEventOverflow,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -237,9 +239,7 @@ internal fun MonthViewContent(
             // ── Task list (fades in as collapse progresses) ───
             if (progress > 0f && selectedDay != null) {
                 val selectedTasks = remember(selectedDay, tasks) {
-                    val dk = dayKeyFromDate(selectedDay.year, selectedDay.month, selectedDay.day)
-                    tasks.filter { val dl = it.deadline; dl != null && dayKey(dl) == dk }
-                        .sortedBy { it.deadline }
+                    tasksForDay(tasks, dayKeyFromDate(selectedDay.year, selectedDay.month, selectedDay.day))
                 }
 
                 LazyColumn(
@@ -469,12 +469,7 @@ private fun WeekRowContent(
                         val maxVisible =
                             ((availableHeight - overflowHeight) / eventBarHeight).toInt()
                                 .coerceAtLeast(1)
-                        val visibleTasks = if (dayTasks.size <= maxVisible + 1) {
-                            dayTasks
-                        } else {
-                            dayTasks.take(maxVisible)
-                        }
-                        val overflow = dayTasks.size - visibleTasks.size
+                        val (visibleTasks, overflow) = truncateWithOverflow(dayTasks, maxVisible)
 
                         Column {
                             visibleTasks.forEach { task ->

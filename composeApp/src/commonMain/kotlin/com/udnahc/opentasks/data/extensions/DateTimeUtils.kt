@@ -118,6 +118,21 @@ fun computeDeadlineUtcMillis(
     return dt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
 }
 
+/**
+ * Build local-shifted millis from date/time components.
+ * The result is in "local millis" — suitable for passing to repositories,
+ * which handle the local→UTC conversion before storing.
+ */
+fun computeLocalMillis(
+    year: Int, month: Int, day: Int,
+    hour: Int = 9, minute: Int = 0,
+): Long {
+    val h = if (hour >= 0) hour else 9
+    val m = if (minute >= 0) minute else 0
+    val dt = LocalDateTime(year, month, day, h, m)
+    return dt.toInstant(TimeZone.UTC).toEpochMilliseconds()
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  RECURRENCE — NEXT DEADLINE COMPUTATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -161,6 +176,45 @@ fun computeNextDeadlineUtc(
         else -> return currentDeadlineUtcMillis // NONE or unknown — no advancement
     }
     return nextLocalDt.toInstant(tz).toEpochMilliseconds()
+}
+
+/**
+ * Compute the next deadline in local-shifted millis for a recurring task.
+ * Works entirely in local millis — no timezone conversion needed.
+ * [interval] defaults to 1 (e.g., every 1 day, every 1 week).
+ */
+fun computeNextDeadlineLocal(
+    currentDeadlineLocalMillis: Long,
+    recurrenceType: String,
+    interval: Int = 1,
+): Long {
+    val localDt = localMillisToLocalDateTime(currentDeadlineLocalMillis)
+    val effectiveInterval = if (interval > 0) interval else 1
+
+    val nextLocalDt = when (recurrenceType) {
+        "DAILY" -> localDt.date.plus(effectiveInterval, DateTimeUnit.DAY)
+            .let { LocalDateTime(it, localDt.time) }
+
+        "WEEKLY" -> localDt.date.plus(effectiveInterval * 7, DateTimeUnit.DAY)
+            .let { LocalDateTime(it, localDt.time) }
+
+        "MONTHLY" -> localDt.date.plus(effectiveInterval, DateTimeUnit.MONTH)
+            .let { LocalDateTime(it, localDt.time) }
+
+        "YEARLY" -> localDt.date.plus(effectiveInterval, DateTimeUnit.YEAR)
+            .let { LocalDateTime(it, localDt.time) }
+
+        "EVERY_WEEKDAY" -> {
+            var next = localDt.date.plus(1, DateTimeUnit.DAY)
+            while (next.dayOfWeek == DayOfWeek.SATURDAY || next.dayOfWeek == DayOfWeek.SUNDAY) {
+                next = next.plus(1, DateTimeUnit.DAY)
+            }
+            LocalDateTime(next, localDt.time)
+        }
+
+        else -> return currentDeadlineLocalMillis // NONE or unknown — no advancement
+    }
+    return nextLocalDt.toInstant(TimeZone.UTC).toEpochMilliseconds()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

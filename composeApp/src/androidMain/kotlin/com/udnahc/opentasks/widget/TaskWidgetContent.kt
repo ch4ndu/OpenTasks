@@ -6,8 +6,10 @@ import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.appwidget.AppWidgetManager
 import androidx.glance.GlanceModifier
 import androidx.glance.action.clickable
+import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
@@ -46,10 +48,10 @@ private fun filterPickerIntent(appWidgetId: Int): Intent =
         flags = Intent.FLAG_ACTIVITY_NEW_TASK
     }
 
-private fun menuIntent(appWidgetId: Int): Intent =
+private fun taskSettingsIntent(appWidgetId: Int): Intent =
     Intent().apply {
-        component = ComponentName(PKG, "$PKG.widget.WidgetMenuActivity")
-        putExtra("appWidgetId", appWidgetId)
+        component = ComponentName(PKG, "$PKG.widget.WidgetSettingsActivity")
+        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         flags = Intent.FLAG_ACTIVITY_NEW_TASK
     }
 
@@ -105,11 +107,18 @@ fun TaskWidgetContent(
                     .clickable(actionStartActivity(mainIntent("create_task"))),
             )
             Text(
-                text = "\u22EE",
+                text = "\u21BB",
                 style = TextStyle(color = textColor, fontSize = 20.sp, fontWeight = FontWeight.Bold),
                 modifier = GlanceModifier
-                    .padding(start = 8.dp)
-                    .clickable(actionStartActivity(menuIntent(appWidgetId))),
+                    .padding(horizontal = 8.dp)
+                    .clickable(actionRunCallback<TaskRefreshCallback>()),
+            )
+            Text(
+                text = "\u2699",
+                style = TextStyle(color = textColor, fontSize = 20.sp, fontWeight = FontWeight.Bold),
+                modifier = GlanceModifier
+                    .padding(start = 4.dp)
+                    .clickable(actionStartActivity(taskSettingsIntent(appWidgetId))),
             )
         }
 

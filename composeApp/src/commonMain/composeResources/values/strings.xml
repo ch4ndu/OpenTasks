@@ -251,4 +251,40 @@
 
     <!-- Widget -->
     <string name="widget_description">Shows upcoming tasks on your home screen</string>
+
+    <!-- Common -->
+    <string name="edit">Edit</string>
+    <string name="add">Add</string>
+    <string name="loading">Loading…</string>
+    <string name="name_label">Name</string>
+
+    <!-- Countdown -->
+    <string name="countdown_title">Countdown</string>
+    <string name="countdown_filter_all">All</string>
+    <string name="countdown_filter_holiday">Holiday</string>
+    <string name="countdown_filter_birthday">Birthday</string>
+    <string name="countdown_filter_anniversary">Anniversary</string>
+    <string name="countdown_filter_countdown">Countdown</string>
+    <string name="countdown_no_items">No countdowns yet</string>
+    <string name="countdown_days_left">Days Left</string>
+    <string name="countdown_days_ago">Days Ago</string>
+    <string name="countdown_days_since">Days Since</string>
+    <string name="countdown_days_until">Days until</string>
+    <string name="countdown_today_is">Today is</string>
+    <string name="countdown_type">Type</string>
+    <string name="countdown_counting_mode">Counting Mode</string>
+    <string name="countdown_smart_list">Show in Smart List</string>
+    <string name="countdown_counting_countdown">Countdown</string>
+    <string name="countdown_counting_count_up">Count Up</string>
+    <string name="countdown_reminder_on_the_day">On the day (09:00)</string>
+    <string name="countdown_reminder_1_day_early">1 day early</string>
+    <string name="countdown_reminder_2_days_early">2 days early</string>
+    <string name="countdown_reminder_3_days_early">3 days early</string>
+    <string name="countdown_reminder_1_week_early">1 week early</string>
+    <string name="countdown_smart_list_on_the_day">On the day</string>
+    <string name="countdown_smart_list_3_days_early">3 days early</string>
+    <string name="countdown_smart_list_7_days_early">7 days early</string>
+    <string name="countdown_smart_list_always">Always show</string>
+    <string name="countdown_smart_list_do_not_show">Do not show</string>
+    <string name="countdown_every_weekday">Every Weekday</string>
 </resources>

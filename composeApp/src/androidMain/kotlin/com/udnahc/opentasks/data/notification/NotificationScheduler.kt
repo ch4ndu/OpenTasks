@@ -7,6 +7,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import com.udnahc.opentasks.R
 import org.lighthousegames.logging.logging
 
 private val log = logging("NotificationScheduler")
@@ -120,7 +123,24 @@ actual class NotificationScheduler(private val context: Context) {
             }
         } catch (e: Exception) {
             // Android 12+ blocks foreground service starts from the background
-            log.e { "Cannot start ongoing notification from background: ${e.message}" }
+            log.e { "Cannot start foreground service from background: ${e.message}" }
+            showFallbackOngoingNotification(taskId, title)
+        }
+    }
+
+    private fun showFallbackOngoingNotification(taskId: String, title: String) {
+        val nId = notificationId(taskId, 99)
+        val notification = NotificationCompat.Builder(context, ONGOING_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText("All-day task in progress")
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(nId, notification)
+        } catch (e: SecurityException) {
+            log.e { "Failed to show fallback notification: ${e.message}" }
         }
     }
 

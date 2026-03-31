@@ -3,6 +3,9 @@ package com.udnahc.opentasks.data.extensions
 /** Returns the current time in UTC milliseconds since epoch. */
 fun utcNow(): Long = nowUtcMillis()
 
+/** Returns the current time as local-shifted millis (for use outside the repository layer). */
+fun localNow(): Long = utcMillisToLocalMillis(nowUtcMillis())
+
 /** Converts a UTC epoch millis timestamp to local time epoch millis. */
 fun utcToLocal(utcMillis: Long): Long = utcMillisToLocalMillis(utcMillis)
 

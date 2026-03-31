@@ -1,7 +1,7 @@
 package com.udnahc.opentasks.domain.action.task
 
-import com.udnahc.opentasks.data.extensions.computeNextDeadlineUtc
-import com.udnahc.opentasks.data.extensions.utcNow
+import com.udnahc.opentasks.data.extensions.computeNextDeadlineLocal
+import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.repository.TaskRepository
@@ -20,17 +20,17 @@ class ToggleTaskCompleteAction(
         val updated = if (markingComplete && task.shouldAdvanceRecurrence()) {
             advanceRecurrence(task)
         } else {
-            task.copy(isCompleted = !task.isCompleted, updatedAt = utcNow())
+            task.copy(isCompleted = !task.isCompleted, updatedAt = localNow())
         }
 
         repository.update(updated)
-        scheduleTaskRemindersAction(updated)
+        scheduleTaskRemindersAction(updated.id)
     }
 
     private fun advanceRecurrence(task: Task): Task {
-        val currentDeadline = task.deadline ?: return task.copy(isCompleted = true, updatedAt = utcNow())
-        val nextDeadline = computeNextDeadlineUtc(
-            currentDeadlineUtcMillis = currentDeadline,
+        val currentDeadline = task.deadline ?: return task.copy(isCompleted = true, updatedAt = localNow())
+        val nextDeadline = computeNextDeadlineLocal(
+            currentDeadlineLocalMillis = currentDeadline,
             recurrenceType = task.recurrenceType.name,
             interval = task.recurrenceInterval,
         )
@@ -41,7 +41,7 @@ class ToggleTaskCompleteAction(
             deadline = nextDeadline,
             endDeadline = nextEndDeadline,
             isCompleted = false,
-            updatedAt = utcNow(),
+            updatedAt = localNow(),
         )
     }
 

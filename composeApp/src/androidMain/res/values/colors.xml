@@ -12,6 +12,7 @@
     <color name="calendar_widget_today_bg">#FF4D9EFF</color>
     <color name="calendar_widget_today_text">#FFFFFFFF</color>
     <color name="calendar_widget_dot">#FF4D9EFF</color>
+    <color name="widget_divider">#80888888</color>
     <color name="calendar_widget_day_dimmed">#FF555555</color>
     <color name="calendar_widget_day_dimmed_light">#FFAAAAAA</color>
 

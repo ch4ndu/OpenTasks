@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.repository
 
 import com.udnahc.opentasks.data.dao.TaskDao
+import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
@@ -35,14 +36,14 @@ class TaskRepositoryImpl(
 
     override suspend fun insert(task: Task): Long {
         log.v { "Inserting task: ${task.id}" }
-        val result = taskDao.insert(task)
+        val result = taskDao.insert(task.withUtcTimestamps())
         triggerSyncAction()
         return result
     }
 
     override suspend fun update(task: Task) {
         log.v { "Updating task: ${task.id}" }
-        taskDao.update(task.copy(isSynced = false))
+        taskDao.update(task.withUtcTimestamps().copy(isSynced = false))
         triggerSyncAction()
     }
 
@@ -57,11 +58,23 @@ class TaskRepositoryImpl(
     override suspend fun getTasksWithDeadlines(): List<Task> =
         taskDao.getTasksWithDeadlines()
 
+    /** Returns a single task with raw UTC timestamps for notification scheduling. */
+    override suspend fun getTaskByIdUtc(id: String): Task? =
+        taskDao.getTaskById(id)
+
     /** Converts UTC timestamps from the database to local time for presentation. */
     private fun Task.withLocalTimestamps() = copy(
         deadline = deadline?.let { utcToLocal(it) },
         endDeadline = endDeadline?.let { utcToLocal(it) },
         createdAt = utcToLocal(createdAt),
         updatedAt = utcToLocal(updatedAt)
+    )
+
+    /** Converts local-shifted timestamps to UTC for database storage. */
+    private fun Task.withUtcTimestamps() = copy(
+        deadline = deadline?.let { localToUtc(it) },
+        endDeadline = endDeadline?.let { localToUtc(it) },
+        createdAt = localToUtc(createdAt),
+        updatedAt = localToUtc(updatedAt),
     )
 }

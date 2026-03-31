@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.widget
 
+import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Build
@@ -8,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceModifier
 import androidx.glance.action.clickable
+import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.background
@@ -28,7 +30,6 @@ import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.udnahc.opentasks.R
-import com.udnahc.opentasks.data.model.TaskPriority
 
 private const val PKG = "com.udnahc.opentasks"
 private const val MAIN_ACTIVITY = "$PKG.MainActivity"
@@ -37,7 +38,11 @@ private const val DAYS_PER_WEEK = 7
 
 private val DAY_HEADERS = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
-private fun calendarDayIntent(year: Int, month: Int, day: Int): Intent =
+private fun calendarDayIntent(
+    year: Int,
+    month: Int,
+    day: Int
+): Intent =
     Intent().apply {
         component = ComponentName(PKG, MAIN_ACTIVITY)
         putExtra("widget_action", "view_calendar")
@@ -47,7 +52,10 @@ private fun calendarDayIntent(year: Int, month: Int, day: Int): Intent =
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
 
-private fun navigationIntent(appWidgetId: Int, delta: Int): Intent =
+private fun navigationIntent(
+    appWidgetId: Int,
+    delta: Int
+): Intent =
     Intent().apply {
         component = ComponentName(PKG, "$PKG.widget.CalendarWidgetNavigationActivity")
         putExtra("appWidgetId", appWidgetId)
@@ -55,26 +63,12 @@ private fun navigationIntent(appWidgetId: Int, delta: Int): Intent =
         flags = Intent.FLAG_ACTIVITY_NEW_TASK
     }
 
-private fun calendarMenuIntent(appWidgetId: Int): Intent =
+private fun calendarSettingsIntent(appWidgetId: Int): Intent =
     Intent().apply {
-        component = ComponentName(PKG, "$PKG.widget.CalendarWidgetMenuActivity")
-        putExtra("appWidgetId", appWidgetId)
+        component = ComponentName(PKG, "$PKG.widget.CalendarWidgetSettingsActivity")
+        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         flags = Intent.FLAG_ACTIVITY_NEW_TASK
     }
-
-private fun priorityBgColorRes(priority: TaskPriority): Int = when (priority) {
-    TaskPriority.HIGH -> R.color.widget_priority_high
-    TaskPriority.MEDIUM -> R.color.widget_priority_medium
-    TaskPriority.LOW -> R.color.widget_priority_low
-    TaskPriority.NONE -> R.color.widget_priority_none
-}
-
-private fun priorityTextColorRes(priority: TaskPriority): Int = when (priority) {
-    TaskPriority.HIGH -> R.color.widget_priority_high_text
-    TaskPriority.MEDIUM -> R.color.widget_priority_medium_text
-    TaskPriority.LOW -> R.color.widget_priority_low_text
-    TaskPriority.NONE -> R.color.widget_priority_none_text
-}
 
 @Composable
 fun CalendarWidgetContent(
@@ -90,7 +84,8 @@ fun CalendarWidgetContent(
 ) {
     val isDark = prefs.theme != WidgetTheme.LIGHT
     val bgColor = ColorProvider(if (isDark) R.color.widget_bg_dark else R.color.widget_bg_light)
-    val textColor = ColorProvider(if (isDark) R.color.widget_text_white else R.color.widget_text_black)
+    val textColor =
+        ColorProvider(if (isDark) R.color.widget_text_white else R.color.widget_text_black)
     val headerColor = ColorProvider(R.color.widget_text_gray)
     val todayBgColor = ColorProvider(R.color.calendar_widget_today_bg)
     val todayTextColor = ColorProvider(R.color.calendar_widget_today_text)
@@ -126,12 +121,12 @@ fun CalendarWidgetContent(
             .let { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) it.cornerRadius(16.dp) else it }
             .padding(6.dp),
     ) {
-        // Header: [spacer]  ◂ Month ▸  [+] [⋮]
+        // Header: [spacer]  ◂ Month ▸  [↻] [⚙]
         Row(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(modifier = GlanceModifier.width(40.dp)) {}
+            Box(modifier = GlanceModifier.width(80.dp)) {}
 
             Row(
                 modifier = GlanceModifier.defaultWeight(),
@@ -166,11 +161,18 @@ fun CalendarWidgetContent(
             }
 
             Text(
-                text = "\u22EE",
-                style = TextStyle(color = textColor, fontSize = 22.sp, fontWeight = FontWeight.Bold),
+                text = "\u21BB",
+                style = TextStyle(color = textColor, fontSize = 20.sp, fontWeight = FontWeight.Bold),
                 modifier = GlanceModifier
                     .width(40.dp)
-                    .clickable(actionStartActivity(calendarMenuIntent(appWidgetId))),
+                    .clickable(actionRunCallback<CalendarRefreshCallback>()),
+            )
+            Text(
+                text = "\u2699",
+                style = TextStyle(color = textColor, fontSize = 20.sp, fontWeight = FontWeight.Bold),
+                modifier = GlanceModifier
+                    .width(40.dp)
+                    .clickable(actionStartActivity(calendarSettingsIntent(appWidgetId))),
             )
         }
 
@@ -211,7 +213,15 @@ fun CalendarWidgetContent(
                             modifier = GlanceModifier
                                 .defaultWeight()
                                 .padding(1.dp)
-                                .clickable(actionStartActivity(calendarDayIntent(year, month, day))),
+                                .clickable(
+                                    actionStartActivity(
+                                        calendarDayIntent(
+                                            year,
+                                            month,
+                                            day
+                                        )
+                                    )
+                                ),
                         ) {
                             // Day number
                             if (isToday) {
@@ -275,7 +285,10 @@ fun CalendarWidgetContent(
                                 val prevMonthDays = if (month == 1) {
                                     com.udnahc.opentasks.data.extensions.daysInMonth(year - 1, 12)
                                 } else {
-                                    com.udnahc.opentasks.data.extensions.daysInMonth(year, month - 1)
+                                    com.udnahc.opentasks.data.extensions.daysInMonth(
+                                        year,
+                                        month - 1
+                                    )
                                 }
                                 prevMonthDays + day
                             } else {

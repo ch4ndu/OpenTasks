@@ -12,4 +12,6 @@ interface TaskRepository {
     suspend fun update(task: Task)
     suspend fun delete(task: Task)
     suspend fun getTasksWithDeadlines(): List<Task>
+    /** Returns task with raw UTC timestamps for notification scheduling. */
+    suspend fun getTaskByIdUtc(id: String): Task?
 }

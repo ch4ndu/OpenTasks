@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.extractDay
+import com.udnahc.opentasks.domain.usecase.task.tasksForDay
 import com.udnahc.opentasks.data.extensions.formatDateLabel
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
@@ -106,8 +107,7 @@ internal fun ListViewContent(
         val isToday = selectedDayMillis == todayMillis
 
         val dayTasks = remember(selectedDayKey, tasks) {
-            tasks.filter { val dl = it.deadline; dl != null && dayKey(dl) == selectedDayKey }
-                .sortedBy { it.deadline }
+            tasksForDay(tasks, selectedDayKey)
         }
 
         when (displayMode) {

@@ -50,6 +50,8 @@ fun CalendarWidgetSettingsContent(
     initialPreferences: CalendarWidgetPreferences,
     onSave: (CalendarWidgetPreferences) -> Unit,
     onCancel: () -> Unit,
+    title: String = "Calendar Widget",
+    previewContent: (@Composable (WidgetTheme, WidgetFontSize, Float) -> Unit)? = null,
 ) {
     var theme by remember { mutableStateOf(initialPreferences.theme) }
     var fontSize by remember { mutableStateOf(initialPreferences.fontSize) }
@@ -65,7 +67,7 @@ fun CalendarWidgetSettingsContent(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "Calendar Widget",
+                        text = title,
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White,
                     )
@@ -112,7 +114,11 @@ fun CalendarWidgetSettingsContent(
                 .padding(horizontal = 16.dp),
         ) {
             // Widget Preview
-            CalendarPreviewSection(theme = theme, fontSize = fontSize, opacity = opacity)
+            if (previewContent != null) {
+                previewContent(theme, fontSize, opacity)
+            } else {
+                CalendarPreviewSection(theme = theme, fontSize = fontSize, opacity = opacity)
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 

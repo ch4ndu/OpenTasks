@@ -12,6 +12,6 @@ class RescheduleAllRemindersAction(
     suspend operator fun invoke() {
         val tasks = taskRepository.getTasksWithDeadlines()
         log.d { "Rescheduling reminders for ${tasks.size} tasks" }
-        tasks.forEach { scheduleTaskRemindersAction(it) }
+        tasks.forEach { scheduleTaskRemindersAction.invokeWithUtcTask(it) }
     }
 }

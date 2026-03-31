@@ -1,7 +1,7 @@
 package com.udnahc.opentasks.domain.action.task
 
-import com.udnahc.opentasks.data.extensions.utcNow
-import com.udnahc.opentasks.data.extensions.utcMillisToLocalMillis
+import com.udnahc.opentasks.data.extensions.localNow
+import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.CalendarEvent
@@ -30,7 +30,8 @@ class ImportCalendarEventsAction(
         // Find or create "Calendar Imports" category
         val category = categoryRepository.getCategoryByName(CATEGORY_NAME)
             ?: run {
-                val newCategory = Category(name = CATEGORY_NAME, icon = "calendar", createdAt = utcNow())
+                val now = localNow()
+                val newCategory = Category(name = CATEGORY_NAME, icon = "calendar", createdAt = now)
                 categoryRepository.insert(newCategory)
                 newCategory
             }
@@ -42,7 +43,7 @@ class ImportCalendarEventsAction(
                 tagRepository.getTagById(tagId) ?: return 0
             }
 
-        val now = utcNow()
+        val now = localNow()
         var importedCount = 0
 
         for (event in events) {
@@ -52,13 +53,14 @@ class ImportCalendarEventsAction(
                 continue
             }
 
-            // Build content with time range
+            // Build content with time range (format from local millis already available)
             val content = buildEventContent(event)
 
+            // Convert external UTC timestamps to local millis for repository
             val task = Task(
                 title = event.title,
                 content = content,
-                deadline = event.startTimeUtcMillis,
+                deadline = utcToLocal(event.startTimeUtcMillis),
                 isAllDay = event.isAllDay,
                 sourceExternalId = event.externalId,
                 categoryId = category.id,
@@ -71,7 +73,7 @@ class ImportCalendarEventsAction(
                 updatedAt = now,
             )
             taskRepository.insert(task)
-            scheduleTaskRemindersAction(task)
+            scheduleTaskRemindersAction(task.id)
 
             // Tag the task
             tagRepository.insertTaskTag(TaskTag(taskId = task.id, tagId = tag.id))
@@ -88,11 +90,12 @@ class ImportCalendarEventsAction(
         if (event.isAllDay) {
             parts.add("All day event")
         } else {
-            val startLocal = utcMillisToLocalMillis(event.startTimeUtcMillis)
+            // Convert external UTC to local millis for display formatting
+            val startLocal = utcToLocal(event.startTimeUtcMillis)
             val startDate = formatDateShort(startLocal)
             val startTime = formatTimeFromLocalMillis(startLocal)
             if (event.endTimeUtcMillis != null) {
-                val endLocal = utcMillisToLocalMillis(event.endTimeUtcMillis)
+                val endLocal = utcToLocal(event.endTimeUtcMillis)
                 val endTime = formatTimeFromLocalMillis(endLocal)
                 parts.add("$startDate $startTime – $endTime")
             } else {

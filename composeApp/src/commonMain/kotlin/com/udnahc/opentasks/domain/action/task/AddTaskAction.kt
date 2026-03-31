@@ -1,6 +1,6 @@
 package com.udnahc.opentasks.domain.action.task
 
-import com.udnahc.opentasks.data.extensions.utcNow
+import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
@@ -37,7 +37,7 @@ class AddTaskAction(
         dateReminders: String = "",
     ): Task {
         log.d { "Adding task: '$title'" }
-        val now = utcNow()
+        val now = localNow()
         val task = Task(
                 title = title,
                 content = content,
@@ -64,7 +64,7 @@ class AddTaskAction(
             )
         repository.insert(task)
         log.v { "Task created: id=${task.id}" }
-        scheduleTaskRemindersAction(task)
+        scheduleTaskRemindersAction(task.id)
         return task
     }
 }

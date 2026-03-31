@@ -1,6 +1,6 @@
 package com.udnahc.opentasks.domain.action.task
 
-import com.udnahc.opentasks.data.extensions.utcNow
+import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.repository.TaskRepository
 import org.lighthousegames.logging.logging
@@ -13,8 +13,8 @@ class UpdateTaskAction(
 ) {
     suspend operator fun invoke(task: Task) {
         log.d { "Updating task: ${task.id}" }
-        val updated = task.copy(updatedAt = utcNow())
+        val updated = task.copy(updatedAt = localNow())
         repository.update(updated)
-        scheduleTaskRemindersAction(updated)
+        scheduleTaskRemindersAction(updated.id)
     }
 }

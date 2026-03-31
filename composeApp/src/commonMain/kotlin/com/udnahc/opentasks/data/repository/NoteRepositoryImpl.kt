@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.repository
 
 import com.udnahc.opentasks.data.dao.NoteDao
+import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
@@ -27,13 +28,13 @@ class NoteRepositoryImpl(
 
     override suspend fun insert(note: Note) {
         log.v { "Inserting note: ${note.id}" }
-        noteDao.insert(note)
+        noteDao.insert(note.withUtcTimestamps())
         triggerSyncAction()
     }
 
     override suspend fun update(note: Note) {
         log.v { "Updating note: ${note.id}, content has newlines=${'\n' in note.content}" }
-        noteDao.update(note.copy(isSynced = false))
+        noteDao.update(note.withUtcTimestamps().copy(isSynced = false))
         triggerSyncAction()
     }
 
@@ -47,5 +48,11 @@ class NoteRepositoryImpl(
     private fun Note.withLocalTimestamps() = copy(
         createdAt = utcToLocal(createdAt),
         updatedAt = utcToLocal(updatedAt)
+    )
+
+    /** Converts local-shifted timestamps to UTC for database storage. */
+    private fun Note.withUtcTimestamps() = copy(
+        createdAt = localToUtc(createdAt),
+        updatedAt = localToUtc(updatedAt),
     )
 }

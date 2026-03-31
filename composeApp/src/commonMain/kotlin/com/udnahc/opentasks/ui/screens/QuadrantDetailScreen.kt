@@ -38,7 +38,7 @@ import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.todayLocal
-import com.udnahc.opentasks.data.extensions.utcNow
+import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
@@ -113,7 +113,7 @@ private fun QuadrantDetailContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onAddTask: () -> Unit = {},
-    now: Long = utcNow(),
+    now: Long = localNow(),
     startOfToday: Long = run {
         val today = todayLocal()
         startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)

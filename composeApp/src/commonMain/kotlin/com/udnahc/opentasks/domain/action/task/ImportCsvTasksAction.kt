@@ -1,7 +1,8 @@
 package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.calendar.CsvTask
-import com.udnahc.opentasks.data.extensions.utcNow
+import com.udnahc.opentasks.data.extensions.localNow
+import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.repository.CategoryRepository
@@ -20,7 +21,7 @@ class ImportCsvTasksAction(
         if (tasks.isEmpty()) return 0
 
         val categoryCache = mutableMapOf<String, String>()
-        val now = utcNow()
+        val now = localNow()
         var importedCount = 0
 
         for (csvTask in tasks) {
@@ -29,23 +30,24 @@ class ImportCsvTasksAction(
 
             val categoryId = resolveCategory(csvTask.listName, categoryCache)
 
+            // Convert external UTC timestamps to local millis for repository
             val task = Task(
                 title = csvTask.title,
                 content = csvTask.content,
                 priority = csvTask.priority,
-                deadline = csvTask.startDate,
-                endDeadline = csvTask.dueDate,
+                deadline = csvTask.startDate?.let { utcToLocal(it) },
+                endDeadline = csvTask.dueDate?.let { utcToLocal(it) },
                 isAllDay = csvTask.isAllDay,
                 isCompleted = csvTask.isCompleted,
                 recurrenceType = csvTask.recurrenceType,
                 categoryId = categoryId,
                 durationReminders = csvTask.durationReminders,
                 sourceExternalId = externalId,
-                createdAt = csvTask.createdAt,
+                createdAt = if (csvTask.createdAt > 0) utcToLocal(csvTask.createdAt) else now,
                 updatedAt = now,
             )
             taskRepository.insert(task)
-            scheduleTaskRemindersAction(task)
+            scheduleTaskRemindersAction(task.id)
             importedCount++
         }
 
@@ -70,7 +72,8 @@ class ImportCsvTasksAction(
             return existing.id
         }
 
-        val newCategory = Category(name = name, icon = "inbox", createdAt = utcNow())
+        val now = localNow()
+        val newCategory = Category(name = name, icon = "inbox", createdAt = now)
         categoryRepository.insert(newCategory)
         cache[name] = newCategory.id
         return newCategory.id

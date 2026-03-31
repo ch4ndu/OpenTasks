@@ -36,6 +36,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.screens.EmptyPlaceholder
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
@@ -109,18 +110,19 @@ internal fun TimelineTaskRow(
                 )
             }
             // Circle
+            val isCountdownItem = task.isCountdownItem
             Icon(
                 painter = painterResource(
-                    if (task.isCompleted) Res.drawable.ic_check_box
+                    if (!isCountdownItem && task.isCompleted) Res.drawable.ic_check_box
                     else Res.drawable.ic_check_box_outline
                 ),
                 contentDescription = null,
-                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                tint = if (!isCountdownItem && task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                 else taskPriorityColor(task.priority),
                 modifier = Modifier
                     .size(dimens.calendarTimelineMarkerSize)
                     .offset(y = dimens.calendarTimelineDividerHeight)
-                    .clickable { onToggleComplete() },
+                    .let { if (!isCountdownItem) it.clickable { onToggleComplete() } else it },
             )
             // Vertical line — bottom half
             if (!isLast) {
@@ -184,6 +186,7 @@ internal fun CardTaskRow(
     onClick: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
+    val isCountdownItem = task.isCountdownItem
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -191,20 +194,22 @@ internal fun CardTaskRow(
             .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingLarge),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(
-            onClick = onToggleComplete,
-            modifier = Modifier.size(dimens.touchTargetMedium),
-        ) {
-            Icon(
-                painter = painterResource(
-                    if (task.isCompleted) Res.drawable.ic_check_box
-                    else Res.drawable.ic_check_box_outline
-                ),
-                contentDescription = null,
-                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                else taskPriorityColor(task.priority),
-                modifier = Modifier.size(dimens.iconLarge),
-            )
+        if (!isCountdownItem) {
+            IconButton(
+                onClick = onToggleComplete,
+                modifier = Modifier.size(dimens.touchTargetMedium),
+            ) {
+                Icon(
+                    painter = painterResource(
+                        if (task.isCompleted) Res.drawable.ic_check_box
+                        else Res.drawable.ic_check_box_outline
+                    ),
+                    contentDescription = null,
+                    tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    else taskPriorityColor(task.priority),
+                    modifier = Modifier.size(dimens.iconLarge),
+                )
+            }
         }
         Spacer(Modifier.width(dimens.spacerLarge))
         Column(modifier = Modifier.weight(1f)) {
@@ -258,6 +263,7 @@ internal fun CalendarTaskRow(
     onClick: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
+    val isCountdownItem = task.isCountdownItem
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -265,20 +271,22 @@ internal fun CalendarTaskRow(
             .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingLarge),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(
-            onClick = onToggleComplete,
-            modifier = Modifier.size(dimens.touchTargetMedium),
-        ) {
-            Icon(
-                painter = painterResource(
-                    if (task.isCompleted) Res.drawable.ic_check_box
-                    else Res.drawable.ic_check_box_outline
-                ),
-                contentDescription = null,
-                tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                else taskPriorityColor(task.priority),
-                modifier = Modifier.size(dimens.iconLarge),
+        if (!isCountdownItem) {
+            IconButton(
+                onClick = onToggleComplete,
+                modifier = Modifier.size(dimens.touchTargetMedium),
+            ) {
+                Icon(
+                    painter = painterResource(
+                        if (task.isCompleted) Res.drawable.ic_check_box
+                        else Res.drawable.ic_check_box_outline
+                    ),
+                    contentDescription = null,
+                    tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    else taskPriorityColor(task.priority),
+                    modifier = Modifier.size(dimens.iconLarge),
             )
+            }
         }
         Spacer(Modifier.width(dimens.spacerLarge))
         Column(modifier = Modifier.weight(1f)) {
@@ -335,11 +343,13 @@ internal fun TimelineEventBar(
 ) {
     val dimens = OpenTasksTheme.dimens
     val priorityColor = taskPriorityColor(task.priority)
-    val bgAlpha = if (onToggleComplete != null && task.isCompleted) 0.1f else 0.2f
-    val contentColor = if (onToggleComplete != null && task.isCompleted)
+    val isCountdown = task.isCountdownItem
+    val effectiveToggle = if (isCountdown) null else onToggleComplete
+    val bgAlpha = if (effectiveToggle != null && task.isCompleted) 0.1f else 0.2f
+    val contentColor = if (effectiveToggle != null && task.isCompleted)
         MaterialTheme.colorScheme.onSurfaceVariant else priorityColor
 
-    if (onToggleComplete != null) {
+    if (effectiveToggle != null) {
         // Day view & 3-Day view: Row with checkbox icon + title (+ optional time)
         Row(
             modifier = modifier
@@ -358,7 +368,7 @@ internal fun TimelineEventBar(
                 tint = contentColor,
                 modifier = Modifier
                     .size(iconSize)
-                    .clickable(onClick = onToggleComplete),
+                    .clickable(onClick = effectiveToggle),
             )
             Spacer(Modifier.width(iconSpacing))
             Text(

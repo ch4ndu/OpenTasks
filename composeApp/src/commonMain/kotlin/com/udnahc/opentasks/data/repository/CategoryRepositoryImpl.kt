@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.repository
 
 import com.udnahc.opentasks.data.dao.CategoryDao
+import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
@@ -30,14 +31,14 @@ class CategoryRepositoryImpl(
 
     override suspend fun insert(category: Category): Long {
         log.v { "Inserting category: ${category.id}" }
-        val result = categoryDao.insert(category)
+        val result = categoryDao.insert(category.withUtcTimestamps())
         triggerSyncAction()
         return result
     }
 
     override suspend fun update(category: Category) {
         log.v { "Updating category: ${category.id}" }
-        categoryDao.update(category.copy(isSynced = false))
+        categoryDao.update(category.withUtcTimestamps().copy(isSynced = false))
         triggerSyncAction()
     }
 
@@ -51,5 +52,11 @@ class CategoryRepositoryImpl(
     private fun Category.withLocalTimestamps() = copy(
         createdAt = utcToLocal(createdAt),
         updatedAt = utcToLocal(updatedAt),
+    )
+
+    /** Converts local-shifted timestamps to UTC for database storage. */
+    private fun Category.withUtcTimestamps() = copy(
+        createdAt = localToUtc(createdAt),
+        updatedAt = localToUtc(updatedAt),
     )
 }
