@@ -31,7 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
 import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
@@ -128,7 +127,7 @@ fun SettingsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsContent(
+internal fun SettingsContent(
     currentUrl: String?,
     syncStatus: SyncStatus,
     themePreference: ThemeMode = ThemeMode.SYSTEM,
@@ -336,7 +335,7 @@ private fun SettingsContent(
 // ── Reusable settings composables ────────────────────────────────────────────
 
 @Composable
-private fun SettingsCategoryHeader(title: String) {
+internal fun SettingsCategoryHeader(title: String) {
     val dimens = OpenTasksTheme.dimens
     Text(
         text = title,
@@ -352,7 +351,7 @@ private fun SettingsCategoryHeader(title: String) {
 }
 
 @Composable
-private fun SettingsRow(
+internal fun SettingsRow(
     title: String,
     summary: String? = null,
     onClick: () -> Unit,
@@ -474,52 +473,3 @@ private fun ThemePickerDialog(
     )
 }
 
-// ── Previews ─────────────────────────────────────────────────────────────────
-
-@Composable
-@Preview
-private fun SettingsContentPreview() {
-    OpenTasksTheme {
-        SettingsContent(
-            currentUrl = null,
-            syncStatus = SyncStatus.IDLE,
-            onBack = {},
-            onSaveUrl = {},
-            onClearUrl = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun SettingsContentConnectedPreview() {
-    OpenTasksTheme {
-        SettingsContent(
-            currentUrl = "http://192.168.1.100:8090",
-            syncStatus = SyncStatus.SUCCESS,
-            onBack = {},
-            onSaveUrl = {},
-            onClearUrl = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun SettingsRowPreview() {
-    OpenTasksTheme {
-        SettingsRow(
-            title = "PocketBase URL",
-            summary = "http://192.168.1.100:8090",
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun SettingsCategoryHeaderPreview() {
-    OpenTasksTheme {
-        SettingsCategoryHeader(title = "Appearance")
-    }
-}

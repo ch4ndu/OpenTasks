@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.repository
 
 import com.udnahc.opentasks.data.dao.TaskDao
+import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Task
@@ -36,7 +37,7 @@ class TaskRepositoryImpl(
 
     override suspend fun insert(task: Task): Long {
         log.v { "Inserting task: ${task.id}" }
-        val result = taskDao.insert(task.withUtcTimestamps())
+        val result = taskDao.insert(task.withDefaultTimestamps().withUtcTimestamps())
         triggerSyncAction()
         return result
     }
@@ -48,8 +49,8 @@ class TaskRepositoryImpl(
     }
 
     override suspend fun delete(task: Task) {
-        log.v { "Deleting task: ${task.id}" }
-        taskDao.delete(task)
+        log.v { "Soft-deleting task: ${task.id}" }
+        taskDao.update(task.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
         triggerSyncAction()
     }
 
@@ -61,6 +62,15 @@ class TaskRepositoryImpl(
     /** Returns a single task with raw UTC timestamps for notification scheduling. */
     override suspend fun getTaskByIdUtc(id: String): Task? =
         taskDao.getTaskById(id)
+
+    /** Fills in 0L timestamps with current local time before insert. */
+    private fun Task.withDefaultTimestamps(): Task {
+        val now = localNow()
+        return copy(
+            createdAt = if (createdAt == 0L) now else createdAt,
+            updatedAt = if (updatedAt == 0L) now else updatedAt,
+        )
+    }
 
     /** Converts UTC timestamps from the database to local time for presentation. */
     private fun Task.withLocalTimestamps() = copy(

@@ -15,6 +15,8 @@ import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.data.repository.TaskRepositoryImpl
 import com.udnahc.opentasks.data.repository.TagRepository
 import com.udnahc.opentasks.data.repository.TagRepositoryImpl
+import com.udnahc.opentasks.data.repository.AppSettingsRepository
+import com.udnahc.opentasks.data.repository.AppSettingsRepositoryImpl
 import com.udnahc.opentasks.data.repository.CountdownRepository
 import com.udnahc.opentasks.data.repository.CountdownRepositoryImpl
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
@@ -108,6 +110,7 @@ val sharedModule = module {
     single { get<AppDatabase>().countdownDao() }
     single<CountdownRepository> { CountdownRepositoryImpl(get(), get()) }
     single<TagRepository> { TagRepositoryImpl(get(), get()) }
+    single<AppSettingsRepository> { AppSettingsRepositoryImpl(get()) }
 
     // UseCases
     single { ObserveAllTasksUseCase(get()) }

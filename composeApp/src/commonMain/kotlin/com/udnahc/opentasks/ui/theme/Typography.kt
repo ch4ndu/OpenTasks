@@ -1,7 +1,6 @@
 package com.udnahc.opentasks.ui.theme
 
 import androidx.compose.material3.Typography
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -47,7 +46,6 @@ fun openTasksTypography(preset: TextSizePreset = TextSizePreset.NORMAL): Typogra
     )
 }
 
-@Immutable
 data class OpenTasksExtendedTypography(
     val calendarDayNumber: TextStyle,
     val calendarEventTitle: TextStyle,

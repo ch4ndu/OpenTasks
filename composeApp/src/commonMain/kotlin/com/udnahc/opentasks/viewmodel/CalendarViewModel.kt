@@ -32,6 +32,7 @@ class CalendarViewModel(
     ) { taskList, countdowns ->
         taskList + countdowns.map { it.toCalendarTask() }
     }
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val tasksByDay: StateFlow<Map<Long, List<Task>>> = combine(

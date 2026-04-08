@@ -31,7 +31,7 @@ class CountdownSyncAdapter(private val dao: CountdownDao) : BaseSyncAdapter<Coun
 
     override fun recordLocalId(record: CountdownRecord) = record.localId
     override fun recordIsDeleted(record: CountdownRecord) = record.isDeleted
-    override fun recordUpdatedAt(record: CountdownRecord) = record.localUpdatedAt
+    override fun recordUpdatedAt(record: CountdownRecord) = record.updatedAtUtc
 
     override fun toRecord(entity: Countdown) = entity.toCountdownRecord()
     override fun toEntity(record: CountdownRecord) = record.toCountdown()

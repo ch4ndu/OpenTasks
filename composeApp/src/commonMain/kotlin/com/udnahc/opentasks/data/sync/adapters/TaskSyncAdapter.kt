@@ -31,7 +31,7 @@ class TaskSyncAdapter(private val dao: TaskDao) : BaseSyncAdapter<Task, TaskReco
 
     override fun recordLocalId(record: TaskRecord) = record.localId
     override fun recordIsDeleted(record: TaskRecord) = record.isDeleted
-    override fun recordUpdatedAt(record: TaskRecord) = record.localUpdatedAt
+    override fun recordUpdatedAt(record: TaskRecord) = record.updatedAtUtc
 
     override fun toRecord(entity: Task) = entity.toTaskRecord()
     override fun toEntity(record: TaskRecord) = record.toTask()

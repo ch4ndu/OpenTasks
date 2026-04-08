@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -19,11 +18,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.model.Task
-import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -86,7 +83,7 @@ internal fun YearViewContent(
 }
 
 @Composable
-private fun MiniMonthCard(
+internal fun MiniMonthCard(
     year: Int,
     month: Int,
     todayYear: Int,
@@ -124,37 +121,3 @@ private fun MiniMonthCard(
     }
 }
 
-@Composable
-@Preview
-private fun MiniMonthCardPreview() {
-    OpenTasksTheme {
-        MiniMonthCard(
-            year = PreviewSampleData.SAMPLE_YEAR,
-            month = PreviewSampleData.SAMPLE_MONTH,
-            todayYear = PreviewSampleData.SAMPLE_YEAR,
-            todayMonth = PreviewSampleData.SAMPLE_MONTH,
-            todayDay = PreviewSampleData.SAMPLE_DAY,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun YearViewContentPreview() {
-    OpenTasksTheme {
-        val pagerState = rememberPagerState(initialPage = 10) { 20 }
-        YearViewContent(
-            pagerState = pagerState,
-            centreIndex = 10,
-            todayYear = PreviewSampleData.SAMPLE_YEAR,
-            todayMonth = PreviewSampleData.SAMPLE_MONTH,
-            todayDay = PreviewSampleData.SAMPLE_DAY,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
-            topBarHeight = 64.dp,
-            navBarHeight = 0.dp,
-            onMonthClick = { _, _ -> },
-        )
-    }
-}

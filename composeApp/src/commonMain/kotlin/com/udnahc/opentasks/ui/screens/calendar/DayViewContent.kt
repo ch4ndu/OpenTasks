@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -37,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
@@ -52,7 +50,6 @@ import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.formatTime12Hr
 import com.udnahc.opentasks.data.model.Task
-import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import kotlinx.coroutines.launch
@@ -117,14 +114,13 @@ internal fun DayViewContent(
                 ) { index ->
                     val dayOffset = index - pagerCentre
                     val dayMillis = todayMillis + dayOffset * MILLIS_PER_DAY
-                    val onClick = remember(index) { { scope.launch { pagerState.scrollToPage(index) }; Unit } }
                     DayViewStripItem(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
                         isSelected = index == pagerState.currentPage,
                         tasksByDay = tasksByDay,
                         modifier = Modifier.width(dayStripWidth),
-                        onClick = onClick,
+                        onClick = { scope.launch { pagerState.scrollToPage(index) } },
                     )
                 }
             }
@@ -209,7 +205,7 @@ internal fun DayViewContent(
 // ── Day strip item (single day in the week strip pager) ─────────────────────
 
 @Composable
-private fun DayViewStripItem(
+internal fun DayViewStripItem(
     dayMillis: Long,
     todayMillis: Long,
     isSelected: Boolean,
@@ -312,16 +308,14 @@ private fun DayViewTimeline(
             ) {
                 val (visibleAllDay, allDayOverflow) = truncateWithOverflow(allDayTasks, 3)
                 visibleAllDay.forEach { task ->
-                    val onClick = remember(task.id) { { onTaskClick(task) } }
-                    val onToggle = remember(task.id) { { onToggleComplete(task) } }
                     TimelineEventBar(
                         task = task,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(dimens.threeDayEventMinHeight)
                             .padding(vertical = 2.dp),
-                        onClick = onClick,
-                        onToggleComplete = onToggle,
+                        onClick = { onTaskClick(task) },
+                        onToggleComplete = { onToggleComplete(task) },
                         iconSize = dimens.iconMedium,
                         horizontalPadding = dimens.paddingSmall,
                         iconSpacing = dimens.paddingSmall,
@@ -374,9 +368,6 @@ private fun DayViewTimeline(
                 val hour = extractHour(dl)
                 val minute = extractMinute(dl)
                 val yOffset = hourHeight * hour + hourHeight * (minute / 60f)
-                val onClick = remember(task.id) { { onTaskClick(task) } }
-                val onToggle = remember(task.id) { { onToggleComplete(task) } }
-
                 TimelineEventBar(
                     task = task,
                     modifier = Modifier
@@ -384,8 +375,8 @@ private fun DayViewTimeline(
                         .height(dimens.threeDayEventMinHeight)
                         .offset(y = yOffset)
                         .padding(horizontal = 1.dp),
-                    onClick = onClick,
-                    onToggleComplete = onToggle,
+                    onClick = { onTaskClick(task) },
+                    onToggleComplete = { onToggleComplete(task) },
                     iconSize = dimens.iconMedium,
                     horizontalPadding = dimens.paddingSmall,
                     iconSpacing = dimens.paddingSmall,
@@ -396,42 +387,3 @@ private fun DayViewTimeline(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  PREVIEWS
-// ═══════════════════════════════════════════════════════════════════════════
-
-@Composable
-@Preview
-private fun DayViewStripItemPreview() {
-    OpenTasksTheme {
-        Box(modifier = Modifier.width(56.dp)) {
-            DayViewStripItem(
-                dayMillis = PreviewSampleData.sampleTodayMillis,
-                todayMillis = PreviewSampleData.sampleTodayMillis,
-                isSelected = true,
-                tasksByDay = PreviewSampleData.sampleTasksByDay,
-                onClick = {},
-            )
-        }
-    }
-}
-
-@Composable
-@Preview
-private fun DayViewContentPreview() {
-    OpenTasksTheme {
-        DayViewContent(
-            todayMillis = PreviewSampleData.sampleTodayMillis,
-            todayYear = PreviewSampleData.SAMPLE_YEAR,
-            todayMonth = PreviewSampleData.SAMPLE_MONTH,
-            todayDay = PreviewSampleData.SAMPLE_DAY,
-            pagerState = rememberPagerState(initialPage = 3650) { 7300 },
-            pagerCentre = 3650,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
-            topBarHeight = 64.dp,
-            navBarHeight = 0.dp,
-            onTaskClick = {},
-            onToggleComplete = {},
-        )
-    }
-}

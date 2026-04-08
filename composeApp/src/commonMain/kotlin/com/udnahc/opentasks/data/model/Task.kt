@@ -1,11 +1,9 @@
 package com.udnahc.opentasks.data.model
 
-import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.udnahc.opentasks.data.extensions.uuid4
 
-@Immutable
 @Entity(tableName = "tasks")
 data class Task(
     @PrimaryKey val id: String = uuid4(),

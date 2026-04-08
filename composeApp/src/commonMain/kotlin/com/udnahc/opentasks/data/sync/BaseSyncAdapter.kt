@@ -84,17 +84,36 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 } else {
                     val created = runCatching { createRecord(client, body) }
                     if (created.isSuccess) {
-                        created.getOrNull()?.id?.let { updatePbId(entityLocalId, it) }
-                        markSynced(entityLocalId)
+                        val newPbId = created.getOrNull()?.id
+                        if (newPbId != null) {
+                            try {
+                                updatePbId(entityLocalId, newPbId)
+                            } catch (e: Exception) {
+                                log.e { "Failed to save pbId for $collectionName $entityLocalId: ${e.message}" }
+                            }
+                        }
+                        try {
+                            markSynced(entityLocalId)
+                        } catch (e: Exception) {
+                            log.w { "Failed to markSynced for $collectionName $entityLocalId (will retry): ${e.message}" }
+                        }
                     } else {
                         // Create failed -- likely duplicate localId. Look up existing record.
                         log.w { "Create failed for $collectionName, looking up by localId: ${created.exceptionOrNull()?.message}" }
                         val existing = findRecordByLocalId(client, entityLocalId)
                         val serverId = existing?.id
                         if (serverId != null) {
-                            updatePbId(entityLocalId, serverId)
+                            try {
+                                updatePbId(entityLocalId, serverId)
+                            } catch (e: Exception) {
+                                log.e { "Failed to save pbId for $collectionName $entityLocalId: ${e.message}" }
+                            }
                             updateRecord(client, serverId, body)
-                            markSynced(entityLocalId)
+                            try {
+                                markSynced(entityLocalId)
+                            } catch (e: Exception) {
+                                log.w { "Failed to markSynced for $collectionName $entityLocalId (will retry): ${e.message}" }
+                            }
                         } else {
                             log.e { "Failed to push $collectionName $entityLocalId: ${created.exceptionOrNull()?.message}" }
                         }
@@ -112,6 +131,9 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             val remoteRecords = fetchAllRecords(client)
             log.d { "Pulled ${remoteRecords.size} $collectionName" }
 
+            // Snapshot local synced records BEFORE processing remote changes
+            val localSyncedSnapshot = getAllOnce().filter { isSynced(it) && !isDeleted(it) }
+
             for (record in remoteRecords) {
                 val rLocalId = recordLocalId(record)
                 val local = getById(rLocalId)
@@ -123,15 +145,21 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 }
             }
 
-            // Cleanup: remove local synced records not found on server
+            // Cleanup: remove local synced records not found on server (using pre-upsert snapshot)
             val remoteIds = remoteRecords.filter { !recordIsDeleted(it) }.map { recordLocalId(it) }.toSet()
-            val localSynced = getAllOnce().filter { isSynced(it) && !isDeleted(it) }
-            if (remoteRecords.size < localSynced.size * 0.5 && localSynced.isNotEmpty()) {
-                log.w { "Skipping $collectionName cleanup: server returned ${remoteRecords.size} records but ${localSynced.size} local synced exist -- possible partial response" }
+            if (remoteRecords.isEmpty() && localSyncedSnapshot.isNotEmpty()) {
+                log.w { "Skipping $collectionName cleanup: server returned 0 records but ${localSyncedSnapshot.size} local synced exist -- possible empty response" }
+            } else if (remoteRecords.size < localSyncedSnapshot.size * 0.1 && localSyncedSnapshot.isNotEmpty()) {
+                log.w { "Skipping $collectionName cleanup: server returned ${remoteRecords.size} records but ${localSyncedSnapshot.size} local synced exist -- possible partial response" }
             } else {
-                for (local in localSynced) {
+                for (local in localSyncedSnapshot) {
                     if (localId(local) !in remoteIds) {
-                        deleteEntity(local)
+                        try {
+                            log.d { "Cleanup deleting $collectionName ${localId(local)}: not found on server" }
+                            deleteEntity(local)
+                        } catch (e: Exception) {
+                            log.e { "Failed to cleanup-delete $collectionName ${localId(local)}: ${e.message}" }
+                        }
                     }
                 }
             }

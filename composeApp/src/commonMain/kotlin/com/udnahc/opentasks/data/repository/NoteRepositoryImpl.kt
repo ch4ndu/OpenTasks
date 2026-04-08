@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.repository
 
 import com.udnahc.opentasks.data.dao.NoteDao
+import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Note
@@ -28,7 +29,7 @@ class NoteRepositoryImpl(
 
     override suspend fun insert(note: Note) {
         log.v { "Inserting note: ${note.id}" }
-        noteDao.insert(note.withUtcTimestamps())
+        noteDao.insert(note.withDefaultTimestamps().withUtcTimestamps())
         triggerSyncAction()
     }
 
@@ -39,9 +40,17 @@ class NoteRepositoryImpl(
     }
 
     override suspend fun delete(note: Note) {
-        log.v { "Deleting note: ${note.id}" }
-        noteDao.delete(note)
+        log.v { "Soft-deleting note: ${note.id}" }
+        noteDao.update(note.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
         triggerSyncAction()
+    }
+
+    private fun Note.withDefaultTimestamps(): Note {
+        val now = localNow()
+        return copy(
+            createdAt = if (createdAt == 0L) now else createdAt,
+            updatedAt = if (updatedAt == 0L) now else updatedAt,
+        )
     }
 
     /** Converts UTC timestamps from the database to local time for presentation. */

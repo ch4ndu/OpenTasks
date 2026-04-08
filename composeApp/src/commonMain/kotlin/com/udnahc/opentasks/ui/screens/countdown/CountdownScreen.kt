@@ -42,7 +42,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
 import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.Countdown
@@ -132,7 +131,7 @@ fun CountdownScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CountdownContent(
+internal fun CountdownContent(
     countdowns: List<Countdown>,
     selectedFilter: CountdownType?,
     onFilterSelected: (CountdownType?) -> Unit,
@@ -255,7 +254,7 @@ private fun FilterChipRow(
 }
 
 @Composable
-private fun CountdownCard(
+internal fun CountdownCard(
     countdown: Countdown,
     onClick: () -> Unit,
 ) {
@@ -339,7 +338,7 @@ private fun CountdownCard(
 
 // -- Previews ------------------------------------------------------------------
 
-private val previewCountdowns = listOf(
+internal val previewCountdowns = listOf(
     Countdown(
         id = "preview-1",
         title = "Christmas",
@@ -367,41 +366,3 @@ private val previewCountdowns = listOf(
     ),
 )
 
-@Composable
-@Preview
-private fun CountdownContentPreview() {
-    OpenTasksTheme {
-        CountdownContent(
-            countdowns = previewCountdowns,
-            selectedFilter = null,
-            onFilterSelected = {},
-            onCountdownClick = {},
-            onSettingsClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun CountdownContentEmptyPreview() {
-    OpenTasksTheme {
-        CountdownContent(
-            countdowns = emptyList(),
-            selectedFilter = null,
-            onFilterSelected = {},
-            onCountdownClick = {},
-            onSettingsClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun CountdownCardPreview() {
-    OpenTasksTheme {
-        CountdownCard(
-            countdown = previewCountdowns.first(),
-            onClick = {},
-        )
-    }
-}

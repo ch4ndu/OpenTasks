@@ -40,7 +40,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.entryProvider
@@ -118,7 +117,6 @@ private fun isTabScreen(key: Any): Boolean =
     key is Screen.Matrix || key is Screen.TaskList || key is Screen.Calendar || key is Screen.Notes || key is Screen.Countdown
 
 @Composable
-@Preview
 fun App(sharedText: String = "", deepLinkTaskId: String = "", widgetAction: String = "") {
     val settingsViewModel: SettingsViewModel = koinViewModel()
     val themeMode by settingsViewModel.themePreference.collectAsState()

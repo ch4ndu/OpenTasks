@@ -21,13 +21,13 @@ interface CategoryDao {
     @Delete
     suspend fun delete(category: Category)
 
-    @Query("SELECT * FROM categories ORDER BY sortOrder ASC, id ASC")
+    @Query("SELECT * FROM categories WHERE isDeleted = 0 ORDER BY sortOrder ASC, id ASC")
     fun getAllCategories(): Flow<List<Category>>
 
     @Query("SELECT * FROM categories WHERE id = :id")
     suspend fun getCategoryById(id: String): Category?
 
-    @Query("SELECT * FROM categories WHERE name = :name LIMIT 1")
+    @Query("SELECT * FROM categories WHERE name = :name AND isDeleted = 0 LIMIT 1")
     suspend fun getCategoryByName(name: String): Category?
 
     @Query("SELECT * FROM categories WHERE isSynced = 0")

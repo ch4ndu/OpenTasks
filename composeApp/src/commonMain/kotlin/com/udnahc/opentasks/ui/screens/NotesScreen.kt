@@ -35,7 +35,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.formatDateShort
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.viewmodel.NoteViewModel
@@ -81,7 +80,7 @@ fun NotesScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NotesContent(
+internal fun NotesContent(
     notes: List<Note>,
     onNoteClick: (Note) -> Unit,
     onSettingsClick: () -> Unit = {},
@@ -148,7 +147,7 @@ private fun NotesContent(
 }
 
 @Composable
-private fun NoteCard(
+internal fun NoteCard(
     note: Note,
     onClick: () -> Unit,
 ) {
@@ -196,7 +195,7 @@ private fun NoteCard(
 
 // -- Previews ------------------------------------------------------------------
 
-private val previewNotes = listOf(
+internal val previewNotes = listOf(
     Note(
         id = "preview-note-1",
         title = "Meeting Notes",
@@ -220,37 +219,3 @@ private val previewNotes = listOf(
     ),
 )
 
-@Composable
-@Preview
-private fun NotesContentPreview() {
-    OpenTasksTheme {
-        NotesContent(
-            notes = previewNotes,
-            onNoteClick = {},
-            onSettingsClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun NotesContentEmptyPreview() {
-    OpenTasksTheme {
-        NotesContent(
-            notes = emptyList(),
-            onNoteClick = {},
-            onSettingsClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun NoteCardPreview() {
-    OpenTasksTheme {
-        NoteCard(
-            note = previewNotes.first(),
-            onClick = {},
-        )
-    }
-}

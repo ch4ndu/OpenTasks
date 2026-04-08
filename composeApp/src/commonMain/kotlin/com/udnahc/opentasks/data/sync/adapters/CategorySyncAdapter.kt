@@ -32,7 +32,7 @@ class CategorySyncAdapter(private val dao: CategoryDao) : BaseSyncAdapter<Catego
 
     override fun recordLocalId(record: CategoryRecord) = record.localId
     override fun recordIsDeleted(record: CategoryRecord) = record.isDeleted
-    override fun recordUpdatedAt(record: CategoryRecord) = record.localUpdatedAt
+    override fun recordUpdatedAt(record: CategoryRecord) = record.updatedAtUtc
 
     override fun toRecord(entity: Category) = entity.toCategoryRecord()
     override fun toEntity(record: CategoryRecord) = record.toCategory()

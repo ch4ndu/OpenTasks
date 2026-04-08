@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -28,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
@@ -38,7 +36,6 @@ import com.udnahc.opentasks.domain.usecase.task.tasksForDay
 import com.udnahc.opentasks.data.extensions.formatDateLabel
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
-import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
@@ -205,7 +202,7 @@ private fun CardTaskList(
 
 /** A single week page inside the week pager. Shows Sun–Sat with selectable days. */
 @Composable
-private fun WeekStripPage(
+internal fun WeekStripPage(
     weekSundayMillis: Long,
     todayMillis: Long,
     selectedDayMillis: Long,
@@ -288,66 +285,3 @@ private fun WeekStripPage(
     }
 }
 
-@Composable
-@Preview
-private fun WeekStripPagePreview() {
-    OpenTasksTheme {
-        WeekStripPage(
-            weekSundayMillis = PreviewSampleData.sampleWeekSundayMillis,
-            todayMillis = PreviewSampleData.sampleTodayMillis,
-            selectedDayMillis = PreviewSampleData.sampleTodayMillis,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
-            onDaySelected = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun ListViewContentTimelinePreview() {
-    OpenTasksTheme {
-        val weekPagerState = rememberPagerState(initialPage = 520) { 1040 }
-        ListViewContent(
-            tasks = PreviewSampleData.sampleTasks,
-            todayMillis = PreviewSampleData.sampleTodayMillis,
-            todayYear = PreviewSampleData.SAMPLE_YEAR,
-            todayMonth = PreviewSampleData.SAMPLE_MONTH,
-            todayDay = PreviewSampleData.SAMPLE_DAY,
-            selectedDayMillis = PreviewSampleData.sampleTodayMillis,
-            onDaySelected = {},
-            weekPagerState = weekPagerState,
-            weekPagerCentre = 520,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
-            topBarHeight = 64.dp,
-            navBarHeight = 0.dp,
-            displayMode = ListDisplayMode.TIMELINE,
-            onTaskClick = {},
-            onToggleComplete = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun ListViewContentCardPreview() {
-    OpenTasksTheme {
-        val weekPagerState = rememberPagerState(initialPage = 520) { 1040 }
-        ListViewContent(
-            tasks = PreviewSampleData.sampleTasks,
-            todayMillis = PreviewSampleData.sampleTodayMillis,
-            todayYear = PreviewSampleData.SAMPLE_YEAR,
-            todayMonth = PreviewSampleData.SAMPLE_MONTH,
-            todayDay = PreviewSampleData.SAMPLE_DAY,
-            selectedDayMillis = PreviewSampleData.sampleTodayMillis,
-            onDaySelected = {},
-            weekPagerState = weekPagerState,
-            weekPagerCentre = 520,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
-            topBarHeight = 64.dp,
-            navBarHeight = 0.dp,
-            displayMode = ListDisplayMode.CARD,
-            onTaskClick = {},
-            onToggleComplete = {},
-        )
-    }
-}

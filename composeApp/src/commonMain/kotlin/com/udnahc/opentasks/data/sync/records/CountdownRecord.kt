@@ -6,6 +6,7 @@ import com.udnahc.opentasks.data.model.CountingMode
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.SmartListVisibility
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -22,8 +23,8 @@ class CountdownRecord(
     val smartListVisibility: String = "ON_THE_DAY",
     val isCompleted: Boolean = false,
     val isDeleted: Boolean = false,
-    val localCreatedAt: Long = 0L,
-    val localUpdatedAt: Long = 0L,
+    @SerialName("localCreatedAt") val createdAtUtc: Long = 0L,
+    @SerialName("localUpdatedAt") val updatedAtUtc: Long = 0L,
 ) : BaseModel()
 
 fun CountdownRecord.toCountdown(): Countdown = Countdown(
@@ -41,8 +42,8 @@ fun CountdownRecord.toCountdown(): Countdown = Countdown(
     pbId = id,
     isSynced = true,
     isDeleted = isDeleted,
-    createdAt = localCreatedAt,
-    updatedAt = localUpdatedAt,
+    createdAt = createdAtUtc,
+    updatedAt = updatedAtUtc,
 )
 
 fun Countdown.toCountdownRecord(): CountdownRecord = CountdownRecord(
@@ -58,6 +59,6 @@ fun Countdown.toCountdownRecord(): CountdownRecord = CountdownRecord(
     smartListVisibility = smartListVisibility.name,
     isCompleted = isCompleted,
     isDeleted = isDeleted,
-    localCreatedAt = createdAt,
-    localUpdatedAt = updatedAt,
+    createdAtUtc = createdAt,
+    updatedAtUtc = updatedAt,
 )

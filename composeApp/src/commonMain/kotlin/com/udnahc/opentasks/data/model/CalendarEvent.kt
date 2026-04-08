@@ -1,8 +1,5 @@
 package com.udnahc.opentasks.data.model
 
-import androidx.compose.runtime.Immutable
-
-@Immutable
 data class CalendarEvent(
     val externalId: String,
     val title: String,

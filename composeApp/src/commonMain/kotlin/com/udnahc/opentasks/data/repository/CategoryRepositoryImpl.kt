@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.repository
 
 import com.udnahc.opentasks.data.dao.CategoryDao
+import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Category
@@ -31,7 +32,7 @@ class CategoryRepositoryImpl(
 
     override suspend fun insert(category: Category): Long {
         log.v { "Inserting category: ${category.id}" }
-        val result = categoryDao.insert(category.withUtcTimestamps())
+        val result = categoryDao.insert(category.withDefaultTimestamps().withUtcTimestamps())
         triggerSyncAction()
         return result
     }
@@ -43,9 +44,17 @@ class CategoryRepositoryImpl(
     }
 
     override suspend fun delete(category: Category) {
-        log.v { "Deleting category: ${category.id}" }
-        categoryDao.delete(category)
+        log.v { "Soft-deleting category: ${category.id}" }
+        categoryDao.update(category.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
         triggerSyncAction()
+    }
+
+    private fun Category.withDefaultTimestamps(): Category {
+        val now = localNow()
+        return copy(
+            createdAt = if (createdAt == 0L) now else createdAt,
+            updatedAt = if (updatedAt == 0L) now else updatedAt,
+        )
     }
 
     /** Converts UTC timestamps from the database to local time for presentation. */

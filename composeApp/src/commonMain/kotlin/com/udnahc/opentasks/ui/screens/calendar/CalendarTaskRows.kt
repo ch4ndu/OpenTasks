@@ -32,12 +32,10 @@ import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.formatTime12Hr
 import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.isCountdownItem
-import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.screens.EmptyPlaceholder
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -426,83 +424,3 @@ internal fun EmptyDayPlaceholder() {
     )
 }
 
-// ── Previews ─────────────────────────────────────────────────────────────────
-
-@Composable
-@Preview
-private fun TimelineTaskRowPreview() {
-    OpenTasksTheme {
-        TimelineTaskRow(
-            task = PreviewSampleData.sampleTasks[0],
-            isFirst = true,
-            isLast = true,
-            onToggleComplete = {},
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun CardTaskRowPreview() {
-    OpenTasksTheme {
-        CardTaskRow(
-            task = PreviewSampleData.sampleTasks[0],
-            isToday = true,
-            onToggleComplete = {},
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun CalendarTaskRowPreview() {
-    OpenTasksTheme {
-        CalendarTaskRow(
-            task = PreviewSampleData.sampleTasks[0],
-            onToggleComplete = {},
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun TimelineEventBarDayPreview() {
-    OpenTasksTheme {
-        TimelineEventBar(
-            task = PreviewSampleData.sampleTasks[0],
-            modifier = Modifier.fillMaxWidth().height(24.dp),
-            onClick = {},
-            onToggleComplete = {},
-            iconSize = OpenTasksTheme.dimens.iconMedium,
-            horizontalPadding = OpenTasksTheme.dimens.paddingSmall,
-            iconSpacing = OpenTasksTheme.dimens.paddingSmall,
-            showTime = true,
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun TimelineEventBarWeekPreview() {
-    OpenTasksTheme {
-        TimelineEventBar(
-            task = PreviewSampleData.sampleTasks[0],
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(OpenTasksTheme.dimens.calendarMonthGridEventHeight)
-                .padding(vertical = 1.dp),
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun EmptyDayPlaceholderPreview() {
-    OpenTasksTheme {
-        EmptyDayPlaceholder()
-    }
-}

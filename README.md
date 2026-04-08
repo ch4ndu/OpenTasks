@@ -2,6 +2,50 @@
 
 A cross-platform task management app built with **Kotlin Multiplatform** and **Compose Multiplatform**, featuring Eisenhower Matrix prioritization to help you focus on what truly matters. Inspired by [TickTick](https://ticktick.com).
 
+## Note
+This project is built collaboratively with AI assistance (Claude Code). The code is reviewed, iterated on, and guided by me at every step — not auto-generated and dumped. Architecture decisions, feature design, and quality standards are human-driven; AI accelerates the implementation.
+
+## Screenshots
+
+<details>
+<summary>View screenshots</summary>
+
+<br>
+
+**Core Screens**
+
+<p>
+  <img src="screenshots/matrix_dark.png" alt="Eisenhower Matrix" width="250">
+  <img src="screenshots/tasklist_light.png" alt="Task List (Light)" width="250">
+  <img src="screenshots/tasklist_dark.png" alt="Task List (Dark)" width="250">
+  <img src="screenshots/notes_dark.png" alt="Notes" width="250">
+  <img src="screenshots/settings_dark.png" alt="Settings" width="250">
+</p>
+
+**Calendar Views**
+
+<p>
+  <img src="screenshots/calendar_month_dark.png" alt="Month View" width="250">
+  <img src="screenshots/calendar_week_light.png" alt="Week View (Light)" width="250">
+  <img src="screenshots/calendar_week_dark.png" alt="Week View (Dark)" width="250">
+  <img src="screenshots/three_day_light.png" alt="3-Day View (Light)" width="250">
+  <img src="screenshots/three_day_dark.png" alt="3-Day View (Dark)" width="250">
+  <img src="screenshots/calendar_year_light.png" alt="Year View (Light)" width="250">
+  <img src="screenshots/calendar_year_dark.png" alt="Year View (Dark)" width="250">
+  <img src="screenshots/calendar_options.png" alt="Calendar Options" width="250">
+</p>
+
+**Countdowns & Import**
+
+<p>
+  <img src="screenshots/countdown_dark.png" alt="Countdown" width="250">
+  <img src="screenshots/create_countdown.png" alt="Create Countdown" width="250">
+  <img src="screenshots/import_calendar.png" alt="Import Calendar" width="250">
+  <img src="screenshots/import_ics.png" alt="Import ICS" width="250">
+</p>
+
+</details>
+
 ## Platforms
 
 | Android | iOS | Desktop (JVM) |
@@ -10,24 +54,50 @@ A cross-platform task management app built with **Kotlin Multiplatform** and **C
 
 ## Features
 
-- **Eisenhower Matrix** — Visualize tasks across four priority quadrants:
-  - Urgent & Important (red)
-  - Not Urgent & Important (amber)
-  - Urgent & Unimportant (blue)
-  - Not Urgent & Unimportant (green)
-- **Task Lists** — Organize tasks into custom lists (default "Inbox" included)
-- **Calendar Views** — Year, month, week, 3-day, and list views
-- **Recurring Tasks** — Daily, weekly, monthly, yearly, or every weekday
-- **Reminders** — Configurable notifications before deadlines
-- **Responsive Layout** — Adapts to compact, medium, and expanded screen sizes
+### Task Management
+- **Eisenhower Matrix** — Visualize tasks across four priority quadrants (Urgent & Important, Not Urgent & Important, Urgent & Unimportant, Not Urgent & Unimportant)
+- **Task Lists** — Organize tasks into custom categories (default "Inbox" included)
+- **Recurring Tasks** — Daily, weekly, monthly, yearly, or every weekday with configurable intervals
+- **Reminders** — Configurable notifications (days/weeks/months before deadline), plus duration and date-based reminders
+- **Tags** — Color-coded tags for flexible cross-category organization
+- **Soft Deletes** — Non-destructive deletion with sync-safe tracking
+
+### Calendar
+- **6 Calendar Views** — Year, month, week, 3-day, day, and list views
+- **Calendar Import** — Import events directly from your device calendar with configurable date range
+- **ICS Import** — Import tasks from standard `.ics` calendar files
+- **CSV Import** — Import tasks from TickTick-format CSV exports
+- **All-Day Events** — Full support for all-day and multi-day events
+
+### Notes
+- **Rich Notes** — Create, edit, and delete notes with title and content
+
+### Countdowns
+- **Event Countdowns** — Track days until (or since) important dates
+- **Countdown Types** — Holiday, Birthday, Anniversary, and general Countdown
+- **Count Up Mode** — Switch between counting down to a date or counting up from a past date
+- **Smart List Visibility** — Configure when countdowns appear (on the day, 3/7 days early, always, or hidden)
+- **Countdown Reminders** — Schedule reminders at specific times, configurable days before the event
+- **Recurring Countdowns** — Repeat countdowns on daily, weekly, monthly, or yearly schedules
+
+### Sync & Data
+- **PocketBase Sync** — Optional self-hosted sync via [PocketBase](https://pocketbase.io) for backup and multi-device access (tasks, categories, notes, countdowns, tags)
+- **Automatic Sync** — Syncs on app resume and after every write; manual sync available in Settings
+- **Clear Local Data** — Reset option available in Settings
+
+### Platform & UI
+- **Cross-Platform** — Android, iOS, and Desktop (JVM) from a single codebase
 - **Material Design 3** — Modern theming with custom color palette and typography
+- **Dark / Light / System Theme** — Configurable in Settings
+- **Responsive Layout** — Adapts to compact, medium, and expanded screen sizes
+- **Android Widgets** — Home screen widgets for quick task access
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | UI | Compose Multiplatform + Material 3 |
-| State | Single ViewModel with StateFlow |
+| State | Per-screen ViewModels with StateFlow |
 | Database | Room + BundledSQLiteDriver |
 | DI | Koin |
 | Navigation | AndroidX Navigation 3 |
@@ -54,23 +124,27 @@ For **iOS**, open `iosApp/iosApp.xcodeproj` in Xcode and build the `iosApp` sche
 
 ```
 composeApp/src/
-├── commonMain/          # Shared UI, data, DI, and ViewModel
+├── commonMain/          # Shared UI, data, domain, DI
 │   ├── kotlin/.../
 │   │   ├── App.kt              # Entry point & navigation
-│   │   ├── viewmodel/          # TaskViewModel (single VM)
+│   │   ├── viewmodel/          # Per-screen ViewModels + AppViewModel
 │   │   ├── data/
-│   │   │   ├── model/          # Task, TaskList, TaskPriority, RecurrenceType
+│   │   │   ├── model/          # Task, Category, Note, Countdown, Tag, etc.
 │   │   │   ├── database/       # Room database & converters
 │   │   │   ├── dao/            # Data access objects
 │   │   │   ├── repository/     # Repository interfaces & implementations
+│   │   │   ├── sync/           # PocketBase sync adapters & records
 │   │   │   └── extensions/     # Date/time utilities
+│   │   ├── domain/
+│   │   │   ├── usecase/        # Read operations (task/, note/, settings/, etc.)
+│   │   │   └── action/         # Write operations (task/, note/, settings/, etc.)
 │   │   ├── di/                 # Koin modules
 │   │   └── ui/
 │   │       ├── screens/        # One composable per screen
 │   │       │   └── calendar/   # Calendar view variants
 │   │       └── theme/          # Colors, typography, dimensions
 │   └── composeResources/       # Drawables, strings
-├── androidMain/         # Android DB builder, Application, Activity
+├── androidMain/         # Android DB builder, Activity, widgets
 ├── iosMain/             # iOS DB builder, MainViewController
 └── jvmMain/             # Desktop DB builder, main entry point
 ```
@@ -80,14 +154,16 @@ Platform-specific code uses Kotlin's `expect`/`actual` pattern and is kept to a 
 ## Architecture
 
 - **Repository pattern** wraps Room DAOs for data access
-- **Single ViewModel** (`TaskViewModel`) manages all task and list operations
-- **UTC storage** — dates stored as UTC epoch millis in the database, converted to local time on read
-- **Derived StateFlows** — filtering and sorting happen in the ViewModel, not in composables
-- **Immutable entities** — `Task` and `TaskList` are annotated `@Immutable` for efficient recomposition
+- **UseCase / Action pattern** — reads via UseCase classes (return `Flow`), writes via Action classes
+- **Per-screen ViewModels** — `MatrixViewModel`, `TaskListViewModel`, `CalendarViewModel`, `NoteViewModel`, `CountdownViewModel`, plus `AppViewModel` for shared operations
+- **UTC storage** — dates stored as UTC epoch millis in the database, converted to local time in the repository layer
+- **Derived StateFlows** — filtering, sorting, and grouping happen in UseCases/ViewModels, not in composables
+- **Strong skipping** — Compose compiler handles recomposition skipping; no manual `@Immutable` annotations needed
+- **Auto-sync** — repositories trigger PocketBase sync on every write; `SyncService` uses DAOs directly to avoid sync loops
 
 ## PocketBase Sync (Optional)
 
-The app supports syncing tasks, categories, and notes to a self-hosted [PocketBase](https://pocketbase.io) server for backup and multi-device access. No authentication is required — collections use public API rules.
+The app supports syncing tasks, categories, notes, countdowns, and tags to a self-hosted [PocketBase](https://pocketbase.io) server for backup and multi-device access. No authentication is required — collections use public API rules.
 
 ### Quick Start (Ubuntu)
 
@@ -150,13 +226,17 @@ sudo systemctl status pocketbase
 
 ### Migration Details
 
-The included migration (`pocketbase/pb_migrations/001_create_collections.js`) creates three collections:
+The included migrations (`pocketbase/pb_migrations/`) create the following collections:
 
 **`tasks`** — localId, title, content, priority, deadline, notifyBeforeValue, notifyBeforeUnit, recurrenceType, recurrenceInterval, isCompleted, isUrgent, isImportant, categoryId, isAllDay, sourceExternalId, location, url, organizer, eventStatus, attendees, durationReminders, dateReminders, isDeleted, localCreatedAt, localUpdatedAt
 
 **`categories`** — localId, name, icon, sortOrder, isDeleted, localCreatedAt
 
 **`notes`** — localId, title, content, isDeleted, localCreatedAt, localUpdatedAt
+
+**`countdowns`** — localId, title, targetDate, countdownType, countingMode, reminders, recurrenceType, recurrenceInterval, recurrenceDaysOfWeek, smartListVisibility, isCompleted, isDeleted, localCreatedAt, localUpdatedAt
+
+**`tags`** — localId, name, color, isDeleted, localCreatedAt, localUpdatedAt
 
 Each collection has a unique index on `localId` for fast sync lookups. All API rules are left empty (public access) since the app doesn't use authentication.
 

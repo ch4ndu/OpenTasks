@@ -1,6 +1,5 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
-import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.extensions.daysInMonth
@@ -12,7 +11,6 @@ import com.udnahc.opentasks.ui.theme.PriorityNone
 
 // ── Calendar day model ──────────────────────────────────────────────────────
 
-@Immutable
 internal data class CalendarDay(
     val year: Int,
     val month: Int,   // 1-12

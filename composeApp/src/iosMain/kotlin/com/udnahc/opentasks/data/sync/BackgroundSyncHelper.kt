@@ -1,7 +1,10 @@
 package com.udnahc.opentasks.data.sync
 
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.lighthousegames.logging.logging
@@ -12,10 +15,11 @@ object BackgroundSyncHelper : KoinComponent {
 
     private val syncService: SyncService by inject()
     private val rescheduleAllRemindersAction: RescheduleAllRemindersAction by inject()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun performSync() {
         log.d { "Background sync starting" }
-        runBlocking {
+        scope.launch {
             try {
                 syncService.syncAll()
                 rescheduleAllRemindersAction()

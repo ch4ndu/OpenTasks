@@ -15,14 +15,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.Immutable
 import org.lighthousegames.logging.logging
 
 private val log = logging("ImportCalendarViewModel")
 
 enum class ImportRangeUnit { DAYS, WEEKS, MONTHS, YEARS }
 
-@Immutable
 data class ImportCalendarUiState(
     val permissionStatus: CalendarPermissionStatus = CalendarPermissionStatus.NOT_DETERMINED,
     val isLoading: Boolean = false,
@@ -44,7 +42,7 @@ class ImportCalendarViewModel(
     val isAvailable: Boolean = fetchCalendarEvents.isAvailable()
 
     fun checkPermission() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val status = checkCalendarPermission()
             _uiState.update { it.copy(permissionStatus = status) }
         }

@@ -1,10 +1,8 @@
 package com.udnahc.opentasks.data.model
 
-import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.ForeignKey
 
-@Immutable
 @Entity(
     tableName = "task_tags",
     primaryKeys = ["taskId", "tagId"],

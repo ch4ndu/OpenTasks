@@ -31,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -103,7 +102,7 @@ fun CategoryPickerBottomSheet(
 }
 
 @Composable
-private fun CategoryPickerContent(
+internal fun CategoryPickerContent(
     categories: List<Category>,
     selectedCategoryId: String,
     showTitle: Boolean,
@@ -303,24 +302,3 @@ private fun AddCategoryDialog(
     )
 }
 
-@Composable
-@Preview
-private fun CategoryPickerPreview() {
-    val sampleCategories = listOf(
-        Category(id = "1", name = "Inbox", icon = "inbox"),
-        Category(id = "2", name = "Work"),
-        Category(id = "3", name = "Personal"),
-    )
-    OpenTasksTheme {
-        CategoryPickerContent(
-            categories = sampleCategories,
-            selectedCategoryId = "1",
-            showTitle = true,
-            searchQuery = "",
-            onSearchQueryChange = {},
-            onCategorySelected = {},
-            onAddCategoryClick = {},
-            onDismiss = {},
-        )
-    }
-}

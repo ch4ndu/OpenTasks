@@ -5,6 +5,7 @@ import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -33,8 +34,8 @@ class TaskRecord(
     val durationReminders: String = "",
     val dateReminders: String = "",
     val isDeleted: Boolean = false,
-    val localCreatedAt: Long = 0L,
-    val localUpdatedAt: Long = 0L,
+    @SerialName("localCreatedAt") val createdAtUtc: Long = 0L,
+    @SerialName("localUpdatedAt") val updatedAtUtc: Long = 0L,
 ) : BaseModel()
 
 fun Task.toTaskRecord(): TaskRecord = TaskRecord(
@@ -62,8 +63,8 @@ fun Task.toTaskRecord(): TaskRecord = TaskRecord(
     durationReminders = durationReminders,
     dateReminders = dateReminders,
     isDeleted = isDeleted,
-    localCreatedAt = createdAt,
-    localUpdatedAt = updatedAt,
+    createdAtUtc = createdAt,
+    updatedAtUtc = updatedAt,
 )
 
 fun TaskRecord.toTask(): Task = Task(
@@ -93,6 +94,6 @@ fun TaskRecord.toTask(): Task = Task(
     dateReminders = dateReminders,
     isDeleted = isDeleted,
     isSynced = true,
-    createdAt = localCreatedAt,
-    updatedAt = localUpdatedAt,
+    createdAt = createdAtUtc,
+    updatedAt = updatedAtUtc,
 )

@@ -34,7 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.currentMonth
@@ -489,7 +488,7 @@ private fun CalendarContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CalendarTopBar(
+internal fun CalendarTopBar(
     title: String,
     currentView: CalendarViewType,
     showBackButton: Boolean,
@@ -585,7 +584,7 @@ private fun DisplayModeToggle(
 // ── View Picker Dropdown ────────────────────────────────────────────────────
 
 @Composable
-private fun ViewPickerDropdown(
+internal fun ViewPickerDropdown(
     expanded: Boolean,
     currentView: CalendarViewType,
     onViewSelected: (CalendarViewType) -> Unit,
@@ -627,36 +626,3 @@ private fun ViewPickerDropdown(
 
 private val dimens @Composable get() = OpenTasksTheme.dimens
 
-// ── Previews ─────────────────────────────────────────────────────────────────
-
-@Composable
-@Preview
-private fun CalendarTopBarPreview() {
-    OpenTasksTheme {
-        CalendarTopBar(
-            title = "March",
-            currentView = CalendarViewType.MONTH,
-            showBackButton = false,
-            onBack = {},
-            listDisplayMode = ListDisplayMode.TIMELINE,
-            onToggleDisplayMode = {},
-            showViewPicker = false,
-            onViewPickerToggle = {},
-            onViewSelected = {},
-            onViewPickerDismiss = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun ViewPickerDropdownPreview() {
-    OpenTasksTheme {
-        ViewPickerDropdown(
-            expanded = true,
-            currentView = CalendarViewType.MONTH,
-            onViewSelected = {},
-            onDismiss = {},
-        )
-    }
-}

@@ -1,6 +1,5 @@
 package com.udnahc.opentasks.ui.theme
 
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -11,7 +10,6 @@ import androidx.compose.ui.unit.dp
  */
 enum class WindowSizeCategory { COMPACT, MEDIUM, EXPANDED }
 
-@Immutable
 data class OpenTasksDimensions(
     // ── Padding ──────────────────────────────────────────────────────────
     val paddingTiny: Dp,        // 2.dp baseline

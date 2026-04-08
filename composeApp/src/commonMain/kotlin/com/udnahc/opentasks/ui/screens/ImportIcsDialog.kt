@@ -16,7 +16,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.viewmodel.ImportIcsUiState
@@ -51,7 +50,7 @@ fun ImportIcsDialog(
 }
 
 @Composable
-private fun ImportIcsDialogContent(
+internal fun ImportIcsDialogContent(
     uiState: ImportIcsUiState,
     onPickFile: () -> Unit,
     onDismiss: () -> Unit,
@@ -135,26 +134,3 @@ private fun ImportIcsDialogContent(
     )
 }
 
-@Composable
-@Preview
-private fun ImportIcsDialogPreview() {
-    OpenTasksTheme {
-        ImportIcsDialogContent(
-            uiState = ImportIcsUiState(),
-            onPickFile = {},
-            onDismiss = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun ImportIcsDialogSuccessPreview() {
-    OpenTasksTheme {
-        ImportIcsDialogContent(
-            uiState = ImportIcsUiState(importedCount = 8),
-            onPickFile = {},
-            onDismiss = {},
-        )
-    }
-}

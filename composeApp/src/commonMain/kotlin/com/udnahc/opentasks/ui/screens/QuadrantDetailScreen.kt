@@ -33,8 +33,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
-import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.todayLocal
@@ -42,7 +40,6 @@ import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
-import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.DateOrange
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -105,7 +102,7 @@ fun QuadrantDetailScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun QuadrantDetailContent(
+internal fun QuadrantDetailContent(
     title: String,
     priority: TaskPriority,
     tasks: List<Task>,
@@ -199,14 +196,12 @@ private fun QuadrantDetailContent(
                     ) {
                         Column {
                             categoryTasks.forEachIndexed { index, task ->
-                                val onToggle = remember(task.id) { { onToggleComplete(task) } }
-                                val onClick = remember(task.id) { { onTaskClick(task) } }
                                 DetailTaskRow(
                                     task = task,
                                     priority = priority,
                                     isOverdue = category == TaskCategory.OVERDUE,
-                                    onToggleComplete = onToggle,
-                                    onClick = onClick,
+                                    onToggleComplete = { onToggleComplete(task) },
+                                    onClick = { onTaskClick(task) },
                                 )
                                 if (index < categoryTasks.lastIndex) {
                                     HorizontalDivider(
@@ -229,7 +224,7 @@ private fun QuadrantDetailContent(
 }
 
 @Composable
-private fun DetailTaskRow(
+internal fun DetailTaskRow(
     task: Task,
     priority: TaskPriority,
     isOverdue: Boolean,
@@ -374,38 +369,4 @@ private fun priorityColor(priority: TaskPriority): Color = when (priority) {
     TaskPriority.MEDIUM -> PriorityMedium
     TaskPriority.LOW -> PriorityLow
     TaskPriority.NONE -> PriorityNone
-}
-
-
-@Composable
-@Preview
-private fun QuadrantDetailPreview() {
-    OpenTasksTheme {
-        QuadrantDetailContent(
-            title = "Urgent & Important",
-            priority = TaskPriority.HIGH,
-            tasks = PreviewSampleData.sampleTasks.filter { it.priority == TaskPriority.HIGH },
-            onBack = {},
-            onTaskClick = {},
-            onToggleComplete = {},
-            now = PreviewSampleData.sampleTodayMillis,
-            startOfToday = PreviewSampleData.sampleTodayMillis,
-            startOfTomorrow = PreviewSampleData.sampleTodayMillis + MILLIS_PER_DAY,
-            endOfNext7Days = PreviewSampleData.sampleTodayMillis + 7 * MILLIS_PER_DAY,
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun DetailTaskRowPreview() {
-    OpenTasksTheme {
-        DetailTaskRow(
-            task = PreviewSampleData.sampleTasks.first(),
-            priority = TaskPriority.HIGH,
-            isOverdue = false,
-            onToggleComplete = {},
-            onClick = {},
-        )
-    }
 }

@@ -11,12 +11,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.Immutable
 import org.lighthousegames.logging.logging
 
 private val log = logging("ImportCsvViewModel")
 
-@Immutable
 data class ImportCsvUiState(
     val isLoading: Boolean = false,
     val importedCount: Int? = null,

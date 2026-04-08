@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.repository
 
 import com.udnahc.opentasks.data.dao.TagDao
+import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Tag
@@ -27,7 +28,7 @@ class TagRepositoryImpl(
         tagDao.getTagsForTask(taskId).map { tags -> tags.map { it.withLocalTimestamps() } }
 
     override suspend fun insertTag(tag: Tag): Long {
-        val result = tagDao.insertTag(tag.withUtcTimestamps())
+        val result = tagDao.insertTag(tag.withDefaultTimestamps().withUtcTimestamps())
         triggerSyncAction()
         return result
     }
@@ -42,6 +43,14 @@ class TagRepositoryImpl(
 
     // TaskTag is local-only; no sync adapter exists. Do not trigger sync.
     override suspend fun deleteTaskTag(taskTag: TaskTag) = tagDao.deleteTaskTag(taskTag)
+
+    private fun Tag.withDefaultTimestamps(): Tag {
+        val now = localNow()
+        return copy(
+            createdAt = if (createdAt == 0L) now else createdAt,
+            updatedAt = if (updatedAt == 0L) now else updatedAt,
+        )
+    }
 
     private fun Tag.withLocalTimestamps() = copy(
         createdAt = utcToLocal(createdAt),

@@ -32,7 +32,7 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
 
     override fun recordLocalId(record: TagRecord) = record.localId
     override fun recordIsDeleted(record: TagRecord) = record.isDeleted
-    override fun recordUpdatedAt(record: TagRecord) = record.localUpdatedAt
+    override fun recordUpdatedAt(record: TagRecord) = record.updatedAtUtc
 
     override fun toRecord(entity: Tag) = entity.toTagRecord()
     override fun toEntity(record: TagRecord) = record.toTag()

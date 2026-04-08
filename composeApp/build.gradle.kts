@@ -1,4 +1,5 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.kotlin.compose.compiler.gradle.ComposeFeatureFlag
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -33,6 +34,7 @@ kotlin {
     
     sourceSets {
         androidMain.dependencies {
+            implementation(libs.compose.uiTooling)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
             implementation(libs.koin.android)
@@ -126,7 +128,6 @@ android {
 }
 
 dependencies {
-    debugImplementation(libs.compose.uiTooling)
     add("kspAndroid", libs.androidx.room.compiler)
     add("kspIosArm64", libs.androidx.room.compiler)
     add("kspIosSimulatorArm64", libs.androidx.room.compiler)
@@ -135,6 +136,10 @@ dependencies {
 
 room {
     schemaDirectory("$projectDir/schemas")
+}
+
+composeCompiler {
+    featureFlags.add(ComposeFeatureFlag.StrongSkipping)
 }
 
 compose.desktop {

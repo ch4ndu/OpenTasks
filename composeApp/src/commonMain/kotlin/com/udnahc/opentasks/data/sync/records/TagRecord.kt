@@ -2,6 +2,7 @@ package com.udnahc.opentasks.data.sync.records
 
 import com.udnahc.opentasks.data.model.Tag
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -10,8 +11,8 @@ class TagRecord(
     val name: String = "",
     val color: String? = null,
     val isDeleted: Boolean = false,
-    val localCreatedAt: Long = 0L,
-    val localUpdatedAt: Long = 0L,
+    @SerialName("localCreatedAt") val createdAtUtc: Long = 0L,
+    @SerialName("localUpdatedAt") val updatedAtUtc: Long = 0L,
 ) : BaseModel()
 
 fun TagRecord.toTag(): Tag = Tag(
@@ -21,8 +22,8 @@ fun TagRecord.toTag(): Tag = Tag(
     pbId = id,
     isSynced = true,
     isDeleted = isDeleted,
-    createdAt = localCreatedAt,
-    updatedAt = localUpdatedAt,
+    createdAt = createdAtUtc,
+    updatedAt = updatedAtUtc,
 )
 
 fun Tag.toTagRecord(): TagRecord = TagRecord(
@@ -30,6 +31,6 @@ fun Tag.toTagRecord(): TagRecord = TagRecord(
     name = name,
     color = color,
     isDeleted = isDeleted,
-    localCreatedAt = createdAt,
-    localUpdatedAt = updatedAt,
+    createdAtUtc = createdAt,
+    updatedAtUtc = updatedAt,
 )

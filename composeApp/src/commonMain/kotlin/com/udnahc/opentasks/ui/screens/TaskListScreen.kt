@@ -42,10 +42,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
-import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PriorityHigh
 import com.udnahc.opentasks.ui.theme.PriorityLow
@@ -121,7 +119,7 @@ fun TaskListScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TaskListContent(
+internal fun TaskListContent(
     listName: String = "Inbox",
     activeTasks: List<Task> = emptyList(),
     completedTasks: List<Task> = emptyList(),
@@ -188,12 +186,10 @@ private fun TaskListContent(
                         ) {
                             Column {
                                 completedTasks.forEachIndexed { index, task ->
-                                    val onToggle = remember(task.id) { { onToggleComplete(task) } }
-                                    val onClick = remember(task.id) { { onTaskClick(task) } }
                                     CompletedTaskRow(
                                         task = task,
-                                        onToggleComplete = onToggle,
-                                        onClick = onClick,
+                                        onToggleComplete = { onToggleComplete(task) },
+                                        onClick = { onTaskClick(task) },
                                     )
                                     if (index < completedTasks.lastIndex) {
                                         HorizontalDivider(
@@ -221,7 +217,7 @@ private fun TaskListContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TaskListTopBar(
+internal fun TaskListTopBar(
     listName: String,
     onListClick: () -> Unit,
     onSettingsClick: () -> Unit = {},
@@ -262,7 +258,7 @@ private fun TaskListTopBar(
 }
 
 @Composable
-private fun TaskRow(
+internal fun TaskRow(
     task: Task,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
@@ -311,7 +307,7 @@ private fun TaskRow(
 }
 
 @Composable
-private fun CompletedTaskRow(
+internal fun CompletedTaskRow(
     task: Task,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
@@ -367,62 +363,3 @@ private fun priorityColor(priority: TaskPriority): Color = when (priority) {
     TaskPriority.NONE -> PriorityNone
 }
 
-@Composable
-@Preview
-private fun TaskListScreenPreview() {
-    OpenTasksTheme {
-        TaskListContent(
-            activeTasks = PreviewSampleData.sampleTasks.filter { !it.isCompleted },
-            completedTasks = PreviewSampleData.sampleTasks.filter { it.isCompleted },
-            onTaskClick = {},
-            onToggleComplete = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun TaskListScreenEmptyPreview() {
-    OpenTasksTheme {
-        TaskListContent(
-            onTaskClick = {},
-            onToggleComplete = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun TaskRowPreview() {
-    OpenTasksTheme {
-        TaskRow(
-            task = PreviewSampleData.sampleTasks.first(),
-            onToggleComplete = {},
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun CompletedTaskRowPreview() {
-    OpenTasksTheme {
-        CompletedTaskRow(
-            task = PreviewSampleData.sampleTasks.first { it.isCompleted },
-            onToggleComplete = {},
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun TaskListTopBarPreview() {
-    OpenTasksTheme {
-        TaskListTopBar(
-            listName = "Inbox",
-            onListClick = {},
-            onSettingsClick = {},
-        )
-    }
-}

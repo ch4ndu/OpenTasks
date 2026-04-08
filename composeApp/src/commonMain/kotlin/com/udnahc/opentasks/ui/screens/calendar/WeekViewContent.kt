@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -31,7 +30,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
@@ -41,7 +39,6 @@ import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
-import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 
@@ -180,7 +177,7 @@ private fun WeekViewDayPagerContent(
 // ── Single day cell ─────────────────────────────────────────────────────────
 
 @Composable
-private fun WeekViewDayCell(
+internal fun WeekViewDayCell(
     dayMillis: Long,
     todayMillis: Long,
     tasksByDay: Map<Long, List<Task>>,
@@ -277,14 +274,13 @@ private fun WeekViewDayCell(
                     val (visibleTasks, overflow) = truncateWithOverflow(dayTasks, maxVisible)
 
                     visibleTasks.forEach { task ->
-                        val onClick = remember(task.id) { { onTaskClick(task) } }
                         TimelineEventBar(
                             task = task,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(dimens.calendarMonthGridEventHeight)
                                 .padding(vertical = 1.dp),
-                            onClick = onClick,
+                            onClick = { onTaskClick(task) },
                         )
                     }
                     if (overflow > 0) {
@@ -304,7 +300,7 @@ private fun WeekViewDayCell(
 // ── Mini calendar with animated week highlight ──────────────────────────────
 
 @Composable
-private fun WeekViewMiniCalendar(
+internal fun WeekViewMiniCalendar(
     year: Int,
     month: Int,
     highlightedWeekSundayMillis: Long,
@@ -353,67 +349,3 @@ private fun WeekViewMiniCalendar(
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  PREVIEWS
-// ═══════════════════════════════════════════════════════════════════════════
-
-@Composable
-@Preview
-private fun WeekViewDayCellPreview() {
-    OpenTasksTheme {
-        Box(modifier = Modifier.size(200.dp)) {
-            WeekViewDayCell(
-                dayMillis = PreviewSampleData.sampleTodayMillis,
-                todayMillis = PreviewSampleData.sampleTodayMillis,
-                tasksByDay = PreviewSampleData.sampleTasksByDay,
-                onTaskClick = {},
-                isSelected = true,
-                onDaySelected = {},
-            )
-        }
-    }
-}
-
-@Composable
-@Preview
-private fun WeekViewMiniCalendarPreview() {
-    OpenTasksTheme {
-        Box(modifier = Modifier.size(200.dp)) {
-            WeekViewMiniCalendar(
-                year = PreviewSampleData.SAMPLE_YEAR,
-                month = PreviewSampleData.SAMPLE_MONTH,
-                highlightedWeekSundayMillis = PreviewSampleData.sampleWeekSundayMillis,
-                todayYear = PreviewSampleData.SAMPLE_YEAR,
-                todayMonth = PreviewSampleData.SAMPLE_MONTH,
-                todayDay = PreviewSampleData.SAMPLE_DAY,
-                tasksByDay = PreviewSampleData.sampleTasksByDay,
-                onDayClick = {},
-            )
-        }
-    }
-}
-
-@Composable
-@Preview
-private fun WeekViewContentPreview() {
-    OpenTasksTheme {
-        WeekViewContent(
-            weekPagerState = rememberPagerState(initialPage = 520) { 1040 },
-            weekPagerCentre = 520,
-            todayMillis = PreviewSampleData.sampleTodayMillis,
-            todayYear = PreviewSampleData.SAMPLE_YEAR,
-            todayMonth = PreviewSampleData.SAMPLE_MONTH,
-            todayDay = PreviewSampleData.SAMPLE_DAY,
-            weekSundayMillis = PreviewSampleData.sampleWeekSundayMillis,
-            calendarYear = PreviewSampleData.SAMPLE_YEAR,
-            calendarMonth = PreviewSampleData.SAMPLE_MONTH,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
-            topBarHeight = 64.dp,
-            navBarHeight = 0.dp,
-            onTaskClick = {},
-            onWeekSelected = {},
-            selectedDayMillis = PreviewSampleData.sampleTodayMillis,
-            onDaySelected = {},
-        )
-    }
-}

@@ -30,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.CountdownType
@@ -81,7 +80,7 @@ fun CountdownDetailScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CountdownDetailContent(
+internal fun CountdownDetailContent(
     countdown: Countdown?,
     onBack: () -> Unit,
     onEdit: () -> Unit,
@@ -233,7 +232,7 @@ private fun CountdownDetailContent(
 
 // -- Previews ------------------------------------------------------------------
 
-private val previewCountdown = Countdown(
+internal val previewCountdown = Countdown(
     id = "preview-detail",
     title = "Project Launch",
     targetDate = 1775088000000L,
@@ -241,28 +240,3 @@ private val previewCountdown = Countdown(
     countingMode = CountingMode.COUNTDOWN,
 )
 
-@Composable
-@Preview
-private fun CountdownDetailContentPreview() {
-    OpenTasksTheme {
-        CountdownDetailContent(
-            countdown = previewCountdown,
-            onBack = {},
-            onEdit = {},
-            onDelete = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun CountdownDetailLoadingPreview() {
-    OpenTasksTheme {
-        CountdownDetailContent(
-            countdown = null,
-            onBack = {},
-            onEdit = {},
-            onDelete = {},
-        )
-    }
-}

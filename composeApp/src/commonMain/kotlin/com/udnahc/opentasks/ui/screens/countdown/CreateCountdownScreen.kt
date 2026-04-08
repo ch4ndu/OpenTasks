@@ -46,7 +46,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.extensions.computeLocalMillis
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.currentMonth
@@ -206,7 +205,7 @@ fun CreateCountdownScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CreateCountdownContent(
+internal fun CreateCountdownContent(
     editCountdown: Countdown?,
     initialType: CountdownType,
     onSave: (Countdown) -> Unit,
@@ -1038,35 +1037,3 @@ private fun SmartListPickerDialog(
     )
 }
 
-// -- Previews ------------------------------------------------------------------
-
-@Composable
-@Preview
-private fun CreateCountdownContentPreview() {
-    OpenTasksTheme {
-        CreateCountdownContent(
-            editCountdown = null,
-            initialType = CountdownType.COUNTDOWN,
-            onSave = {},
-            onBack = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun CreateCountdownEditPreview() {
-    OpenTasksTheme {
-        CreateCountdownContent(
-            editCountdown = Countdown(
-                id = "preview-edit",
-                title = "Christmas",
-                targetDate = 1766620800000L,
-                countdownType = CountdownType.HOLIDAY,
-            ),
-            initialType = CountdownType.HOLIDAY,
-            onSave = {},
-            onBack = {},
-        )
-    }
-}

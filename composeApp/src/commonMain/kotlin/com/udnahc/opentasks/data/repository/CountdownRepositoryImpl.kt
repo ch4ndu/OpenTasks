@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.repository
 
 import com.udnahc.opentasks.data.dao.CountdownDao
+import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Countdown
@@ -33,7 +34,7 @@ class CountdownRepositoryImpl(
 
     override suspend fun insert(countdown: Countdown) {
         log.v { "Inserting countdown: ${countdown.id}" }
-        countdownDao.insert(countdown.withUtcTimestamps())
+        countdownDao.insert(countdown.withDefaultTimestamps().withUtcTimestamps())
         triggerSyncAction()
     }
 
@@ -47,6 +48,14 @@ class CountdownRepositoryImpl(
         log.v { "Soft-deleting countdown: ${countdown.id}" }
         countdownDao.update(countdown.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
         triggerSyncAction()
+    }
+
+    private fun Countdown.withDefaultTimestamps(): Countdown {
+        val now = localNow()
+        return copy(
+            createdAt = if (createdAt == 0L) now else createdAt,
+            updatedAt = if (updatedAt == 0L) now else updatedAt,
+        )
     }
 
     /** Converts UTC timestamps from the database to local time for presentation. */

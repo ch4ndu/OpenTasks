@@ -38,11 +38,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
-import com.udnahc.opentasks.ui.preview.PreviewSampleData
 import com.udnahc.opentasks.ui.theme.DateOrange
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PriorityHigh
@@ -82,7 +80,7 @@ fun EisenhowerMatrixScreen(
 }
 
 @Composable
-private fun EisenhowerMatrixContent(
+internal fun EisenhowerMatrixContent(
     tasksByPriority: Map<TaskPriority, List<Task>>,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
@@ -111,7 +109,7 @@ private fun EisenhowerMatrixContent(
 }
 
 @Composable
-private fun MatrixHeader(
+internal fun MatrixHeader(
     onSettingsClick: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -215,7 +213,7 @@ private fun QuadrantGrid(
 }
 
 @Composable
-private fun QuadrantCard(
+internal fun QuadrantCard(
     modifier: Modifier,
     title: String,
     badge: String,
@@ -315,7 +313,7 @@ private fun ViewMoreLabel() {
 }
 
 @Composable
-private fun QuadrantTaskRow(
+internal fun QuadrantTaskRow(
     task: Task,
     color: Color,
     onToggleComplete: () -> Unit,
@@ -373,56 +371,5 @@ private fun QuadrantTaskRow(
                 )
             }
         }
-    }
-}
-
-
-@Composable
-@Preview
-private fun EisenhowerMatrixScreenPreview() {
-    OpenTasksTheme {
-        EisenhowerMatrixContent(
-            tasksByPriority = PreviewSampleData.sampleTasks.groupBy { it.priority },
-            onTaskClick = {},
-            onToggleComplete = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun QuadrantCardPreview() {
-    OpenTasksTheme {
-        QuadrantCard(
-            modifier = Modifier.fillMaxWidth().height(300.dp),
-            title = "Urgent & Important",
-            badge = "I",
-            color = PriorityHigh,
-            tasks = PreviewSampleData.sampleTasks.filter { it.priority == TaskPriority.HIGH },
-            onTaskClick = {},
-            onToggleComplete = {},
-            onCardClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun QuadrantTaskRowPreview() {
-    OpenTasksTheme {
-        QuadrantTaskRow(
-            task = PreviewSampleData.sampleTasks.first(),
-            color = PriorityHigh,
-            onToggleComplete = {},
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun MatrixHeaderPreview() {
-    OpenTasksTheme {
-        MatrixHeader(onSettingsClick = {})
     }
 }

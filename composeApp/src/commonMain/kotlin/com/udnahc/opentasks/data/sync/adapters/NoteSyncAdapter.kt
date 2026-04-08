@@ -31,7 +31,7 @@ class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteReco
 
     override fun recordLocalId(record: NoteRecord) = record.localId
     override fun recordIsDeleted(record: NoteRecord) = record.isDeleted
-    override fun recordUpdatedAt(record: NoteRecord) = record.localUpdatedAt
+    override fun recordUpdatedAt(record: NoteRecord) = record.updatedAtUtc
 
     override fun toRecord(entity: Note) = entity.toNoteRecord()
     override fun toEntity(record: NoteRecord) = record.toNote()

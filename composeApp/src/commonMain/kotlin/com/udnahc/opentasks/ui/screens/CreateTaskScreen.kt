@@ -51,7 +51,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -69,7 +68,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.extensions.computeLocalMillis
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.currentMonth
@@ -227,7 +225,6 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
-@Immutable
 data class SubtaskItem(
     val text: String = "",
     val isChecked: Boolean = false,
@@ -673,7 +670,7 @@ private fun TaskDescriptionField(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CreateTaskTopBar(
+internal fun CreateTaskTopBar(
     listName: String = "Inbox",
     priority: TaskPriority,
     showPriorityMenu: Boolean,
@@ -771,7 +768,7 @@ private fun CreateTaskTopBar(
 }
 
 @Composable
-private fun PriorityDropdown(
+internal fun PriorityDropdown(
     expanded: Boolean,
     currentPriority: TaskPriority,
     onDismiss: () -> Unit,
@@ -855,7 +852,7 @@ private fun priorityColor(priority: TaskPriority): Color = when (priority) {
 }
 
 @Composable
-private fun DateReminderRow(
+internal fun DateReminderRow(
     selectedDay: Int,
     selectedMonth: Int,
     selectedYear: Int,
@@ -1084,7 +1081,7 @@ private fun SubtaskRow(
 }
 
 @Composable
-private fun CreateTaskBottomBar(
+internal fun CreateTaskBottomBar(
     isSubtaskMode: Boolean,
     onToggleSubtaskMode: () -> Unit,
     onDone: () -> Unit,
@@ -2355,7 +2352,7 @@ private fun DurationRepeatDialog(
 }
 
 @Composable
-private fun TaskDetailFields(
+internal fun TaskDetailFields(
     showDetails: Boolean,
     onToggleDetails: () -> Unit,
     location: String,
@@ -2510,184 +2507,3 @@ private fun computeDeadlineMillis(
     minute: Int
 ): Long = computeLocalMillis(year, month, day, hour, minute)
 
-@Composable
-@Preview
-private fun CreateTaskScreenPreview() {
-    OpenTasksTheme {
-        CreateTaskScreen(
-            onBack = { },
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-@Preview
-private fun CreateTaskTopBarPreview() {
-    OpenTasksTheme {
-        CreateTaskTopBar(
-            listName = "Work",
-            priority = TaskPriority.HIGH,
-            showPriorityMenu = false,
-            onShowPriorityMenu = {},
-            onPrioritySelected = {},
-            onBack = {},
-            onListClick = {},
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-@Preview
-private fun CreateTaskTopBarMediumPriorityPreview() {
-    OpenTasksTheme {
-        CreateTaskTopBar(
-            listName = "Personal",
-            priority = TaskPriority.MEDIUM,
-            showPriorityMenu = false,
-            onShowPriorityMenu = {},
-            onPrioritySelected = {},
-            onBack = {},
-            onListClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun PriorityDropdownExpandedPreview() {
-    OpenTasksTheme {
-        PriorityDropdown(
-            expanded = true,
-            currentPriority = TaskPriority.HIGH,
-            onDismiss = {},
-            onSelected = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun DateReminderRowNoDatePreview() {
-    OpenTasksTheme {
-        DateReminderRow(
-            selectedDay = 0,
-            selectedMonth = 0,
-            selectedYear = 0,
-            selectedHour = 8,
-            selectedMinute = 0,
-            selectedReminders = emptySet(),
-            selectedRecurrence = RecurrenceType.NONE,
-            isCompleted = false,
-            onToggleComplete = {},
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun DateReminderRowWithDatePreview() {
-    OpenTasksTheme {
-        DateReminderRow(
-            selectedDay = 23,
-            selectedMonth = 3,
-            selectedYear = 2026,
-            selectedHour = 14,
-            selectedMinute = 30,
-            selectedReminders = setOf(ReminderOption.ON_TIME),
-            selectedRecurrence = RecurrenceType.WEEKLY,
-            isCompleted = false,
-            onToggleComplete = {},
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun DateReminderRowCompletedPreview() {
-    OpenTasksTheme {
-        DateReminderRow(
-            selectedDay = 0,
-            selectedMonth = 0,
-            selectedYear = 0,
-            selectedHour = 8,
-            selectedMinute = 0,
-            selectedReminders = emptySet(),
-            selectedRecurrence = RecurrenceType.NONE,
-            isCompleted = true,
-            onToggleComplete = {},
-            onClick = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun TaskDetailFieldsCollapsedPreview() {
-    OpenTasksTheme {
-        TaskDetailFields(
-            showDetails = false,
-            onToggleDetails = {},
-            location = "",
-            onLocationChange = {},
-            onOpenInMaps = {},
-            taskUrl = "",
-            onUrlChange = {},
-            organizer = "",
-            onOrganizerChange = {},
-            eventStatus = "",
-            onStatusChange = {},
-            attendees = "",
-            onAttendeesChange = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun TaskDetailFieldsExpandedPreview() {
-    OpenTasksTheme {
-        TaskDetailFields(
-            showDetails = true,
-            onToggleDetails = {},
-            location = "123 Main St, Springfield",
-            onLocationChange = {},
-            onOpenInMaps = {},
-            taskUrl = "https://example.com/task",
-            onUrlChange = {},
-            organizer = "Jane Doe",
-            onOrganizerChange = {},
-            eventStatus = "Confirmed",
-            onStatusChange = {},
-            attendees = "alice@example.com, bob@example.com",
-            onAttendeesChange = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun CreateTaskBottomBarPreview() {
-    OpenTasksTheme {
-        CreateTaskBottomBar(
-            isSubtaskMode = false,
-            onToggleSubtaskMode = {},
-            onDone = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun CreateTaskBottomBarSubtaskModePreview() {
-    OpenTasksTheme {
-        CreateTaskBottomBar(
-            isSubtaskMode = true,
-            onToggleSubtaskMode = {},
-            onDone = {},
-        )
-    }
-}

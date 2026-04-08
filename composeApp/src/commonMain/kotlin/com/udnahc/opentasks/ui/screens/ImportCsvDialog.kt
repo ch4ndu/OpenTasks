@@ -16,7 +16,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.viewmodel.ImportCsvUiState
@@ -51,7 +50,7 @@ fun ImportCsvDialog(
 }
 
 @Composable
-private fun ImportCsvDialogContent(
+internal fun ImportCsvDialogContent(
     uiState: ImportCsvUiState,
     onPickFile: () -> Unit,
     onDismiss: () -> Unit,
@@ -135,26 +134,3 @@ private fun ImportCsvDialogContent(
     )
 }
 
-@Composable
-@Preview
-private fun ImportCsvDialogPreview() {
-    OpenTasksTheme {
-        ImportCsvDialogContent(
-            uiState = ImportCsvUiState(),
-            onPickFile = {},
-            onDismiss = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun ImportCsvDialogSuccessPreview() {
-    OpenTasksTheme {
-        ImportCsvDialogContent(
-            uiState = ImportCsvUiState(importedCount = 12),
-            onPickFile = {},
-            onDismiss = {},
-        )
-    }
-}

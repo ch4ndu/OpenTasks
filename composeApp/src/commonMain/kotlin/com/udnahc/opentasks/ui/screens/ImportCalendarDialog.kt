@@ -29,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -83,7 +82,7 @@ fun ImportCalendarDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ImportCalendarDialogContent(
+internal fun ImportCalendarDialogContent(
     uiState: ImportCalendarUiState,
     isAvailable: Boolean,
     onRangeValueChange: (Int) -> Unit,
@@ -264,39 +263,3 @@ private fun RangeUnitDropdown(
     }
 }
 
-@Composable
-@Preview
-private fun ImportCalendarDialogPreview() {
-    OpenTasksTheme {
-        ImportCalendarDialogContent(
-            uiState = ImportCalendarUiState(
-                permissionStatus = CalendarPermissionStatus.GRANTED,
-            ),
-            isAvailable = true,
-            onRangeValueChange = {},
-            onRangeUnitChange = {},
-            onRequestPermission = {},
-            onImport = {},
-            onDismiss = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun ImportCalendarDialogSuccessPreview() {
-    OpenTasksTheme {
-        ImportCalendarDialogContent(
-            uiState = ImportCalendarUiState(
-                permissionStatus = CalendarPermissionStatus.GRANTED,
-                importedCount = 12,
-            ),
-            isAvailable = true,
-            onRangeValueChange = {},
-            onRangeUnitChange = {},
-            onRequestPermission = {},
-            onImport = {},
-            onDismiss = {},
-        )
-    }
-}

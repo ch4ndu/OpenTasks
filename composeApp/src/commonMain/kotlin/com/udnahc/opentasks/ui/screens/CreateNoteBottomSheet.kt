@@ -40,7 +40,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
-import androidx.compose.ui.tooling.preview.Preview
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -85,6 +84,28 @@ fun CreateNoteBottomSheet(
     onSave: (title: String, content: String) -> Unit,
     onDelete: (() -> Unit)? = null,
 ) {
+    ModalBottomSheet(
+        sheetState = sheetState,
+        onDismissRequest = onDismiss,
+        dragHandle = null,
+        containerColor = MaterialTheme.colorScheme.background,
+    ) {
+        CreateNoteBottomSheetContent(
+            editNote = editNote,
+            onDismiss = onDismiss,
+            onSave = onSave,
+            onDelete = onDelete,
+        )
+    }
+}
+
+@Composable
+internal fun CreateNoteBottomSheetContent(
+    editNote: Note? = null,
+    onDismiss: () -> Unit,
+    onSave: (title: String, content: String) -> Unit,
+    onDelete: (() -> Unit)? = null,
+) {
     val stateKey = editNote?.id ?: 0L
     var title by remember(stateKey) { mutableStateOf(editNote?.title ?: "") }
     val richTextState = rememberRichTextState()
@@ -120,94 +141,87 @@ fun CreateNoteBottomSheet(
         )
     }
 
-    ModalBottomSheet(
-        sheetState = sheetState,
-        onDismissRequest = onDismiss,
-        dragHandle = null,
-        containerColor = MaterialTheme.colorScheme.background,
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding(),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding(),
-        ) {
-            CreateNoteTopBar(
-                onBack = onDismiss,
-                onSave = {
-                    val content = richTextState.toHtml()
-                    log.d { "Saving note content: length=${content.length}, has newlines=${'\n' in content}" }
-                    if (title.isNotBlank() || content.isNotBlank()) {
-                        onSave(title, content)
-                    }
-                    onDismiss()
-                },
-                onDelete = if (editNote != null) {
-                    { showDeleteConfirm = true }
-                } else {
-                    null
-                },
-            )
+        CreateNoteTopBar(
+            onBack = onDismiss,
+            onSave = {
+                val content = richTextState.toHtml()
+                log.d { "Saving note content: length=${content.length}, has newlines=${'\n' in content}" }
+                if (title.isNotBlank() || content.isNotBlank()) {
+                    onSave(title, content)
+                }
+                onDismiss()
+            },
+            onDelete = if (editNote != null) {
+                { showDeleteConfirm = true }
+            } else {
+                null
+            },
+        )
 
-            val dimens = OpenTasksTheme.dimens
+        val dimens = OpenTasksTheme.dimens
 
-            // Title field
-            BasicTextField(
-                value = title,
-                onValueChange = { title = it },
-                textStyle = MaterialTheme.typography.titleLarge.copy(
-                    color = MaterialTheme.colorScheme.onBackground,
-                    fontWeight = FontWeight.Bold,
-                ),
-                cursorBrush = SolidColor(PrimaryBlue),
-                decorationBox = { innerTextField ->
-                    Box(
-                        modifier = Modifier.padding(
-                            horizontal = dimens.paddingLarge,
-                            vertical = dimens.paddingMedium,
-                        ),
-                    ) {
-                        if (title.isEmpty()) {
-                            Text(
-                                text = stringResource(Res.string.note_title_hint),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        innerTextField()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-
-            // Rich text editor
-            BasicRichTextEditor(
-                state = richTextState,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onBackground,
-                ),
-                cursorBrush = SolidColor(PrimaryBlue),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(
+        // Title field
+        BasicTextField(
+            value = title,
+            onValueChange = { title = it },
+            textStyle = MaterialTheme.typography.titleLarge.copy(
+                color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.Bold,
+            ),
+            cursorBrush = SolidColor(PrimaryBlue),
+            decorationBox = { innerTextField ->
+                Box(
+                    modifier = Modifier.padding(
                         horizontal = dimens.paddingLarge,
                         vertical = dimens.paddingMedium,
                     ),
-            )
+                ) {
+                    if (title.isEmpty()) {
+                        Text(
+                            text = stringResource(Res.string.note_title_hint),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    innerTextField()
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
 
-            // Markdown formatting toolbar
-            MarkdownToolbar(
-                richTextState = richTextState,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+        // Rich text editor
+        BasicRichTextEditor(
+            state = richTextState,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onBackground,
+            ),
+            cursorBrush = SolidColor(PrimaryBlue),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(
+                    horizontal = dimens.paddingLarge,
+                    vertical = dimens.paddingMedium,
+                ),
+        )
+
+        // Markdown formatting toolbar
+        MarkdownToolbar(
+            richTextState = richTextState,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
 @Composable
-private fun CreateNoteTopBar(
+internal fun CreateNoteTopBar(
     onBack: () -> Unit,
     onSave: () -> Unit,
     onDelete: (() -> Unit)?,
@@ -263,7 +277,7 @@ private fun CreateNoteTopBar(
 }
 
 @Composable
-private fun MarkdownToolbar(
+internal fun MarkdownToolbar(
     richTextState: RichTextState,
     modifier: Modifier = Modifier,
 ) {
@@ -350,40 +364,3 @@ private fun ToolbarButton(
     }
 }
 
-// region Previews
-
-@Composable
-@Preview
-private fun CreateNoteTopBarPreview() {
-    OpenTasksTheme {
-        CreateNoteTopBar(
-            onBack = {},
-            onSave = {},
-            onDelete = null,
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun CreateNoteTopBarWithDeletePreview() {
-    OpenTasksTheme {
-        CreateNoteTopBar(
-            onBack = {},
-            onSave = {},
-            onDelete = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun MarkdownToolbarPreview() {
-    OpenTasksTheme {
-        MarkdownToolbar(
-            richTextState = rememberRichTextState(),
-        )
-    }
-}
-
-// endregion

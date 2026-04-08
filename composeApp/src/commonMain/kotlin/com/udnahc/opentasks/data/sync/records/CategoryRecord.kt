@@ -2,6 +2,7 @@ package com.udnahc.opentasks.data.sync.records
 
 import com.udnahc.opentasks.data.model.Category
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -11,8 +12,8 @@ class CategoryRecord(
     val icon: String = "inbox",
     val sortOrder: Int = 0,
     val isDeleted: Boolean = false,
-    val localCreatedAt: Long = 0L,
-    val localUpdatedAt: Long = 0L,
+    @SerialName("localCreatedAt") val createdAtUtc: Long = 0L,
+    @SerialName("localUpdatedAt") val updatedAtUtc: Long = 0L,
 ) : BaseModel()
 
 fun Category.toCategoryRecord(): CategoryRecord = CategoryRecord(
@@ -21,8 +22,8 @@ fun Category.toCategoryRecord(): CategoryRecord = CategoryRecord(
     icon = icon,
     sortOrder = sortOrder,
     isDeleted = isDeleted,
-    localCreatedAt = createdAt,
-    localUpdatedAt = updatedAt,
+    createdAtUtc = createdAt,
+    updatedAtUtc = updatedAt,
 )
 
 fun CategoryRecord.toCategory(): Category = Category(
@@ -33,6 +34,6 @@ fun CategoryRecord.toCategory(): Category = Category(
     sortOrder = sortOrder,
     isDeleted = isDeleted,
     isSynced = true,
-    createdAt = localCreatedAt,
-    updatedAt = localUpdatedAt,
+    createdAt = createdAtUtc,
+    updatedAt = updatedAtUtc,
 )
