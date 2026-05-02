@@ -111,3 +111,16 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         connection.execSQL("ALTER TABLE tasks_new RENAME TO tasks")
     }
 }
+
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE task_tags ADD COLUMN pbId TEXT DEFAULT NULL")
+        connection.execSQL("ALTER TABLE task_tags ADD COLUMN isSynced INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("ALTER TABLE task_tags ADD COLUMN isDeleted INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("ALTER TABLE task_tags ADD COLUMN createdAt INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("ALTER TABLE task_tags ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("UPDATE task_tags SET createdAt = CAST(strftime('%s', 'now') AS INTEGER) * 1000 WHERE createdAt = 0")
+        connection.execSQL("UPDATE task_tags SET updatedAt = createdAt WHERE updatedAt = 0")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_task_tags_tagId ON task_tags(tagId)")
+    }
+}

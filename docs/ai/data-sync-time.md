@@ -41,5 +41,15 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - ViewModels and ordinary Actions should not call `TriggerSyncAction`.
 - Approved direct sync triggers are Settings “Sync Now”, app resume sync, widget refresh callbacks, and `AppViewModel.triggerSync()` for pull-to-refresh.
 - `SyncService` uses DAOs directly to avoid sync loops during pull.
-- Server wins when remote `updatedAt` is newer than local `updatedAt`.
-- `BaseSyncAdapter.pushAll()` may hard-delete locally after the server-side delete succeeds.
+- Sync runs collection-by-collection in dependency order: categories, tags, tasks, task_tags, notes, countdowns.
+- Each collection pulls before pushing.
+- Conflict resolution uses last-write-wins by app-managed UTC `updatedAt` / PocketBase `localUpdatedAt`.
+- Remote rows overwrite local rows, including unsynced local edits, only when remote `localUpdatedAt` is newer.
+- Unsynced local rows push when their timestamp is newer than or equal to the remote row.
+- Normal synced deletes are pushed as durable PocketBase tombstones with `isDeleted = true`; do not hard-delete server rows for app deletes.
+- Pull remote tombstones by upserting synced local tombstones.
+- Hard-delete locally only for never-synced tombstones with no `pbId`.
+- After a successful full fetch, physically missing server rows are treated as damage/manual deletion: synced active local rows absent from the remote `localId` set are marked unsynced for recreation.
+- Push bookkeeping must mark rows synced only if `updatedAt` and `isDeleted` still match the pushed state.
+- Task-tag assignments sync through `task_tags` with derived `localId = "$taskId:$tagId"` and local primary key `(taskId, tagId)`.
+- Device clock skew is a known limitation: a bad device clock can incorrectly win last-write-wins conflicts.

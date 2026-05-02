@@ -38,11 +38,33 @@ class TagRepositoryImpl(
         triggerSyncAction()
     }
 
-    // TaskTag is local-only; no sync adapter exists. Do not trigger sync.
-    override suspend fun insertTaskTag(taskTag: TaskTag) = tagDao.insertTaskTag(taskTag)
+    override suspend fun insertTaskTag(taskTag: TaskTag) {
+        val existing = tagDao.findTaskTagByIdAnyState(taskTag.taskId, taskTag.tagId)?.withLocalTimestamps()
+        val now = localNow()
+        val current = existing ?: taskTag
+        val stamped = current.copy(
+            isDeleted = false,
+            isSynced = false,
+            createdAt = if (current.createdAt == 0L) now else current.createdAt,
+            updatedAt = now,
+        ).withUtcTimestamps()
+        tagDao.upsertTaskTag(stamped)
+        triggerSyncAction()
+    }
 
-    // TaskTag is local-only; no sync adapter exists. Do not trigger sync.
-    override suspend fun deleteTaskTag(taskTag: TaskTag) = tagDao.deleteTaskTag(taskTag)
+    override suspend fun deleteTaskTag(taskTag: TaskTag) {
+        val existing = tagDao.findTaskTagByIdAnyState(taskTag.taskId, taskTag.tagId)?.withLocalTimestamps() ?: taskTag
+        val now = localNow()
+        tagDao.updateTaskTag(
+            existing.copy(
+                isDeleted = true,
+                isSynced = false,
+                createdAt = if (existing.createdAt == 0L) now else existing.createdAt,
+                updatedAt = now,
+            ).withUtcTimestamps()
+        )
+        triggerSyncAction()
+    }
 
     private fun Tag.withDefaultTimestamps(): Tag {
         val now = localNow()
@@ -60,5 +82,15 @@ class TagRepositoryImpl(
     private fun Tag.withUtcTimestamps() = copy(
         createdAt = localToUtc(createdAt),
         updatedAt = localToUtc(updatedAt),
+    )
+
+    private fun TaskTag.withUtcTimestamps() = copy(
+        createdAt = localToUtc(createdAt),
+        updatedAt = localToUtc(updatedAt),
+    )
+
+    private fun TaskTag.withLocalTimestamps() = copy(
+        createdAt = utcToLocal(createdAt),
+        updatedAt = utcToLocal(updatedAt),
     )
 }

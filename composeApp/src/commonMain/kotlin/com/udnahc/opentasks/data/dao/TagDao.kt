@@ -33,14 +33,41 @@ interface TagDao {
     @Query("SELECT * FROM tags WHERE name = :name AND isDeleted = 0 LIMIT 1")
     suspend fun getTagByName(name: String): Tag?
 
-    @Query("SELECT t.* FROM tags t INNER JOIN task_tags tt ON t.id = tt.tagId WHERE tt.taskId = :taskId AND t.isDeleted = 0")
+    @Query("SELECT t.* FROM tags t INNER JOIN task_tags tt ON t.id = tt.tagId WHERE tt.taskId = :taskId AND t.isDeleted = 0 AND tt.isDeleted = 0")
     fun getTagsForTask(taskId: String): Flow<List<Tag>>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTaskTag(taskTag: TaskTag)
 
+    @Update
+    suspend fun updateTaskTag(taskTag: TaskTag)
+
     @Delete
-    suspend fun deleteTaskTag(taskTag: TaskTag)
+    suspend fun hardDeleteTaskTag(taskTag: TaskTag)
+
+    @Upsert
+    suspend fun upsertTaskTag(taskTag: TaskTag)
+
+    @Query("SELECT * FROM task_tags WHERE taskId = :taskId AND tagId = :tagId")
+    suspend fun findTaskTagByIdAnyState(taskId: String, tagId: String): TaskTag?
+
+    @Query("SELECT * FROM task_tags WHERE isSynced = 0")
+    suspend fun getUnsyncedTaskTags(): List<TaskTag>
+
+    @Query("SELECT * FROM task_tags")
+    suspend fun getAllTaskTagsOnce(): List<TaskTag>
+
+    @Query("UPDATE task_tags SET isSynced = 1 WHERE taskId = :taskId AND tagId = :tagId")
+    suspend fun markTaskTagSynced(taskId: String, tagId: String)
+
+    @Query("UPDATE task_tags SET isSynced = 1 WHERE taskId = :taskId AND tagId = :tagId AND updatedAt = :updatedAt AND isDeleted = :isDeleted")
+    suspend fun markTaskTagSyncedIfUnchanged(taskId: String, tagId: String, updatedAt: Long, isDeleted: Boolean): Int
+
+    @Query("UPDATE task_tags SET isSynced = 0 WHERE taskId = :taskId AND tagId = :tagId")
+    suspend fun markTaskTagUnsynced(taskId: String, tagId: String)
+
+    @Query("UPDATE task_tags SET pbId = :pbId WHERE taskId = :taskId AND tagId = :tagId")
+    suspend fun updateTaskTagPbId(taskId: String, tagId: String, pbId: String)
 
     @Query("DELETE FROM task_tags")
     suspend fun deleteAllTaskTags()
@@ -59,6 +86,12 @@ interface TagDao {
 
     @Query("UPDATE tags SET isSynced = 1 WHERE id = :id")
     suspend fun markSynced(id: String)
+
+    @Query("UPDATE tags SET isSynced = 1 WHERE id = :id AND updatedAt = :updatedAt AND isDeleted = :isDeleted")
+    suspend fun markSyncedIfUnchanged(id: String, updatedAt: Long, isDeleted: Boolean): Int
+
+    @Query("UPDATE tags SET isSynced = 0 WHERE id = :id")
+    suspend fun markUnsynced(id: String)
 
     @Query("UPDATE tags SET pbId = :pbId WHERE id = :id")
     suspend fun updatePbId(id: String, pbId: String)

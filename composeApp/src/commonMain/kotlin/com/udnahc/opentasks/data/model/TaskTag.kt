@@ -2,10 +2,12 @@ package com.udnahc.opentasks.data.model
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Index
 
 @Entity(
     tableName = "task_tags",
     primaryKeys = ["taskId", "tagId"],
+    indices = [Index("tagId")],
     foreignKeys = [
         ForeignKey(
             entity = Task::class,
@@ -24,4 +26,9 @@ import androidx.room.ForeignKey
 data class TaskTag(
     val taskId: String,
     val tagId: String,
+    val pbId: String? = null,
+    val isSynced: Boolean = false,
+    val isDeleted: Boolean = false,
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L,
 )

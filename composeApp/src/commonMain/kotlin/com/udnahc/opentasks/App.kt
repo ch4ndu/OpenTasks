@@ -1,11 +1,7 @@
 package com.udnahc.opentasks
 
-import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -33,71 +29,75 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.navigation3.runtime.NavKey
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation3.runtime.NavBackStack
+import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.localNow
-import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
-import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
+import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
+import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.TaskFormData
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.model.isCountdownItem
+import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
+import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemindersAction
+import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
+import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
+import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import com.udnahc.opentasks.navigation.AppNavController
 import com.udnahc.opentasks.navigation.Screen
 import com.udnahc.opentasks.ui.screens.CreateNoteBottomSheet
 import com.udnahc.opentasks.ui.screens.CreateTaskScreen
-import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
 import com.udnahc.opentasks.ui.screens.EisenhowerMatrixScreen
-import com.udnahc.opentasks.ui.screens.NotesScreen
-import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
-import com.udnahc.opentasks.ui.screens.SettingsScreen
-import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
-import com.udnahc.opentasks.ui.screens.TaskListScreen
-import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.screens.ImportCalendarDialog
 import com.udnahc.opentasks.ui.screens.ImportCsvDialog
 import com.udnahc.opentasks.ui.screens.ImportIcsDialog
+import com.udnahc.opentasks.ui.screens.NotesScreen
+import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
+import com.udnahc.opentasks.ui.screens.SettingsScreen
+import com.udnahc.opentasks.ui.screens.TaskListScreen
+import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
+import com.udnahc.opentasks.ui.screens.countdown.CountdownDetailScreen
+import com.udnahc.opentasks.ui.screens.countdown.CountdownScreen
+import com.udnahc.opentasks.ui.screens.countdown.CreateCountdownScreen
+import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.util.pickCsvFileContent
 import com.udnahc.opentasks.ui.util.pickIcsFileContent
-import com.udnahc.opentasks.data.model.ThemeMode
+import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
+import com.udnahc.opentasks.viewmodel.AppViewModel
+import com.udnahc.opentasks.viewmodel.CalendarViewModel
+import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
+import com.udnahc.opentasks.viewmodel.CountdownViewModel
 import com.udnahc.opentasks.viewmodel.ImportCalendarViewModel
-import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.ImportCsvViewModel
 import com.udnahc.opentasks.viewmodel.ImportIcsViewModel
+import com.udnahc.opentasks.viewmodel.MatrixViewModel
+import com.udnahc.opentasks.viewmodel.NoteViewModel
+import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormSaveEvent
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
+import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.udnahc.opentasks.viewmodel.MatrixViewModel
-import com.udnahc.opentasks.viewmodel.CalendarViewModel
-import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
-import com.udnahc.opentasks.viewmodel.CountdownViewModel
-import com.udnahc.opentasks.viewmodel.AppViewModel
-import com.udnahc.opentasks.viewmodel.NoteViewModel
-import com.udnahc.opentasks.viewmodel.TaskListViewModel
-import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
-import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
-import androidx.lifecycle.compose.LifecycleResumeEffect
-import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemindersAction
-import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
-import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
-import org.koin.compose.koinInject
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
 import opentasks.composeapp.generated.resources.exact_reminder_permission_message
@@ -112,15 +112,10 @@ import opentasks.composeapp.generated.resources.not_urgent_unimportant
 import opentasks.composeapp.generated.resources.open_settings
 import opentasks.composeapp.generated.resources.urgent_important
 import opentasks.composeapp.generated.resources.urgent_unimportant
-import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
-import com.udnahc.opentasks.data.model.CountdownType
-import com.udnahc.opentasks.data.model.isCountdownItem
-import com.udnahc.opentasks.ui.screens.countdown.CountdownDetailScreen
-import com.udnahc.opentasks.ui.screens.countdown.CountdownScreen
-import com.udnahc.opentasks.ui.screens.countdown.CreateCountdownScreen
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 private val IosTransitionEasing = CubicBezierEasing(0.2833f, 0.99f, 0.31833f, 0.99f)
@@ -146,7 +141,8 @@ fun App(
         val navController = remember { AppNavController(backStack) }
         val initializeSyncAction = koinInject<InitializeSyncAction>()
         val rescheduleAllRemindersAction = koinInject<RescheduleAllRemindersAction>()
-        val rescheduleAllCountdownRemindersAction = koinInject<RescheduleAllCountdownRemindersAction>()
+        val rescheduleAllCountdownRemindersAction =
+            koinInject<RescheduleAllCountdownRemindersAction>()
         val triggerSyncAction = koinInject<TriggerSyncAction>()
         val isSyncInitialized = remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
@@ -277,46 +273,46 @@ private fun MainScreen(
             onBack = { navController.popBackStack() },
             modifier = Modifier.fillMaxSize(),
             entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
-            transitionSpec = {
-                if (isTabScreen(initialState.key) && isTabScreen(targetState.key)) {
-                    ContentTransform(
-                        fadeIn(animationSpec = snap()),
-                        fadeOut(animationSpec = snap()),
-                    )
-                } else {
-                    ContentTransform(
-                        slideIntoContainer(
-                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                            animationSpec = tween(500, easing = IosTransitionEasing),
-                        ),
-                        slideOutOfContainer(
-                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                            targetOffset = { it / 4 },
-                            animationSpec = tween(500, easing = IosTransitionEasing),
-                        ),
-                    )
-                }
-            },
-            popTransitionSpec = {
-                if (isTabScreen(initialState.key) && isTabScreen(targetState.key)) {
-                    ContentTransform(
-                        fadeIn(animationSpec = snap()),
-                        fadeOut(animationSpec = snap()),
-                    )
-                } else {
-                    ContentTransform(
-                        slideIntoContainer(
-                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                            initialOffset = { it / 4 },
-                            animationSpec = tween(500, easing = IosTransitionEasing),
-                        ),
-                        slideOutOfContainer(
-                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                            animationSpec = tween(500, easing = IosTransitionEasing),
-                        ),
-                    )
-                }
-            },
+//            transitionSpec = {
+//                if (isTabScreen(initialState.key) && isTabScreen(targetState.key)) {
+//                    ContentTransform(
+//                        fadeIn(animationSpec = snap()),
+//                        fadeOut(animationSpec = snap()),
+//                    )
+//                } else {
+//                    ContentTransform(
+//                        slideIntoContainer(
+//                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+//                            animationSpec = tween(500, easing = IosTransitionEasing),
+//                        ),
+//                        slideOutOfContainer(
+//                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
+//                            targetOffset = { it / 4 },
+//                            animationSpec = tween(500, easing = IosTransitionEasing),
+//                        ),
+//                    )
+//                }
+//            },
+//            popTransitionSpec = {
+//                if (isTabScreen(initialState.key) && isTabScreen(targetState.key)) {
+//                    ContentTransform(
+//                        fadeIn(animationSpec = snap()),
+//                        fadeOut(animationSpec = snap()),
+//                    )
+//                } else {
+//                    ContentTransform(
+//                        slideIntoContainer(
+//                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+//                            initialOffset = { it / 4 },
+//                            animationSpec = tween(500, easing = IosTransitionEasing),
+//                        ),
+//                        slideOutOfContainer(
+//                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
+//                            animationSpec = tween(500, easing = IosTransitionEasing),
+//                        ),
+//                    )
+//                }
+//            },
             entryProvider = entryProvider {
                 entry<Screen.Matrix> {
                     val matrixViewModel: MatrixViewModel = koinViewModel()
@@ -415,7 +411,11 @@ private fun MainScreen(
                 entry<Screen.CreateTask> { screen ->
                     val taskFormViewModel: TaskFormViewModel = koinViewModel()
                     val categories by taskFormViewModel.categories.collectAsState()
-                    var pendingPostSaveReminderCheck by remember { mutableStateOf<TaskFormData?>(null) }
+                    var pendingPostSaveReminderCheck by remember {
+                        mutableStateOf<TaskFormData?>(
+                            null
+                        )
+                    }
                     val requestNotificationPermission = rememberNotificationPermissionLauncher {
                         val formData = pendingPostSaveReminderCheck
                         pendingPostSaveReminderCheck = null
@@ -440,6 +440,7 @@ private fun MainScreen(
                                         requestNotificationPermission()
                                     }
                                 }
+
                                 is TaskFormSaveEvent.Error -> Unit
                             }
                         }
@@ -454,15 +455,17 @@ private fun MainScreen(
                         initialYear = screen.year,
                         categories = categories,
                         onAddCategory = { name -> taskFormViewModel.addCategory(name) },
-                        onSave = { formData ->
-                            taskFormViewModel.saveNewTask(formData)
-                        },
+                        onSave = { formData -> taskFormViewModel.saveNewTask(formData) },
                     )
                 }
 
                 entry<Screen.EditTask> { screen ->
                     val taskFormViewModel: TaskFormViewModel = koinViewModel()
-                    var pendingPostSaveReminderCheck by remember { mutableStateOf<TaskFormData?>(null) }
+                    var pendingPostSaveReminderCheck by remember {
+                        mutableStateOf<TaskFormData?>(
+                            null
+                        )
+                    }
                     val requestNotificationPermission = rememberNotificationPermissionLauncher {
                         val formData = pendingPostSaveReminderCheck
                         pendingPostSaveReminderCheck = null
@@ -487,6 +490,7 @@ private fun MainScreen(
                                         requestNotificationPermission()
                                     }
                                 }
+
                                 is TaskFormSaveEvent.Error -> Unit
                             }
                         }
@@ -526,7 +530,8 @@ private fun MainScreen(
 
                 entry<Screen.CreateCountdown> { screen ->
                     val viewModel: CountdownFormViewModel = koinViewModel()
-                    val initialType = CountdownType.entries.getOrElse(screen.typeOrdinal) { CountdownType.COUNTDOWN }
+                    val initialType =
+                        CountdownType.entries.getOrElse(screen.typeOrdinal) { CountdownType.COUNTDOWN }
                     CreateCountdownScreen(
                         editCountdown = null,
                         initialType = initialType,
@@ -742,11 +747,12 @@ private fun TaskFormData.hasFutureReminder(): Boolean {
         emptyList()
     }
     return dateOffsets.any { deadlineValue - (it * MILLIS_PER_MINUTE) > now } ||
-        durationOffsets.any { offset ->
-            val triggerAt = if (offset == -1) endDeadline else deadlineValue - (offset * MILLIS_PER_MINUTE)
-            triggerAt != null && triggerAt > now
-        } ||
-        legacyOffsets.any { deadlineValue - (it * MILLIS_PER_MINUTE) > now }
+            durationOffsets.any { offset ->
+                val triggerAt =
+                    if (offset == -1) endDeadline else deadlineValue - (offset * MILLIS_PER_MINUTE)
+                triggerAt != null && triggerAt > now
+            } ||
+            legacyOffsets.any { deadlineValue - (it * MILLIS_PER_MINUTE) > now }
 }
 
 private fun String.parseMinuteValues(): List<Int> =
@@ -827,7 +833,10 @@ private fun CreateTaskFab(
         contentColor = Color.White,
         modifier = Modifier
             .navigationBarsPadding()
-            .padding(end = OpenTasksTheme.dimens.paddingXLarge, bottom = OpenTasksTheme.dimens.fabBottomPadding),
+            .padding(
+                end = OpenTasksTheme.dimens.paddingXLarge,
+                bottom = OpenTasksTheme.dimens.fabBottomPadding
+            ),
     ) {
         Icon(
             painter = painterResource(Res.drawable.ic_add),

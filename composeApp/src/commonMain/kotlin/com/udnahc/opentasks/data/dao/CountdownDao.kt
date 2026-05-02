@@ -49,6 +49,12 @@ interface CountdownDao {
     @Query("UPDATE countdowns SET isSynced = 1 WHERE id = :id")
     suspend fun markSynced(id: String)
 
+    @Query("UPDATE countdowns SET isSynced = 1 WHERE id = :id AND updatedAt = :updatedAt AND isDeleted = :isDeleted")
+    suspend fun markSyncedIfUnchanged(id: String, updatedAt: Long, isDeleted: Boolean): Int
+
+    @Query("UPDATE countdowns SET isSynced = 0 WHERE id = :id")
+    suspend fun markUnsynced(id: String)
+
     @Query("UPDATE countdowns SET pbId = :pbId WHERE id = :id")
     suspend fun updatePbId(id: String, pbId: String)
 

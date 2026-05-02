@@ -50,6 +50,18 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 | Models | `data/model/` |
 | Version catalog | `gradle/libs.versions.toml` |
 
+## PocketBase Sync
+
+- Sync is designed for a few trusted app instances against one self-hosted PocketBase server with public collection rules.
+- Repositories soft-delete durable rows and trigger sync; `SyncService` and adapters use DAOs directly to avoid sync loops during pull.
+- Collections sync in dependency order: categories, tags, tasks, task_tags, notes, countdowns.
+- Each collection pulls before pushing and uses last-write-wins by local database `updatedAt` / server `localUpdatedAt`.
+- Remote rows with newer timestamps overwrite local rows, including older unsynced local edits; unsynced local rows with newer or equal timestamps push.
+- App deletes are server tombstones (`isDeleted = true`) retained indefinitely, not PocketBase hard deletes. Never-synced local tombstones without `pbId` may be hard-deleted locally.
+- After a successful full fetch, synced active local rows missing from the server are marked unsynced so push recreates them.
+- Task-tag assignments are synced as `task_tags` records with `localId = "$taskId:$tagId"` while keeping `(taskId, tagId)` as the local Room primary key.
+- Clock skew between devices can make the wrong edit win because there is no conflict UI or history.
+
 ## Priority System
 
 - `HIGH` = Urgent and Important, quadrant I, red.

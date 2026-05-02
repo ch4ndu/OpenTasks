@@ -14,13 +14,16 @@ import kotlinx.serialization.json.Json
 class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteRecord>() {
 
     override val collectionName = "notes"
+    override val order = 30
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllNotesOnce()
     override suspend fun getById(localId: String) = dao.findNoteByIdAnyState(localId)
-    override suspend fun markSynced(localId: String) = dao.markSynced(localId)
+    override suspend fun markSyncedIfUnchanged(localId: String, updatedAt: Long, isDeleted: Boolean) =
+        dao.markSyncedIfUnchanged(localId, updatedAt, isDeleted)
     override suspend fun updatePbId(localId: String, pbId: String) = dao.updatePbId(localId, pbId)
-    override suspend fun deleteEntity(entity: Note) = dao.delete(entity)
+    override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
+    override suspend fun hardDeleteLocalNeverSynced(entity: Note) = dao.delete(entity)
     override suspend fun upsert(entity: Note) = dao.upsert(entity)
 
     override fun localId(entity: Note) = entity.id
@@ -45,9 +48,6 @@ class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteReco
 
     override suspend fun updateRecord(client: PocketbaseClient, pbId: String, body: String) =
         client.records.update<NoteRecord>(collectionName, pbId, body)
-
-    override suspend fun deleteRecord(client: PocketbaseClient, pbId: String) =
-        client.records.delete(collectionName, pbId)
 
     override suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): NoteRecord? =
         client.records.getList<NoteRecord>(collectionName, 1, 1, filterBy = Filter("localId='$localId'"))

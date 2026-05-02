@@ -29,12 +29,10 @@ class SyncService(
                 log.d { "Sync started" }
                 val sorted = adapters.sortedBy { it.order }
                 for (adapter in sorted) {
-                    runCatching { adapter.pushAll(client) }
-                        .onFailure { log.e { "Push ${adapter.collectionName} failed: ${it.message}" } }
-                }
-                for (adapter in sorted) {
                     runCatching { adapter.pullAll(client) }
                         .onFailure { log.e { "Pull ${adapter.collectionName} failed: ${it.message}" } }
+                    runCatching { adapter.pushAll(client) }
+                        .onFailure { log.e { "Push ${adapter.collectionName} failed: ${it.message}" } }
                 }
                 log.d { "Sync completed" }
             } while (pendingSyncRequested)

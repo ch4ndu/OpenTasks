@@ -11,6 +11,7 @@ import com.udnahc.opentasks.data.database.MIGRATION_3_4
 import com.udnahc.opentasks.data.database.MIGRATION_4_5
 import com.udnahc.opentasks.data.database.MIGRATION_5_6
 import com.udnahc.opentasks.data.database.MIGRATION_6_7
+import com.udnahc.opentasks.data.database.MIGRATION_7_8
 import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
 import com.udnahc.opentasks.data.repository.NoteRepository
@@ -83,6 +84,7 @@ import com.udnahc.opentasks.data.sync.adapters.CategorySyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.CountdownSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.NoteSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.TagSyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.TaskTagSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.TaskSyncAdapter
 import com.udnahc.opentasks.viewmodel.AppViewModel
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
@@ -106,7 +108,7 @@ expect val platformModule: Module
 val sharedModule = module {
     single<AppDatabase> {
         get<androidx.room.RoomDatabase.Builder<AppDatabase>>()
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(connection: SQLiteConnection) {
@@ -195,6 +197,7 @@ val sharedModule = module {
     single { TaskSyncAdapter(get()) }
     single { CategorySyncAdapter(get()) }
     single { TagSyncAdapter(get()) }
+    single { TaskTagSyncAdapter(get()) }
     single { NoteSyncAdapter(get()) }
     single { CountdownSyncAdapter(get()) }
     single {
@@ -204,6 +207,7 @@ val sharedModule = module {
                 get<CategorySyncAdapter>(),
                 get<TagSyncAdapter>(),
                 get<TaskSyncAdapter>(),
+                get<TaskTagSyncAdapter>(),
                 get<NoteSyncAdapter>(),
                 get<CountdownSyncAdapter>(),
             ),

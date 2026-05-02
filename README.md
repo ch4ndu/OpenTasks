@@ -81,7 +81,7 @@ This project is built collaboratively with AI assistance (Claude Code). The code
 - **Recurring Countdowns** — Repeat countdowns on daily, weekly, monthly, or yearly schedules
 
 ### Sync & Data
-- **PocketBase Sync** — Optional self-hosted sync via [PocketBase](https://pocketbase.io) for backup and multi-device access (tasks, categories, notes, countdowns, tags)
+- **PocketBase Sync** — Optional self-hosted sync via [PocketBase](https://pocketbase.io) for backup and multi-device access (tasks, categories, notes, countdowns, tags, task-tag assignments)
 - **Automatic Sync** — Syncs on app resume and after every write; manual sync available in Settings
 - **Clear Local Data** — Reset option available in Settings
 
@@ -159,11 +159,11 @@ Platform-specific code uses Kotlin's `expect`/`actual` pattern and is kept to a 
 - **UTC storage** — dates stored as UTC epoch millis in the database, converted to local time in the repository layer
 - **Derived StateFlows** — filtering, sorting, and grouping happen in UseCases/ViewModels, not in composables
 - **Strong skipping** — Compose compiler handles recomposition skipping; no manual `@Immutable` annotations needed
-- **Auto-sync** — repositories trigger PocketBase sync on every write; `SyncService` uses DAOs directly to avoid sync loops
+- **Auto-sync** — repositories trigger PocketBase sync on every write; `SyncService` uses DAOs directly and syncs with pull-before-push last-write-wins passes
 
 ## PocketBase Sync (Optional)
 
-The app supports syncing tasks, categories, notes, countdowns, and tags to a self-hosted [PocketBase](https://pocketbase.io) server for backup and multi-device access. No authentication is required — collections use public API rules.
+The app supports syncing tasks, categories, notes, countdowns, tags, and task-tag assignments to a self-hosted [PocketBase](https://pocketbase.io) server for backup and multi-device access. No authentication is required — collections use public API rules.
 
 ### Quick Start (Ubuntu)
 
@@ -179,7 +179,7 @@ cp -r pocketbase/pb_migrations /opt/pocketbase/pb_migrations
 /opt/pocketbase/pocketbase serve --http=0.0.0.0:8090
 ```
 
-On first launch PocketBase runs `pb_migrations/001_create_collections.js`, which creates the `tasks`, `categories`, and `notes` collections with all required fields and indexes.
+On first launch PocketBase runs the scripts in `pb_migrations/`, which create the app collections with all required fields and indexes.
 
 ### Running as a Background Service (systemd)
 
@@ -228,9 +228,9 @@ sudo systemctl status pocketbase
 
 The included migrations (`pocketbase/pb_migrations/`) create the following collections:
 
-**`tasks`** — localId, title, content, priority, deadline, notifyBeforeValue, notifyBeforeUnit, recurrenceType, recurrenceInterval, isCompleted, isUrgent, isImportant, categoryId, isAllDay, sourceExternalId, location, url, organizer, eventStatus, attendees, durationReminders, dateReminders, isDeleted, localCreatedAt, localUpdatedAt
+**`tasks`** — localId, title, content, priority, deadline, endDeadline, notifyBeforeValue, notifyBeforeUnit, recurrenceType, recurrenceInterval, status, isStarred, section, isUrgent, isImportant, categoryId, isAllDay, sourceExternalId, location, url, organizer, eventStatus, attendees, durationReminders, dateReminders, isDeleted, localCreatedAt, localUpdatedAt
 
-**`categories`** — localId, name, icon, sortOrder, isDeleted, localCreatedAt
+**`categories`** — localId, name, icon, sortOrder, isDeleted, localCreatedAt, localUpdatedAt
 
 **`notes`** — localId, title, content, isDeleted, localCreatedAt, localUpdatedAt
 
@@ -238,7 +238,11 @@ The included migrations (`pocketbase/pb_migrations/`) create the following colle
 
 **`tags`** — localId, name, color, isDeleted, localCreatedAt, localUpdatedAt
 
+**`task_tags`** — localId, taskId, tagId, isDeleted, localCreatedAt, localUpdatedAt
+
 Each collection has a unique index on `localId` for fast sync lookups. All API rules are left empty (public access) since the app doesn't use authentication.
+
+Sync runs one collection at a time in this order: categories, tags, tasks, task_tags, notes, countdowns. Each collection pulls before pushing. Conflicts use last-write-wins by the app-managed `localUpdatedAt` timestamp; if a remote row is newer it overwrites local state, and if an unsynced local row is newer or equal it is pushed. Deletes are durable tombstones (`isDeleted = true`) rather than PocketBase hard deletes. A physically missing server row is treated as server damage/manual deletion and the synced active local row is marked unsynced so the next push recreates it. Device clock skew can make the wrong edit win.
 
 ### Manual Setup (without migration)
 

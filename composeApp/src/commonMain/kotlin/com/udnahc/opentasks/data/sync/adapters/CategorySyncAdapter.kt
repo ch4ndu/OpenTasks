@@ -19,9 +19,11 @@ class CategorySyncAdapter(private val dao: CategoryDao) : BaseSyncAdapter<Catego
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllCategoriesOnce()
     override suspend fun getById(localId: String) = dao.findCategoryByIdAnyState(localId)
-    override suspend fun markSynced(localId: String) = dao.markSynced(localId)
+    override suspend fun markSyncedIfUnchanged(localId: String, updatedAt: Long, isDeleted: Boolean) =
+        dao.markSyncedIfUnchanged(localId, updatedAt, isDeleted)
     override suspend fun updatePbId(localId: String, pbId: String) = dao.updatePbId(localId, pbId)
-    override suspend fun deleteEntity(entity: Category) = dao.delete(entity)
+    override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
+    override suspend fun hardDeleteLocalNeverSynced(entity: Category) = dao.delete(entity)
     override suspend fun upsert(entity: Category) = dao.upsert(entity)
 
     override fun localId(entity: Category) = entity.id
@@ -46,9 +48,6 @@ class CategorySyncAdapter(private val dao: CategoryDao) : BaseSyncAdapter<Catego
 
     override suspend fun updateRecord(client: PocketbaseClient, pbId: String, body: String) =
         client.records.update<CategoryRecord>(collectionName, pbId, body)
-
-    override suspend fun deleteRecord(client: PocketbaseClient, pbId: String) =
-        client.records.delete(collectionName, pbId)
 
     override suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): CategoryRecord? =
         client.records.getList<CategoryRecord>(collectionName, 1, 1, filterBy = Filter("localId='$localId'"))

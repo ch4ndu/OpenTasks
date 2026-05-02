@@ -46,6 +46,12 @@ interface TaskDao {
     @Query("UPDATE tasks SET isSynced = 1 WHERE id = :id")
     suspend fun markSynced(id: String)
 
+    @Query("UPDATE tasks SET isSynced = 1 WHERE id = :id AND updatedAt = :updatedAt AND isDeleted = :isDeleted")
+    suspend fun markSyncedIfUnchanged(id: String, updatedAt: Long, isDeleted: Boolean): Int
+
+    @Query("UPDATE tasks SET isSynced = 0 WHERE id = :id")
+    suspend fun markUnsynced(id: String)
+
     @Query("UPDATE tasks SET pbId = :pbId WHERE id = :id")
     suspend fun updatePbId(id: String, pbId: String)
 

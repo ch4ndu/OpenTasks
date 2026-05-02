@@ -14,13 +14,16 @@ import kotlinx.serialization.json.Json
 class CountdownSyncAdapter(private val dao: CountdownDao) : BaseSyncAdapter<Countdown, CountdownRecord>() {
 
     override val collectionName = "countdowns"
+    override val order = 40
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllCountdownsOnce()
     override suspend fun getById(localId: String) = dao.findCountdownByIdAnyState(localId)
-    override suspend fun markSynced(localId: String) = dao.markSynced(localId)
+    override suspend fun markSyncedIfUnchanged(localId: String, updatedAt: Long, isDeleted: Boolean) =
+        dao.markSyncedIfUnchanged(localId, updatedAt, isDeleted)
     override suspend fun updatePbId(localId: String, pbId: String) = dao.updatePbId(localId, pbId)
-    override suspend fun deleteEntity(entity: Countdown) = dao.delete(entity)
+    override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
+    override suspend fun hardDeleteLocalNeverSynced(entity: Countdown) = dao.delete(entity)
     override suspend fun upsert(entity: Countdown) = dao.upsert(entity)
 
     override fun localId(entity: Countdown) = entity.id
@@ -45,9 +48,6 @@ class CountdownSyncAdapter(private val dao: CountdownDao) : BaseSyncAdapter<Coun
 
     override suspend fun updateRecord(client: PocketbaseClient, pbId: String, body: String) =
         client.records.update<CountdownRecord>(collectionName, pbId, body)
-
-    override suspend fun deleteRecord(client: PocketbaseClient, pbId: String) =
-        client.records.delete(collectionName, pbId)
 
     override suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): CountdownRecord? =
         client.records.getList<CountdownRecord>(collectionName, 1, 1, filterBy = Filter("localId='$localId'"))
