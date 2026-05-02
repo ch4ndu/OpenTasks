@@ -24,7 +24,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import com.udnahc.opentasks.data.model.ThemeMode
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,10 +33,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
+import com.udnahc.opentasks.data.model.TextSizePreference
+import com.udnahc.opentasks.data.model.ThemeMode
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
 import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
-import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.viewmodel.ExportResult
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.SyncStatus
@@ -65,9 +68,11 @@ import opentasks.composeapp.generated.resources.logout_confirm_message
 import opentasks.composeapp.generated.resources.logout_confirm_title
 import opentasks.composeapp.generated.resources.logout_description
 import opentasks.composeapp.generated.resources.notifications
+import opentasks.composeapp.generated.resources.exact_reminder_timing
 import opentasks.composeapp.generated.resources.calendar_access
 import opentasks.composeapp.generated.resources.permission_granted
 import opentasks.composeapp.generated.resources.permission_not_granted
+import opentasks.composeapp.generated.resources.permission_not_required
 import opentasks.composeapp.generated.resources.permissions
 import opentasks.composeapp.generated.resources.theme
 import opentasks.composeapp.generated.resources.theme_dark
@@ -83,6 +88,10 @@ import opentasks.composeapp.generated.resources.settings
 import opentasks.composeapp.generated.resources.sync
 import opentasks.composeapp.generated.resources.sync_error
 import opentasks.composeapp.generated.resources.syncing
+import opentasks.composeapp.generated.resources.text_size
+import opentasks.composeapp.generated.resources.text_size_large
+import opentasks.composeapp.generated.resources.text_size_medium
+import opentasks.composeapp.generated.resources.text_size_small
 
 @Composable
 fun SettingsScreen(
@@ -96,40 +105,44 @@ fun SettingsScreen(
     val currentUrl by viewModel.pocketBaseUrl.collectAsState()
     val syncStatus by viewModel.syncStatus.collectAsState()
     val themePreference by viewModel.themePreference.collectAsState()
+    val textSizePreference by viewModel.textSizePreference.collectAsState()
     val notificationGranted by viewModel.notificationGranted.collectAsState()
+    val exactReminderStatus by viewModel.exactReminderStatus.collectAsState()
     val calendarGranted by viewModel.calendarGranted.collectAsState()
 
     val exportResult by viewModel.exportResult.collectAsState()
 
     val requestNotification = rememberNotificationPermissionLauncher { granted ->
-        if (granted) {
-            // POST_NOTIFICATIONS granted, but exact alarms might still be denied
-            viewModel.openNotificationSettings()
-        }
         viewModel.recheckPermissions()
     }
     val requestCalendar = rememberCalendarPermissionLauncher { granted ->
         viewModel.onCalendarPermissionResult(granted)
     }
 
+    LifecycleResumeEffect(Unit) {
+        viewModel.recheckPermissions()
+        onPauseOrDispose { }
+    }
+
     SettingsContent(
         currentUrl = currentUrl,
         syncStatus = syncStatus,
         themePreference = themePreference,
+        textSizePreference = textSizePreference,
         notificationGranted = notificationGranted,
+        exactReminderStatus = exactReminderStatus,
         calendarGranted = calendarGranted,
         exportResult = exportResult,
         onBack = onBack,
-        onSaveUrl = {
-            viewModel.savePocketBaseUrl(it)
-            requestNotification()
-        },
+        onSaveUrl = { viewModel.savePocketBaseUrl(it) },
         onClearUrl = { viewModel.clearPocketBaseUrl() },
         onSyncNow = { viewModel.triggerSync() },
         onThemeChanged = { viewModel.saveThemePreference(it) },
+        onTextSizeChanged = { viewModel.saveTextSizePreference(it) },
         onRequestNotificationPermission = {
             requestNotification()
         },
+        onRequestExactReminderSettings = { viewModel.openExactReminderSettings() },
         onRequestCalendarPermission = requestCalendar,
         onImportCalendar = onImportCalendar,
         onImportIcs = onImportIcs,
@@ -147,7 +160,9 @@ internal fun SettingsContent(
     currentUrl: String?,
     syncStatus: SyncStatus,
     themePreference: ThemeMode = ThemeMode.SYSTEM,
+    textSizePreference: TextSizePreference = TextSizePreference.SMALL,
     notificationGranted: Boolean = true,
+    exactReminderStatus: ExactReminderPermissionStatus = ExactReminderPermissionStatus.NOT_REQUIRED,
     calendarGranted: Boolean = false,
     exportResult: ExportResult = ExportResult.Idle,
     onBack: () -> Unit,
@@ -155,7 +170,9 @@ internal fun SettingsContent(
     onClearUrl: () -> Unit,
     onSyncNow: () -> Unit = {},
     onThemeChanged: (ThemeMode) -> Unit = {},
+    onTextSizeChanged: (TextSizePreference) -> Unit = {},
     onRequestNotificationPermission: () -> Unit = {},
+    onRequestExactReminderSettings: () -> Unit = {},
     onRequestCalendarPermission: () -> Unit = {},
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
@@ -168,6 +185,7 @@ internal fun SettingsContent(
     val dimens = OpenTasksTheme.dimens
     var showUrlDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showTextSizeDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -229,6 +247,13 @@ internal fun SettingsContent(
                     onClick = { showThemeDialog = true },
                 )
             }
+            item(key = "text_size_preference") {
+                SettingsRow(
+                    title = stringResource(Res.string.text_size),
+                    summary = textSizePreference.label(),
+                    onClick = { showTextSizeDialog = true },
+                )
+            }
 
             // ── Permissions ──
             item(key = "permissions_header") {
@@ -240,6 +265,22 @@ internal fun SettingsContent(
                     summary = if (notificationGranted) stringResource(Res.string.permission_granted)
                     else stringResource(Res.string.permission_not_granted),
                     onClick = { if (!notificationGranted) onRequestNotificationPermission() },
+                )
+            }
+            item(key = "perm_exact_reminders") {
+                val exactSummary = when (exactReminderStatus) {
+                    ExactReminderPermissionStatus.GRANTED -> stringResource(Res.string.permission_granted)
+                    ExactReminderPermissionStatus.NOT_GRANTED -> stringResource(Res.string.permission_not_granted)
+                    ExactReminderPermissionStatus.NOT_REQUIRED -> stringResource(Res.string.permission_not_required)
+                }
+                SettingsRow(
+                    title = stringResource(Res.string.exact_reminder_timing),
+                    summary = exactSummary,
+                    onClick = {
+                        if (exactReminderStatus == ExactReminderPermissionStatus.NOT_GRANTED) {
+                            onRequestExactReminderSettings()
+                        }
+                    },
                 )
             }
             item(key = "perm_calendar") {
@@ -367,6 +408,18 @@ internal fun SettingsContent(
                 showThemeDialog = false
             },
             onDismiss = { showThemeDialog = false },
+        )
+    }
+
+    // Text size picker dialog
+    if (showTextSizeDialog) {
+        TextSizePickerDialog(
+            currentTextSize = textSizePreference,
+            onTextSizeSelected = { preference ->
+                onTextSizeChanged(preference)
+                showTextSizeDialog = false
+            },
+            onDismiss = { showTextSizeDialog = false },
         )
     }
 
@@ -528,3 +581,50 @@ private fun ThemePickerDialog(
     )
 }
 
+@Composable
+private fun TextSizePickerDialog(
+    currentTextSize: TextSizePreference,
+    onTextSizeSelected: (TextSizePreference) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(Res.string.text_size)) },
+        text = {
+            Column {
+                TextSizePreference.entries.forEach { preference ->
+                    Row(
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onTextSizeSelected(preference) }
+                            .padding(vertical = OpenTasksTheme.dimens.paddingSmall),
+                    ) {
+                        RadioButton(
+                            selected = preference == currentTextSize,
+                            onClick = { onTextSizeSelected(preference) },
+                        )
+                        Spacer(Modifier.width(OpenTasksTheme.dimens.spacerLarge))
+                        Text(
+                            text = preference.label(),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun TextSizePreference.label(): String =
+    when (this) {
+        TextSizePreference.SMALL -> stringResource(Res.string.text_size_small)
+        TextSizePreference.MEDIUM -> stringResource(Res.string.text_size_medium)
+        TextSizePreference.LARGE -> stringResource(Res.string.text_size_large)
+    }

@@ -3,15 +3,19 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
+import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
+import com.udnahc.opentasks.data.model.TextSizePreference
 import com.udnahc.opentasks.data.model.ThemeMode
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
+import com.udnahc.opentasks.domain.action.settings.SaveTextSizePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveThemePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
+import com.udnahc.opentasks.domain.usecase.settings.ObserveTextSizePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
 import com.udnahc.opentasks.domain.action.task.GenerateCsvExportAction
 import com.udnahc.opentasks.domain.action.task.GenerateIcsExportAction
@@ -23,7 +27,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.lighthousegames.logging.logging
@@ -41,10 +44,12 @@ sealed class ExportResult {
 class SettingsViewModel(
     observePocketBaseUrl: ObservePocketBaseUrlUseCase,
     observeThemePreference: ObserveThemePreferenceUseCase,
+    observeTextSizePreference: ObserveTextSizePreferenceUseCase,
     private val savePocketBaseUrlAction: SavePocketBaseUrlAction,
     private val clearPocketBaseUrlAction: ClearPocketBaseUrlAction,
     private val triggerSyncAction: TriggerSyncAction,
     private val saveThemePreferenceAction: SaveThemePreferenceAction,
+    private val saveTextSizePreferenceAction: SaveTextSizePreferenceAction,
     private val clearLocalDataAction: ClearLocalDataAction,
     private val checkNotificationPermission: CheckNotificationPermissionUseCase,
     private val checkCalendarPermission: CheckCalendarPermissionUseCase,
@@ -59,11 +64,17 @@ class SettingsViewModel(
     val themePreference: StateFlow<ThemeMode> = observeThemePreference()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
 
+    val textSizePreference: StateFlow<TextSizePreference> = observeTextSizePreference()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TextSizePreference.SMALL)
+
     private val _syncStatus = MutableStateFlow(SyncStatus.IDLE)
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
     private val _notificationGranted = MutableStateFlow(true)
     val notificationGranted: StateFlow<Boolean> = _notificationGranted.asStateFlow()
+
+    private val _exactReminderStatus = MutableStateFlow(ExactReminderPermissionStatus.NOT_REQUIRED)
+    val exactReminderStatus: StateFlow<ExactReminderPermissionStatus> = _exactReminderStatus.asStateFlow()
 
     private val _calendarGranted = MutableStateFlow(false)
     val calendarGranted: StateFlow<Boolean> = _calendarGranted.asStateFlow()
@@ -122,13 +133,22 @@ class SettingsViewModel(
         viewModelScope.launch(Dispatchers.IO) { saveThemePreferenceAction(mode) }
     }
 
+    fun saveTextSizePreference(preference: TextSizePreference) {
+        viewModelScope.launch(Dispatchers.IO) { saveTextSizePreferenceAction(preference) }
+    }
+
     fun openNotificationSettings() {
         checkNotificationPermission.openSettings()
+    }
+
+    fun openExactReminderSettings() {
+        checkNotificationPermission.openExactReminderSettings()
     }
 
     fun recheckPermissions() {
         viewModelScope.launch(Dispatchers.IO) {
             _notificationGranted.value = checkNotificationPermission()
+            _exactReminderStatus.value = checkNotificationPermission.exactReminderStatus()
             _calendarGranted.value = checkCalendarPermission() == CalendarPermissionStatus.GRANTED
         }
     }

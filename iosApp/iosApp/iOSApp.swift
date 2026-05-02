@@ -36,6 +36,16 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         completionHandler([.banner, .sound, .badge])
     }
 
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let userInfo = response.notification.request.content.userInfo
+        if let eventId = userInfo["notification_event_id"] as? String {
+            NotificationDeepLinkKt.publishNotificationDeepLinkEventId(eventId: eventId)
+        }
+        completionHandler()
+    }
+
     private func handleSyncTask(_ task: BGAppRefreshTask) {
         scheduleNextSync()
 

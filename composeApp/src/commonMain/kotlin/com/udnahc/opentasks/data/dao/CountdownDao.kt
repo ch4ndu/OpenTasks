@@ -30,6 +30,12 @@ interface CountdownDao {
     @Query("SELECT * FROM countdowns WHERE id = :id AND isDeleted = 0")
     suspend fun getCountdownById(id: String): Countdown?
 
+    @Query("SELECT * FROM countdowns WHERE id = :id")
+    suspend fun getCountdownByIdUtc(id: String): Countdown?
+
+    @Query("SELECT * FROM countdowns")
+    suspend fun getCountdownsWithTargetsUtc(): List<Countdown>
+
     @Query("SELECT * FROM countdowns WHERE id = :id AND isDeleted = 0")
     fun observeCountdownById(id: String): Flow<Countdown?>
 

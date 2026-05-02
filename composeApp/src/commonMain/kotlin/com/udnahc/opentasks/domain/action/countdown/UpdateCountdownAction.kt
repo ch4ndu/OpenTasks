@@ -7,9 +7,14 @@ import org.lighthousegames.logging.logging
 
 private val log = logging("UpdateCountdownAction")
 
-class UpdateCountdownAction(private val repository: CountdownRepository) {
+class UpdateCountdownAction(
+    private val repository: CountdownRepository,
+    private val scheduleCountdownRemindersAction: ScheduleCountdownRemindersAction,
+) {
     suspend operator fun invoke(countdown: Countdown) {
         log.d { "Updating countdown: ${countdown.id}" }
-        repository.update(countdown.copy(updatedAt = localNow()))
+        val updated = countdown.copy(updatedAt = localNow())
+        repository.update(updated)
+        scheduleCountdownRemindersAction(updated.id)
     }
 }

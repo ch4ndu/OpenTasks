@@ -8,6 +8,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.udnahc.opentasks.MainActivity
 import com.udnahc.opentasks.R
+import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.TaskRepository
 import kotlinx.coroutines.CoroutineScope
@@ -29,7 +30,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
         val body = intent.getStringExtra(NotificationScheduler.EXTRA_BODY) ?: ""
         val notificationId = intent.getIntExtra(NotificationScheduler.EXTRA_NOTIFICATION_ID, 0)
 
-        if (taskId != null) {
+        if (taskId != null && !taskId.startsWith(COUNTDOWN_ID_PREFIX)) {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
@@ -38,28 +39,30 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
                         log.d { "Skipping notification for inactive task $taskId" }
                         return@launch
                     }
-                    showNotification(context, title, body, notificationId)
+                    showNotification(context, taskId, title, body, notificationId)
                 } catch (e: Exception) {
                     // Fail-open: show notification if DB lookup fails
                     log.e { "Task lookup failed, showing notification anyway: ${e.message}" }
-                    showNotification(context, title, body, notificationId)
+                    showNotification(context, taskId, title, body, notificationId)
                 } finally {
                     pendingResult.finish()
                 }
             }
         } else {
-            showNotification(context, title, body, notificationId)
+            showNotification(context, taskId, title, body, notificationId)
         }
     }
 
     private fun showNotification(
         context: Context,
+        eventId: String?,
         title: String,
         body: String,
         notificationId: Int,
     ) {
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            eventId?.let { putExtra(NotificationScheduler.EXTRA_TASK_ID, it) }
         }
         val tapPendingIntent = PendingIntent.getActivity(
             context,

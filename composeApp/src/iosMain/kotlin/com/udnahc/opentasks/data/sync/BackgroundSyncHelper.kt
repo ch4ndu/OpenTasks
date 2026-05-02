@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.sync
 
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
+import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemindersAction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,6 +16,7 @@ object BackgroundSyncHelper : KoinComponent {
 
     private val syncService: SyncService by inject()
     private val rescheduleAllRemindersAction: RescheduleAllRemindersAction by inject()
+    private val rescheduleAllCountdownRemindersAction: RescheduleAllCountdownRemindersAction by inject()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun performSync() {
@@ -23,6 +25,7 @@ object BackgroundSyncHelper : KoinComponent {
             try {
                 syncService.syncAll()
                 rescheduleAllRemindersAction()
+                rescheduleAllCountdownRemindersAction()
             } catch (e: Exception) {
                 log.e { "Background sync failed: ${e.message}" }
             }

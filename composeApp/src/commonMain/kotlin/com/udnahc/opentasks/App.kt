@@ -24,9 +24,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,7 +50,9 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.udnahc.opentasks.data.extensions.currentDay
-import com.udnahc.opentasks.data.model.NotifyBeforeUnit
+import com.udnahc.opentasks.data.extensions.localNow
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
+import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
 import com.udnahc.opentasks.data.model.TaskFormData
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.navigation.AppNavController
@@ -72,6 +78,7 @@ import com.udnahc.opentasks.viewmodel.ImportCalendarViewModel
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.ImportCsvViewModel
 import com.udnahc.opentasks.viewmodel.ImportIcsViewModel
+import com.udnahc.opentasks.viewmodel.TaskFormSaveEvent
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -87,10 +94,13 @@ import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemindersAction
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
+import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import org.koin.compose.koinInject
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
+import opentasks.composeapp.generated.resources.exact_reminder_permission_message
 import opentasks.composeapp.generated.resources.ic_add
 import opentasks.composeapp.generated.resources.ic_calendar
 import opentasks.composeapp.generated.resources.ic_check_box
@@ -99,6 +109,7 @@ import opentasks.composeapp.generated.resources.ic_note
 import opentasks.composeapp.generated.resources.ic_schedule
 import opentasks.composeapp.generated.resources.not_urgent_important
 import opentasks.composeapp.generated.resources.not_urgent_unimportant
+import opentasks.composeapp.generated.resources.open_settings
 import opentasks.composeapp.generated.resources.urgent_important
 import opentasks.composeapp.generated.resources.urgent_unimportant
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
@@ -118,20 +129,31 @@ private fun isTabScreen(key: Any): Boolean =
     key is Screen.Matrix || key is Screen.TaskList || key is Screen.Calendar || key is Screen.Notes || key is Screen.Countdown
 
 @Composable
-fun App(sharedText: String = "", deepLinkTaskId: String = "", widgetAction: String = "") {
+fun App(
+    sharedText: String = "",
+    deepLinkTaskId: String = "",
+    deepLinkCountdownId: String = "",
+    widgetAction: String = "",
+) {
     val settingsViewModel: SettingsViewModel = koinViewModel()
     val themeMode by settingsViewModel.themePreference.collectAsState()
-    OpenTasksTheme(themeMode = themeMode) {
+    val textSizePreference by settingsViewModel.textSizePreference.collectAsState()
+    OpenTasksTheme(
+        themeMode = themeMode,
+        textSizePreference = textSizePreference,
+    ) {
         val backStack = remember { NavBackStack<NavKey>(Screen.Matrix) }
         val navController = remember { AppNavController(backStack) }
         val initializeSyncAction = koinInject<InitializeSyncAction>()
         val rescheduleAllRemindersAction = koinInject<RescheduleAllRemindersAction>()
+        val rescheduleAllCountdownRemindersAction = koinInject<RescheduleAllCountdownRemindersAction>()
         val triggerSyncAction = koinInject<TriggerSyncAction>()
         val isSyncInitialized = remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) {
                 initializeSyncAction()
                 rescheduleAllRemindersAction()
+                rescheduleAllCountdownRemindersAction()
                 isSyncInitialized.value = true
             }
         }
@@ -149,7 +171,20 @@ fun App(sharedText: String = "", deepLinkTaskId: String = "", widgetAction: Stri
         }
         if (deepLinkTaskId.isNotEmpty()) {
             LaunchedEffect(deepLinkTaskId) {
-                navController.navigate(Screen.EditTask(deepLinkTaskId))
+                navController.navigateNotificationEventId(deepLinkTaskId)
+            }
+        }
+        if (deepLinkCountdownId.isNotEmpty()) {
+            LaunchedEffect(deepLinkCountdownId) {
+                navController.navigate(Screen.CountdownDetail(deepLinkCountdownId))
+            }
+        }
+        LaunchedEffect(navController) {
+            notificationDeepLinkEventId.collect { eventId ->
+                if (eventId != null) {
+                    navController.navigateNotificationEventId(eventId)
+                    clearNotificationDeepLinkEventId(eventId)
+                }
             }
         }
         if (widgetAction.isNotEmpty()) {
@@ -161,6 +196,14 @@ fun App(sharedText: String = "", deepLinkTaskId: String = "", widgetAction: Stri
             }
         }
         MainScreen(navController = navController, backStack = backStack)
+    }
+}
+
+private fun AppNavController.navigateNotificationEventId(eventId: String) {
+    if (eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
+        navigate(Screen.CountdownDetail(eventId.removePrefix(COUNTDOWN_ID_PREFIX)))
+    } else {
+        navigate(Screen.EditTask(eventId))
     }
 }
 
@@ -188,6 +231,9 @@ private fun MainScreen(
     var showImportCalendar by remember { mutableStateOf(false) }
     var showImportIcs by remember { mutableStateOf(false) }
     var showImportCsv by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val checkNotificationPermissionUseCase = koinInject<CheckNotificationPermissionUseCase>()
+    val snackbarScope = rememberCoroutineScope()
 
     val tabs = remember {
         listOf(
@@ -369,8 +415,35 @@ private fun MainScreen(
                 entry<Screen.CreateTask> { screen ->
                     val taskFormViewModel: TaskFormViewModel = koinViewModel()
                     val categories by taskFormViewModel.categories.collectAsState()
-                    val requestNotificationPermission = rememberNotificationPermissionLauncher {}
-                    LaunchedEffect(Unit) { requestNotificationPermission() }
+                    var pendingPostSaveReminderCheck by remember { mutableStateOf<TaskFormData?>(null) }
+                    val requestNotificationPermission = rememberNotificationPermissionLauncher {
+                        val formData = pendingPostSaveReminderCheck
+                        pendingPostSaveReminderCheck = null
+                        if (formData != null) {
+                            maybeShowExactReminderSnackbar(
+                                formData = formData,
+                                checkNotificationPermissionUseCase = checkNotificationPermissionUseCase,
+                                snackbarHostState = snackbarHostState,
+                                scope = snackbarScope,
+                            )
+                        }
+                    }
+                    DisposableEffect(Unit) {
+                        onDispose { pendingPostSaveReminderCheck = null }
+                    }
+                    LaunchedEffect(taskFormViewModel) {
+                        taskFormViewModel.saveEvents.collect { event ->
+                            when (event) {
+                                is TaskFormSaveEvent.Saved -> {
+                                    if (event.formData.hasFutureReminder()) {
+                                        pendingPostSaveReminderCheck = event.formData
+                                        requestNotificationPermission()
+                                    }
+                                }
+                                is TaskFormSaveEvent.Error -> Unit
+                            }
+                        }
+                    }
                     CreateTaskScreen(
                         onBack = { navController.popBackStack() },
                         initialPriority = TaskPriority.entries[screen.priorityOrdinal],
@@ -382,34 +455,42 @@ private fun MainScreen(
                         categories = categories,
                         onAddCategory = { name -> taskFormViewModel.addCategory(name) },
                         onSave = { formData ->
-                            val notifyUnit =
-                                if (formData.reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
-                            taskFormViewModel.addTask(
-                                title = formData.title,
-                                content = formData.content,
-                                priority = formData.priority,
-                                deadline = formData.deadline,
-                                endDeadline = formData.endDeadline,
-                                isAllDay = formData.isAllDay,
-                                notifyBeforeValue = formData.reminderDays,
-                                notifyBeforeUnit = notifyUnit,
-                                recurrenceType = formData.recurrence,
-                                categoryId = formData.categoryId,
-                                section = formData.section,
-                                location = formData.location,
-                                url = formData.url,
-                                organizer = formData.organizer,
-                                eventStatus = formData.eventStatus,
-                                attendees = formData.attendees,
-                                durationReminders = formData.durationReminders,
-                                dateReminders = formData.dateReminders,
-                            )
+                            taskFormViewModel.saveNewTask(formData)
                         },
                     )
                 }
 
                 entry<Screen.EditTask> { screen ->
                     val taskFormViewModel: TaskFormViewModel = koinViewModel()
+                    var pendingPostSaveReminderCheck by remember { mutableStateOf<TaskFormData?>(null) }
+                    val requestNotificationPermission = rememberNotificationPermissionLauncher {
+                        val formData = pendingPostSaveReminderCheck
+                        pendingPostSaveReminderCheck = null
+                        if (formData != null) {
+                            maybeShowExactReminderSnackbar(
+                                formData = formData,
+                                checkNotificationPermissionUseCase = checkNotificationPermissionUseCase,
+                                snackbarHostState = snackbarHostState,
+                                scope = snackbarScope,
+                            )
+                        }
+                    }
+                    DisposableEffect(Unit) {
+                        onDispose { pendingPostSaveReminderCheck = null }
+                    }
+                    LaunchedEffect(taskFormViewModel) {
+                        taskFormViewModel.saveEvents.collect { event ->
+                            when (event) {
+                                is TaskFormSaveEvent.Saved -> {
+                                    if (event.formData.hasFutureReminder()) {
+                                        pendingPostSaveReminderCheck = event.formData
+                                        requestNotificationPermission()
+                                    }
+                                }
+                                is TaskFormSaveEvent.Error -> Unit
+                            }
+                        }
+                    }
                     LaunchedEffect(screen.taskId) { taskFormViewModel.setTaskId(screen.taskId) }
                     val editTask by taskFormViewModel.editTask.collectAsState()
                     val categories by taskFormViewModel.categories.collectAsState()
@@ -421,31 +502,7 @@ private fun MainScreen(
                             categories = categories,
                             onAddCategory = { name -> taskFormViewModel.addCategory(name) },
                             onSave = { formData ->
-                                val notifyUnit =
-                                    if (formData.reminderDays > 0) NotifyBeforeUnit.DAYS else NotifyBeforeUnit.NONE
-                                taskFormViewModel.updateTask(
-                                    currentEditTask.copy(
-                                        title = formData.title,
-                                        content = formData.content,
-                                        priority = formData.priority,
-                                        deadline = formData.deadline,
-                                        endDeadline = formData.endDeadline,
-                                        isAllDay = formData.isAllDay,
-                                        notifyBeforeValue = formData.reminderDays,
-                                        notifyBeforeUnit = notifyUnit,
-                                        recurrenceType = formData.recurrence,
-                                        categoryId = formData.categoryId,
-                                        section = formData.section,
-                                        status = formData.status,
-                                        location = formData.location,
-                                        url = formData.url,
-                                        organizer = formData.organizer,
-                                        eventStatus = formData.eventStatus,
-                                        attendees = formData.attendees,
-                                        durationReminders = formData.durationReminders,
-                                        dateReminders = formData.dateReminders,
-                                    )
-                                )
+                                taskFormViewModel.saveExistingTask(currentEditTask, formData)
                             },
                             onDelete = {
                                 taskFormViewModel.deleteTask(currentEditTask)
@@ -540,6 +597,10 @@ private fun MainScreen(
                 },
             )
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
 
         // FAB — slides out with nav bar
         AnimatedVisibility(
@@ -647,6 +708,53 @@ private fun MainScreen(
             onDismiss = { showImportCsv = false },
         )
     }
+}
+
+private fun maybeShowExactReminderSnackbar(
+    formData: TaskFormData,
+    checkNotificationPermissionUseCase: CheckNotificationPermissionUseCase,
+    snackbarHostState: SnackbarHostState,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    if (!formData.hasFutureReminder()) return
+    scope.launch {
+        if (checkNotificationPermissionUseCase.exactReminderStatus() != ExactReminderPermissionStatus.NOT_GRANTED) {
+            return@launch
+        }
+        val result = snackbarHostState.showSnackbar(
+            message = org.jetbrains.compose.resources.getString(Res.string.exact_reminder_permission_message),
+            actionLabel = org.jetbrains.compose.resources.getString(Res.string.open_settings),
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            checkNotificationPermissionUseCase.openExactReminderSettings()
+        }
+    }
+}
+
+private fun TaskFormData.hasFutureReminder(): Boolean {
+    val deadlineValue = deadline ?: return false
+    val now = localNow()
+    val dateOffsets = dateReminders.parseMinuteValues()
+    val durationOffsets = durationReminders.parseMinuteValues()
+    val legacyOffsets = if (dateOffsets.isEmpty() && durationOffsets.isEmpty()) {
+        legacyReminderMinutes()
+    } else {
+        emptyList()
+    }
+    return dateOffsets.any { deadlineValue - (it * MILLIS_PER_MINUTE) > now } ||
+        durationOffsets.any { offset ->
+            val triggerAt = if (offset == -1) endDeadline else deadlineValue - (offset * MILLIS_PER_MINUTE)
+            triggerAt != null && triggerAt > now
+        } ||
+        legacyOffsets.any { deadlineValue - (it * MILLIS_PER_MINUTE) > now }
+}
+
+private fun String.parseMinuteValues(): List<Int> =
+    split(",").mapNotNull { it.trim().toIntOrNull() }
+
+private fun TaskFormData.legacyReminderMinutes(): List<Int> {
+    val value = reminderDays.takeIf { it > 0 } ?: return emptyList()
+    return listOf(value * 1440)
 }
 
 @Composable

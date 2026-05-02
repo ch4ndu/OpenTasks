@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.data.model.TextSizePreference
 import com.udnahc.opentasks.data.model.ThemeMode
 
 private val DarkColorScheme = darkColorScheme(
@@ -43,6 +44,7 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun OpenTasksTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
+    textSizePreference: TextSizePreference = TextSizePreference.SMALL,
     content: @Composable () -> Unit,
 ) {
     val darkTheme = when (themeMode) {
@@ -57,12 +59,16 @@ fun OpenTasksTheme(
             else -> WindowSizeCategory.EXPANDED
         }
         val textSizePreset = when (sizeCategory) {
-            WindowSizeCategory.COMPACT -> TextSizePreset.SMALL
-            WindowSizeCategory.MEDIUM -> TextSizePreset.NORMAL
-            WindowSizeCategory.EXPANDED -> TextSizePreset.LARGE
+            WindowSizeCategory.COMPACT -> ResponsiveTextSizePreset.COMPACT
+            WindowSizeCategory.MEDIUM -> ResponsiveTextSizePreset.MEDIUM
+            WindowSizeCategory.EXPANDED -> ResponsiveTextSizePreset.EXPANDED
         }
-        val typography = remember(textSizePreset) { openTasksTypography(textSizePreset) }
-        val extendedTypography = remember(textSizePreset) { openTasksExtendedTypography(textSizePreset) }
+        val typography = remember(textSizePreset, textSizePreference) {
+            openTasksTypography(textSizePreset, textSizePreference.scale)
+        }
+        val extendedTypography = remember(textSizePreset, textSizePreference) {
+            openTasksExtendedTypography(textSizePreset, textSizePreference.scale)
+        }
         val dimensions = remember(sizeCategory) {
             when (sizeCategory) {
                 WindowSizeCategory.COMPACT -> compactDimensions()

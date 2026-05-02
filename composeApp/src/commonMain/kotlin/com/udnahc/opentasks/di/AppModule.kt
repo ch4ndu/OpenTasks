@@ -26,6 +26,8 @@ import com.udnahc.opentasks.data.repository.CountdownRepositoryImpl
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
+import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemindersAction
+import com.udnahc.opentasks.domain.action.countdown.ScheduleCountdownRemindersAction
 import com.udnahc.opentasks.domain.action.countdown.UpdateCountdownAction
 import com.udnahc.opentasks.domain.action.tag.AddTagAction
 import com.udnahc.opentasks.domain.action.tag.TagTaskAction
@@ -44,6 +46,7 @@ import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
 import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskListViewModeAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
+import com.udnahc.opentasks.domain.action.settings.SaveTextSizePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveThemePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
@@ -62,6 +65,7 @@ import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionU
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskListViewModeUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
+import com.udnahc.opentasks.domain.usecase.settings.ObserveTextSizePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.task.FetchCalendarEventsUseCase
 import com.udnahc.opentasks.domain.action.task.GenerateCsvExportAction
@@ -144,6 +148,7 @@ val sharedModule = module {
     single { ObserveTaskSortOptionUseCase(get()) }
     single { ObserveTaskListViewModeUseCase(get()) }
     single { ObserveThemePreferenceUseCase(get()) }
+    single { ObserveTextSizePreferenceUseCase(get()) }
     single { CheckNotificationPermissionUseCase(get()) }
     single { CheckCalendarPermissionUseCase(get()) }
     single { FetchCalendarEventsUseCase(get()) }
@@ -161,9 +166,9 @@ val sharedModule = module {
     single { UpdateSectionAction(get()) }
     single { AddCategoryAction(get()) }
     single { AddNoteAction(get()) }
-    single { AddCountdownAction(get()) }
-    single { UpdateCountdownAction(get()) }
-    single { DeleteCountdownAction(get()) }
+    single { AddCountdownAction(get(), get()) }
+    single { UpdateCountdownAction(get(), get()) }
+    single { DeleteCountdownAction(get(), get()) }
     single { UpdateNoteAction(get()) }
     single { DeleteNoteAction(get()) }
     single { AddTagAction(get()) }
@@ -172,6 +177,8 @@ val sharedModule = module {
     single { ImportCsvTasksAction(get(), get(), get()) }
     single { ScheduleTaskRemindersAction(get(), get()) }
     single { RescheduleAllRemindersAction(get(), get()) }
+    single { ScheduleCountdownRemindersAction(get(), get()) }
+    single { RescheduleAllCountdownRemindersAction(get(), get()) }
     single { SavePocketBaseUrlAction(get(), get(), get()) }
     single { ClearPocketBaseUrlAction(get(), get()) }
     single { TriggerSyncAction(get(), get()) }
@@ -180,6 +187,7 @@ val sharedModule = module {
     single { SaveTaskListViewModeAction(get()) }
     single { UpdateTaskStatusAction(get()) }
     single { SaveThemePreferenceAction(get()) }
+    single { SaveTextSizePreferenceAction(get()) }
     single { ClearLocalDataAction(get(), get(), get(), get(), get()) }
 
     // Sync
@@ -213,6 +221,6 @@ val sharedModule = module {
     viewModel { ImportCsvViewModel(get(), get()) }
     viewModel { CountdownViewModel(get(), get()) }
     viewModel { CountdownFormViewModel(get(), get(), get(), get()) }
-    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AppViewModel(get()) }
 }

@@ -16,6 +16,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.sync.SyncWorker
 import java.util.concurrent.TimeUnit
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity() {
 
     private var deepLinkTaskId by mutableStateOf("")
+    private var deepLinkCountdownId by mutableStateOf("")
     private var widgetAction by mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,7 +46,7 @@ class MainActivity : ComponentActivity() {
             ""
         }
 
-        deepLinkTaskId = intent?.getStringExtra(NotificationScheduler.EXTRA_TASK_ID).orEmpty()
+        handleDeepLinkIntent(intent)
         widgetAction = intent?.getStringExtra("widget_action").orEmpty()
 
         schedulePeriodicSync()
@@ -53,6 +55,7 @@ class MainActivity : ComponentActivity() {
             App(
                 sharedText = sharedText,
                 deepLinkTaskId = deepLinkTaskId,
+                deepLinkCountdownId = deepLinkCountdownId,
                 widgetAction = widgetAction,
             )
         }
@@ -75,8 +78,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        deepLinkTaskId = intent.getStringExtra(NotificationScheduler.EXTRA_TASK_ID).orEmpty()
+        handleDeepLinkIntent(intent)
         widgetAction = intent.getStringExtra("widget_action").orEmpty()
+    }
+
+    private fun handleDeepLinkIntent(intent: Intent?) {
+        val eventId = intent?.getStringExtra(NotificationScheduler.EXTRA_TASK_ID).orEmpty()
+        if (eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
+            deepLinkTaskId = ""
+            deepLinkCountdownId = eventId.removePrefix(COUNTDOWN_ID_PREFIX)
+        } else {
+            deepLinkTaskId = eventId
+            deepLinkCountdownId = ""
+        }
     }
 }
 

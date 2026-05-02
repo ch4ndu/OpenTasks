@@ -32,6 +32,12 @@ class CountdownRepositoryImpl(
     override suspend fun getCountdownById(id: String): Countdown? =
         countdownDao.getCountdownById(id)?.withLocalTimestamps()
 
+    override suspend fun getCountdownByIdUtc(id: String): Countdown? =
+        countdownDao.getCountdownByIdUtc(id)
+
+    override suspend fun getCountdownsWithTargetsUtc(): List<Countdown> =
+        countdownDao.getCountdownsWithTargetsUtc()
+
     override suspend fun insert(countdown: Countdown) {
         log.v { "Inserting countdown: ${countdown.id}" }
         countdownDao.insert(countdown.withDefaultTimestamps().withUtcTimestamps())

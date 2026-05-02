@@ -4,27 +4,34 @@ import androidx.compose.material3.Typography
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 
-enum class TextSizePreset { SMALL, NORMAL, LARGE }
+enum class ResponsiveTextSizePreset { COMPACT, MEDIUM, EXPANDED }
 
-fun openTasksTypography(preset: TextSizePreset = TextSizePreset.NORMAL): Typography {
-    val scale = when (preset) {
-        TextSizePreset.SMALL -> 0.85f
-        TextSizePreset.NORMAL -> 1.0f
-        TextSizePreset.LARGE -> 1.15f
-    }
+fun openTasksTypography(
+    preset: ResponsiveTextSizePreset = ResponsiveTextSizePreset.MEDIUM,
+    userScale: Float = 1.0f,
+): Typography {
+    val scale = preset.scale * userScale
+    val default = Typography()
     return Typography(
+        displayLarge = default.displayLarge.scaledBy(scale),
+        displayMedium = default.displayMedium.scaledBy(scale),
+        displaySmall = default.displaySmall.scaledBy(scale),
+        headlineLarge = default.headlineLarge.scaledBy(scale),
         headlineMedium = TextStyle(
             fontSize = 28.sp * scale,
             fontWeight = FontWeight.Bold,
         ),
+        headlineSmall = default.headlineSmall.scaledBy(scale),
         titleLarge = TextStyle(
             fontSize = 20.sp * scale,
         ),
         titleMedium = TextStyle(
             fontSize = 18.sp * scale,
         ),
+        titleSmall = default.titleSmall.scaledBy(scale),
         bodyLarge = TextStyle(
             fontSize = 16.sp * scale,
         ),
@@ -55,13 +62,10 @@ data class OpenTasksExtendedTypography(
 )
 
 fun openTasksExtendedTypography(
-    preset: TextSizePreset = TextSizePreset.NORMAL,
+    preset: ResponsiveTextSizePreset = ResponsiveTextSizePreset.MEDIUM,
+    userScale: Float = 1.0f,
 ): OpenTasksExtendedTypography {
-    val scale = when (preset) {
-        TextSizePreset.SMALL -> 0.85f
-        TextSizePreset.NORMAL -> 1.0f
-        TextSizePreset.LARGE -> 1.15f
-    }
+    val scale = preset.scale * userScale
     return OpenTasksExtendedTypography(
         calendarDayNumber = TextStyle(
             fontSize = 13.sp * scale,
@@ -90,3 +94,16 @@ fun openTasksExtendedTypography(
 val LocalOpenTasksTypography = staticCompositionLocalOf {
     openTasksExtendedTypography()
 }
+
+private val ResponsiveTextSizePreset.scale: Float
+    get() = when (this) {
+        ResponsiveTextSizePreset.COMPACT -> 0.85f
+        ResponsiveTextSizePreset.MEDIUM -> 1.0f
+        ResponsiveTextSizePreset.EXPANDED -> 1.15f
+    }
+
+private fun TextStyle.scaledBy(scale: Float): TextStyle =
+    copy(
+        fontSize = fontSize * scale,
+        lineHeight = if (lineHeight.isSpecified) lineHeight * scale else lineHeight,
+    )

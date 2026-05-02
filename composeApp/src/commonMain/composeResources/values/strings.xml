@@ -238,13 +238,21 @@
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+    <string name="text_size">Text size</string>
+    <string name="text_size_small">Small</string>
+    <string name="text_size_medium">Medium</string>
+    <string name="text_size_large">Large</string>
 
     <!-- Settings / Permissions -->
     <string name="permissions">Permissions</string>
     <string name="notifications">Notifications</string>
+    <string name="exact_reminder_timing">Exact reminder timing</string>
     <string name="calendar_access">Calendar</string>
     <string name="permission_granted">Granted</string>
     <string name="permission_not_granted">Not granted</string>
+    <string name="permission_not_required">Not required</string>
+    <string name="exact_reminder_permission_message">Exact reminder timing is off. Reminders may be delayed.</string>
+    <string name="open_settings">Open settings</string>
 
     <!-- Settings / Sync -->
     <string name="sync">Sync</string>
@@ -305,6 +313,12 @@
     <string name="countdown_reminder_2_days_early">2 days early</string>
     <string name="countdown_reminder_3_days_early">3 days early</string>
     <string name="countdown_reminder_1_week_early">1 week early</string>
+    <string name="countdown_notification_today">Today</string>
+    <string name="countdown_notification_in_minutes">In %1$d min</string>
+    <string name="countdown_notification_in_hour">In %1$d hour</string>
+    <string name="countdown_notification_in_hours">In %1$d hours</string>
+    <string name="countdown_notification_in_day">In %1$d day</string>
+    <string name="countdown_notification_in_days">In %1$d days</string>
     <string name="countdown_smart_list_on_the_day">On the day</string>
     <string name="countdown_smart_list_3_days_early">3 days early</string>
     <string name="countdown_smart_list_7_days_early">7 days early</string>

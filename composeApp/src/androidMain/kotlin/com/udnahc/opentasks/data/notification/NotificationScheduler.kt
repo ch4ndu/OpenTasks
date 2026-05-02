@@ -52,18 +52,23 @@ actual class NotificationScheduler(private val context: Context) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
             alarmManager.canScheduleExactAlarms()
+        val notificationId = notificationId(taskId, reminderId)
 
         log.d { "Scheduling alarm for task=$taskId reminderId=$reminderId at $triggerAtMillis (exact=$canExact)" }
+
+        cancel(taskId, reminderId)
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+            .cancel(notificationId)
 
         val intent = Intent(context, NotificationReceiver::class.java).apply {
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_TITLE, title)
             putExtra(EXTRA_BODY, body)
-            putExtra(EXTRA_NOTIFICATION_ID, notificationId(taskId, reminderId))
+            putExtra(EXTRA_NOTIFICATION_ID, notificationId)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            notificationId(taskId, reminderId),
+            notificationId,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -166,6 +171,6 @@ actual class NotificationScheduler(private val context: Context) {
         private const val MAX_REMINDERS_PER_TASK = 100
 
         fun notificationId(taskId: String, reminderId: Int): Int =
-            (taskId.hashCode().and(0x7FFFFFFF) / 100 * 100 + reminderId)
+            "$taskId:$reminderId".hashCode().and(0x7FFFFFFF)
     }
 }

@@ -15,8 +15,13 @@ actual class NotificationPermissionChecker {
         }
     }
 
+    actual suspend fun exactReminderStatus(): ExactReminderPermissionStatus =
+        ExactReminderPermissionStatus.NOT_REQUIRED
+
     actual fun openSettings() {
         val url = NSURL.URLWithString(UIApplicationOpenSettingsURLString) ?: return
         UIApplication.sharedApplication.openURL(url)
     }
+
+    actual fun openExactReminderSettings() {}
 }
