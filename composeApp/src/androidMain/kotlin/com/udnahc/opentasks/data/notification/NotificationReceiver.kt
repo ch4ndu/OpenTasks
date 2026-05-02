@@ -8,6 +8,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.udnahc.opentasks.MainActivity
 import com.udnahc.opentasks.R
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.TaskRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +34,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     val task = taskRepository.getTaskById(taskId)
-                    if (task == null || task.isCompleted || task.isDeleted) {
+                    if (task == null || task.status == TaskStatus.DONE || task.isDeleted) {
                         log.d { "Skipping notification for inactive task $taskId" }
                         return@launch
                     }

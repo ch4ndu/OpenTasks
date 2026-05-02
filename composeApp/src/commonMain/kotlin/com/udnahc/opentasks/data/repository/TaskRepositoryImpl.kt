@@ -63,6 +63,15 @@ class TaskRepositoryImpl(
     override suspend fun getTaskByIdUtc(id: String): Task? =
         taskDao.getTaskById(id)
 
+    override suspend fun getAllTasksOnce(): List<Task> =
+        taskDao.getAllTasksOnce()
+            .filter { !it.isDeleted }
+            .map { it.withLocalTimestamps() }
+
+    override suspend fun getAllTasksOnceUtc(): List<Task> =
+        taskDao.getAllTasksOnce()
+            .filter { !it.isDeleted }
+
     /** Fills in 0L timestamps with current local time before insert. */
     private fun Task.withDefaultTimestamps(): Task {
         val now = localNow()

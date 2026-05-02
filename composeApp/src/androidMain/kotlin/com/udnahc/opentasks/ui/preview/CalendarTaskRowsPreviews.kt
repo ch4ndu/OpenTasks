@@ -34,6 +34,7 @@ private fun CardTaskRowPreview() {
         CardTaskRow(
             task = PreviewSampleData.sampleTasks[0],
             isToday = true,
+            categoryName = "Inbox",
             onToggleComplete = {},
             onClick = {},
         )
@@ -46,6 +47,7 @@ private fun CalendarTaskRowPreview() {
     OpenTasksTheme {
         CalendarTaskRow(
             task = PreviewSampleData.sampleTasks[0],
+            categoryName = "Inbox",
             onToggleComplete = {},
             onClick = {},
         )

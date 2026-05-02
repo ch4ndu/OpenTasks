@@ -43,27 +43,43 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.TaskListFilter
+import com.udnahc.opentasks.data.model.TaskListViewMode
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.model.TaskSortOption
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.ui.theme.PriorityHigh
-import com.udnahc.opentasks.ui.theme.PriorityLow
-import com.udnahc.opentasks.ui.theme.PriorityMedium
-import com.udnahc.opentasks.ui.theme.PriorityNone
+import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.theme.StarGold
+import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
+import com.udnahc.opentasks.viewmodel.TaskListViewModel.SectionGroup
 import opentasks.composeapp.generated.resources.Res
-import opentasks.composeapp.generated.resources.import_from_calendar
-import opentasks.composeapp.generated.resources.import_from_ics
-import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.completed
+import opentasks.composeapp.generated.resources.ic_check
 import opentasks.composeapp.generated.resources.ic_check_box
-import opentasks.composeapp.generated.resources.ic_more_vert
 import opentasks.composeapp.generated.resources.ic_check_box_outline
+import opentasks.composeapp.generated.resources.ic_grid_view
+import opentasks.composeapp.generated.resources.ic_list
+import opentasks.composeapp.generated.resources.ic_star
 import opentasks.composeapp.generated.resources.ic_unfold
 import opentasks.composeapp.generated.resources.ic_settings
-import opentasks.composeapp.generated.resources.more
+import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.no_tasks
 import opentasks.composeapp.generated.resources.select
 import opentasks.composeapp.generated.resources.settings
+import opentasks.composeapp.generated.resources.sort_by
+import opentasks.composeapp.generated.resources.sort_by_deadline
+import opentasks.composeapp.generated.resources.sort_by_priority
+import opentasks.composeapp.generated.resources.sort_by_title
+import opentasks.composeapp.generated.resources.sort_recently_updated
+import opentasks.composeapp.generated.resources.due_this_week
+import opentasks.composeapp.generated.resources.high_priority
+import opentasks.composeapp.generated.resources.no_date
+import opentasks.composeapp.generated.resources.overdue
+import opentasks.composeapp.generated.resources.starred
+import opentasks.composeapp.generated.resources.today
+import opentasks.composeapp.generated.resources.toggle_view_mode
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -75,37 +91,126 @@ fun TaskListScreen(
     onSelectedCategoryChanged: (String) -> Unit,
     onTaskClick: (Task) -> Unit,
     onSettingsClick: () -> Unit = {},
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
 ) {
     // Sync parent's selectedCategoryId into ViewModel for the derived flow
     LaunchedEffect(selectedCategoryId) { viewModel.selectCategory(selectedCategoryId) }
 
     val activeTasks by viewModel.activeTasksForSelectedCategory.collectAsState()
     val completedTasks by viewModel.completedTasksForSelectedCategory.collectAsState()
+    val groupedTasks by viewModel.groupedActiveTasks.collectAsState()
+    val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
+    val currentFilter by viewModel.currentFilter.collectAsState()
+    val sortOption by viewModel.sortOption.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
+    val tasksByStatus by viewModel.tasksByStatus.collectAsState()
     var showCategoryPicker by remember { mutableStateOf(false) }
 
     val categories by viewModel.categories.collectAsState()
     val defaultListName = stringResource(Res.string.inbox)
-    val selectedListName = remember(categories, selectedCategoryId, defaultListName) {
-        categories.find { it.id == selectedCategoryId }?.name ?: defaultListName
+    val starredName = stringResource(Res.string.starred)
+    val todayName = stringResource(Res.string.today)
+    val overdueStr = stringResource(Res.string.overdue)
+    val noDateStr = stringResource(Res.string.no_date)
+    val highPriorityStr = stringResource(Res.string.high_priority)
+    val dueThisWeekStr = stringResource(Res.string.due_this_week)
+    val selectedListName = remember(categories, currentFilter, defaultListName, starredName, todayName, overdueStr, noDateStr, highPriorityStr, dueThisWeekStr) {
+        when (currentFilter) {
+            is TaskListFilter.Starred -> starredName
+            is TaskListFilter.Today -> todayName
+            is TaskListFilter.Overdue -> overdueStr
+            is TaskListFilter.NoDate -> noDateStr
+            is TaskListFilter.HighPriority -> highPriorityStr
+            is TaskListFilter.DueThisWeek -> dueThisWeekStr
+            is TaskListFilter.Category -> {
+                val catId = (currentFilter as TaskListFilter.Category).id
+                categories.find { it.id == catId }?.name ?: defaultListName
+            }
+        }
     }
 
-    TaskListContent(
-        listName = selectedListName,
-        activeTasks = activeTasks,
-        completedTasks = completedTasks,
-        onTaskClick = onTaskClick,
-        onToggleComplete = { viewModel.toggleComplete(it) },
-        onListClick = { showCategoryPicker = true },
-        onSettingsClick = onSettingsClick,
-    )
+    val density = LocalDensity.current
+    val statusBarHeight = with(density) {
+        WindowInsets.statusBars.getTop(this).toDp()
+    }
+    val navBarHeight = with(density) {
+        WindowInsets.navigationBars.getBottom(this).toDp()
+    }
+    val dimens = OpenTasksTheme.dimens
+    val topBarHeight = dimens.topBarHeight + statusBarHeight
+
+    when (viewMode) {
+        TaskListViewMode.LIST -> {
+            TaskListContent(
+                listName = selectedListName,
+                activeTasks = activeTasks,
+                completedTasks = completedTasks,
+                groupedActiveTasks = groupedTasks,
+                onTaskClick = onTaskClick,
+                onToggleComplete = { viewModel.toggleComplete(it) },
+                onToggleStar = { viewModel.toggleStar(it) },
+                onListClick = { showCategoryPicker = true },
+                onSettingsClick = onSettingsClick,
+                sortOption = sortOption,
+                onSortOptionSelected = { viewModel.setSortOption(it) },
+                viewMode = viewMode,
+                onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.BOARD) },
+                isRefreshing = isRefreshing,
+                onRefresh = onRefresh,
+            )
+        }
+        TaskListViewMode.BOARD -> {
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                SyncPullToRefresh(
+                    isRefreshing = isRefreshing,
+                    onRefresh = onRefresh,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    KanbanBoardContent(
+                        tasksByStatus = tasksByStatus,
+                        onTaskClick = onTaskClick,
+                        onStatusChange = { task, newStatus -> viewModel.updateTaskStatus(task, newStatus) },
+                        onToggleStar = { viewModel.toggleStar(it) },
+                        topBarHeight = topBarHeight,
+                        navBarHeight = navBarHeight,
+                    )
+                }
+
+                // Translucent top bar overlay for board mode
+                TaskListTopBar(
+                    listName = selectedListName,
+                    onListClick = { showCategoryPicker = true },
+                    onSettingsClick = onSettingsClick,
+                    sortOption = sortOption,
+                    onSortOptionSelected = { viewModel.setSortOption(it) },
+                    viewMode = viewMode,
+                    onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.LIST) },
+                )
+            }
+        }
+    }
+
+    if (taskPendingSeriesChoice != null) {
+        CompleteSeriesDialog(
+            onCompleteOccurrence = { viewModel.completeOccurrence() },
+            onCompleteSeries = { viewModel.completeSeries() },
+            onDismiss = { viewModel.dismissSeriesChoice() },
+        )
+    }
 
     if (showCategoryPicker) {
         val listPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         CategoryPickerBottomSheet(
             sheetState = listPickerState,
             categories = categories,
-            selectedCategoryId = selectedCategoryId,
+            selectedCategoryId = if (currentFilter is TaskListFilter.Category) {
+                (currentFilter as TaskListFilter.Category).id
+            } else {
+                ""
+            },
             onCategorySelected = { category ->
+                viewModel.selectFilter(TaskListFilter.Category(category.id))
                 onSelectedCategoryChanged(category.id)
                 showCategoryPicker = false
             },
@@ -113,6 +218,11 @@ fun TaskListScreen(
             onDismiss = { showCategoryPicker = false },
             showTitle = false,
             showSearch = false,
+            selectedFilter = currentFilter,
+            onFilterSelected = { filter ->
+                viewModel.selectFilter(filter)
+                showCategoryPicker = false
+            },
         )
     }
 }
@@ -123,10 +233,18 @@ internal fun TaskListContent(
     listName: String = "Inbox",
     activeTasks: List<Task> = emptyList(),
     completedTasks: List<Task> = emptyList(),
+    groupedActiveTasks: List<SectionGroup> = emptyList(),
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
+    onToggleStar: (Task) -> Unit = {},
     onListClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
+    sortOption: TaskSortOption = TaskSortOption.RECENTLY_UPDATED,
+    onSortOptionSelected: (TaskSortOption) -> Unit = {},
+    viewMode: TaskListViewMode = TaskListViewMode.LIST,
+    onViewModeToggle: () -> Unit = {},
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val density = LocalDensity.current
@@ -142,6 +260,11 @@ internal fun TaskListContent(
     var completedCollapsed by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        SyncPullToRefresh(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize(),
+        ) {
         // Task list — fills entire screen, scrolls behind top bar and bottom nav
         if (activeTasks.isEmpty() && completedTasks.isEmpty()) {
             EmptyPlaceholder(
@@ -156,17 +279,45 @@ internal fun TaskListContent(
                     bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge, // nav bar + FAB + spacing
                 ),
             ) {
-                // Active tasks
-                items(activeTasks, key = { it.id }) { task ->
-                    TaskRow(
-                        task = task,
-                        onToggleComplete = { onToggleComplete(task) },
-                        onClick = { onTaskClick(task) },
-                    )
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        thickness = dimens.dividerThin,
-                    )
+                // Active tasks — grouped by section when sections exist
+                val useGrouped = groupedActiveTasks.size > 1 ||
+                    groupedActiveTasks.any { it.name != null }
+                if (useGrouped) {
+                    groupedActiveTasks.forEach { group ->
+                        if (group.name != null) {
+                            item(key = "section_${group.name}") {
+                                SectionHeader(
+                                    name = group.name,
+                                    count = group.tasks.size,
+                                )
+                            }
+                        }
+                        items(group.tasks, key = { it.id }) { task ->
+                            TaskRow(
+                                task = task,
+                                onToggleComplete = { onToggleComplete(task) },
+                                onClick = { onTaskClick(task) },
+                                onToggleStar = { onToggleStar(task) },
+                            )
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                thickness = dimens.dividerThin,
+                            )
+                        }
+                    }
+                } else {
+                    items(activeTasks, key = { it.id }) { task ->
+                        TaskRow(
+                            task = task,
+                            onToggleComplete = { onToggleComplete(task) },
+                            onClick = { onTaskClick(task) },
+                            onToggleStar = { onToggleStar(task) },
+                        )
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            thickness = dimens.dividerThin,
+                        )
+                    }
                 }
 
                 // Completed section
@@ -190,6 +341,7 @@ internal fun TaskListContent(
                                         task = task,
                                         onToggleComplete = { onToggleComplete(task) },
                                         onClick = { onTaskClick(task) },
+                                        onToggleStar = { onToggleStar(task) },
                                     )
                                     if (index < completedTasks.lastIndex) {
                                         HorizontalDivider(
@@ -205,12 +357,17 @@ internal fun TaskListContent(
                 }
             }
         }
+        }
 
         // Translucent Top bar overlay — content scrolls behind this
         TaskListTopBar(
             listName = listName,
             onListClick = onListClick,
             onSettingsClick = onSettingsClick,
+            sortOption = sortOption,
+            onSortOptionSelected = onSortOptionSelected,
+            viewMode = viewMode,
+            onViewModeToggle = onViewModeToggle,
         )
     }
 }
@@ -221,7 +378,13 @@ internal fun TaskListTopBar(
     listName: String,
     onListClick: () -> Unit,
     onSettingsClick: () -> Unit = {},
+    sortOption: TaskSortOption = TaskSortOption.RECENTLY_UPDATED,
+    onSortOptionSelected: (TaskSortOption) -> Unit = {},
+    viewMode: TaskListViewMode = TaskListViewMode.LIST,
+    onViewModeToggle: () -> Unit = {},
 ) {
+    var showSortMenu by remember { mutableStateOf(false) }
+
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
@@ -246,6 +409,33 @@ internal fun TaskListTopBar(
             }
         },
         actions = {
+            IconButton(onClick = onViewModeToggle) {
+                Icon(
+                    painter = painterResource(
+                        when (viewMode) {
+                            TaskListViewMode.LIST -> Res.drawable.ic_grid_view
+                            TaskListViewMode.BOARD -> Res.drawable.ic_list
+                        }
+                    ),
+                    contentDescription = stringResource(Res.string.toggle_view_mode),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Box {
+                IconButton(onClick = { showSortMenu = true }) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_unfold),
+                        contentDescription = stringResource(Res.string.sort_by),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                SortOptionDropdown(
+                    expanded = showSortMenu,
+                    currentOption = sortOption,
+                    onOptionSelected = onSortOptionSelected,
+                    onDismiss = { showSortMenu = false },
+                )
+            }
             IconButton(onClick = onSettingsClick) {
                 Icon(
                     painter = painterResource(Res.drawable.ic_settings),
@@ -258,10 +448,63 @@ internal fun TaskListTopBar(
 }
 
 @Composable
+private fun SortOptionDropdown(
+    expanded: Boolean,
+    currentOption: TaskSortOption,
+    onOptionSelected: (TaskSortOption) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+    ) {
+        TaskSortOption.entries.forEach { option ->
+            DropdownMenuItem(
+                text = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = sortOptionLabel(option),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (option == currentOption) PrimaryBlue
+                            else MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (option == currentOption) {
+                            Icon(
+                                painter = painterResource(Res.drawable.ic_check),
+                                contentDescription = null,
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(OpenTasksTheme.dimens.iconDefault),
+                            )
+                        }
+                    }
+                },
+                onClick = {
+                    onOptionSelected(option)
+                    onDismiss()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun sortOptionLabel(option: TaskSortOption): String = when (option) {
+    TaskSortOption.RECENTLY_UPDATED -> stringResource(Res.string.sort_recently_updated)
+    TaskSortOption.BY_DEADLINE -> stringResource(Res.string.sort_by_deadline)
+    TaskSortOption.BY_PRIORITY -> stringResource(Res.string.sort_by_priority)
+    TaskSortOption.BY_TITLE -> stringResource(Res.string.sort_by_title)
+}
+
+@Composable
 internal fun TaskRow(
     task: Task,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
+    onToggleStar: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     Row(
@@ -295,13 +538,26 @@ internal fun TaskRow(
             )
             if (task.content.isNotBlank()) {
                 Text(
-                    text = task.content,
+                    text = stripHtmlTags(task.content),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+
+        IconButton(
+            onClick = onToggleStar,
+            modifier = Modifier.size(dimens.touchTargetMedium),
+        ) {
+            Icon(
+                painter = painterResource(Res.drawable.ic_star),
+                contentDescription = null,
+                tint = if (task.isStarred) StarGold
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                modifier = Modifier.size(dimens.iconDefault),
+            )
         }
     }
 }
@@ -311,6 +567,7 @@ internal fun CompletedTaskRow(
     task: Task,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
+    onToggleStar: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     Row(
@@ -345,7 +602,7 @@ internal fun CompletedTaskRow(
             )
             if (task.content.isNotBlank()) {
                 Text(
-                    text = task.content,
+                    text = stripHtmlTags(task.content),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -353,13 +610,46 @@ internal fun CompletedTaskRow(
                 )
             }
         }
+
+        IconButton(
+            onClick = onToggleStar,
+            modifier = Modifier.size(dimens.touchTargetMedium),
+        ) {
+            Icon(
+                painter = painterResource(Res.drawable.ic_star),
+                contentDescription = null,
+                tint = if (task.isStarred) StarGold
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                modifier = Modifier.size(dimens.iconDefault),
+            )
+        }
     }
 }
 
-private fun priorityColor(priority: TaskPriority): Color = when (priority) {
-    TaskPriority.HIGH -> PriorityHigh
-    TaskPriority.MEDIUM -> PriorityMedium
-    TaskPriority.LOW -> PriorityLow
-    TaskPriority.NONE -> PriorityNone
+@Composable
+private fun SectionHeader(
+    name: String,
+    count: Int,
+) {
+    val dimens = OpenTasksTheme.dimens
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingMedium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 

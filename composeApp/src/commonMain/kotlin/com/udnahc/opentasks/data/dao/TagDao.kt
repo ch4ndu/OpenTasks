@@ -23,8 +23,12 @@ interface TagDao {
     @Query("SELECT * FROM tags WHERE isDeleted = 0 ORDER BY name ASC")
     fun getAllTags(): Flow<List<Tag>>
 
-    @Query("SELECT * FROM tags WHERE id = :id")
+    @Query("SELECT * FROM tags WHERE id = :id AND isDeleted = 0")
     suspend fun getTagById(id: String): Tag?
+
+    /** Unfiltered lookup including soft-deleted rows. For sync use only. */
+    @Query("SELECT * FROM tags WHERE id = :id")
+    suspend fun findTagByIdAnyState(id: String): Tag?
 
     @Query("SELECT * FROM tags WHERE name = :name AND isDeleted = 0 LIMIT 1")
     suspend fun getTagByName(name: String): Tag?

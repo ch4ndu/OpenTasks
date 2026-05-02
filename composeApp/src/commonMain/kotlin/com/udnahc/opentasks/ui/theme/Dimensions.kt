@@ -93,6 +93,10 @@ data class OpenTasksDimensions(
     val priorityIndicatorBorder: Dp,    // 2.dp
     val reminderRowButtonHeight: Dp,    // 40.dp
     val reminderDayButtonSize: Dp,      // 36.dp
+
+    // ── Kanban board ─────────────────────────────────────────────────────
+    val kanbanColumnMinWidth: Dp,       // 200.dp (min phone column width)
+    val kanbanAutoScrollAmount: Dp,     // 150.dp (edge-drag auto-scroll step)
 )
 
 fun compactDimensions() = OpenTasksDimensions(
@@ -169,6 +173,9 @@ fun compactDimensions() = OpenTasksDimensions(
     priorityIndicatorBorder = 2.dp,
     reminderRowButtonHeight = 40.dp,
     reminderDayButtonSize = 36.dp,
+    // Kanban
+    kanbanColumnMinWidth = 200.dp,
+    kanbanAutoScrollAmount = 150.dp,
 )
 
 fun mediumDimensions() = OpenTasksDimensions(
@@ -245,6 +252,9 @@ fun mediumDimensions() = OpenTasksDimensions(
     priorityIndicatorBorder = 2.dp,
     reminderRowButtonHeight = 44.dp,
     reminderDayButtonSize = 40.dp,
+    // Kanban
+    kanbanColumnMinWidth = 240.dp,
+    kanbanAutoScrollAmount = 180.dp,
 )
 
 fun expandedDimensions() = OpenTasksDimensions(
@@ -321,6 +331,9 @@ fun expandedDimensions() = OpenTasksDimensions(
     priorityIndicatorBorder = 3.dp,
     reminderRowButtonHeight = 48.dp,
     reminderDayButtonSize = 44.dp,
+    // Kanban
+    kanbanColumnMinWidth = 280.dp,
+    kanbanAutoScrollAmount = 200.dp,
 )
 
 val LocalOpenTasksDimensions = staticCompositionLocalOf { compactDimensions() }

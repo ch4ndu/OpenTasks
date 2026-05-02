@@ -17,7 +17,7 @@ class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteReco
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllNotesOnce()
-    override suspend fun getById(localId: String) = dao.getNoteById(localId)
+    override suspend fun getById(localId: String) = dao.findNoteByIdAnyState(localId)
     override suspend fun markSynced(localId: String) = dao.markSynced(localId)
     override suspend fun updatePbId(localId: String, pbId: String) = dao.updatePbId(localId, pbId)
     override suspend fun deleteEntity(entity: Note) = dao.delete(entity)

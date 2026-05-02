@@ -6,25 +6,35 @@ import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.data.model.toCalendarTask
+import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
+import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 class CalendarViewModel(
     observeAllTasks: ObserveAllTasksUseCase,
     observeTasksByDay: ObserveTasksByDayUseCase,
     observeAllCountdowns: ObserveAllCountdownsUseCase,
-    private val toggleTaskCompleteAction: ToggleTaskCompleteAction,
+    observeAllCategories: ObserveAllCategoriesUseCase,
+    toggleTaskCompleteAction: ToggleTaskCompleteAction,
 ) : ViewModel() {
+
+    private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
+    val taskPendingSeriesChoice: StateFlow<Task?> = completionHandler.taskPendingSeriesChoice
+
+    val categoryNames: StateFlow<Map<String, String>> = observeAllCategories()
+        .map { cats -> cats.associate { it.id to it.name } }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val tasks: StateFlow<List<Task>> = combine(
         observeAllTasks(),
@@ -52,6 +62,10 @@ class CalendarViewModel(
 
     fun toggleComplete(task: Task) {
         if (task.isCountdownItem) return
-        viewModelScope.launch(Dispatchers.IO) { toggleTaskCompleteAction(task) }
+        completionHandler.toggleComplete(task)
     }
+
+    fun completeOccurrence() = completionHandler.completeOccurrence()
+    fun completeSeries() = completionHandler.completeSeries()
+    fun dismissSeriesChoice() = completionHandler.dismissSeriesChoice()
 }

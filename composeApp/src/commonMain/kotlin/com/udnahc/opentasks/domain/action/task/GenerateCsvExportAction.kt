@@ -1,0 +1,18 @@
+package com.udnahc.opentasks.domain.action.task
+
+import com.udnahc.opentasks.data.calendar.CsvGenerator
+import com.udnahc.opentasks.data.repository.CategoryRepository
+import com.udnahc.opentasks.data.repository.TaskRepository
+import kotlinx.coroutines.flow.first
+
+class GenerateCsvExportAction(
+    private val taskRepository: TaskRepository,
+    private val categoryRepository: CategoryRepository,
+) {
+    suspend operator fun invoke(): Pair<String, Int> {
+        val tasks = taskRepository.getAllTasksOnceUtc()
+        val categories = categoryRepository.getAllCategories().first()
+        val csv = CsvGenerator.generate(tasks, categories)
+        return csv to tasks.size
+    }
+}

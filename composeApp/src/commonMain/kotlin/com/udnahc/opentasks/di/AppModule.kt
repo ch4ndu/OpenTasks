@@ -5,8 +5,12 @@ import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import com.udnahc.opentasks.data.database.AppDatabase
+import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.database.MIGRATION_2_3
 import com.udnahc.opentasks.data.database.MIGRATION_3_4
+import com.udnahc.opentasks.data.database.MIGRATION_4_5
+import com.udnahc.opentasks.data.database.MIGRATION_5_6
+import com.udnahc.opentasks.data.database.MIGRATION_6_7
 import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
 import com.udnahc.opentasks.data.repository.NoteRepository
@@ -31,11 +35,15 @@ import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
 import com.udnahc.opentasks.domain.action.task.AddTaskAction
 import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
+import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
+import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
 import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
+import com.udnahc.opentasks.domain.action.settings.SaveTaskListViewModeAction
+import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
 import com.udnahc.opentasks.domain.action.settings.SaveThemePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
@@ -46,15 +54,21 @@ import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
 import com.udnahc.opentasks.domain.usecase.tag.ObserveTagsForTaskUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
+import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskListViewModeUseCase
+import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.task.FetchCalendarEventsUseCase
+import com.udnahc.opentasks.domain.action.task.GenerateCsvExportAction
+import com.udnahc.opentasks.domain.action.task.GenerateIcsExportAction
 import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
+import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
@@ -66,6 +80,7 @@ import com.udnahc.opentasks.data.sync.adapters.CountdownSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.NoteSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.TagSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.TaskSyncAdapter
+import com.udnahc.opentasks.viewmodel.AppViewModel
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
@@ -87,13 +102,13 @@ expect val platformModule: Module
 val sharedModule = module {
     single<AppDatabase> {
         get<androidx.room.RoomDatabase.Builder<AppDatabase>>()
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(connection: SQLiteConnection) {
                     super.onCreate(connection)
                     connection.execSQL(
-                        "INSERT OR IGNORE INTO `categories` (`id`, `name`, `icon`, `sortOrder`, `isSynced`, `isDeleted`, `createdAt`, `updatedAt`) VALUES ('00000000-0000-0000-0000-000000000001', 'Inbox', 'inbox', 0, 0, 0, 0, 0)"
+                        "INSERT OR IGNORE INTO `categories` (`id`, `name`, `icon`, `sortOrder`, `isSynced`, `isDeleted`, `createdAt`, `updatedAt`) VALUES ('${AppConstants.DEFAULT_INBOX_ID}', 'Inbox', 'inbox', 0, 0, 0, 0, 0)"
                     )
                 }
             })
@@ -125,18 +140,25 @@ val sharedModule = module {
     factory { ObserveTagsForTaskUseCase(get()) }
     factory { ObserveTaskByIdUseCase(get()) }
     single { ObservePocketBaseUrlUseCase(get()) }
+    single { ObserveTodayTasksUseCase(get()) }
+    single { ObserveTaskSortOptionUseCase(get()) }
+    single { ObserveTaskListViewModeUseCase(get()) }
     single { ObserveThemePreferenceUseCase(get()) }
     single { CheckNotificationPermissionUseCase(get()) }
     single { CheckCalendarPermissionUseCase(get()) }
     single { FetchCalendarEventsUseCase(get()) }
     single { ParseCsvUseCase() }
     single { ParseIcsUseCase() }
+    single { GenerateCsvExportAction(get(), get()) }
+    single { GenerateIcsExportAction(get()) }
 
     // Actions
     single { AddTaskAction(get(), get()) }
     single { UpdateTaskAction(get(), get()) }
     single { DeleteTaskAction(get(), get()) }
     single { ToggleTaskCompleteAction(get(), get()) }
+    single { ToggleTaskStarredAction(get()) }
+    single { UpdateSectionAction(get()) }
     single { AddCategoryAction(get()) }
     single { AddNoteAction(get()) }
     single { AddCountdownAction(get()) }
@@ -154,6 +176,9 @@ val sharedModule = module {
     single { ClearPocketBaseUrlAction(get(), get()) }
     single { TriggerSyncAction(get(), get()) }
     single { InitializeSyncAction(get(), get(), get()) }
+    single { SaveTaskSortOptionAction(get()) }
+    single { SaveTaskListViewModeAction(get()) }
+    single { UpdateTaskStatusAction(get()) }
     single { SaveThemePreferenceAction(get()) }
     single { ClearLocalDataAction(get(), get(), get(), get(), get()) }
 
@@ -179,14 +204,15 @@ val sharedModule = module {
 
     // ViewModels
     viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get()) }
-    viewModel { MatrixViewModel(get(), get(), get()) }
-    viewModel { TaskListViewModel(get(), get(), get(), get()) }
-    viewModel { CalendarViewModel(get(), get(), get(), get()) }
+    viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get()) }
+    viewModel { TaskListViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { CalendarViewModel(get(), get(), get(), get(), get()) }
     viewModel { NoteViewModel(get(), get(), get(), get()) }
     viewModel { ImportCalendarViewModel(get(), get(), get()) }
     viewModel { ImportIcsViewModel(get(), get()) }
     viewModel { ImportCsvViewModel(get(), get()) }
     viewModel { CountdownViewModel(get(), get()) }
     viewModel { CountdownFormViewModel(get(), get(), get(), get()) }
-    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { AppViewModel(get()) }
 }

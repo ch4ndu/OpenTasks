@@ -13,8 +13,12 @@ import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCa
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
+import com.udnahc.opentasks.domain.action.task.GenerateCsvExportAction
+import com.udnahc.opentasks.domain.action.task.GenerateIcsExportAction
+import com.udnahc.opentasks.ui.util.FileSaver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +32,12 @@ private val log = logging("SettingsViewModel")
 
 enum class SyncStatus { IDLE, SYNCING, SUCCESS, ERROR }
 
+sealed class ExportResult {
+    data object Idle : ExportResult()
+    data class Success(val count: Int) : ExportResult()
+    data object Error : ExportResult()
+}
+
 class SettingsViewModel(
     observePocketBaseUrl: ObservePocketBaseUrlUseCase,
     observeThemePreference: ObserveThemePreferenceUseCase,
@@ -38,6 +48,9 @@ class SettingsViewModel(
     private val clearLocalDataAction: ClearLocalDataAction,
     private val checkNotificationPermission: CheckNotificationPermissionUseCase,
     private val checkCalendarPermission: CheckCalendarPermissionUseCase,
+    private val generateCsvExport: GenerateCsvExportAction,
+    private val generateIcsExport: GenerateIcsExportAction,
+    private val fileSaver: FileSaver,
 ) : ViewModel() {
 
     val pocketBaseUrl: StateFlow<String?> = observePocketBaseUrl()
@@ -54,6 +67,9 @@ class SettingsViewModel(
 
     private val _calendarGranted = MutableStateFlow(false)
     val calendarGranted: StateFlow<Boolean> = _calendarGranted.asStateFlow()
+
+    private val _exportResult = MutableStateFlow<ExportResult>(ExportResult.Idle)
+    val exportResult: StateFlow<ExportResult> = _exportResult.asStateFlow()
 
     init { recheckPermissions() }
 
@@ -121,10 +137,47 @@ class SettingsViewModel(
         _calendarGranted.value = granted
     }
 
+    fun exportCsv() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val (content, count) = generateCsvExport()
+                val fileName = "opentasks_export.csv"
+                val saved = fileSaver.save(fileName, content, "text/csv")
+                _exportResult.value = if (saved) ExportResult.Success(count) else ExportResult.Error
+            } catch (e: Exception) {
+                log.e { "CSV export failed: ${e.message}" }
+                _exportResult.value = ExportResult.Error
+            }
+        }
+    }
+
+    fun exportIcs() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val (content, count) = generateIcsExport()
+                val fileName = "opentasks_export.ics"
+                val saved = fileSaver.save(fileName, content, "text/calendar")
+                _exportResult.value = if (saved) ExportResult.Success(count) else ExportResult.Error
+            } catch (e: Exception) {
+                log.e { "ICS export failed: ${e.message}" }
+                _exportResult.value = ExportResult.Error
+            }
+        }
+    }
+
+    fun clearExportResult() {
+        _exportResult.value = ExportResult.Idle
+    }
+
     fun clearLocalData(onComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            clearLocalDataAction()
-            _syncStatus.value = SyncStatus.IDLE
-        }.invokeOnCompletion { onComplete() }
+            try {
+                clearLocalDataAction()
+                _syncStatus.value = SyncStatus.IDLE
+                withContext(Dispatchers.Main) { onComplete() }
+            } catch (e: Exception) {
+                log.e { "Clear local data failed: ${e.message}" }
+            }
+        }
     }
 }

@@ -74,7 +74,7 @@ Platform dirs: `androidMain/`, `iosMain/`, `jvmMain/` — DB builders, BackHandl
 - **Default timestamps**: Repository `insert` methods fill in `createdAt`/`updatedAt` with `localNow()` if they are 0L, ensuring new entities always have valid timestamps for sync conflict resolution.
 - **Conflict resolution**: Server wins when remote `updatedAt` > local `updatedAt` during pull.
 - `SyncService` uses DAOs directly (not repositories) to avoid infinite sync loops during pull.
-- **Authorized direct callers of `TriggerSyncAction`**: (1) `SettingsViewModel` "Sync Now" button, (2) `App.kt` `LifecycleResumeEffect` for on-resume sync, (3) Widget refresh callbacks (`TaskRefreshCallback`, `CalendarRefreshCallback`, `WeekRefreshCallback`).
+- **Authorized direct callers of `TriggerSyncAction`**: (1) `SettingsViewModel` "Sync Now" button, (2) `App.kt` `LifecycleResumeEffect` for on-resume sync, (3) Widget refresh callbacks (`TaskRefreshCallback`, `CalendarRefreshCallback`, `WeekRefreshCallback`), (4) `AppViewModel.triggerSync()` for pull-to-refresh on main screens.
 
 ### Performance
 - **Strong skipping enabled** — do not add `@Immutable` or `@Stable` annotations

@@ -2,6 +2,7 @@ package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.extensions.utcNow
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.repository.TaskRepository
 import org.lighthousegames.logging.logging
@@ -42,7 +43,7 @@ class ScheduleTaskRemindersAction(
         log.d { "Scheduling reminders for task ${task.id}" }
         scheduler.cancelReminders(task.id)
 
-        if (task.isCompleted || task.isDeleted || task.deadline == null) {
+        if (task.status == TaskStatus.DONE || task.isDeleted || task.deadline == null) {
             log.d { "Cancelled reminders for completed/deleted task ${task.id}" }
             scheduler.stopOngoing(task.id)
             return

@@ -3,7 +3,7 @@ package com.udnahc.opentasks.ui.preview
 import androidx.compose.runtime.Composable
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.udnahc.opentasks.ui.screens.CreateNoteTopBar
-import com.udnahc.opentasks.ui.screens.MarkdownToolbar
+import com.udnahc.opentasks.ui.screens.FormattingToolbar
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 
 @Composable
@@ -34,7 +34,7 @@ private fun CreateNoteTopBarWithDeletePreview() {
 @LightDarkPreview
 private fun MarkdownToolbarPreview() {
     OpenTasksTheme {
-        MarkdownToolbar(
+        FormattingToolbar(
             richTextState = rememberRichTextState(),
         )
     }

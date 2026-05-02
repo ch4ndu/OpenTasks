@@ -19,11 +19,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import com.udnahc.opentasks.data.model.ThemeMode
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,8 +38,10 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
 import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.viewmodel.ExportResult
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.SyncStatus
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
@@ -44,6 +49,11 @@ import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.clear
 import opentasks.composeapp.generated.resources.connected
+import opentasks.composeapp.generated.resources.export_csv
+import opentasks.composeapp.generated.resources.export_error
+import opentasks.composeapp.generated.resources.export_header
+import opentasks.composeapp.generated.resources.export_ics
+import opentasks.composeapp.generated.resources.export_success
 import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.import_header
@@ -89,6 +99,8 @@ fun SettingsScreen(
     val notificationGranted by viewModel.notificationGranted.collectAsState()
     val calendarGranted by viewModel.calendarGranted.collectAsState()
 
+    val exportResult by viewModel.exportResult.collectAsState()
+
     val requestNotification = rememberNotificationPermissionLauncher { granted ->
         if (granted) {
             // POST_NOTIFICATIONS granted, but exact alarms might still be denied
@@ -106,6 +118,7 @@ fun SettingsScreen(
         themePreference = themePreference,
         notificationGranted = notificationGranted,
         calendarGranted = calendarGranted,
+        exportResult = exportResult,
         onBack = onBack,
         onSaveUrl = {
             viewModel.savePocketBaseUrl(it)
@@ -121,6 +134,9 @@ fun SettingsScreen(
         onImportCalendar = onImportCalendar,
         onImportIcs = onImportIcs,
         onImportCsv = onImportCsv,
+        onExportCsv = { viewModel.exportCsv() },
+        onExportIcs = { viewModel.exportIcs() },
+        onClearExportResult = { viewModel.clearExportResult() },
         onLogout = { viewModel.clearLocalData(onLogout) },
     )
 }
@@ -133,6 +149,7 @@ internal fun SettingsContent(
     themePreference: ThemeMode = ThemeMode.SYSTEM,
     notificationGranted: Boolean = true,
     calendarGranted: Boolean = false,
+    exportResult: ExportResult = ExportResult.Idle,
     onBack: () -> Unit,
     onSaveUrl: (String) -> Unit,
     onClearUrl: () -> Unit,
@@ -143,14 +160,35 @@ internal fun SettingsContent(
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
     onImportCsv: () -> Unit = {},
+    onExportCsv: () -> Unit = {},
+    onExportIcs: () -> Unit = {},
+    onClearExportResult: () -> Unit = {},
     onLogout: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     var showUrlDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(exportResult) {
+        when (val result = exportResult) {
+            is ExportResult.Success -> {
+                val msg = getString(Res.string.export_success, result.count)
+                snackbarHostState.showSnackbar(msg)
+                onClearExportResult()
+            }
+            is ExportResult.Error -> {
+                val msg = getString(Res.string.export_error)
+                snackbarHostState.showSnackbar(msg)
+                onClearExportResult()
+            }
+            ExportResult.Idle -> { /* no-op */ }
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -261,6 +299,23 @@ internal fun SettingsContent(
                 SettingsRow(
                     title = stringResource(Res.string.import_csv_ticktick),
                     onClick = onImportCsv,
+                )
+            }
+
+            // ── Export ──
+            item(key = "export_header") {
+                SettingsCategoryHeader(stringResource(Res.string.export_header))
+            }
+            item(key = "export_csv") {
+                SettingsRow(
+                    title = stringResource(Res.string.export_csv),
+                    onClick = onExportCsv,
+                )
+            }
+            item(key = "export_ics") {
+                SettingsRow(
+                    title = stringResource(Res.string.export_ics),
+                    onClick = onExportIcs,
                 )
             }
 

@@ -5,6 +5,8 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,11 +14,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,9 +30,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.cancel
+import opentasks.composeapp.generated.resources.complete_recurring_task_title
+import opentasks.composeapp.generated.resources.complete_series
+import opentasks.composeapp.generated.resources.complete_this_occurrence
 import opentasks.composeapp.generated.resources.ic_chevron_right
 import opentasks.composeapp.generated.resources.ic_dropdown
 import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 
 // ── Empty placeholder ────────────────────────────────────────────────────────
 
@@ -162,4 +173,50 @@ private fun CollapsibleSectionHeader(
             modifier = Modifier.size(dimens.iconMedium),
         )
     }
+}
+
+// ── Complete-series dialog ──────────────────────────────────────────────────
+
+@Composable
+fun CompleteSeriesDialog(
+    onCompleteOccurrence: () -> Unit,
+    onCompleteSeries: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(Res.string.complete_recurring_task_title)) },
+        text = {
+            Column {
+                TextButton(onClick = onCompleteOccurrence, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(Res.string.complete_this_occurrence))
+                }
+                TextButton(onClick = onCompleteSeries, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(Res.string.complete_series))
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.cancel))
+            }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SyncPullToRefresh(
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = modifier,
+        content = content,
+    )
 }

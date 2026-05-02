@@ -47,7 +47,9 @@ import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.theme.priorityColor
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.no_tasks
 import opentasks.composeapp.generated.resources.today
 import org.jetbrains.compose.resources.stringResource
@@ -68,6 +70,7 @@ internal fun MonthViewContent(
     pagerState: PagerState,
     centreIndex: Int,
     tasksByDay: Map<Long, List<Task>>,
+    categoryNames: Map<String, String>,
     topBarHeight: Dp,
     navBarHeight: Dp,
     onDayClick: (CalendarDay) -> Unit,
@@ -197,7 +200,7 @@ internal fun MonthViewContent(
                                                 .padding(vertical = 1.dp)
                                                 .clip(RoundedCornerShape(dimens.cornerTiny))
                                                 .background(
-                                                    taskPriorityColor(task.priority).copy(
+                                                    priorityColor(task.priority).copy(
                                                         alpha = 0.2f
                                                     )
                                                 )
@@ -207,7 +210,7 @@ internal fun MonthViewContent(
                                             Text(
                                                 text = task.title,
                                                 style = OpenTasksTheme.typography.calendarEventTitle,
-                                                color = taskPriorityColor(task.priority),
+                                                color = priorityColor(task.priority),
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
                                             )
@@ -238,6 +241,7 @@ internal fun MonthViewContent(
                 val selectedTasks = remember(selectedDay, tasks) {
                     tasksForDay(tasks, dayKeyFromDate(selectedDay.year, selectedDay.month, selectedDay.day))
                 }
+                val defaultCategoryName = stringResource(Res.string.inbox)
 
                 LazyColumn(
                     modifier = Modifier
@@ -265,6 +269,7 @@ internal fun MonthViewContent(
                     items(selectedTasks, key = { it.id }) { task ->
                         CalendarTaskRow(
                             task = task,
+                            categoryName = categoryNames[task.categoryId] ?: defaultCategoryName,
                             onToggleComplete = { onToggleComplete(task) },
                             onClick = { onTaskClick(task) },
                         )
@@ -477,14 +482,14 @@ private fun WeekRowContent(
                                         .padding(vertical = 1.dp)
                                         .alpha(eventBarAlpha)
                                         .clip(RoundedCornerShape(dimens.cornerTiny))
-                                        .background(taskPriorityColor(task.priority).copy(alpha = 0.2f))
+                                        .background(priorityColor(task.priority).copy(alpha = 0.2f))
                                         .padding(horizontal = 2.dp),
                                     contentAlignment = Alignment.CenterStart,
                                 ) {
                                     Text(
                                         text = task.title,
                                         style = OpenTasksTheme.typography.calendarEventTitle,
-                                        color = taskPriorityColor(task.priority),
+                                        color = priorityColor(task.priority),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )

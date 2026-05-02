@@ -18,7 +18,7 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllTagsOnce()
-    override suspend fun getById(localId: String) = dao.getTagById(localId)
+    override suspend fun getById(localId: String) = dao.findTagByIdAnyState(localId)
     override suspend fun markSynced(localId: String) = dao.markSynced(localId)
     override suspend fun updatePbId(localId: String, pbId: String) = dao.updatePbId(localId, pbId)
     override suspend fun deleteEntity(entity: Tag) = dao.deleteTag(entity)

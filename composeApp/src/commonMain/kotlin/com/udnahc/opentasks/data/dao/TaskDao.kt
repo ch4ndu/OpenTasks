@@ -24,14 +24,18 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE isDeleted = 0 ORDER BY updatedAt DESC")
     fun getAllTasks(): Flow<List<Task>>
 
-    @Query("SELECT * FROM tasks WHERE isCompleted = 0 AND isDeleted = 0 AND deadline IS NOT NULL")
+    @Query("SELECT * FROM tasks WHERE status != 'DONE' AND isDeleted = 0 AND deadline IS NOT NULL")
     suspend fun getTasksWithDeadlines(): List<Task>
 
-    @Query("SELECT * FROM tasks WHERE id = :id")
+    @Query("SELECT * FROM tasks WHERE id = :id AND isDeleted = 0")
     suspend fun getTaskById(id: String): Task?
 
-    @Query("SELECT * FROM tasks WHERE id = :id")
+    @Query("SELECT * FROM tasks WHERE id = :id AND isDeleted = 0")
     fun observeTaskById(id: String): Flow<Task?>
+
+    /** Unfiltered lookup including soft-deleted rows. For sync use only. */
+    @Query("SELECT * FROM tasks WHERE id = :id")
+    suspend fun findTaskByIdAnyState(id: String): Task?
 
     @Query("SELECT * FROM tasks WHERE sourceExternalId = :externalId LIMIT 1")
     suspend fun getTaskByExternalId(externalId: String): Task?
@@ -54,9 +58,9 @@ interface TaskDao {
     @Query("DELETE FROM tasks")
     suspend fun deleteAll()
 
-    @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND isCompleted = 0 AND deadline IS NOT NULL AND deadline >= :startUtc AND deadline < :endUtc ORDER BY deadline ASC")
+    @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND status != 'DONE' AND deadline IS NOT NULL AND deadline >= :startUtc AND deadline < :endUtc ORDER BY deadline ASC")
     suspend fun getTasksInDateRange(startUtc: Long, endUtc: Long): List<Task>
 
-    @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND isCompleted = 0 ORDER BY deadline ASC, updatedAt DESC")
+    @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND status != 'DONE' ORDER BY deadline ASC, updatedAt DESC")
     suspend fun getActiveTasksOnce(): List<Task>
 }

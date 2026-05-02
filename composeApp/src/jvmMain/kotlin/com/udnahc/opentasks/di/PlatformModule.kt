@@ -7,6 +7,8 @@ import com.udnahc.opentasks.data.calendar.CalendarProvider
 import com.udnahc.opentasks.data.calendar.JvmCalendarProvider
 import com.udnahc.opentasks.data.notification.NotificationPermissionChecker
 import com.udnahc.opentasks.data.notification.NotificationScheduler
+import com.udnahc.opentasks.ui.util.FileSaver
+import com.udnahc.opentasks.ui.util.JvmFileSaver
 import org.koin.dsl.module
 
 actual val platformModule = module {
@@ -16,4 +18,5 @@ actual val platformModule = module {
     single<CalendarProvider> { JvmCalendarProvider() }
     single { NotificationScheduler() }
     single { NotificationPermissionChecker() }
+    single<FileSaver> { JvmFileSaver() }
 }

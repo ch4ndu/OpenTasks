@@ -40,6 +40,7 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.fri
+import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.mon
 import opentasks.composeapp.generated.resources.sat
 import opentasks.composeapp.generated.resources.sun
@@ -65,6 +66,7 @@ internal fun ListViewContent(
     weekPagerState: PagerState,
     weekPagerCentre: Int,
     tasksByDay: Map<Long, List<Task>>,
+    categoryNames: Map<String, String>,
     topBarHeight: Dp,
     navBarHeight: Dp,
     displayMode: ListDisplayMode,
@@ -119,6 +121,7 @@ internal fun ListViewContent(
                 dayTasks = dayTasks,
                 selectedDayMillis = selectedDayMillis,
                 isToday = isToday,
+                categoryNames = categoryNames,
                 navBarHeight = navBarHeight,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
@@ -162,6 +165,7 @@ private fun CardTaskList(
     dayTasks: List<Task>,
     selectedDayMillis: Long,
     isToday: Boolean,
+    categoryNames: Map<String, String>,
     navBarHeight: Dp,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
@@ -175,6 +179,7 @@ private fun CardTaskList(
         modifier = Modifier.padding(start = dimens.paddingXLarge, end = dimens.paddingXLarge, top = dimens.paddingXLarge, bottom = dimens.paddingMedium),
     )
 
+    val defaultCategoryName = stringResource(Res.string.inbox)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge),
@@ -183,6 +188,7 @@ private fun CardTaskList(
             CardTaskRow(
                 task = task,
                 isToday = isToday,
+                categoryName = categoryNames[task.categoryId] ?: defaultCategoryName,
                 onToggleComplete = { onToggleComplete(task) },
                 onClick = { onTaskClick(task) },
             )

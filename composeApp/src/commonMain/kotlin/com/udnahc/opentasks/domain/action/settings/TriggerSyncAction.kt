@@ -43,4 +43,19 @@ class TriggerSyncAction(
             syncService.syncAll()
         }
     }
+
+    /**
+     * Runs a full sync immediately in the caller's coroutine and suspends until it completes.
+     * Cancels any pending debounced sync. Use for user-initiated syncs (e.g. pull-to-refresh)
+     * that need to show progress tied to actual completion.
+     */
+    suspend fun syncNow() {
+        log.d { "Triggering sync (immediate)" }
+        if (!pbProvider.isConfigured) {
+            log.d { "Sync skipped: PocketBase not configured" }
+            return
+        }
+        debounceJob?.cancel()
+        syncService.syncAll()
+    }
 }

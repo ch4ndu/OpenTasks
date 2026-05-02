@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.extensions.localNow
+import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
@@ -27,7 +28,8 @@ class AddTaskAction(
         recurrenceInterval: Int = 0,
         isUrgent: Boolean = false,
         isImportant: Boolean = false,
-        categoryId: String = "00000000-0000-0000-0000-000000000001",
+        categoryId: String = AppConstants.DEFAULT_INBOX_ID,
+        section: String? = null,
         location: String = "",
         url: String = "",
         organizer: String = "",
@@ -52,6 +54,7 @@ class AddTaskAction(
                 isUrgent = isUrgent,
                 isImportant = isImportant,
                 categoryId = categoryId,
+                section = section,
                 location = location,
                 url = url,
                 organizer = organizer,

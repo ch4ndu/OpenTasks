@@ -25,7 +25,7 @@ fun Countdown.toCalendarTask(): Task = Task(
     },
     deadline = targetDate,
     isAllDay = true,
-    isCompleted = isCompleted,
+    status = if (isCompleted) TaskStatus.DONE else TaskStatus.TODO,
 )
 
 @Entity(tableName = "countdowns")

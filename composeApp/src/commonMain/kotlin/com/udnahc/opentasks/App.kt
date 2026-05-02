@@ -81,6 +81,7 @@ import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
 import com.udnahc.opentasks.viewmodel.CountdownViewModel
+import com.udnahc.opentasks.viewmodel.AppViewModel
 import com.udnahc.opentasks.viewmodel.NoteViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
@@ -175,6 +176,9 @@ private fun MainScreen(
     backStack: NavBackStack<NavKey>,
 ) {
     val noteViewModel: NoteViewModel = koinViewModel()
+    val appViewModel: AppViewModel = koinViewModel()
+    val isRefreshing by appViewModel.isRefreshing.collectAsState()
+    val onPullToRefresh = remember(appViewModel) { { appViewModel.triggerSync() } }
     var selectedListId by rememberSaveable { mutableStateOf("00000000-0000-0000-0000-000000000001") }
     var calendarSelectedYear by remember { mutableIntStateOf(0) }
     var calendarSelectedMonth by remember { mutableIntStateOf(0) }
@@ -279,6 +283,8 @@ private fun MainScreen(
                             navController.navigate(Screen.QuadrantDetail(priority.ordinal))
                         },
                         onSettingsClick = onSettingsClick,
+                        isRefreshing = isRefreshing,
+                        onRefresh = onPullToRefresh,
                     )
                 }
 
@@ -292,6 +298,8 @@ private fun MainScreen(
                             navController.navigate(Screen.EditTask(task.id))
                         },
                         onSettingsClick = onSettingsClick,
+                        isRefreshing = isRefreshing,
+                        onRefresh = onPullToRefresh,
                     )
                 }
 
@@ -313,6 +321,8 @@ private fun MainScreen(
                             calendarSelectedDay = day
                         },
                         onSettingsClick = onSettingsClick,
+                        isRefreshing = isRefreshing,
+                        onRefresh = onPullToRefresh,
                     )
                 }
 
@@ -321,6 +331,8 @@ private fun MainScreen(
                         viewModel = noteViewModel,
                         onNoteClick = { note -> editNoteId = note.id },
                         onSettingsClick = onSettingsClick,
+                        isRefreshing = isRefreshing,
+                        onRefresh = onPullToRefresh,
                     )
                 }
 
@@ -383,6 +395,7 @@ private fun MainScreen(
                                 notifyBeforeUnit = notifyUnit,
                                 recurrenceType = formData.recurrence,
                                 categoryId = formData.categoryId,
+                                section = formData.section,
                                 location = formData.location,
                                 url = formData.url,
                                 organizer = formData.organizer,
@@ -422,7 +435,8 @@ private fun MainScreen(
                                         notifyBeforeUnit = notifyUnit,
                                         recurrenceType = formData.recurrence,
                                         categoryId = formData.categoryId,
-                                        isCompleted = formData.isCompleted,
+                                        section = formData.section,
+                                        status = formData.status,
                                         location = formData.location,
                                         url = formData.url,
                                         organizer = formData.organizer,

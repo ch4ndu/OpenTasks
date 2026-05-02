@@ -1,13 +1,7 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
-import androidx.compose.ui.graphics.Color
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.extensions.daysInMonth
-import com.udnahc.opentasks.data.model.TaskPriority
-import com.udnahc.opentasks.ui.theme.PriorityHigh
-import com.udnahc.opentasks.ui.theme.PriorityLow
-import com.udnahc.opentasks.ui.theme.PriorityMedium
-import com.udnahc.opentasks.ui.theme.PriorityNone
 
 // ── Calendar day model ──────────────────────────────────────────────────────
 
@@ -64,14 +58,6 @@ internal val MONTH_NAMES_SHORT = arrayOf(
 internal fun monthName(month: Int): String = MONTH_NAMES[month - 1]
 internal fun monthNameShort(month: Int): String = MONTH_NAMES_SHORT[month - 1]
 
-// ── Priority color ──────────────────────────────────────────────────────────
-
-internal fun taskPriorityColor(priority: TaskPriority): Color = when (priority) {
-    TaskPriority.HIGH -> PriorityHigh
-    TaskPriority.MEDIUM -> PriorityMedium
-    TaskPriority.LOW -> PriorityLow
-    TaskPriority.NONE -> PriorityNone
-}
 
 // ── Constants ───────────────────────────────────────────────────────────────
 

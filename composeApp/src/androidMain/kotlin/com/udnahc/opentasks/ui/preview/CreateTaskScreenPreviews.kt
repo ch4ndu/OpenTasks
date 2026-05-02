@@ -123,6 +123,8 @@ private fun TaskDetailFieldsCollapsedPreview() {
         TaskDetailFields(
             showDetails = false,
             onToggleDetails = {},
+            section = "",
+            onSectionChange = {},
             location = "",
             onLocationChange = {},
             onOpenInMaps = {},
@@ -145,6 +147,8 @@ private fun TaskDetailFieldsExpandedPreview() {
         TaskDetailFields(
             showDetails = true,
             onToggleDetails = {},
+            section = "Design",
+            onSectionChange = {},
             location = "123 Main St, Springfield",
             onLocationChange = {},
             onOpenInMaps = {},

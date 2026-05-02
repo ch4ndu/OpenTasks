@@ -69,12 +69,16 @@ fun NotesScreen(
     viewModel: NoteViewModel,
     onNoteClick: (Note) -> Unit,
     onSettingsClick: () -> Unit = {},
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
 ) {
     val notes by viewModel.notes.collectAsState()
     NotesContent(
         notes = notes,
         onNoteClick = onNoteClick,
         onSettingsClick = onSettingsClick,
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
     )
 }
 
@@ -84,6 +88,8 @@ internal fun NotesContent(
     notes: List<Note>,
     onNoteClick: (Note) -> Unit,
     onSettingsClick: () -> Unit = {},
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val density = LocalDensity.current
@@ -96,27 +102,33 @@ internal fun NotesContent(
     val topBarHeight = dimens.topBarHeight + statusBarHeight
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        if (notes.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(Res.string.empty_notes),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    top = topBarHeight + dimens.paddingMedium,
-                    bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge,
-                ),
-            ) {
-                items(notes, key = { it.id }) { note ->
-                    NoteCard(note = note, onClick = { onNoteClick(note) })
+        SyncPullToRefresh(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            if (notes.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(Res.string.empty_notes),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        top = topBarHeight + dimens.paddingMedium,
+                        bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge,
+                    ),
+                ) {
+                    items(notes, key = { it.id }) { note ->
+                        NoteCard(note = note, onClick = { onNoteClick(note) })
+                    }
                 }
             }
         }

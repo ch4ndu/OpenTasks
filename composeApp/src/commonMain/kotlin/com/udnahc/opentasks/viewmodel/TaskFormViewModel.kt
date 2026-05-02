@@ -3,6 +3,7 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.model.Category
+import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -40,6 +42,7 @@ class TaskFormViewModel(
         .flatMapLatest { id ->
             if (id != null) observeTaskByIdUseCase(id) else flowOf(null)
         }
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val categories: StateFlow<List<Category>> = observeAllCategories()
@@ -59,7 +62,8 @@ class TaskFormViewModel(
         notifyBeforeValue: Int = 0,
         notifyBeforeUnit: NotifyBeforeUnit = NotifyBeforeUnit.NONE,
         recurrenceType: RecurrenceType = RecurrenceType.NONE,
-        categoryId: String = "00000000-0000-0000-0000-000000000001",
+        categoryId: String = AppConstants.DEFAULT_INBOX_ID,
+        section: String? = null,
         location: String = "",
         url: String = "",
         organizer: String = "",
@@ -80,6 +84,7 @@ class TaskFormViewModel(
                 notifyBeforeUnit = notifyBeforeUnit,
                 recurrenceType = recurrenceType,
                 categoryId = categoryId,
+                section = section,
                 location = location,
                 url = url,
                 organizer = organizer,

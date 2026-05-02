@@ -44,6 +44,8 @@ import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
+import com.udnahc.opentasks.ui.screens.SyncPullToRefresh
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
@@ -103,17 +105,33 @@ fun CalendarScreen(
     onTaskClick: (Task) -> Unit,
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
     onSettingsClick: () -> Unit = {},
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
 ) {
     val tasks by viewModel.tasks.collectAsState()
     val tasksByDay by viewModel.tasksByDay.collectAsState()
+    val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
+    val categoryNames by viewModel.categoryNames.collectAsState()
+
     CalendarContent(
         tasks = tasks,
         tasksByDay = tasksByDay,
+        categoryNames = categoryNames,
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onSelectedDateChanged = onSelectedDateChanged,
         onSettingsClick = onSettingsClick,
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
     )
+
+    if (taskPendingSeriesChoice != null) {
+        CompleteSeriesDialog(
+            onCompleteOccurrence = { viewModel.completeOccurrence() },
+            onCompleteSeries = { viewModel.completeSeries() },
+            onDismiss = { viewModel.dismissSeriesChoice() },
+        )
+    }
 }
 
 // ── Main Content ────────────────────────────────────────────────────────────
@@ -123,10 +141,13 @@ fun CalendarScreen(
 private fun CalendarContent(
     tasks: List<Task>,
     tasksByDay: Map<Long, List<Task>>,
+    categoryNames: Map<String, String>,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
     onSettingsClick: () -> Unit = {},
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
 ) {
     val density = LocalDensity.current
     val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
@@ -328,6 +349,11 @@ private fun CalendarContent(
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // ── Body ─────────────────────────────────────────────────────
+        SyncPullToRefresh(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize(),
+        ) {
         when (currentView) {
             CalendarViewType.LIST -> {
                 ListViewContent(
@@ -341,6 +367,7 @@ private fun CalendarContent(
                     weekPagerState = weekPagerState,
                     weekPagerCentre = WEEK_PAGER_CENTRE,
                     tasksByDay = tasksByDay,
+                    categoryNames = categoryNames,
                     topBarHeight = topBarHeight,
                     navBarHeight = navBarHeight,
                     displayMode = listDisplayMode,
@@ -374,6 +401,7 @@ private fun CalendarContent(
                     pagerState = pagerState,
                     centreIndex = centreIndex,
                     tasksByDay = tasksByDay,
+                    categoryNames = categoryNames,
                     topBarHeight = topBarHeight,
                     navBarHeight = navBarHeight,
                     onDayClick = { day ->
@@ -446,6 +474,7 @@ private fun CalendarContent(
                     onToggleComplete = onToggleComplete,
                 )
             }
+        }
         }
 
         // ── Top bar overlay ──────────────────────────────────────────

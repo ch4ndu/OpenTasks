@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.ui.theme.DateOrange
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PriorityHigh
@@ -68,15 +69,29 @@ fun EisenhowerMatrixScreen(
     onTaskClick: (Task) -> Unit,
     onQuadrantClick: (TaskPriority) -> Unit,
     onSettingsClick: () -> Unit = {},
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
 ) {
     val tasksByPriority by viewModel.tasksByPriority.collectAsState()
+    val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
+
     EisenhowerMatrixContent(
         tasksByPriority = tasksByPriority,
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onQuadrantClick = onQuadrantClick,
         onSettingsClick = onSettingsClick,
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
     )
+
+    if (taskPendingSeriesChoice != null) {
+        CompleteSeriesDialog(
+            onCompleteOccurrence = { viewModel.completeOccurrence() },
+            onCompleteSeries = { viewModel.completeSeries() },
+            onDismiss = { viewModel.dismissSeriesChoice() },
+        )
+    }
 }
 
 @Composable
@@ -86,25 +101,33 @@ internal fun EisenhowerMatrixContent(
     onToggleComplete: (Task) -> Unit,
     onQuadrantClick: (TaskPriority) -> Unit = {},
     onSettingsClick: () -> Unit = {},
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit = {},
 ) {
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
-        MatrixHeader(onSettingsClick = onSettingsClick)
+    SyncPullToRefresh(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+    ) {
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+            MatrixHeader(onSettingsClick = onSettingsClick)
 
-        // 2x2 Grid
-        val highTasks = tasksByPriority[TaskPriority.HIGH].orEmpty()
-        val lowTasks = tasksByPriority[TaskPriority.LOW].orEmpty()
-        val mediumTasks = tasksByPriority[TaskPriority.MEDIUM].orEmpty()
-        val noneTasks = tasksByPriority[TaskPriority.NONE].orEmpty()
+            // 2x2 Grid
+            val highTasks = tasksByPriority[TaskPriority.HIGH].orEmpty()
+            val lowTasks = tasksByPriority[TaskPriority.LOW].orEmpty()
+            val mediumTasks = tasksByPriority[TaskPriority.MEDIUM].orEmpty()
+            val noneTasks = tasksByPriority[TaskPriority.NONE].orEmpty()
 
-        QuadrantGrid(
-            highTasks = highTasks,
-            lowTasks = lowTasks,
-            mediumTasks = mediumTasks,
-            noneTasks = noneTasks,
-            onTaskClick = onTaskClick,
-            onToggleComplete = onToggleComplete,
-            onQuadrantClick = onQuadrantClick,
-        )
+            QuadrantGrid(
+                highTasks = highTasks,
+                lowTasks = lowTasks,
+                mediumTasks = mediumTasks,
+                noneTasks = noneTasks,
+                onTaskClick = onTaskClick,
+                onToggleComplete = onToggleComplete,
+                onQuadrantClick = onQuadrantClick,
+            )
+        }
     }
 }
 
@@ -239,11 +262,11 @@ internal fun QuadrantCard(
 
             Spacer(Modifier.height(dimens.spacerLarge))
 
-            // Scrollable task list fills remaining space
+            // Task list limited to visible count; "View more" navigates to detail
             LazyColumn(
                 modifier = Modifier.weight(1f),
             ) {
-                items(tasks, key = { it.id }) { task ->
+                items(tasks.take(QUADRANT_MAX_VISIBLE), key = { it.id }) { task ->
                     QuadrantTaskRow(
                         task = task,
                         color = color,
@@ -331,7 +354,7 @@ internal fun QuadrantTaskRow(
             modifier = Modifier
                 .size(dimens.checkboxSize)
                 .then(
-                    if (task.isCompleted) {
+                    if (task.status == TaskStatus.DONE) {
                         Modifier.background(color.copy(alpha = 0.4f), RoundedCornerShape(dimens.checkboxCorner))
                     } else {
                         Modifier.border(dimens.checkboxBorder, color, RoundedCornerShape(dimens.checkboxCorner))
@@ -340,7 +363,7 @@ internal fun QuadrantTaskRow(
                 .clickable(onClick = onToggleComplete),
             contentAlignment = Alignment.Center,
         ) {
-            if (task.isCompleted) {
+            if (task.status == TaskStatus.DONE) {
                 Icon(
                     painter = painterResource(Res.drawable.ic_check),
                     contentDescription = null,
@@ -356,14 +379,14 @@ internal fun QuadrantTaskRow(
             Text(
                 text = task.title,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                color = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                         else MaterialTheme.colorScheme.onBackground,
-                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
+                textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             // Show deadline date if present
-            if (task.deadline != null && !task.isCompleted) {
+            if (task.deadline != null && task.status != TaskStatus.DONE) {
                 Text(
                     text = formatDateShort(task.deadline),
                     style = MaterialTheme.typography.labelSmall,

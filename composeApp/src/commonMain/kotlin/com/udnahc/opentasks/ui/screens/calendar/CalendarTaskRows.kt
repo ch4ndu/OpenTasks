@@ -35,10 +35,12 @@ import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.ui.screens.EmptyPlaceholder
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.theme.priorityColor
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.ic_alarm
 import opentasks.composeapp.generated.resources.ic_check_box
@@ -111,12 +113,12 @@ internal fun TimelineTaskRow(
             val isCountdownItem = task.isCountdownItem
             Icon(
                 painter = painterResource(
-                    if (!isCountdownItem && task.isCompleted) Res.drawable.ic_check_box
+                    if (!isCountdownItem && task.status == TaskStatus.DONE) Res.drawable.ic_check_box
                     else Res.drawable.ic_check_box_outline
                 ),
                 contentDescription = null,
-                tint = if (!isCountdownItem && task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                else taskPriorityColor(task.priority),
+                tint = if (!isCountdownItem && task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                else priorityColor(task.priority),
                 modifier = Modifier
                     .size(dimens.calendarTimelineMarkerSize)
                     .offset(y = dimens.calendarTimelineDividerHeight)
@@ -153,9 +155,9 @@ internal fun TimelineTaskRow(
                 Text(
                     text = task.title,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant
                     else MaterialTheme.colorScheme.onBackground,
-                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
+                    textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
@@ -180,6 +182,7 @@ internal fun TimelineTaskRow(
 internal fun CardTaskRow(
     task: Task,
     isToday: Boolean,
+    categoryName: String,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -199,12 +202,12 @@ internal fun CardTaskRow(
             ) {
                 Icon(
                     painter = painterResource(
-                        if (task.isCompleted) Res.drawable.ic_check_box
+                        if (task.status == TaskStatus.DONE) Res.drawable.ic_check_box
                         else Res.drawable.ic_check_box_outline
                     ),
                     contentDescription = null,
-                    tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    else taskPriorityColor(task.priority),
+                    tint = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    else priorityColor(task.priority),
                     modifier = Modifier.size(dimens.iconLarge),
                 )
             }
@@ -214,9 +217,9 @@ internal fun CardTaskRow(
             Text(
                 text = task.title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant
                 else MaterialTheme.colorScheme.onBackground,
-                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
+                textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -245,7 +248,7 @@ internal fun CardTaskRow(
             }
         }
         Text(
-            text = stringResource(Res.string.inbox),
+            text = categoryName,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -257,6 +260,7 @@ internal fun CardTaskRow(
 @Composable
 internal fun CalendarTaskRow(
     task: Task,
+    categoryName: String,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -276,12 +280,12 @@ internal fun CalendarTaskRow(
             ) {
                 Icon(
                     painter = painterResource(
-                        if (task.isCompleted) Res.drawable.ic_check_box
+                        if (task.status == TaskStatus.DONE) Res.drawable.ic_check_box
                         else Res.drawable.ic_check_box_outline
                     ),
                     contentDescription = null,
-                    tint = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    else taskPriorityColor(task.priority),
+                    tint = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    else priorityColor(task.priority),
                     modifier = Modifier.size(dimens.iconLarge),
             )
             }
@@ -291,9 +295,9 @@ internal fun CalendarTaskRow(
             Text(
                 text = task.title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (task.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant
                 else MaterialTheme.colorScheme.onBackground,
-                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
+                textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -306,7 +310,7 @@ internal fun CalendarTaskRow(
             }
         }
         Text(
-            text = stringResource(Res.string.inbox),
+            text = categoryName,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -340,11 +344,11 @@ internal fun TimelineEventBar(
     showTime: Boolean = false,
 ) {
     val dimens = OpenTasksTheme.dimens
-    val priorityColor = taskPriorityColor(task.priority)
+    val priorityColor = priorityColor(task.priority)
     val isCountdown = task.isCountdownItem
     val effectiveToggle = if (isCountdown) null else onToggleComplete
-    val bgAlpha = if (effectiveToggle != null && task.isCompleted) 0.1f else 0.2f
-    val contentColor = if (effectiveToggle != null && task.isCompleted)
+    val bgAlpha = if (effectiveToggle != null && task.status == TaskStatus.DONE) 0.1f else 0.2f
+    val contentColor = if (effectiveToggle != null && task.status == TaskStatus.DONE)
         MaterialTheme.colorScheme.onSurfaceVariant else priorityColor
 
     if (effectiveToggle != null) {
@@ -359,7 +363,7 @@ internal fun TimelineEventBar(
         ) {
             Icon(
                 painter = painterResource(
-                    if (task.isCompleted) Res.drawable.ic_check_box
+                    if (task.status == TaskStatus.DONE) Res.drawable.ic_check_box
                     else Res.drawable.ic_check_box_outline
                 ),
                 contentDescription = null,
@@ -373,7 +377,7 @@ internal fun TimelineEventBar(
                 text = task.title,
                 style = OpenTasksTheme.typography.calendarEventTitle,
                 color = contentColor,
-                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
+                textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = if (showTime) Modifier.weight(1f) else Modifier,

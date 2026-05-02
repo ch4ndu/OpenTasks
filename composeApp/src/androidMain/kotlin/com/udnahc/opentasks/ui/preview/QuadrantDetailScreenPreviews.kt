@@ -18,7 +18,6 @@ private fun QuadrantDetailPreview() {
             onBack = {},
             onTaskClick = {},
             onToggleComplete = {},
-            now = PreviewSampleData.sampleTodayMillis,
             startOfToday = PreviewSampleData.sampleTodayMillis,
             startOfTomorrow = PreviewSampleData.sampleTodayMillis + MILLIS_PER_DAY,
             endOfNext7Days = PreviewSampleData.sampleTodayMillis + 7 * MILLIS_PER_DAY,
@@ -34,6 +33,7 @@ private fun DetailTaskRowPreview() {
             task = PreviewSampleData.sampleTasks.first(),
             priority = TaskPriority.HIGH,
             isOverdue = false,
+            categoryName = "",
             onToggleComplete = {},
             onClick = {},
         )

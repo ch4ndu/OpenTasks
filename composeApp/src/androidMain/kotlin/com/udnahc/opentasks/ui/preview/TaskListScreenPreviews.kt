@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.ui.preview
 
 import androidx.compose.runtime.Composable
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.ui.screens.CompletedTaskRow
 import com.udnahc.opentasks.ui.screens.TaskListContent
 import com.udnahc.opentasks.ui.screens.TaskListTopBar
@@ -12,8 +13,8 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 private fun TaskListScreenPreview() {
     OpenTasksTheme {
         TaskListContent(
-            activeTasks = PreviewSampleData.sampleTasks.filter { !it.isCompleted },
-            completedTasks = PreviewSampleData.sampleTasks.filter { it.isCompleted },
+            activeTasks = PreviewSampleData.sampleTasks.filter { it.status != TaskStatus.DONE },
+            completedTasks = PreviewSampleData.sampleTasks.filter { it.status == TaskStatus.DONE },
             onTaskClick = {},
             onToggleComplete = {},
         )
@@ -48,7 +49,7 @@ private fun TaskRowPreview() {
 private fun CompletedTaskRowPreview() {
     OpenTasksTheme {
         CompletedTaskRow(
-            task = PreviewSampleData.sampleTasks.first { it.isCompleted },
+            task = PreviewSampleData.sampleTasks.first { it.status == TaskStatus.DONE },
             onToggleComplete = {},
             onClick = {},
         )

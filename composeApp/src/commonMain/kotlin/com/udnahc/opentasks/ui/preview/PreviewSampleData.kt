@@ -5,6 +5,7 @@ import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.model.TaskStatus
 
 object PreviewSampleData {
     const val SAMPLE_YEAR = 2026
@@ -90,7 +91,7 @@ object PreviewSampleData {
             priority = TaskPriority.NONE,
             isUrgent = false,
             isImportant = false,
-            isCompleted = true,
+            status = TaskStatus.DONE,
         ),
     )
 

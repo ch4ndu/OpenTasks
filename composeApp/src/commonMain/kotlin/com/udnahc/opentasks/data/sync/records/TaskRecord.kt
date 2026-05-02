@@ -2,6 +2,7 @@ package com.udnahc.opentasks.data.sync.records
 
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
@@ -20,7 +21,9 @@ class TaskRecord(
     val notifyBeforeUnit: String = "NONE",
     val recurrenceType: String = "NONE",
     val recurrenceInterval: Int = 0,
-    val isCompleted: Boolean = false,
+    val status: String = "TODO",
+    val isStarred: Boolean = false,
+    val section: String? = null,
     val isUrgent: Boolean = false,
     val isImportant: Boolean = false,
     val categoryId: String = "",
@@ -49,7 +52,9 @@ fun Task.toTaskRecord(): TaskRecord = TaskRecord(
     notifyBeforeUnit = notifyBeforeUnit.name,
     recurrenceType = recurrenceType.name,
     recurrenceInterval = recurrenceInterval,
-    isCompleted = isCompleted,
+    status = status.name,
+    isStarred = isStarred,
+    section = section,
     isUrgent = isUrgent,
     isImportant = isImportant,
     categoryId = categoryId,
@@ -79,7 +84,9 @@ fun TaskRecord.toTask(): Task = Task(
     notifyBeforeUnit = NotifyBeforeUnit.entries.firstOrNull { it.name == notifyBeforeUnit } ?: NotifyBeforeUnit.NONE,
     recurrenceType = RecurrenceType.entries.firstOrNull { it.name == recurrenceType } ?: RecurrenceType.NONE,
     recurrenceInterval = recurrenceInterval,
-    isCompleted = isCompleted,
+    status = TaskStatus.entries.firstOrNull { it.name == status } ?: TaskStatus.TODO,
+    isStarred = isStarred,
+    section = section,
     isUrgent = isUrgent,
     isImportant = isImportant,
     categoryId = categoryId,

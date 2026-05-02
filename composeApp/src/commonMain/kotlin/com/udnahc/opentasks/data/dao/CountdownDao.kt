@@ -27,11 +27,15 @@ interface CountdownDao {
     @Query("SELECT * FROM countdowns WHERE isDeleted = 0 ORDER BY targetDate ASC")
     fun getAllCountdowns(): Flow<List<Countdown>>
 
-    @Query("SELECT * FROM countdowns WHERE id = :id")
+    @Query("SELECT * FROM countdowns WHERE id = :id AND isDeleted = 0")
     suspend fun getCountdownById(id: String): Countdown?
 
-    @Query("SELECT * FROM countdowns WHERE id = :id")
+    @Query("SELECT * FROM countdowns WHERE id = :id AND isDeleted = 0")
     fun observeCountdownById(id: String): Flow<Countdown?>
+
+    /** Unfiltered lookup including soft-deleted rows. For sync use only. */
+    @Query("SELECT * FROM countdowns WHERE id = :id")
+    suspend fun findCountdownByIdAnyState(id: String): Countdown?
 
     @Query("SELECT * FROM countdowns WHERE isSynced = 0")
     suspend fun getUnsynced(): List<Countdown>

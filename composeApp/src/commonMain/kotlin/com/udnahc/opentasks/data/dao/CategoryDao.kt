@@ -24,8 +24,12 @@ interface CategoryDao {
     @Query("SELECT * FROM categories WHERE isDeleted = 0 ORDER BY sortOrder ASC, id ASC")
     fun getAllCategories(): Flow<List<Category>>
 
-    @Query("SELECT * FROM categories WHERE id = :id")
+    @Query("SELECT * FROM categories WHERE id = :id AND isDeleted = 0")
     suspend fun getCategoryById(id: String): Category?
+
+    /** Unfiltered lookup including soft-deleted rows. For sync use only. */
+    @Query("SELECT * FROM categories WHERE id = :id")
+    suspend fun findCategoryByIdAnyState(id: String): Category?
 
     @Query("SELECT * FROM categories WHERE name = :name AND isDeleted = 0 LIMIT 1")
     suspend fun getCategoryByName(name: String): Category?

@@ -17,7 +17,7 @@ class TaskSyncAdapter(private val dao: TaskDao) : BaseSyncAdapter<Task, TaskReco
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllTasksOnce()
-    override suspend fun getById(localId: String) = dao.getTaskById(localId)
+    override suspend fun getById(localId: String) = dao.findTaskByIdAnyState(localId)
     override suspend fun markSynced(localId: String) = dao.markSynced(localId)
     override suspend fun updatePbId(localId: String, pbId: String) = dao.updatePbId(localId, pbId)
     override suspend fun deleteEntity(entity: Task) = dao.delete(entity)

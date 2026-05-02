@@ -17,7 +17,7 @@ class CountdownSyncAdapter(private val dao: CountdownDao) : BaseSyncAdapter<Coun
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllCountdownsOnce()
-    override suspend fun getById(localId: String) = dao.getCountdownById(localId)
+    override suspend fun getById(localId: String) = dao.findCountdownByIdAnyState(localId)
     override suspend fun markSynced(localId: String) = dao.markSynced(localId)
     override suspend fun updatePbId(localId: String, pbId: String) = dao.updatePbId(localId, pbId)
     override suspend fun deleteEntity(entity: Countdown) = dao.delete(entity)

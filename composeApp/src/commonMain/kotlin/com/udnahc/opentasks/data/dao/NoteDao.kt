@@ -24,8 +24,12 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE isDeleted = 0 ORDER BY updatedAt DESC")
     fun getAllNotes(): Flow<List<Note>>
 
-    @Query("SELECT * FROM notes WHERE id = :id")
+    @Query("SELECT * FROM notes WHERE id = :id AND isDeleted = 0")
     suspend fun getNoteById(id: String): Note?
+
+    /** Unfiltered lookup including soft-deleted rows. For sync use only. */
+    @Query("SELECT * FROM notes WHERE id = :id")
+    suspend fun findNoteByIdAnyState(id: String): Note?
 
     @Query("SELECT * FROM notes WHERE isSynced = 0")
     suspend fun getUnsynced(): List<Note>

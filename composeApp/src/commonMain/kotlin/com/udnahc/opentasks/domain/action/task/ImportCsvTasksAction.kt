@@ -3,8 +3,10 @@ package com.udnahc.opentasks.domain.action.task
 import com.udnahc.opentasks.data.calendar.CsvTask
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.utcToLocal
+import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
 import org.lighthousegames.logging.logging
@@ -38,7 +40,7 @@ class ImportCsvTasksAction(
                 deadline = csvTask.startDate?.let { utcToLocal(it) },
                 endDeadline = csvTask.dueDate?.let { utcToLocal(it) },
                 isAllDay = csvTask.isAllDay,
-                isCompleted = csvTask.isCompleted,
+                status = if (csvTask.isCompleted) TaskStatus.DONE else TaskStatus.TODO,
                 recurrenceType = csvTask.recurrenceType,
                 categoryId = categoryId,
                 durationReminders = csvTask.durationReminders,
@@ -80,6 +82,6 @@ class ImportCsvTasksAction(
     }
 
     companion object {
-        private const val DEFAULT_INBOX_ID = "00000000-0000-0000-0000-000000000001"
+        private const val DEFAULT_INBOX_ID = AppConstants.DEFAULT_INBOX_ID
     }
 }
