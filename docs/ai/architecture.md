@@ -16,6 +16,7 @@ Load this when working on architecture, source layout, dependency flow, or cross
 - Domain layer owns read UseCases and write Actions.
 - ViewModels are per screen and inject UseCases/Actions, never repositories.
 - UI renders state and sends events. Filtering, sorting, grouping, and mapping belong in UseCases or ViewModels, not composables.
+- Expensive screen projections and mode-specific UI state belong in the screen ViewModel. Keep transient view mode and selected-date state in memory unless there is an explicit persistence requirement.
 
 ## UseCases And Actions
 

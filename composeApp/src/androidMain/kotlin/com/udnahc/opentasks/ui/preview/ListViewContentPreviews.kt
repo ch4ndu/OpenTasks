@@ -28,7 +28,7 @@ private fun ListViewContentTimelinePreview() {
     OpenTasksTheme {
         val weekPagerState = rememberPagerState(initialPage = 520) { 1040 }
         ListViewContent(
-            tasks = PreviewSampleData.sampleTasks,
+            dayTasks = PreviewSampleData.sampleTasks,
             todayMillis = PreviewSampleData.sampleTodayMillis,
             todayYear = PreviewSampleData.SAMPLE_YEAR,
             todayMonth = PreviewSampleData.SAMPLE_MONTH,
@@ -54,7 +54,7 @@ private fun ListViewContentCardPreview() {
     OpenTasksTheme {
         val weekPagerState = rememberPagerState(initialPage = 520) { 1040 }
         ListViewContent(
-            tasks = PreviewSampleData.sampleTasks,
+            dayTasks = PreviewSampleData.sampleTasks,
             todayMillis = PreviewSampleData.sampleTodayMillis,
             todayYear = PreviewSampleData.SAMPLE_YEAR,
             todayMonth = PreviewSampleData.SAMPLE_MONTH,

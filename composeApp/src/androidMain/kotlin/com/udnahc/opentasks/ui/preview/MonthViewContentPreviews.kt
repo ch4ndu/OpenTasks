@@ -25,7 +25,7 @@ private fun MonthViewContentPreview() {
         MonthViewContent(
             collapseProgress = remember { Animatable(0f) },
             pagerState = rememberPagerState(initialPage = 120) { 240 },
-            tasks = PreviewSampleData.sampleTasks,
+            selectedTasks = emptyList(),
             todayYear = PreviewSampleData.SAMPLE_YEAR,
             todayMonth = PreviewSampleData.SAMPLE_MONTH,
             todayDay = PreviewSampleData.SAMPLE_DAY,
@@ -49,7 +49,7 @@ private fun MonthViewContentCollapsedPreview() {
         MonthViewContent(
             collapseProgress = remember { Animatable(1f) },
             pagerState = rememberPagerState(initialPage = 120) { 240 },
-            tasks = PreviewSampleData.sampleTasks,
+            selectedTasks = PreviewSampleData.sampleTasks,
             todayYear = PreviewSampleData.SAMPLE_YEAR,
             todayMonth = PreviewSampleData.SAMPLE_MONTH,
             todayDay = PreviewSampleData.SAMPLE_DAY,

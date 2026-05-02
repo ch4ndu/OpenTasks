@@ -647,25 +647,33 @@ private fun MainScreen(
 
     // Edit note bottom sheet
     val editNoteIdVal = editNoteId
+    LaunchedEffect(editNoteIdVal) {
+        noteViewModel.selectNote(editNoteIdVal)
+    }
     if (editNoteIdVal != null) {
-        val notes by noteViewModel.notes.collectAsState()
-        val editNote = remember(editNoteIdVal, notes) { notes.find { it.id == editNoteIdVal } }
-        if (editNote != null) {
+        val editNote by noteViewModel.selectedNote.collectAsState()
+        var hasObservedEditNote by remember(editNoteIdVal) { mutableStateOf(false) }
+        LaunchedEffect(editNoteIdVal, editNote) {
+            if (editNote != null) {
+                hasObservedEditNote = true
+            } else if (hasObservedEditNote) {
+                editNoteId = null
+            }
+        }
+        editNote?.let { note ->
             val editNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             CreateNoteBottomSheet(
                 sheetState = editNoteSheetState,
-                editNote = editNote,
+                editNote = note,
                 onDismiss = { editNoteId = null },
                 onSave = { title, content ->
-                    noteViewModel.updateNote(editNote.copy(title = title, content = content))
+                    noteViewModel.updateNote(note.copy(title = title, content = content))
                 },
                 onDelete = {
-                    noteViewModel.deleteNote(editNote)
+                    noteViewModel.deleteNote(note)
                     editNoteId = null
                 },
             )
-        } else {
-            editNoteId = null
         }
     }
 

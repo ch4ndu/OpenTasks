@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.model
 data class TaskFormData(
     val title: String,
     val content: String,
+    val subtasks: String = "",
     val priority: TaskPriority = TaskPriority.NONE,
     val deadline: Long? = null,
     val endDeadline: Long? = null,

@@ -3,8 +3,12 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.TaskCategory
+import com.udnahc.opentasks.data.model.TaskListViewMode
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
+import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
+import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
@@ -17,10 +21,15 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.plus
 
 class MatrixViewModel(
     observeTasksByPriority: ObserveTasksByPriorityUseCase,
@@ -31,9 +40,13 @@ class MatrixViewModel(
     private val updateTaskStatusAction: UpdateTaskStatusAction,
 ) : ViewModel() {
 
+    data class TaskCategoryGroup(val category: TaskCategory, val tasks: List<Task>)
+
     private val _selectedPriority = MutableStateFlow(TaskPriority.HIGH)
+    private val _viewMode = MutableStateFlow(TaskListViewMode.LIST)
     private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
     val taskPendingSeriesChoice: StateFlow<Task?> = completionHandler.taskPendingSeriesChoice
+    val viewMode: StateFlow<TaskListViewMode> = _viewMode
 
     val categoryNames: StateFlow<Map<String, String>> = observeAllCategories()
         .map { cats -> cats.associate { it.id to it.name } }
@@ -44,20 +57,38 @@ class MatrixViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val tasksForSelectedPriority: StateFlow<List<Task>> = observeTasksForPriority(_selectedPriority)
+    private val tasksForSelectedPriority = observeTasksForPriority(_selectedPriority)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val categorizedTasks: StateFlow<List<TaskCategoryGroup>> = _viewMode
+        .flatMapLatest { mode ->
+            if (mode == TaskListViewMode.LIST) {
+                tasksForSelectedPriority.map { tasks -> categorize(tasks) }
+            } else {
+                flowOf(emptyList())
+            }
+        }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val tasksByStatus: StateFlow<Map<TaskStatus, List<Task>>> =
-        tasksForSelectedPriority.map { tasks ->
-            TaskStatus.entries.associateWith { status ->
-                tasks.filter { it.status == status }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val tasksByStatus: StateFlow<Map<TaskStatus, List<Task>>> = _viewMode
+        .flatMapLatest { mode ->
+            if (mode == TaskListViewMode.BOARD) {
+                tasksForSelectedPriority.map { tasks ->
+                    TaskStatus.entries.associateWith { status ->
+                        tasks.filter { it.status == status }
+                    }
+                }
+            } else {
+                flowOf(emptyMap())
             }
         }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     fun selectPriority(priority: TaskPriority) { _selectedPriority.value = priority }
+    fun setViewMode(mode: TaskListViewMode) { _viewMode.value = mode }
 
     fun toggleComplete(task: Task) = completionHandler.toggleComplete(task)
     fun completeOccurrence() = completionHandler.completeOccurrence()
@@ -70,5 +101,48 @@ class MatrixViewModel(
 
     fun toggleStar(task: Task) {
         viewModelScope.launch(Dispatchers.IO) { toggleTaskStarredAction(task) }
+    }
+
+    private fun categorize(tasks: List<Task>): List<TaskCategoryGroup> {
+        val today = todayLocal()
+        val tomorrow = today.plus(1, DateTimeUnit.DAY)
+        val next7 = today.plus(7, DateTimeUnit.DAY)
+        val startOfToday = startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)
+        val startOfTomorrow = startOfDayLocalMillis(tomorrow.year, tomorrow.monthNumber, tomorrow.dayOfMonth)
+        val endOfNext7Days = startOfDayLocalMillis(next7.year, next7.monthNumber, next7.dayOfMonth)
+
+        val incomplete = tasks.filter { it.status != TaskStatus.DONE }
+        val completed = tasks.filter { it.status == TaskStatus.DONE }
+
+        return listOf(
+            TaskCategoryGroup(
+                TaskCategory.OVERDUE,
+                incomplete.filter { it.deadline != null && it.deadline < startOfToday }
+                    .sortedBy { it.deadline },
+            ),
+            TaskCategoryGroup(
+                TaskCategory.TODAY,
+                incomplete.filter { it.deadline != null && it.deadline >= startOfToday && it.deadline < startOfTomorrow }
+                    .sortedBy { it.deadline },
+            ),
+            TaskCategoryGroup(
+                TaskCategory.NEXT_7_DAYS,
+                incomplete.filter { it.deadline != null && it.deadline >= startOfTomorrow && it.deadline < endOfNext7Days }
+                    .sortedBy { it.deadline },
+            ),
+            TaskCategoryGroup(
+                TaskCategory.LATER,
+                incomplete.filter { it.deadline != null && it.deadline >= endOfNext7Days }
+                    .sortedBy { it.deadline },
+            ),
+            TaskCategoryGroup(
+                TaskCategory.NO_DATE,
+                incomplete.filter { it.deadline == null }.sortedBy { it.createdAt },
+            ),
+            TaskCategoryGroup(
+                TaskCategory.COMPLETED,
+                completed.sortedByDescending { it.updatedAt },
+            ),
+        )
     }
 }

@@ -97,14 +97,10 @@ fun TaskListScreen(
     // Sync parent's selectedCategoryId into ViewModel for the derived flow
     LaunchedEffect(selectedCategoryId) { viewModel.selectCategory(selectedCategoryId) }
 
-    val activeTasks by viewModel.activeTasksForSelectedCategory.collectAsState()
-    val completedTasks by viewModel.completedTasksForSelectedCategory.collectAsState()
-    val groupedTasks by viewModel.groupedActiveTasks.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
     val currentFilter by viewModel.currentFilter.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
-    val tasksByStatus by viewModel.tasksByStatus.collectAsState()
     var showCategoryPicker by remember { mutableStateOf(false) }
 
     val categories by viewModel.categories.collectAsState()
@@ -142,6 +138,9 @@ fun TaskListScreen(
 
     when (viewMode) {
         TaskListViewMode.LIST -> {
+            val activeTasks by viewModel.activeTasksForSelectedCategory.collectAsState()
+            val completedTasks by viewModel.completedTasksForSelectedCategory.collectAsState()
+            val groupedTasks by viewModel.groupedActiveTasks.collectAsState()
             TaskListContent(
                 listName = selectedListName,
                 activeTasks = activeTasks,
@@ -161,6 +160,7 @@ fun TaskListScreen(
             )
         }
         TaskListViewMode.BOARD -> {
+            val tasksByStatus by viewModel.tasksByStatus.collectAsState()
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 SyncPullToRefresh(
                     isRefreshing = isRefreshing,
@@ -652,4 +652,3 @@ private fun SectionHeader(
         )
     }
 }
-

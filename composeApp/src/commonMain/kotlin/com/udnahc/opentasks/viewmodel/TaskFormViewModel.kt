@@ -70,6 +70,7 @@ class TaskFormViewModel(
                 addTaskAction(
                     title = formData.title,
                     content = formData.content,
+                    subtasks = formData.subtasks,
                     priority = formData.priority,
                     deadline = formData.deadline,
                     endDeadline = formData.endDeadline,
@@ -103,6 +104,7 @@ class TaskFormViewModel(
                     existingTask.copy(
                         title = formData.title,
                         content = formData.content,
+                        subtasks = formData.subtasks,
                         priority = formData.priority,
                         deadline = formData.deadline,
                         endDeadline = formData.endDeadline,

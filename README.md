@@ -228,7 +228,9 @@ sudo systemctl status pocketbase
 
 The included migrations (`pocketbase/pb_migrations/`) create the following collections:
 
-**`tasks`** — localId, title, content, priority, deadline, endDeadline, notifyBeforeValue, notifyBeforeUnit, recurrenceType, recurrenceInterval, status, isStarred, section, isUrgent, isImportant, categoryId, isAllDay, sourceExternalId, location, url, organizer, eventStatus, attendees, durationReminders, dateReminders, isDeleted, localCreatedAt, localUpdatedAt
+**`tasks`** — localId, title, content, subtasks, priority, deadline, endDeadline, notifyBeforeValue, notifyBeforeUnit, recurrenceType, recurrenceInterval, status, isStarred, section, isUrgent, isImportant, categoryId, isAllDay, sourceExternalId, location, url, organizer, eventStatus, attendees, durationReminders, dateReminders, isDeleted, localCreatedAt, localUpdatedAt
+
+`tasks.subtasks` stores a JSON array of `{ "id": "uuid", "text": "Call vendor", "isChecked": false }` entries for subtask-mode editor state.
 
 **`categories`** — localId, name, icon, sortOrder, isDeleted, localCreatedAt, localUpdatedAt
 

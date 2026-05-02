@@ -30,8 +30,10 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 - Strong skipping is enabled; do not add `@Immutable` or `@Stable`.
 - Do not transform data in composables. Filtering, sorting, mapping, and grouping belong in UseCases or ViewModels.
 - Pass `StateFlow` to children when useful and collect at the lowest practical scope.
+- Collect mode-specific flows only inside the active UI branch. List-only projections should not stay subscribed while a board/calendar mode is visible, and board-only projections should not stay subscribed while list mode is visible.
+- Screens should consume ViewModel-provided projections or keyed lookup maps instead of filtering full task lists in composables.
 - Keep `LaunchedEffect` keys narrow and intentional.
-- Use `LazyColumn` keys for scrollable lists, usually `key = { it.id }`.
+- Use `LazyColumn` keys for scrollable lists, usually `key = { it.id }`. Do not wrap large repeated rows inside one lazy item with `Column { items.forEach { ... } }`; emit keyed `items(...)` so virtualization is preserved.
 
 ## Previews
 

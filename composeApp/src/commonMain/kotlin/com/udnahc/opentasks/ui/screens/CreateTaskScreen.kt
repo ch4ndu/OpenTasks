@@ -145,9 +145,9 @@ private fun CreateTaskContent(
     var section by remember(stateKey) { mutableStateOf(editTask?.section ?: "") }
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showPriorityMenu by remember { mutableStateOf(false) }
-    var isSubtaskMode by remember(stateKey) { mutableStateOf(false) }
+    var isSubtaskMode by remember(stateKey) { mutableStateOf(editTask?.subtasks?.isNotBlank() == true) }
     var subtaskToggleCount by remember { mutableIntStateOf(0) }
-    val subtasks = remember { mutableStateListOf<SubtaskItem>() }
+    val subtasks = remember(stateKey) { mutableStateListOf<SubtaskItem>() }
     var location by remember(stateKey) { mutableStateOf(editTask?.location ?: "") }
     var taskUrl by remember(stateKey) { mutableStateOf(editTask?.url ?: "") }
     var organizer by remember(stateKey) { mutableStateOf(editTask?.organizer ?: "") }
@@ -160,6 +160,11 @@ private fun CreateTaskContent(
     LaunchedEffect(stateKey) {
         if (editTask != null && editTask.content.isNotBlank()) {
             richTextState.setHtml(editTask.content)
+        }
+        subtasks.clear()
+        subtasks.addAll(editTask?.subtasks?.toSubtaskItems().orEmpty())
+        if (isSubtaskMode && subtasks.isEmpty()) {
+            subtasks.add(SubtaskItem())
         }
     }
 
@@ -264,14 +269,17 @@ private fun CreateTaskContent(
                 Box(modifier = Modifier.defaultMinSize(minHeight = dimens.minPagerHeight)) {
                     SubtaskList(
                         subtasks = subtasks,
-                        onSubtaskTextChange = { index, text ->
-                            subtasks[index] = subtasks[index].copy(text = text)
+                        onSubtaskTextChange = { id, text ->
+                            val index = subtasks.indexOfFirst { it.id == id }
+                            if (index >= 0) subtasks[index] = subtasks[index].copy(text = text)
                         },
-                        onSubtaskCheckedChange = { index, checked ->
-                            subtasks[index] = subtasks[index].copy(isChecked = checked)
+                        onSubtaskCheckedChange = { id, checked ->
+                            val index = subtasks.indexOfFirst { it.id == id }
+                            if (index >= 0) subtasks[index] = subtasks[index].copy(isChecked = checked)
                         },
-                        onDeleteSubtask = { index ->
-                            subtasks.removeAt(index)
+                        onDeleteSubtask = { id ->
+                            val index = subtasks.indexOfFirst { it.id == id }
+                            if (index >= 0) subtasks.removeAt(index)
                         },
                         onAddSubtask = {
                             subtasks.add(SubtaskItem())
@@ -367,10 +375,12 @@ private fun CreateTaskContent(
                         } else null
                     if (isSubtaskMode) syncSubtasksToDescription()
                     val contentToSave = if (isSubtaskMode) description else richTextState.toHtml()
+                    val subtasksToSave = if (isSubtaskMode) subtasks.toSubtasksJson() else ""
                     onSave(
                         TaskFormData(
                             title = title,
                             content = contentToSave,
+                            subtasks = subtasksToSave,
                             priority = priority,
                             deadline = deadlineMs,
                             endDeadline = if (endHour >= 0 && selectedDay > 0) computeDeadlineMillis(selectedYear, selectedMonth, selectedDay, endHour, endMinute) else null,

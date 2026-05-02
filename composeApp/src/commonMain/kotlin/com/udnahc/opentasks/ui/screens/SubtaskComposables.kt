@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -37,20 +37,20 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 internal fun SubtaskList(
     subtasks: List<SubtaskItem>,
-    onSubtaskTextChange: (Int, String) -> Unit,
-    onSubtaskCheckedChange: (Int, Boolean) -> Unit,
-    onDeleteSubtask: (Int) -> Unit,
+    onSubtaskTextChange: (String, String) -> Unit,
+    onSubtaskCheckedChange: (String, Boolean) -> Unit,
+    onDeleteSubtask: (String) -> Unit,
     onAddSubtask: () -> Unit,
     firstItemFocusRequester: FocusRequester? = null,
 ) {
     LazyColumn {
-        itemsIndexed(subtasks) { index, subtask ->
+        items(subtasks, key = { it.id }) { subtask ->
             SubtaskRow(
                 subtask = subtask,
-                onTextChange = { onSubtaskTextChange(index, it) },
-                onCheckedChange = { onSubtaskCheckedChange(index, it) },
-                onDelete = { onDeleteSubtask(index) },
-                focusRequester = if (index == 0) firstItemFocusRequester else null,
+                onTextChange = { onSubtaskTextChange(subtask.id, it) },
+                onCheckedChange = { onSubtaskCheckedChange(subtask.id, it) },
+                onDelete = { onDeleteSubtask(subtask.id) },
+                focusRequester = if (subtasks.firstOrNull()?.id == subtask.id) firstItemFocusRequester else null,
             )
         }
         item {

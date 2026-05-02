@@ -1,6 +1,10 @@
 package com.udnahc.opentasks.ui.screens
 
 import com.udnahc.opentasks.data.extensions.computeLocalMillis
+import com.udnahc.opentasks.data.extensions.uuid4
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.none
 import opentasks.composeapp.generated.resources.reminder_1_day_early
@@ -14,10 +18,30 @@ import opentasks.composeapp.generated.resources.reminder_at_the_end
 import opentasks.composeapp.generated.resources.reminder_on_time
 import org.jetbrains.compose.resources.StringResource
 
+@Serializable
 data class SubtaskItem(
+    val id: String = uuid4(),
     val text: String = "",
     val isChecked: Boolean = false,
 )
+
+private val subtaskJson = Json {
+    encodeDefaults = true
+    ignoreUnknownKeys = true
+}
+
+internal fun String.toSubtaskItems(): List<SubtaskItem> {
+    if (isBlank()) return emptyList()
+    return runCatching { subtaskJson.decodeFromString<List<SubtaskItem>>(this) }
+        .getOrElse { emptyList() }
+        .filter { it.text.isNotBlank() }
+}
+
+internal fun List<SubtaskItem>.toSubtasksJson(): String {
+    val cleaned = filter { it.text.isNotBlank() }
+        .map { it.copy(text = it.text.trim()) }
+    return if (cleaned.isEmpty()) "" else subtaskJson.encodeToString(cleaned)
+}
 
 internal enum class ReminderOption(val labelRes: StringResource, val minutesValue: Int) {
     NONE(Res.string.none, Int.MIN_VALUE),

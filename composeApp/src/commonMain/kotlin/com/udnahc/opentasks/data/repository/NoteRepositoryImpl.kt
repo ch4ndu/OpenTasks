@@ -27,6 +27,11 @@ class NoteRepositoryImpl(
     override suspend fun getNoteById(id: String): Note? =
         noteDao.getNoteById(id)?.withLocalTimestamps()
 
+    override fun observeNoteById(id: String): Flow<Note?> =
+        noteDao.observeNoteById(id)
+            .map { it?.withLocalTimestamps() }
+            .flowOn(Dispatchers.Default)
+
     override suspend fun insert(note: Note) {
         log.v { "Inserting note: ${note.id}" }
         noteDao.insert(note.withDefaultTimestamps().withUtcTimestamps())

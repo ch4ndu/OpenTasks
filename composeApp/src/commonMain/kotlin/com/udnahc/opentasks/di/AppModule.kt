@@ -12,6 +12,7 @@ import com.udnahc.opentasks.data.database.MIGRATION_4_5
 import com.udnahc.opentasks.data.database.MIGRATION_5_6
 import com.udnahc.opentasks.data.database.MIGRATION_6_7
 import com.udnahc.opentasks.data.database.MIGRATION_7_8
+import com.udnahc.opentasks.data.database.MIGRATION_8_9
 import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
 import com.udnahc.opentasks.data.repository.NoteRepository
@@ -54,6 +55,7 @@ import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveCountdownByIdUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
+import com.udnahc.opentasks.domain.usecase.note.ObserveNoteByIdUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
@@ -108,7 +110,7 @@ expect val platformModule: Module
 val sharedModule = module {
     single<AppDatabase> {
         get<androidx.room.RoomDatabase.Builder<AppDatabase>>()
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(connection: SQLiteConnection) {
@@ -141,6 +143,7 @@ val sharedModule = module {
     factory { ObserveTasksForPriorityUseCase(get()) }
     single { ObserveAllCategoriesUseCase(get()) }
     single { ObserveAllNotesUseCase(get()) }
+    factory { ObserveNoteByIdUseCase(get()) }
     single { ObserveAllCountdownsUseCase(get()) }
     factory { ObserveCountdownByIdUseCase(get()) }
     factory { ObserveTagsForTaskUseCase(get()) }
@@ -218,8 +221,8 @@ val sharedModule = module {
     viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { TaskListViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
-    viewModel { CalendarViewModel(get(), get(), get(), get(), get()) }
-    viewModel { NoteViewModel(get(), get(), get(), get()) }
+    viewModel { CalendarViewModel(get(), get(), get(), get()) }
+    viewModel { NoteViewModel(get(), get(), get(), get(), get()) }
     viewModel { ImportCalendarViewModel(get(), get(), get()) }
     viewModel { ImportIcsViewModel(get(), get()) }
     viewModel { ImportCsvViewModel(get(), get()) }

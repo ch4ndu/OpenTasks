@@ -108,15 +108,20 @@ fun CalendarScreen(
     isRefreshing: Boolean = false,
     onRefresh: () -> Unit = {},
 ) {
-    val tasks by viewModel.tasks.collectAsState()
     val tasksByDay by viewModel.tasksByDay.collectAsState()
+    val selectedListDayTasks by viewModel.selectedListDayTasks.collectAsState()
+    val selectedMonthDayTasks by viewModel.selectedMonthDayTasks.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
     val categoryNames by viewModel.categoryNames.collectAsState()
 
     CalendarContent(
-        tasks = tasks,
         tasksByDay = tasksByDay,
+        selectedListDayTasks = selectedListDayTasks,
+        selectedMonthDayTasks = selectedMonthDayTasks,
         categoryNames = categoryNames,
+        onListDaySelected = { viewModel.selectListDay(it) },
+        onMonthDaySelected = { year, month, day -> viewModel.selectMonthDay(year, month, day) },
+        onMonthDayCleared = { viewModel.clearMonthSelectedDay() },
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onSelectedDateChanged = onSelectedDateChanged,
@@ -139,9 +144,13 @@ fun CalendarScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CalendarContent(
-    tasks: List<Task>,
     tasksByDay: Map<Long, List<Task>>,
+    selectedListDayTasks: List<Task>,
+    selectedMonthDayTasks: List<Task>,
     categoryNames: Map<String, String>,
+    onListDaySelected: (Long) -> Unit,
+    onMonthDaySelected: (Int, Int, Int) -> Unit,
+    onMonthDayCleared: () -> Unit,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
@@ -187,7 +196,10 @@ private fun CalendarContent(
 
     // Selected day for month-view collapse
     var selectedDay by remember { mutableStateOf<CalendarDay?>(null) }
-    LaunchedEffect(pagerState.currentPage) { selectedDay = null }
+    LaunchedEffect(pagerState.currentPage) {
+        selectedDay = null
+        onMonthDayCleared()
+    }
 
     val collapseProgress = remember { Animatable(0f) }
     LaunchedEffect(selectedDay) {
@@ -211,6 +223,9 @@ private fun CalendarContent(
     // Selected day for list view (defaults to today)
     val todayMillis = remember { startOfDayLocalMillis(todayYear, todayMonth, todayDay) }
     var listSelectedDayMillis by remember { mutableStateOf(todayMillis) }
+    LaunchedEffect(listSelectedDayMillis) {
+        onListDaySelected(listSelectedDayMillis)
+    }
 
     // When the week pager page changes, select the first day of the new week
     // (unless the current selection is already within that week)
@@ -357,7 +372,7 @@ private fun CalendarContent(
         when (currentView) {
             CalendarViewType.LIST -> {
                 ListViewContent(
-                    tasks = tasks,
+                    dayTasks = selectedListDayTasks,
                     todayMillis = todayMillis,
                     todayYear = todayYear,
                     todayMonth = todayMonth,
@@ -392,7 +407,7 @@ private fun CalendarContent(
 
             CalendarViewType.MONTH -> {
                 MonthViewContent(
-                    tasks = tasks,
+                    selectedTasks = selectedMonthDayTasks,
                     todayYear = todayYear,
                     todayMonth = todayMonth,
                     todayDay = todayDay,
@@ -407,7 +422,13 @@ private fun CalendarContent(
                     onDayClick = { day ->
                         if (!day.isCurrentMonth) return@MonthViewContent
                         scope.launch {
-                            selectedDay = if (selectedDay == day) null else day
+                            selectedDay = if (selectedDay == day) {
+                                onMonthDayCleared()
+                                null
+                            } else {
+                                onMonthDaySelected(day.year, day.month, day.day)
+                                day
+                            }
                         }
                     },
                     onTaskClick = onTaskClick,
@@ -485,7 +506,10 @@ private fun CalendarContent(
                     currentView == CalendarViewType.YEAR,
             onBack = {
                 if (currentView == CalendarViewType.MONTH && selectedDay != null) {
-                    scope.launch { selectedDay = null }
+                    scope.launch {
+                        selectedDay = null
+                        onMonthDayCleared()
+                    }
                 } else if (currentView == CalendarViewType.YEAR) {
                     currentView = CalendarViewType.MONTH
                 }
@@ -654,4 +678,3 @@ internal fun ViewPickerDropdown(
 }
 
 private val dimens @Composable get() = OpenTasksTheme.dimens
-

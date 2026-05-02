@@ -14,7 +14,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -42,10 +46,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.formatDateShort
-import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
-import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.TaskCategory
 import com.udnahc.opentasks.data.model.TaskListViewMode
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
@@ -54,8 +57,6 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
-import kotlinx.datetime.DateTimeUnit
-import kotlinx.datetime.plus
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
 import opentasks.composeapp.generated.resources.back
@@ -67,6 +68,7 @@ import opentasks.composeapp.generated.resources.ic_check_box_outline
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_repeat
+import opentasks.composeapp.generated.resources.ic_unfold
 import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.later
 import opentasks.composeapp.generated.resources.next_7_days
@@ -76,15 +78,6 @@ import opentasks.composeapp.generated.resources.today
 import opentasks.composeapp.generated.resources.toggle_view_mode
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-
-private enum class TaskCategory {
-    OVERDUE,
-    TODAY,
-    NEXT_7_DAYS,
-    LATER,
-    NO_DATE,
-    COMPLETED,
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,12 +90,8 @@ fun QuadrantDetailScreen(
     onCreateTask: (TaskPriority) -> Unit,
 ) {
     LaunchedEffect(priority) { viewModel.selectPriority(priority) }
-    val tasks by viewModel.tasksForSelectedPriority.collectAsState()
-    val tasksByStatus by viewModel.tasksByStatus.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
-    val categoryNames by viewModel.categoryNames.collectAsState()
-    val defaultCategoryName = stringResource(Res.string.inbox)
-    var viewMode by remember { mutableStateOf(TaskListViewMode.LIST) }
+    val viewMode by viewModel.viewMode.collectAsState()
 
     val density = LocalDensity.current
     val statusBarHeight = with(density) {
@@ -113,10 +102,13 @@ fun QuadrantDetailScreen(
 
     when (viewMode) {
         TaskListViewMode.LIST -> {
+            val categorizedTasks by viewModel.categorizedTasks.collectAsState()
+            val categoryNames by viewModel.categoryNames.collectAsState()
+            val defaultCategoryName = stringResource(Res.string.inbox)
             QuadrantDetailContent(
                 title = title,
                 priority = priority,
-                tasks = tasks,
+                categorizedTasks = categorizedTasks,
                 categoryNames = categoryNames,
                 defaultCategoryName = defaultCategoryName,
                 onBack = onBack,
@@ -124,10 +116,11 @@ fun QuadrantDetailScreen(
                 onToggleComplete = { viewModel.toggleComplete(it) },
                 onAddTask = { onCreateTask(priority) },
                 viewMode = viewMode,
-                onViewModeToggle = { viewMode = TaskListViewMode.BOARD },
+                onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.BOARD) },
             )
         }
         TaskListViewMode.BOARD -> {
+            val tasksByStatus by viewModel.tasksByStatus.collectAsState()
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -163,7 +156,7 @@ fun QuadrantDetailScreen(
                         )
                     },
                     actions = {
-                        IconButton(onClick = { viewMode = TaskListViewMode.LIST }) {
+                        IconButton(onClick = { viewModel.setViewMode(TaskListViewMode.LIST) }) {
                             Icon(
                                 painter = painterResource(Res.drawable.ic_list),
                                 contentDescription = stringResource(Res.string.toggle_view_mode),
@@ -206,7 +199,7 @@ fun QuadrantDetailScreen(
 internal fun QuadrantDetailContent(
     title: String,
     priority: TaskPriority,
-    tasks: List<Task>,
+    categorizedTasks: List<MatrixViewModel.TaskCategoryGroup>,
     categoryNames: Map<String, String> = emptyMap(),
     defaultCategoryName: String = "Inbox",
     onBack: () -> Unit,
@@ -215,24 +208,8 @@ internal fun QuadrantDetailContent(
     onAddTask: () -> Unit = {},
     viewMode: TaskListViewMode = TaskListViewMode.LIST,
     onViewModeToggle: () -> Unit = {},
-    startOfToday: Long = run {
-        val today = todayLocal()
-        startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)
-    },
-    startOfTomorrow: Long = run {
-        val tomorrow = todayLocal().plus(1, DateTimeUnit.DAY)
-        startOfDayLocalMillis(tomorrow.year, tomorrow.monthNumber, tomorrow.dayOfMonth)
-    },
-    endOfNext7Days: Long = run {
-        val next7 = todayLocal().plus(7, DateTimeUnit.DAY)
-        startOfDayLocalMillis(next7.year, next7.monthNumber, next7.dayOfMonth)
-    },
 ) {
     val dimens = OpenTasksTheme.dimens
-
-    val categorized = remember(tasks, startOfToday, startOfTomorrow, endOfNext7Days) {
-        categorize(tasks, startOfToday, startOfTomorrow, endOfNext7Days)
-    }
 
     // Track collapsed state per category
     val collapsedState = remember { mutableStateMapOf<TaskCategory, Boolean>() }
@@ -297,40 +274,40 @@ internal fun QuadrantDetailContent(
                 .padding(innerPadding)
                 .padding(horizontal = dimens.paddingLarge),
         ) {
-            categorized.forEach { (category, categoryTasks) ->
+            categorizedTasks.forEach { group ->
+                val category = group.category
+                val categoryTasks = group.tasks
                 if (categoryTasks.isEmpty()) return@forEach
 
                 val isCollapsed = collapsedState[category] == true
 
                 item(key = "section_$category") {
                     val label = categoryLabel(category)
-                    CollapsibleSection(
+                    QuadrantSectionHeader(
                         label = label,
                         count = categoryTasks.size,
                         isCollapsed = isCollapsed,
                         onToggle = { collapsedState[category] = !isCollapsed },
-                        headerCardModifier = Modifier.padding(top = dimens.paddingMedium),
                         labelColor = MaterialTheme.colorScheme.onBackground,
-                    ) {
-                        Column {
-                            categoryTasks.forEachIndexed { index, task ->
-                                DetailTaskRow(
-                                    task = task,
-                                    priority = priority,
-                                    isOverdue = category == TaskCategory.OVERDUE,
-                                    categoryName = categoryNames[task.categoryId] ?: defaultCategoryName,
-                                    onToggleComplete = { onToggleComplete(task) },
-                                    onClick = { onTaskClick(task) },
-                                )
-                                if (index < categoryTasks.lastIndex) {
-                                    HorizontalDivider(
-                                        color = MaterialTheme.colorScheme.surfaceVariant,
-                                        thickness = dimens.dividerThin,
-                                        modifier = Modifier.padding(horizontal = dimens.paddingLarge),
-                                    )
-                                }
-                            }
-                        }
+                        modifier = Modifier.padding(top = dimens.paddingMedium),
+                    )
+                }
+
+                if (!isCollapsed) {
+                    items(categoryTasks, key = { it.id }) { task ->
+                        DetailTaskRow(
+                            task = task,
+                            priority = priority,
+                            isOverdue = category == TaskCategory.OVERDUE,
+                            categoryName = categoryNames[task.categoryId] ?: defaultCategoryName,
+                            onToggleComplete = { onToggleComplete(task) },
+                            onClick = { onTaskClick(task) },
+                        )
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            thickness = dimens.dividerThin,
+                            modifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                        )
                     }
                 }
 
@@ -338,6 +315,54 @@ internal fun QuadrantDetailContent(
                     Spacer(Modifier.size(dimens.spacerSmall))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun QuadrantSectionHeader(
+    label: String,
+    count: Int,
+    isCollapsed: Boolean,
+    onToggle: () -> Unit,
+    labelColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val dimens = OpenTasksTheme.dimens
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        shape = RoundedCornerShape(dimens.cornerXLarge),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingMedium),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = labelColor,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(dimens.spacerSmall))
+            Icon(
+                painter = painterResource(
+                    if (isCollapsed) Res.drawable.ic_list else Res.drawable.ic_unfold
+                ),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(dimens.iconSmall),
+            )
         }
     }
 }
@@ -433,47 +458,6 @@ internal fun DetailTaskRow(
     }
 }
 
-private fun categorize(
-    tasks: List<Task>,
-    startOfToday: Long,
-    startOfTomorrow: Long,
-    endOfNext7Days: Long,
-): List<Pair<TaskCategory, List<Task>>> {
-    val incomplete = tasks.filter { it.status != TaskStatus.DONE }
-    val completed = tasks.filter { it.status == TaskStatus.DONE }
-
-    val overdue = incomplete
-        .filter { it.deadline != null && it.deadline < startOfToday }
-        .sortedBy { it.deadline }
-
-    val today = incomplete
-        .filter { it.deadline != null && it.deadline >= startOfToday && it.deadline < startOfTomorrow }
-        .sortedBy { it.deadline }
-
-    val next7Days = incomplete
-        .filter { it.deadline != null && it.deadline >= startOfTomorrow && it.deadline < endOfNext7Days }
-        .sortedBy { it.deadline }
-
-    val later = incomplete
-        .filter { it.deadline != null && it.deadline >= endOfNext7Days }
-        .sortedBy { it.deadline }
-
-    val noDate = incomplete
-        .filter { it.deadline == null }
-        .sortedBy { it.createdAt }
-
-    val sortedCompleted = completed.sortedByDescending { it.updatedAt }
-
-    return listOf(
-        TaskCategory.OVERDUE to overdue,
-        TaskCategory.TODAY to today,
-        TaskCategory.NEXT_7_DAYS to next7Days,
-        TaskCategory.LATER to later,
-        TaskCategory.NO_DATE to noDate,
-        TaskCategory.COMPLETED to sortedCompleted,
-    )
-}
-
 @Composable
 private fun categoryLabel(category: TaskCategory): String = when (category) {
     TaskCategory.OVERDUE -> stringResource(Res.string.overdue)
@@ -483,4 +467,3 @@ private fun categoryLabel(category: TaskCategory): String = when (category) {
     TaskCategory.NO_DATE -> stringResource(Res.string.no_date)
     TaskCategory.COMPLETED -> stringResource(Res.string.completed)
 }
-

@@ -18,6 +18,7 @@ class AddTaskAction(
     suspend operator fun invoke(
         title: String,
         content: String,
+        subtasks: String = "",
         priority: TaskPriority = TaskPriority.NONE,
         deadline: Long? = null,
         endDeadline: Long? = null,
@@ -43,6 +44,7 @@ class AddTaskAction(
         val task = Task(
                 title = title,
                 content = content,
+                subtasks = subtasks,
                 priority = priority,
                 deadline = deadline,
                 endDeadline = endDeadline,

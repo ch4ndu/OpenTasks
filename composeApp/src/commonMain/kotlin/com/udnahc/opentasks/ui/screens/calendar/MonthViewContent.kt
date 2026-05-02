@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
-import com.udnahc.opentasks.domain.usecase.task.tasksForDay
 import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
@@ -61,7 +60,7 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun MonthViewContent(
-    tasks: List<Task>,
+    selectedTasks: List<Task>,
     todayYear: Int,
     todayMonth: Int,
     todayDay: Int,
@@ -238,9 +237,6 @@ internal fun MonthViewContent(
 
             // ── Task list (fades in as collapse progresses) ───
             if (progress > 0f && selectedDay != null) {
-                val selectedTasks = remember(selectedDay, tasks) {
-                    tasksForDay(tasks, dayKeyFromDate(selectedDay.year, selectedDay.month, selectedDay.day))
-                }
                 val defaultCategoryName = stringResource(Res.string.inbox)
 
                 LazyColumn(
@@ -512,4 +508,3 @@ private fun WeekRowContent(
         }
     }
 }
-

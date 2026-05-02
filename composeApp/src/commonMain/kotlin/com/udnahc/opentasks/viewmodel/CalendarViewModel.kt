@@ -3,6 +3,7 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.extensions.dayKey
+import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.data.model.toCalendarTask
@@ -10,9 +11,9 @@ import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -21,7 +22,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 class CalendarViewModel(
-    observeAllTasks: ObserveAllTasksUseCase,
     observeTasksByDay: ObserveTasksByDayUseCase,
     observeAllCountdowns: ObserveAllCountdownsUseCase,
     observeAllCategories: ObserveAllCategoriesUseCase,
@@ -30,20 +30,13 @@ class CalendarViewModel(
 
     private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
     val taskPendingSeriesChoice: StateFlow<Task?> = completionHandler.taskPendingSeriesChoice
+    private val _listSelectedDayKey = MutableStateFlow<Long?>(null)
+    private val _monthSelectedDayKey = MutableStateFlow<Long?>(null)
 
     val categoryNames: StateFlow<Map<String, String>> = observeAllCategories()
         .map { cats -> cats.associate { it.id to it.name } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
-
-    val tasks: StateFlow<List<Task>> = combine(
-        observeAllTasks(),
-        observeAllCountdowns(),
-    ) { taskList, countdowns ->
-        taskList + countdowns.map { it.toCalendarTask() }
-    }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val tasksByDay: StateFlow<Map<Long, List<Task>>> = combine(
         observeTasksByDay(),
@@ -59,6 +52,32 @@ class CalendarViewModel(
     }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val selectedListDayTasks: StateFlow<List<Task>> = combine(
+        tasksByDay,
+        _listSelectedDayKey,
+    ) { byDay, selectedKey -> selectedKey?.let { byDay[it] }.orEmpty() }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val selectedMonthDayTasks: StateFlow<List<Task>> = combine(
+        tasksByDay,
+        _monthSelectedDayKey,
+    ) { byDay, selectedKey -> selectedKey?.let { byDay[it] }.orEmpty() }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun selectListDay(millis: Long) {
+        _listSelectedDayKey.value = dayKey(millis)
+    }
+
+    fun clearMonthSelectedDay() {
+        _monthSelectedDayKey.value = null
+    }
+
+    fun selectMonthDay(year: Int, month: Int, day: Int) {
+        _monthSelectedDayKey.value = dayKeyFromDate(year, month, day)
+    }
 
     fun toggleComplete(task: Task) {
         if (task.isCountdownItem) return

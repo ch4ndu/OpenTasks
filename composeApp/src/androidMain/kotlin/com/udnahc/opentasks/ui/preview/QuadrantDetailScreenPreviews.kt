@@ -1,11 +1,12 @@
 package com.udnahc.opentasks.ui.preview
 
 import androidx.compose.runtime.Composable
-import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
+import com.udnahc.opentasks.data.model.TaskCategory
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.ui.screens.DetailTaskRow
 import com.udnahc.opentasks.ui.screens.QuadrantDetailContent
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.viewmodel.MatrixViewModel
 
 @Composable
 @LightDarkPreview
@@ -14,13 +15,15 @@ private fun QuadrantDetailPreview() {
         QuadrantDetailContent(
             title = "Urgent & Important",
             priority = TaskPriority.HIGH,
-            tasks = PreviewSampleData.sampleTasks.filter { it.priority == TaskPriority.HIGH },
+            categorizedTasks = listOf(
+                MatrixViewModel.TaskCategoryGroup(
+                    TaskCategory.TODAY,
+                    PreviewSampleData.sampleTasks.filter { it.priority == TaskPriority.HIGH },
+                )
+            ),
             onBack = {},
             onTaskClick = {},
             onToggleComplete = {},
-            startOfToday = PreviewSampleData.sampleTodayMillis,
-            startOfTomorrow = PreviewSampleData.sampleTodayMillis + MILLIS_PER_DAY,
-            endOfNext7Days = PreviewSampleData.sampleTodayMillis + 7 * MILLIS_PER_DAY,
         )
     }
 }

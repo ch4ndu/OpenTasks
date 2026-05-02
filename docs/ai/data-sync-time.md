@@ -52,4 +52,5 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - After a successful full fetch, physically missing server rows are treated as damage/manual deletion: synced active local rows absent from the remote `localId` set are marked unsynced for recreation.
 - Push bookkeeping must mark rows synced only if `updatedAt` and `isDeleted` still match the pushed state.
 - Task-tag assignments sync through `task_tags` with derived `localId = "$taskId:$tagId"` and local primary key `(taskId, tagId)`.
+- `tasks.subtasks` is a synced JSON array string for editor subtask state. Each entry must contain exactly `id`, `text`, and `isChecked`; blank subtask rows are dropped before save. Existing task content is not automatically migrated into this field.
 - Device clock skew is a known limitation: a bad device clock can incorrectly win last-write-wins conflicts.
