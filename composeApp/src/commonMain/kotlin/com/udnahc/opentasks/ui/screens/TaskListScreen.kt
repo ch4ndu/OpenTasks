@@ -40,8 +40,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskListViewMode
@@ -50,18 +48,14 @@ import com.udnahc.opentasks.data.model.TaskSortOption
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
-import com.udnahc.opentasks.ui.theme.StarGold
 import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel.SectionGroup
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.completed
 import opentasks.composeapp.generated.resources.ic_check
-import opentasks.composeapp.generated.resources.ic_check_box
-import opentasks.composeapp.generated.resources.ic_check_box_outline
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_list
-import opentasks.composeapp.generated.resources.ic_star
 import opentasks.composeapp.generated.resources.ic_unfold
 import opentasks.composeapp.generated.resources.ic_settings
 import opentasks.composeapp.generated.resources.inbox
@@ -326,7 +320,7 @@ internal fun TaskListContent(
                         Spacer(Modifier.size(dimens.spacerXLarge))
                     }
 
-                    item(key = "completed_section") {
+                    item(key = "completed_section_header") {
                         CollapsibleSection(
                             label = stringResource(Res.string.completed).uppercase(),
                             count = completedTasks.size,
@@ -334,23 +328,26 @@ internal fun TaskListContent(
                             onToggle = { completedCollapsed = !completedCollapsed },
                             headerCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
                             contentCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
-                        ) {
-                            Column {
-                                completedTasks.forEachIndexed { index, task ->
-                                    CompletedTaskRow(
-                                        task = task,
-                                        onToggleComplete = { onToggleComplete(task) },
-                                        onClick = { onTaskClick(task) },
-                                        onToggleStar = { onToggleStar(task) },
-                                    )
-                                    if (index < completedTasks.lastIndex) {
-                                        HorizontalDivider(
-                                            color = MaterialTheme.colorScheme.surfaceVariant,
-                                            thickness = dimens.dividerThin,
-                                            modifier = Modifier.padding(horizontal = dimens.paddingLarge),
-                                        )
-                                    }
-                                }
+                        ) {}
+                    }
+
+                    if (!completedCollapsed) {
+                        items(
+                            items = completedTasks,
+                            key = { "completed_${it.id}" },
+                        ) { task ->
+                            CompletedTaskRow(
+                                task = task,
+                                onToggleComplete = { onToggleComplete(task) },
+                                onClick = { onTaskClick(task) },
+                                onToggleStar = { onToggleStar(task) },
+                            )
+                            if (task.id != completedTasks.last().id) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    thickness = dimens.dividerThin,
+                                    modifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                                )
                             }
                         }
                     }
@@ -461,26 +458,14 @@ private fun SortOptionDropdown(
         TaskSortOption.entries.forEach { option ->
             DropdownMenuItem(
                 text = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = sortOptionLabel(option),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (option == currentOption) PrimaryBlue
-                            else MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (option == currentOption) {
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_check),
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(OpenTasksTheme.dimens.iconDefault),
-                            )
-                        }
-                    }
+                    SelectedOptionRow(
+                        label = sortOptionLabel(option),
+                        isSelected = option == currentOption,
+                        onClick = {
+                            onOptionSelected(option)
+                            onDismiss()
+                        },
+                    )
                 },
                 onClick = {
                     onOptionSelected(option)
@@ -514,51 +499,26 @@ internal fun TaskRow(
             .padding(horizontal = dimens.paddingLarge, vertical = dimens.listRowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(
+        TaskCheckboxButton(
+            isChecked = false,
+            tint = priorityColor(task.priority),
             onClick = onToggleComplete,
-            modifier = Modifier.size(dimens.touchTargetMedium),
-        ) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_check_box_outline),
-                contentDescription = null,
-                tint = priorityColor(task.priority),
-                modifier = Modifier.size(dimens.iconLarge),
-            )
-        }
+        )
 
         Spacer(Modifier.width(dimens.spacerLarge))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = task.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            TaskTitleText(
+                title = task.title,
+                isCompleted = false,
             )
-            if (task.content.isNotBlank()) {
-                Text(
-                    text = stripHtmlTags(task.content),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            TaskContentPreviewText(task.content)
         }
 
-        IconButton(
+        TaskStarButton(
+            isStarred = task.isStarred,
             onClick = onToggleStar,
-            modifier = Modifier.size(dimens.touchTargetMedium),
-        ) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_star),
-                contentDescription = null,
-                tint = if (task.isStarred) StarGold
-                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                modifier = Modifier.size(dimens.iconDefault),
-            )
-        }
+        )
     }
 }
 
@@ -577,52 +537,26 @@ internal fun CompletedTaskRow(
             .padding(horizontal = dimens.paddingLarge, vertical = dimens.listRowCompletedVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(
+        TaskCheckboxButton(
+            isChecked = true,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
             onClick = onToggleComplete,
-            modifier = Modifier.size(dimens.touchTargetMedium),
-        ) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_check_box),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.size(dimens.iconLarge),
-            )
-        }
+        )
 
         Spacer(Modifier.width(dimens.spacerLarge))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = task.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textDecoration = TextDecoration.LineThrough,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            TaskTitleText(
+                title = task.title,
+                isCompleted = true,
             )
-            if (task.content.isNotBlank()) {
-                Text(
-                    text = stripHtmlTags(task.content),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            TaskContentPreviewText(task.content)
         }
 
-        IconButton(
+        TaskStarButton(
+            isStarred = task.isStarred,
             onClick = onToggleStar,
-            modifier = Modifier.size(dimens.touchTargetMedium),
-        ) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_star),
-                contentDescription = null,
-                tint = if (task.isStarred) StarGold
-                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                modifier = Modifier.size(dimens.iconDefault),
-            )
-        }
+        )
     }
 }
 

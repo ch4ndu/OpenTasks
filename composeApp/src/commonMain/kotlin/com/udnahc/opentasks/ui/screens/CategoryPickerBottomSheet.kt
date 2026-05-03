@@ -281,26 +281,11 @@ internal fun CategoryPickerContent(
 
             // Add Category row
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onAddCategoryClick)
-                        .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_add),
-                        contentDescription = null,
-                        tint = PrimaryBlue,
-                        modifier = Modifier.size(dimens.iconXLarge),
-                    )
-                    Spacer(Modifier.width(dimens.spacerXXLarge))
-                    Text(
-                        text = stringResource(Res.string.add_list),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = PrimaryBlue,
-                    )
-                }
+                IconLabelActionRow(
+                    icon = Res.drawable.ic_add,
+                    label = stringResource(Res.string.add_list),
+                    onClick = onAddCategoryClick,
+                )
             }
         }
     }

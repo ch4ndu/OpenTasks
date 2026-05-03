@@ -17,7 +17,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -553,23 +552,11 @@ private fun ThemePickerDialog(
                         ThemeMode.LIGHT -> stringResource(Res.string.theme_light)
                         ThemeMode.DARK -> stringResource(Res.string.theme_dark)
                     }
-                    Row(
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onThemeSelected(mode) }
-                            .padding(vertical = OpenTasksTheme.dimens.paddingSmall),
-                    ) {
-                        RadioButton(
-                            selected = mode == currentTheme,
-                            onClick = { onThemeSelected(mode) },
-                        )
-                        Spacer(Modifier.width(OpenTasksTheme.dimens.spacerLarge))
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
+                    RadioOptionRow(
+                        label = label,
+                        isSelected = mode == currentTheme,
+                        onClick = { onThemeSelected(mode) },
+                    )
                 }
             }
         },
@@ -593,23 +580,11 @@ private fun TextSizePickerDialog(
         text = {
             Column {
                 TextSizePreference.entries.forEach { preference ->
-                    Row(
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onTextSizeSelected(preference) }
-                            .padding(vertical = OpenTasksTheme.dimens.paddingSmall),
-                    ) {
-                        RadioButton(
-                            selected = preference == currentTextSize,
-                            onClick = { onTextSizeSelected(preference) },
-                        )
-                        Spacer(Modifier.width(OpenTasksTheme.dimens.spacerLarge))
-                        Text(
-                            text = preference.label(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
+                    RadioOptionRow(
+                        label = preference.label(),
+                        isSelected = preference == currentTextSize,
+                        onClick = { onTextSizeSelected(preference) },
+                    )
                 }
             }
         },

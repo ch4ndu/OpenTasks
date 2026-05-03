@@ -31,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.currentMonth
 import com.udnahc.opentasks.data.extensions.currentYear
@@ -46,25 +45,14 @@ import opentasks.composeapp.generated.resources.custom
 import opentasks.composeapp.generated.resources.daily
 import opentasks.composeapp.generated.resources.end
 import opentasks.composeapp.generated.resources.every_weekday
-import opentasks.composeapp.generated.resources.fri
 import opentasks.composeapp.generated.resources.ic_check
-import opentasks.composeapp.generated.resources.ic_chevron_left
-import opentasks.composeapp.generated.resources.ic_chevron_right
-import opentasks.composeapp.generated.resources.mon
 import opentasks.composeapp.generated.resources.monthly_with_day
 import opentasks.composeapp.generated.resources.none
-import opentasks.composeapp.generated.resources.next_month
 import opentasks.composeapp.generated.resources.ok
-import opentasks.composeapp.generated.resources.previous_month
 import opentasks.composeapp.generated.resources.reminder
 import opentasks.composeapp.generated.resources.repeat
-import opentasks.composeapp.generated.resources.sat
 import opentasks.composeapp.generated.resources.start
-import opentasks.composeapp.generated.resources.sun
-import opentasks.composeapp.generated.resources.thu
 import opentasks.composeapp.generated.resources.time
-import opentasks.composeapp.generated.resources.tue
-import opentasks.composeapp.generated.resources.wed
 import opentasks.composeapp.generated.resources.weekly_with_day
 import opentasks.composeapp.generated.resources.yearly_with_date
 import org.jetbrains.compose.resources.painterResource
@@ -125,10 +113,10 @@ internal fun ReminderDialog(
                     } else {
                         option in localSelected
                     }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
+                    SelectedOptionRow(
+                        label = stringResource(option.labelRes),
+                        isSelected = isSelected,
+                        onClick = {
                                 localSelected = if (option == ReminderOption.NONE) {
                                     emptySet()
                                 } else {
@@ -138,25 +126,8 @@ internal fun ReminderDialog(
                                         localSelected + option
                                     }
                                 }
-                            }
-                            .padding(vertical = dimens.listRowCompletedVerticalPadding),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(option.labelRes),
-                            color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        if (isSelected) {
-                            Spacer(Modifier.weight(1f))
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_check),
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(dimens.iconDefault),
-                            )
-                        }
-                    }
+                        },
+                    )
                 }
             }
         },
@@ -189,28 +160,11 @@ internal fun RepeatDialog(
         text = {
             Column {
                 RecurrenceType.entries.forEach { option ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelected(option) }
-                            .padding(vertical = dimens.listRowCompletedVerticalPadding),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = recurrenceLabel(option),
-                            color = if (option == selected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        if (option == selected) {
-                            Spacer(Modifier.weight(1f))
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_check),
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(dimens.iconDefault),
-                            )
-                        }
-                    }
+                    SelectedOptionRow(
+                        label = recurrenceLabel(option),
+                        isSelected = option == selected,
+                        onClick = { onSelected(option) },
+                    )
                 }
             }
         },
@@ -245,66 +199,27 @@ internal fun DurationDateDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "${monthName(displayMonth)} $displayYear",
-                    fontWeight = FontWeight.Bold,
-                )
-                Row {
-                    IconButton(onClick = {
+            MonthPagerHeader(
+                title = "${monthName(displayMonth)} $displayYear",
+                onPreviousMonth = {
                         coroutineScope.launch {
                             pagerState.animateScrollToPage(pagerState.currentPage - 1)
                         }
-                    }) {
-                        Icon(
-                            painter = painterResource(Res.drawable.ic_chevron_left),
-                            contentDescription = stringResource(Res.string.previous_month),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    IconButton(onClick = {
+                },
+                onNextMonth = {
                         coroutineScope.launch {
                             pagerState.animateScrollToPage(pagerState.currentPage + 1)
                         }
-                    }) {
-                        Icon(
-                            painter = painterResource(Res.drawable.ic_chevron_right),
-                            contentDescription = stringResource(Res.string.next_month),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
+                },
+            )
         },
         text = {
             Column {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    listOf(
-                        Res.string.sun,
-                        Res.string.mon,
-                        Res.string.tue,
-                        Res.string.wed,
-                        Res.string.thu,
-                        Res.string.fri,
-                        Res.string.sat
-                    ).forEach { dayRes ->
-                        Text(
-                            text = stringResource(dayRes),
-                            modifier = Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
+                WeekdayHeader()
                 Spacer(Modifier.height(OpenTasksTheme.dimens.spacerLarge))
                 HorizontalPager(state = pagerState) { page ->
                     val (month, year) = pageToMonthYear(page)
-                    CalendarGrid(
+                    SelectableDayGrid(
                         month = month,
                         year = year,
                         selectedDay = if (month == selectedMonth && year == selectedYear) selectedDay else 0,
@@ -435,28 +350,11 @@ internal fun DurationRepeatDialog(
 
                         RecurrenceType.EVERY_WEEKDAY -> stringResource(Res.string.every_weekday)
                     }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelected(option) }
-                            .padding(vertical = dimens.listRowCompletedVerticalPadding),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = label,
-                            color = if (option == selected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        if (option == selected) {
-                            Spacer(Modifier.weight(1f))
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_check),
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(dimens.iconDefault),
-                            )
-                        }
-                    }
+                    SelectedOptionRow(
+                        label = label,
+                        isSelected = option == selected,
+                        onClick = { onSelected(option) },
+                    )
                 }
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.surfaceVariant,

@@ -45,22 +45,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import com.udnahc.opentasks.data.extensions.computeLocalMillis
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.currentMonth
 import com.udnahc.opentasks.data.extensions.currentYear
-import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
-import com.udnahc.opentasks.data.extensions.daysInMonth
 import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
-import com.udnahc.opentasks.data.extensions.computeLocalMillis
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.SmartListVisibility
+import com.udnahc.opentasks.ui.screens.MonthPagerHeader
+import com.udnahc.opentasks.ui.screens.SelectableDayGrid
+import com.udnahc.opentasks.ui.screens.SelectedOptionRow
+import com.udnahc.opentasks.ui.screens.WeekdayHeader
+import com.udnahc.opentasks.ui.screens.monthName
+import com.udnahc.opentasks.ui.screens.monthNameShort
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import kotlinx.coroutines.launch
@@ -87,26 +89,16 @@ import opentasks.composeapp.generated.resources.countdown_type
 import opentasks.composeapp.generated.resources.daily
 import opentasks.composeapp.generated.resources.date
 import opentasks.composeapp.generated.resources.edit
-import opentasks.composeapp.generated.resources.fri
 import opentasks.composeapp.generated.resources.ic_check
-import opentasks.composeapp.generated.resources.ic_chevron_left
 import opentasks.composeapp.generated.resources.ic_chevron_right
 import opentasks.composeapp.generated.resources.ic_close
-import opentasks.composeapp.generated.resources.mon
 import opentasks.composeapp.generated.resources.monthly
 import opentasks.composeapp.generated.resources.name_label
-import opentasks.composeapp.generated.resources.next_month
 import opentasks.composeapp.generated.resources.none
 import opentasks.composeapp.generated.resources.ok
-import opentasks.composeapp.generated.resources.previous_month
 import opentasks.composeapp.generated.resources.reminder
 import opentasks.composeapp.generated.resources.repeat
-import opentasks.composeapp.generated.resources.sat
 import opentasks.composeapp.generated.resources.save
-import opentasks.composeapp.generated.resources.sun
-import opentasks.composeapp.generated.resources.thu
-import opentasks.composeapp.generated.resources.tue
-import opentasks.composeapp.generated.resources.wed
 import opentasks.composeapp.generated.resources.weekly
 import opentasks.composeapp.generated.resources.yearly
 import org.jetbrains.compose.resources.StringResource
@@ -537,22 +529,6 @@ private fun FormRow(
     }
 }
 
-// ---- Short month name helper ----
-
-private fun monthNameShort(month: Int): String = when (month) {
-    1 -> "Jan"; 2 -> "Feb"; 3 -> "Mar"; 4 -> "Apr"
-    5 -> "May"; 6 -> "Jun"; 7 -> "Jul"; 8 -> "Aug"
-    9 -> "Sep"; 10 -> "Oct"; 11 -> "Nov"; 12 -> "Dec"
-    else -> ""
-}
-
-private fun monthNameFull(month: Int): String = when (month) {
-    1 -> "January"; 2 -> "February"; 3 -> "March"; 4 -> "April"
-    5 -> "May"; 6 -> "June"; 7 -> "July"; 8 -> "August"
-    9 -> "September"; 10 -> "October"; 11 -> "November"; 12 -> "December"
-    else -> ""
-}
-
 // ---- Date picker dialog (calendar grid, same pattern as CreateTaskScreen) ----
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -575,72 +551,32 @@ private fun CountdownDatePickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "${monthNameFull(displayMonth)} $displayYear",
-                    fontWeight = FontWeight.Bold,
-                )
-                Row {
-                    IconButton(onClick = {
+            MonthPagerHeader(
+                title = "${monthName(displayMonth)} $displayYear",
+                onPreviousMonth = {
                         coroutineScope.launch {
                             pagerState.animateScrollToPage(pagerState.currentPage - 1)
                         }
-                    }) {
-                        Icon(
-                            painter = painterResource(Res.drawable.ic_chevron_left),
-                            contentDescription = stringResource(Res.string.previous_month),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    IconButton(onClick = {
+                },
+                onNextMonth = {
                         coroutineScope.launch {
                             pagerState.animateScrollToPage(pagerState.currentPage + 1)
                         }
-                    }) {
-                        Icon(
-                            painter = painterResource(Res.drawable.ic_chevron_right),
-                            contentDescription = stringResource(Res.string.next_month),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
+                },
+            )
         },
         text = {
             Column {
-                // Day-of-week headers
-                val dayNames = listOf(
-                    stringResource(Res.string.sun),
-                    stringResource(Res.string.mon),
-                    stringResource(Res.string.tue),
-                    stringResource(Res.string.wed),
-                    stringResource(Res.string.thu),
-                    stringResource(Res.string.fri),
-                    stringResource(Res.string.sat),
-                )
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    dayNames.forEach { day ->
-                        Text(
-                            text = day,
-                            modifier = Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
+                WeekdayHeader()
                 Spacer(Modifier.height(OpenTasksTheme.dimens.spacerLarge))
                 HorizontalPager(state = pagerState) { page ->
                     val (month, year) = pageToMonthYear(page)
-                    CalendarGrid(
+                    SelectableDayGrid(
                         month = month,
                         year = year,
                         selectedDay = if (month == selectedMonth && year == selectedYear) selectedDay else 0,
                         todayDay = if (month == currentMonth() && year == currentYear()) currentDay() else 0,
+                        useLargeCells = true,
                         onDayClick = { day ->
                             onDaySelected(day, month, year)
                             onDismiss()
@@ -659,75 +595,6 @@ private fun CountdownDatePickerDialog(
             }
         },
     )
-}
-
-@Composable
-private fun CalendarGrid(
-    month: Int,
-    year: Int,
-    selectedDay: Int,
-    todayDay: Int,
-    onDayClick: (Int) -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    val totalDays = daysInMonth(year, month)
-    val firstDow = dayOfWeekIndex(year, month, 1)
-
-    Column {
-        var dayCounter = 1
-        for (week in 0 until 6) {
-            if (dayCounter > totalDays) break
-            Row(modifier = Modifier.fillMaxWidth()) {
-                for (dow in 0 until 7) {
-                    val cellDay = if (week == 0 && dow < firstDow || dayCounter > totalDays) {
-                        0
-                    } else {
-                        dayCounter++
-                        dayCounter - 1
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(dimens.touchTargetLarge)
-                            .then(
-                                if (cellDay > 0) {
-                                    Modifier.clickable { onDayClick(cellDay) }
-                                } else Modifier
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (cellDay > 0) {
-                            val isSelected = cellDay == selectedDay
-                            val isToday = cellDay == todayDay
-                            Box(
-                                modifier = Modifier
-                                    .size(dimens.calendarDaySize)
-                                    .then(
-                                        if (isSelected) {
-                                            Modifier
-                                                .clip(CircleShape)
-                                                .background(PrimaryBlue)
-                                        } else if (isToday) {
-                                            Modifier
-                                                .clip(CircleShape)
-                                                .background(PrimaryBlue.copy(alpha = 0.2f))
-                                        } else Modifier
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = cellDay.toString(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isSelected) Color.White
-                                    else MaterialTheme.colorScheme.onBackground,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 // ---- Reminder picker dialog ----
@@ -1036,4 +903,3 @@ private fun SmartListPickerDialog(
         confirmButton = {},
     )
 }
-

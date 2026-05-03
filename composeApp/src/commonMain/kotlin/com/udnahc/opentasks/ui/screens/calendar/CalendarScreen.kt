@@ -45,11 +45,13 @@ import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
+import com.udnahc.opentasks.ui.screens.SelectedOptionRow
 import com.udnahc.opentasks.ui.screens.SyncPullToRefresh
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.calendar_view_day
@@ -109,16 +111,13 @@ fun CalendarScreen(
     onRefresh: () -> Unit = {},
 ) {
     val tasksByDay by viewModel.tasksByDay.collectAsState()
-    val selectedListDayTasks by viewModel.selectedListDayTasks.collectAsState()
-    val selectedMonthDayTasks by viewModel.selectedMonthDayTasks.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
-    val categoryNames by viewModel.categoryNames.collectAsState()
 
     CalendarContent(
         tasksByDay = tasksByDay,
-        selectedListDayTasks = selectedListDayTasks,
-        selectedMonthDayTasks = selectedMonthDayTasks,
-        categoryNames = categoryNames,
+        selectedListDayTasksFlow = viewModel.selectedListDayTasks,
+        selectedMonthDayTasksFlow = viewModel.selectedMonthDayTasks,
+        categoryNamesFlow = viewModel.categoryNames,
         onListDaySelected = { viewModel.selectListDay(it) },
         onMonthDaySelected = { year, month, day -> viewModel.selectMonthDay(year, month, day) },
         onMonthDayCleared = { viewModel.clearMonthSelectedDay() },
@@ -145,9 +144,9 @@ fun CalendarScreen(
 @Composable
 private fun CalendarContent(
     tasksByDay: Map<Long, List<Task>>,
-    selectedListDayTasks: List<Task>,
-    selectedMonthDayTasks: List<Task>,
-    categoryNames: Map<String, String>,
+    selectedListDayTasksFlow: StateFlow<List<Task>>,
+    selectedMonthDayTasksFlow: StateFlow<List<Task>>,
+    categoryNamesFlow: StateFlow<Map<String, String>>,
     onListDaySelected: (Long) -> Unit,
     onMonthDaySelected: (Int, Int, Int) -> Unit,
     onMonthDayCleared: () -> Unit,
@@ -371,6 +370,8 @@ private fun CalendarContent(
         ) {
         when (currentView) {
             CalendarViewType.LIST -> {
+                val selectedListDayTasks by selectedListDayTasksFlow.collectAsState()
+                val categoryNames by categoryNamesFlow.collectAsState()
                 ListViewContent(
                     dayTasks = selectedListDayTasks,
                     todayMillis = todayMillis,
@@ -406,6 +407,8 @@ private fun CalendarContent(
             }
 
             CalendarViewType.MONTH -> {
+                val selectedMonthDayTasks by selectedMonthDayTasksFlow.collectAsState()
+                val categoryNames by categoryNamesFlow.collectAsState()
                 MonthViewContent(
                     selectedTasks = selectedMonthDayTasks,
                     todayYear = todayYear,
@@ -650,26 +653,11 @@ internal fun ViewPickerDropdown(
         CalendarViewType.entries.forEach { view ->
             DropdownMenuItem(
                 text = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = stringResource(view.labelRes),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (view == currentView) PrimaryBlue
-                            else MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (view == currentView) {
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_check),
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(OpenTasksTheme.dimens.iconDefault),
-                            )
-                        }
-                    }
+                    SelectedOptionRow(
+                        label = stringResource(view.labelRes),
+                        isSelected = view == currentView,
+                        onClick = { onViewSelected(view) },
+                    )
                 },
                 onClick = { onViewSelected(view) },
             )

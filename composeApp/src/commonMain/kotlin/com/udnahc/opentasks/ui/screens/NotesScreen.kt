@@ -48,15 +48,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /** Strips HTML tags and returns the first meaningful line as a preview. */
 internal fun noteContentPreview(content: String): String =
-    content
-        .replace(Regex("<[^>]*>"), " ")
-        .replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace(Regex("\\s+"), " ")
-        .trim()
-        .take(120)
+    stripHtmlTags(content).take(120)
 
 private fun formatNoteDate(localMillis: Long): String {
     if (localMillis == 0L) return ""
@@ -230,4 +222,3 @@ internal val previewNotes = listOf(
         updatedAt = 1773446400000L,
     ),
 )
-

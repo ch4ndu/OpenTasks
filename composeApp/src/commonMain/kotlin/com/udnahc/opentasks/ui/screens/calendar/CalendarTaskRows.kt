@@ -38,6 +38,8 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.ui.screens.EmptyPlaceholder
+import com.udnahc.opentasks.ui.screens.TaskCheckboxButton
+import com.udnahc.opentasks.ui.screens.TaskTitleText
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
@@ -196,32 +198,21 @@ internal fun CardTaskRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!isCountdownItem) {
-            IconButton(
+            TaskCheckboxButton(
+                isChecked = task.status == TaskStatus.DONE,
+                tint = if (task.status == TaskStatus.DONE) {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                } else {
+                    priorityColor(task.priority)
+                },
                 onClick = onToggleComplete,
-                modifier = Modifier.size(dimens.touchTargetMedium),
-            ) {
-                Icon(
-                    painter = painterResource(
-                        if (task.status == TaskStatus.DONE) Res.drawable.ic_check_box
-                        else Res.drawable.ic_check_box_outline
-                    ),
-                    contentDescription = null,
-                    tint = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    else priorityColor(task.priority),
-                    modifier = Modifier.size(dimens.iconLarge),
-                )
-            }
+            )
         }
         Spacer(Modifier.width(dimens.spacerLarge))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = task.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.onBackground,
-                textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            TaskTitleText(
+                title = task.title,
+                isCompleted = task.status == TaskStatus.DONE,
             )
             if (task.deadline != null) {
                 val dayPrefix = if (isToday) stringResource(Res.string.today) else formatDateShort(task.deadline)
@@ -274,32 +265,21 @@ internal fun CalendarTaskRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!isCountdownItem) {
-            IconButton(
+            TaskCheckboxButton(
+                isChecked = task.status == TaskStatus.DONE,
+                tint = if (task.status == TaskStatus.DONE) {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                } else {
+                    priorityColor(task.priority)
+                },
                 onClick = onToggleComplete,
-                modifier = Modifier.size(dimens.touchTargetMedium),
-            ) {
-                Icon(
-                    painter = painterResource(
-                        if (task.status == TaskStatus.DONE) Res.drawable.ic_check_box
-                        else Res.drawable.ic_check_box_outline
-                    ),
-                    contentDescription = null,
-                    tint = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    else priorityColor(task.priority),
-                    modifier = Modifier.size(dimens.iconLarge),
             )
-            }
         }
         Spacer(Modifier.width(dimens.spacerLarge))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = task.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.onBackground,
-                textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            TaskTitleText(
+                title = task.title,
+                isCompleted = task.status == TaskStatus.DONE,
             )
             if (task.deadline != null) {
                 Text(
@@ -427,4 +407,3 @@ internal fun EmptyDayPlaceholder() {
         modifier = Modifier.fillMaxWidth().padding(vertical = dimens.calendarEmptyPadding),
     )
 }
-

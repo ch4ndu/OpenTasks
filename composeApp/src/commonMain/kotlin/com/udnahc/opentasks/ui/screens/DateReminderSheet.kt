@@ -373,64 +373,21 @@ private fun DateTabContent(
 
     val dimens = OpenTasksTheme.dimens
     Column(modifier = Modifier.padding(horizontal = dimens.paddingXLarge)) {
-        // Month header with arrows
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "${monthName(displayMonth)} $displayYear",
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Row {
-                IconButton(onClick = {
+        MonthPagerHeader(
+            title = "${monthName(displayMonth)} $displayYear",
+            onPreviousMonth = {
                     coroutineScope.launch {
                         pagerState.animateScrollToPage(pagerState.currentPage - 1)
                     }
-                }) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_chevron_left),
-                        contentDescription = stringResource(Res.string.previous_month),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                IconButton(onClick = {
+            },
+            onNextMonth = {
                     coroutineScope.launch {
                         pagerState.animateScrollToPage(pagerState.currentPage + 1)
                     }
-                }) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_chevron_right),
-                        contentDescription = stringResource(Res.string.next_month),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
+            },
+        )
 
-        // Day of week headers
-        Row(modifier = Modifier.fillMaxWidth()) {
-            listOf(
-                Res.string.sun,
-                Res.string.mon,
-                Res.string.tue,
-                Res.string.wed,
-                Res.string.thu,
-                Res.string.fri,
-                Res.string.sat
-            ).forEach { dayRes ->
-                Text(
-                    text = stringResource(dayRes),
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
+        WeekdayHeader()
 
         Spacer(Modifier.height(dimens.spacerLarge))
 
@@ -439,7 +396,7 @@ private fun DateTabContent(
             state = pagerState,
         ) { page ->
             val (month, year) = pageToMonthYear(page)
-            CalendarGrid(
+            SelectableDayGrid(
                 month = month,
                 year = year,
                 selectedDay = if (month == selectedMonth && year == selectedYear) selectedDay else 0,
@@ -477,72 +434,6 @@ private fun DateTabContent(
             value = recurrenceLabel(selectedRecurrence),
             onClick = onShowRepeatDialog,
         )
-    }
-}
-
-@Composable
-internal fun CalendarGrid(
-    month: Int,
-    year: Int,
-    selectedDay: Int,
-    todayDay: Int,
-    onDayClick: (Int) -> Unit,
-) {
-    val daysInMonth = daysInMonth(year, month)
-    val firstDayOfWeek = dayOfWeekIndex(year, month, 1)
-
-    val dimens = OpenTasksTheme.dimens
-    val rows = ((daysInMonth + firstDayOfWeek + 6) / 7).coerceAtLeast(6)
-    Column {
-        for (row in 0 until rows) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-                for (col in 0..6) {
-                    val dayIndex = row * 7 + col - firstDayOfWeek + 1
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(dimens.reminderRowButtonHeight)
-                            .then(
-                                if (dayIndex in 1..daysInMonth) {
-                                    Modifier.clickable { onDayClick(dayIndex) }
-                                } else Modifier
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (dayIndex in 1..daysInMonth) {
-                            val isSelected = dayIndex == selectedDay
-                            val isToday = dayIndex == todayDay
-
-                            if (isSelected || isToday) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(dimens.reminderDayButtonSize)
-                                        .background(
-                                            color = if (isSelected) PrimaryBlue else PrimaryBlue.copy(
-                                                alpha = 0.3f
-                                            ),
-                                            shape = RoundedCornerShape(50),
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = dayIndex.toString(),
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                }
-                            } else {
-                                Text(
-                                    text = dayIndex.toString(),
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -694,52 +585,32 @@ private fun DurationTabContent(
         } else {
             stringResource(Res.string.none)
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onShowReminderDialog)
-                .padding(vertical = dimens.paddingLarge),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_alarm),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(dimens.iconDefault),
-            )
-            Spacer(Modifier.width(dimens.spacerXLarge))
-            Text(
-                stringResource(Res.string.reminder),
-                color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                reminderLabel,
-                color = if (hasReminders) PrimaryBlue
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (hasReminders) {
-                Spacer(Modifier.width(dimens.spacerSmall))
-                Icon(
-                    painter = painterResource(Res.drawable.ic_close),
-                    contentDescription = stringResource(Res.string.clear_reminder),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .size(dimens.iconSmall)
-                        .clickable(onClick = onClearReminders),
-                )
-            } else {
-                Spacer(Modifier.width(dimens.spacerSmall))
-                Icon(
-                    painter = painterResource(Res.drawable.ic_chevron_right),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(dimens.iconSmall),
-                )
-            }
-        }
+        LabelValueNavigationRow(
+            icon = Res.drawable.ic_alarm,
+            label = stringResource(Res.string.reminder),
+            value = reminderLabel,
+            valueColor = if (hasReminders) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+            onClick = onShowReminderDialog,
+            trailingContent = {
+                if (hasReminders) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_close),
+                        contentDescription = stringResource(Res.string.clear_reminder),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(dimens.iconSmall)
+                            .clickable(onClick = onClearReminders),
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_chevron_right),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(dimens.iconSmall),
+                    )
+                }
+            },
+        )
 
         SettingRow(
             icon = Res.drawable.ic_repeat,
@@ -757,30 +628,10 @@ private fun SettingRow(
     value: String,
     onClick: () -> Unit,
 ) {
-    val dimens = OpenTasksTheme.dimens
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = dimens.paddingLarge),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painter = painterResource(icon),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(dimens.iconDefault),
-        )
-        Spacer(Modifier.width(dimens.spacerXLarge))
-        Text(label, color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.weight(1f))
-        Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.width(dimens.spacerSmall))
-        Icon(
-            painter = painterResource(Res.drawable.ic_chevron_right),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(dimens.iconSmall),
-        )
-    }
+    LabelValueNavigationRow(
+        icon = icon,
+        label = label,
+        value = value,
+        onClick = onClick,
+    )
 }

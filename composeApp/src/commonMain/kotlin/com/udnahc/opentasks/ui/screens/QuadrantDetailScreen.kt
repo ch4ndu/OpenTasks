@@ -387,33 +387,22 @@ internal fun DetailTaskRow(
             ),
         verticalAlignment = Alignment.Top,
     ) {
-        IconButton(
+        TaskCheckboxButton(
+            isChecked = task.status == TaskStatus.DONE,
+            tint = if (task.status == TaskStatus.DONE) {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            } else {
+                priorityColor(priority)
+            },
             onClick = onToggleComplete,
-            modifier = Modifier.size(dimens.touchTargetMedium),
-        ) {
-            Icon(
-                painter = painterResource(
-                    if (task.status == TaskStatus.DONE) Res.drawable.ic_check_box
-                    else Res.drawable.ic_check_box_outline
-                ),
-                contentDescription = null,
-                tint = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                else priorityColor(priority),
-                modifier = Modifier.size(dimens.iconLarge),
-            )
-        }
+        )
 
         Spacer(Modifier.width(dimens.spacerLarge))
 
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = task.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.onBackground,
-                textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            TaskTitleText(
+                title = task.title,
+                isCompleted = task.status == TaskStatus.DONE,
             )
 
             // Show deadline info if present
@@ -437,15 +426,7 @@ internal fun DetailTaskRow(
             }
 
             // Show content preview if present
-            if (task.content.isNotBlank()) {
-                Text(
-                    text = stripHtmlTags(task.content),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            TaskContentPreviewText(task.content)
         }
 
         // List label
