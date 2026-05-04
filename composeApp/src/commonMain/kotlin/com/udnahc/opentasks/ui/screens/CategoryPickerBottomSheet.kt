@@ -64,6 +64,7 @@ import opentasks.composeapp.generated.resources.overdue
 import opentasks.composeapp.generated.resources.search
 import opentasks.composeapp.generated.resources.starred
 import opentasks.composeapp.generated.resources.today
+import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -305,9 +306,49 @@ private fun SectionDivider(label: String) {
 
 @Composable
 private fun SmartFilterRow(
-    iconRes: org.jetbrains.compose.resources.DrawableResource,
+    iconRes: DrawableResource,
     iconTint: Color,
     label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    SelectableIconRow(
+        iconRes = iconRes,
+        iconTint = iconTint,
+        label = label,
+        labelColor = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onSurface,
+        isSelected = isSelected,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun CategoryPickerRow(
+    category: Category,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    val iconRes = if (category.icon == "inbox") {
+        Res.drawable.ic_inbox
+    } else {
+        Res.drawable.ic_list
+    }
+    SelectableIconRow(
+        iconRes = iconRes,
+        iconTint = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+        label = category.name,
+        labelColor = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onSurface,
+        isSelected = isSelected,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun SelectableIconRow(
+    iconRes: DrawableResource,
+    iconTint: Color,
+    label: String,
+    labelColor: Color,
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -329,50 +370,7 @@ private fun SmartFilterRow(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
-            color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        if (isSelected) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_check),
-                contentDescription = null,
-                tint = PrimaryBlue,
-                modifier = Modifier.size(dimens.touchTargetSmall),
-            )
-        }
-    }
-}
-
-@Composable
-private fun CategoryPickerRow(
-    category: Category,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val iconRes = if (category.icon == "inbox") {
-            Res.drawable.ic_inbox
-        } else {
-            Res.drawable.ic_list
-        }
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            tint = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(dimens.iconXLarge),
-        )
-        Spacer(Modifier.width(dimens.spacerXXLarge))
-        Text(
-            text = category.name,
-            style = MaterialTheme.typography.bodyLarge,
-            color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onSurface,
+            color = labelColor,
             modifier = Modifier.weight(1f),
         )
         if (isSelected) {

@@ -45,6 +45,9 @@ For a new persisted entity or schema change:
 ## Verification
 
 - Run `./gradlew :composeApp:compileKotlinJvm` for normal changes.
+- For shared domain, ViewModel, parser/import/export, sync, or settings changes, run `./gradlew :composeApp:jvmTest`.
+- For broad shared-core changes, prefer `./gradlew :composeApp:allTests` when the local Kotlin/Native/iOS toolchain is available.
 - For platform-sensitive changes, also run the relevant Android or iOS compile task.
 - For broad shared changes, prefer `./gradlew :composeApp:compileKotlinJvm :composeApp:compileKotlinIosSimulatorArm64`.
 - Search changed code for `!!`, raw day millis such as `86400000`, hardcoded user-visible strings, and calendar filtering that removes completed tasks.
+- After running Gradle, stop daemons with `./gradlew --stop`.

@@ -25,8 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,11 +55,9 @@ import opentasks.composeapp.generated.resources.ic_check
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_unfold
-import opentasks.composeapp.generated.resources.ic_settings
 import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.no_tasks
 import opentasks.composeapp.generated.resources.select
-import opentasks.composeapp.generated.resources.settings
 import opentasks.composeapp.generated.resources.sort_by
 import opentasks.composeapp.generated.resources.sort_by_deadline
 import opentasks.composeapp.generated.resources.sort_by_priority
@@ -382,11 +378,9 @@ internal fun TaskListTopBar(
 ) {
     var showSortMenu by remember { mutableStateOf(false) }
 
-    TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-        ),
-        title = {
+    OpenTasksTopBar(
+        containerStyle = OpenTasksTopBarContainerStyle.Translucent,
+        titleContent = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clickable(onClick = onListClick),
@@ -433,13 +427,7 @@ internal fun TaskListTopBar(
                     onDismiss = { showSortMenu = false },
                 )
             }
-            IconButton(onClick = onSettingsClick) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_settings),
-                    contentDescription = stringResource(Res.string.settings),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            OpenTasksSettingsButton(onClick = onSettingsClick)
         },
     )
 }

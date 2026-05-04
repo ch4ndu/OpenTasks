@@ -79,17 +79,12 @@ internal fun TimePickerDialog(
             TimePicker(state = timePickerState)
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(timePickerState.hour, timePickerState.minute) }) {
-                Text(stringResource(Res.string.ok), color = PrimaryBlue)
-            }
+            DialogOkTextButton(onClick = {
+                onConfirm(timePickerState.hour, timePickerState.minute)
+            })
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
     )
 }
@@ -101,7 +96,6 @@ internal fun ReminderDialog(
     onDismiss: () -> Unit,
 ) {
     var localSelected by remember { mutableStateOf(selected) }
-    val dimens = OpenTasksTheme.dimens
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.reminder), fontWeight = FontWeight.Bold) },
@@ -132,17 +126,12 @@ internal fun ReminderDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(localSelected) }) {
-                Text(stringResource(Res.string.ok), color = PrimaryBlue)
-            }
+            DialogOkTextButton(onClick = {
+                onConfirm(localSelected)
+            })
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
     )
 }
@@ -153,7 +142,6 @@ internal fun RepeatDialog(
     onSelected: (RecurrenceType) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val dimens = OpenTasksTheme.dimens
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.repeat), fontWeight = FontWeight.Bold) },
@@ -169,12 +157,7 @@ internal fun RepeatDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
         confirmButton = {},
     )
@@ -234,12 +217,7 @@ internal fun DurationDateDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
     )
 }
@@ -294,19 +272,12 @@ internal fun DurationTimeRangeDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            DialogOkTextButton(onClick = {
                 onConfirm(startState.hour, startState.minute, endState.hour, endState.minute)
-            }) {
-                Text(stringResource(Res.string.ok), color = PrimaryBlue)
-            }
+            })
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
     )
 }
@@ -378,12 +349,7 @@ internal fun DurationRepeatDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
     )
 }

@@ -18,12 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,10 +36,7 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.viewmodel.NoteViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.empty_notes
-import opentasks.composeapp.generated.resources.ic_settings
 import opentasks.composeapp.generated.resources.notes
-import opentasks.composeapp.generated.resources.settings
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 /** Strips HTML tags and returns the first meaningful line as a preview. */
@@ -126,25 +119,11 @@ internal fun NotesContent(
         }
 
         // Translucent Top bar overlay
-        TopAppBar(
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-            ),
-            title = {
-                Text(
-                    text = stringResource(Res.string.notes),
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-            },
+        OpenTasksTopBar(
+            title = stringResource(Res.string.notes),
+            containerStyle = OpenTasksTopBarContainerStyle.Translucent,
             actions = {
-                IconButton(onClick = onSettingsClick) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_settings),
-                        contentDescription = stringResource(Res.string.settings),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                OpenTasksSettingsButton(onClick = onSettingsClick)
             },
         )
     }

@@ -23,8 +23,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.foundation.border
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -65,7 +63,6 @@ import com.udnahc.opentasks.ui.util.rememberOpenInMapsAction
 import com.mohamedrejeb.richeditor.model.RichTextState
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.all_day
-import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.date_and_reminder
 import opentasks.composeapp.generated.resources.delete
@@ -74,7 +71,6 @@ import opentasks.composeapp.generated.resources.delete_task_title
 import opentasks.composeapp.generated.resources.description_hint
 import opentasks.composeapp.generated.resources.done
 import opentasks.composeapp.generated.resources.ic_alarm
-import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.ic_check
 import opentasks.composeapp.generated.resources.ic_delete
 import opentasks.composeapp.generated.resources.ic_flag
@@ -527,20 +523,12 @@ internal fun CreateTaskTopBar(
     onDelete: (() -> Unit)? = null,
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Color.Transparent,
-        ),
+    OpenTasksTopBar(
+        containerStyle = OpenTasksTopBarContainerStyle.Transparent,
         navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_arrow_back),
-                    contentDescription = stringResource(Res.string.back),
-                    tint = MaterialTheme.colorScheme.onBackground,
-                )
-            }
+            OpenTasksBackButton(onClick = onBack)
         },
-        title = {
+        titleContent = {
             val dimens = OpenTasksTheme.dimens
             Row(
                 verticalAlignment = Alignment.CenterVertically,

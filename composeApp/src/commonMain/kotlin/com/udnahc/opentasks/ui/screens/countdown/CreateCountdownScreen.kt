@@ -1,7 +1,6 @@
 package com.udnahc.opentasks.ui.screens.countdown
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,14 +24,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,7 +52,13 @@ import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.SmartListVisibility
+import com.udnahc.opentasks.ui.screens.DialogCancelTextButton
+import com.udnahc.opentasks.ui.screens.DialogOkTextButton
 import com.udnahc.opentasks.ui.screens.MonthPagerHeader
+import com.udnahc.opentasks.ui.screens.NoIconLabelValueNavigationRow
+import com.udnahc.opentasks.ui.screens.OpenTasksCloseButton
+import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
+import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
 import com.udnahc.opentasks.ui.screens.SelectableDayGrid
 import com.udnahc.opentasks.ui.screens.SelectedOptionRow
 import com.udnahc.opentasks.ui.screens.WeekdayHeader
@@ -69,7 +70,6 @@ import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add
 import opentasks.composeapp.generated.resources.cancel
-import opentasks.composeapp.generated.resources.close
 import opentasks.composeapp.generated.resources.countdown_counting_count_up
 import opentasks.composeapp.generated.resources.countdown_counting_countdown
 import opentasks.composeapp.generated.resources.countdown_counting_mode
@@ -89,9 +89,6 @@ import opentasks.composeapp.generated.resources.countdown_type
 import opentasks.composeapp.generated.resources.daily
 import opentasks.composeapp.generated.resources.date
 import opentasks.composeapp.generated.resources.edit
-import opentasks.composeapp.generated.resources.ic_check
-import opentasks.composeapp.generated.resources.ic_chevron_right
-import opentasks.composeapp.generated.resources.ic_close
 import opentasks.composeapp.generated.resources.monthly
 import opentasks.composeapp.generated.resources.name_label
 import opentasks.composeapp.generated.resources.none
@@ -102,7 +99,6 @@ import opentasks.composeapp.generated.resources.save
 import opentasks.composeapp.generated.resources.weekly
 import opentasks.composeapp.generated.resources.yearly
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 // ---- Reminder options for countdowns ----
@@ -254,25 +250,11 @@ internal fun CreateCountdownContent(
                 .padding(bottom = dimens.fabAreaBottom),
         ) {
             // Top bar
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                ),
+            OpenTasksTopBar(
+                title = stringResource(if (editCountdown != null) Res.string.edit else Res.string.add),
+                containerStyle = OpenTasksTopBarContainerStyle.Transparent,
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            painter = painterResource(Res.drawable.ic_close),
-                            contentDescription = stringResource(Res.string.close),
-                            tint = MaterialTheme.colorScheme.onBackground,
-                        )
-                    }
-                },
-                title = {
-                    Text(
-                        text = stringResource(if (editCountdown != null) Res.string.edit else Res.string.add),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
+                    OpenTasksCloseButton(onClick = onBack)
                 },
             )
 
@@ -338,42 +320,42 @@ internal fun CreateCountdownContent(
             ) {
                 Column {
                     // Date row
-                    FormRow(
+                    NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.date),
                         value = "${monthNameShort(selectedMonth)} $selectedDay, $selectedYear",
                         onClick = { showDatePicker = true },
                     )
 
                     // Reminder row
-                    FormRow(
+                    NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.reminder),
                         value = selectedReminders.displayText(),
                         onClick = { showReminderPicker = true },
                     )
 
                     // Repeat row
-                    FormRow(
+                    NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.repeat),
                         value = stringResource(recurrenceLabelRes(selectedRecurrence)),
                         onClick = { showRepeatPicker = true },
                     )
 
                     // Type row
-                    FormRow(
+                    NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.countdown_type),
                         value = stringResource(countdownTypeLabelRes(selectedType)),
                         onClick = { showTypePicker = true },
                     )
 
                     // Counting Mode row
-                    FormRow(
+                    NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.countdown_counting_mode),
                         value = stringResource(countingModeLabelRes(selectedCountingMode)),
                         onClick = { showCountingModePicker = true },
                     )
 
                     // Smart List row
-                    FormRow(
+                    NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.countdown_smart_list),
                         value = stringResource(smartListLabelRes(selectedSmartList)),
                         onClick = { showSmartListPicker = true },
@@ -492,43 +474,6 @@ internal fun CreateCountdownContent(
     }
 }
 
-// ---- Reusable form row ----
-
-@Composable
-private fun FormRow(
-    label: String,
-    value: String,
-    onClick: () -> Unit,
-) {
-    val dimens = OpenTasksTheme.dimens
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.width(dimens.spacerSmall))
-        Icon(
-            painter = painterResource(Res.drawable.ic_chevron_right),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(dimens.iconMedium),
-        )
-    }
-}
-
 // ---- Date picker dialog (calendar grid, same pattern as CreateTaskScreen) ----
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -587,12 +532,7 @@ private fun CountdownDatePickerDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
     )
 }
@@ -606,7 +546,6 @@ private fun CountdownReminderPickerDialog(
     onDismiss: () -> Unit,
 ) {
     var localSelected by remember { mutableStateOf(selected) }
-    val dimens = OpenTasksTheme.dimens
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.reminder), fontWeight = FontWeight.Bold) },
@@ -618,53 +557,32 @@ private fun CountdownReminderPickerDialog(
                     } else {
                         option in localSelected
                     }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                localSelected = if (option == CountdownReminderOption.NONE) {
-                                    emptySet()
+                    SelectedOptionRow(
+                        label = stringResource(option.labelRes),
+                        isSelected = isSelected,
+                        onClick = {
+                            localSelected = if (option == CountdownReminderOption.NONE) {
+                                emptySet()
+                            } else {
+                                if (option in localSelected) {
+                                    localSelected - option
                                 } else {
-                                    if (option in localSelected) {
-                                        localSelected - option
-                                    } else {
-                                        localSelected + option
-                                    }
+                                    localSelected + option
                                 }
                             }
-                            .padding(vertical = dimens.listRowCompletedVerticalPadding),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(option.labelRes),
-                            color = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        if (isSelected) {
-                            Spacer(Modifier.weight(1f))
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_check),
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(dimens.iconDefault),
-                            )
                         }
-                    }
+                    )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(localSelected); onDismiss() }) {
-                Text(stringResource(Res.string.ok), color = PrimaryBlue)
-            }
+            DialogOkTextButton(onClick = {
+                onConfirm(localSelected)
+                onDismiss()
+            })
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
     )
 }
@@ -677,48 +595,25 @@ private fun CountdownRepeatPickerDialog(
     onSelected: (RecurrenceType) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val dimens = OpenTasksTheme.dimens
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.repeat), fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 RecurrenceType.entries.forEach { option ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onSelected(option)
-                                onDismiss()
-                            }
-                            .padding(vertical = dimens.listRowCompletedVerticalPadding),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(recurrenceLabelRes(option)),
-                            color = if (option == selected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        if (option == selected) {
-                            Spacer(Modifier.weight(1f))
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_check),
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(dimens.iconDefault),
-                            )
+                    SelectedOptionRow(
+                        label = stringResource(recurrenceLabelRes(option)),
+                        isSelected = option == selected,
+                        onClick = {
+                            onSelected(option)
+                            onDismiss()
                         }
-                    }
+                    )
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
         confirmButton = {},
     )
@@ -739,56 +634,35 @@ private fun CountdownTypePickerDialog(
         text = {
             Column {
                 CountdownType.entries.forEach { option ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onSelected(option)
-                                onDismiss()
+                    SelectedOptionRow(
+                        label = stringResource(countdownTypeLabelRes(option)),
+                        isSelected = option == selected,
+                        onClick = {
+                            onSelected(option)
+                            onDismiss()
+                        },
+                        leadingContent = {
+                            Box(
+                                modifier = Modifier
+                                    .size(dimens.touchTargetSmall)
+                                    .clip(CircleShape)
+                                    .background(countdownTypeColor(option).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = countdownTypeInitial(option),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = countdownTypeColor(option),
+                                )
                             }
-                            .padding(vertical = dimens.listRowCompletedVerticalPadding),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(dimens.touchTargetSmall)
-                                .clip(CircleShape)
-                                .background(countdownTypeColor(option).copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = countdownTypeInitial(option),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = countdownTypeColor(option),
-                            )
                         }
-                        Spacer(Modifier.width(dimens.spacerXLarge))
-                        Text(
-                            text = stringResource(countdownTypeLabelRes(option)),
-                            color = if (option == selected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        if (option == selected) {
-                            Spacer(Modifier.weight(1f))
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_check),
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(dimens.iconDefault),
-                            )
-                        }
-                    }
+                    )
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
         confirmButton = {},
     )
@@ -802,48 +676,25 @@ private fun CountingModePickerDialog(
     onSelected: (CountingMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val dimens = OpenTasksTheme.dimens
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.countdown_counting_mode), fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 CountingMode.entries.forEach { option ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onSelected(option)
-                                onDismiss()
-                            }
-                            .padding(vertical = dimens.listRowCompletedVerticalPadding),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(countingModeLabelRes(option)),
-                            color = if (option == selected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        if (option == selected) {
-                            Spacer(Modifier.weight(1f))
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_check),
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(dimens.iconDefault),
-                            )
+                    SelectedOptionRow(
+                        label = stringResource(countingModeLabelRes(option)),
+                        isSelected = option == selected,
+                        onClick = {
+                            onSelected(option)
+                            onDismiss()
                         }
-                    }
+                    )
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
         confirmButton = {},
     )
@@ -857,48 +708,25 @@ private fun SmartListPickerDialog(
     onSelected: (SmartListVisibility) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val dimens = OpenTasksTheme.dimens
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.countdown_smart_list), fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 SmartListVisibility.entries.forEach { option ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onSelected(option)
-                                onDismiss()
-                            }
-                            .padding(vertical = dimens.listRowCompletedVerticalPadding),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(smartListLabelRes(option)),
-                            color = if (option == selected) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        if (option == selected) {
-                            Spacer(Modifier.weight(1f))
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_check),
-                                contentDescription = null,
-                                tint = PrimaryBlue,
-                                modifier = Modifier.size(dimens.iconDefault),
-                            )
+                    SelectedOptionRow(
+                        label = stringResource(smartListLabelRes(option)),
+                        isSelected = option == selected,
+                        onClick = {
+                            onSelected(option)
+                            onDismiss()
                         }
-                    }
+                    )
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    stringResource(Res.string.cancel),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
         confirmButton = {},
     )

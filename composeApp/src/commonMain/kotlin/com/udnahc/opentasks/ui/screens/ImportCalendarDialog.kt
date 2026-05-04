@@ -1,6 +1,5 @@
 package com.udnahc.opentasks.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,7 +8,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -18,7 +16,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -31,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
 import com.udnahc.opentasks.viewmodel.ImportCalendarUiState
 import com.udnahc.opentasks.viewmodel.ImportCalendarViewModel
@@ -39,16 +35,13 @@ import com.udnahc.opentasks.viewmodel.ImportRangeUnit
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.calendar_not_available
 import opentasks.composeapp.generated.resources.calendar_permission_denied
-import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.days
-import opentasks.composeapp.generated.resources.done
 import opentasks.composeapp.generated.resources.grant_calendar_permission
 import opentasks.composeapp.generated.resources.import_button
 import opentasks.composeapp.generated.resources.import_error
 import opentasks.composeapp.generated.resources.import_from_calendar
 import opentasks.composeapp.generated.resources.import_range_label
 import opentasks.composeapp.generated.resources.import_success
-import opentasks.composeapp.generated.resources.importing
 import opentasks.composeapp.generated.resources.months
 import opentasks.composeapp.generated.resources.weeks
 import opentasks.composeapp.generated.resources.years
@@ -111,10 +104,7 @@ internal fun ImportCalendarDialogContent(
                         )
                     }
                     uiState.permissionStatus == CalendarPermissionStatus.DENIED -> {
-                        Text(
-                            text = stringResource(Res.string.calendar_permission_denied),
-                            color = MaterialTheme.colorScheme.error,
-                        )
+                        ImportErrorText(stringResource(Res.string.calendar_permission_denied))
                     }
                     uiState.permissionStatus != CalendarPermissionStatus.GRANTED -> {
                         Text(
@@ -123,27 +113,13 @@ internal fun ImportCalendarDialogContent(
                         )
                     }
                     uiState.isLoading -> {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            CircularProgressIndicator()
-                            Spacer(Modifier.width(dimens.spacerXLarge))
-                            Text(stringResource(Res.string.importing))
-                        }
+                        ImportLoadingRow()
                     }
                     uiState.importedCount != null -> {
-                        Text(
-                            text = stringResource(Res.string.import_success, uiState.importedCount),
-                            color = PrimaryBlue,
-                        )
+                        ImportSuccessText(stringResource(Res.string.import_success, uiState.importedCount))
                     }
                     uiState.error != null -> {
-                        Text(
-                            text = stringResource(Res.string.import_error, uiState.error),
-                            color = MaterialTheme.colorScheme.error,
-                        )
+                        ImportErrorText(stringResource(Res.string.import_error, uiState.error))
                     }
                     else -> {
                         // Range picker
@@ -180,36 +156,29 @@ internal fun ImportCalendarDialogContent(
         confirmButton = {
             when {
                 !isAvailable -> {
-                    TextButton(onClick = onDismiss) {
-                        Text(stringResource(Res.string.done), color = PrimaryBlue)
-                    }
+                    ImportDoneButton(onDismiss)
                 }
                 uiState.importedCount != null -> {
-                    TextButton(onClick = onDismiss) {
-                        Text(stringResource(Res.string.done), color = PrimaryBlue)
-                    }
+                    ImportDoneButton(onDismiss)
                 }
                 uiState.permissionStatus != CalendarPermissionStatus.GRANTED -> {
-                    TextButton(onClick = onRequestPermission) {
-                        Text(stringResource(Res.string.grant_calendar_permission), color = PrimaryBlue)
-                    }
+                    PrimaryDialogTextButton(
+                        text = stringResource(Res.string.grant_calendar_permission),
+                        onClick = onRequestPermission,
+                    )
                 }
                 uiState.isLoading -> { /* No button while loading */ }
                 else -> {
-                    TextButton(onClick = onImport) {
-                        Text(stringResource(Res.string.import_button), color = PrimaryBlue)
-                    }
+                    PrimaryDialogTextButton(
+                        text = stringResource(Res.string.import_button),
+                        onClick = onImport,
+                    )
                 }
             }
         },
         dismissButton = {
             if (!uiState.isLoading) {
-                TextButton(onClick = onDismiss) {
-                    Text(
-                        stringResource(Res.string.cancel),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                ImportCancelButton(onDismiss)
             }
         },
     )
@@ -262,4 +231,3 @@ private fun RangeUnitDropdown(
         }
     }
 }
-

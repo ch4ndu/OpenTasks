@@ -27,8 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -59,10 +57,8 @@ import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
-import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.completed
 import opentasks.composeapp.generated.resources.ic_add
-import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.ic_check_box
 import opentasks.composeapp.generated.resources.ic_check_box_outline
 import opentasks.composeapp.generated.resources.ic_grid_view
@@ -135,25 +131,11 @@ fun QuadrantDetailScreen(
                     navBarHeight = 0.dp,
                 )
 
-                TopAppBar(
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-                    ),
+                OpenTasksTopBar(
+                    title = title,
+                    containerStyle = OpenTasksTopBarContainerStyle.Translucent,
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_arrow_back),
-                                contentDescription = stringResource(Res.string.back),
-                                tint = MaterialTheme.colorScheme.onBackground,
-                            )
-                        }
-                    },
-                    title = {
-                        Text(
-                            text = title,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
+                        OpenTasksBackButton(onClick = onBack)
                     },
                     actions = {
                         IconButton(onClick = { viewModel.setViewMode(TaskListViewMode.LIST) }) {
@@ -231,25 +213,10 @@ internal fun QuadrantDetailContent(
             }
         },
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
+            OpenTasksTopBar(
+                title = title,
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            painter = painterResource(Res.drawable.ic_arrow_back),
-                            contentDescription = stringResource(Res.string.back),
-                            tint = MaterialTheme.colorScheme.onBackground,
-                        )
-                    }
-                },
-                title = {
-                    Text(
-                        text = title,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
+                    OpenTasksBackButton(onClick = onBack)
                 },
                 actions = {
                     IconButton(onClick = onViewModeToggle) {

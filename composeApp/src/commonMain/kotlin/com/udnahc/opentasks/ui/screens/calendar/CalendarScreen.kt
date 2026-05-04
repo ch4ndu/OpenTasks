@@ -19,8 +19,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -33,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
@@ -50,6 +47,10 @@ import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
 import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
+import com.udnahc.opentasks.ui.screens.OpenTasksBackButton
+import com.udnahc.opentasks.ui.screens.OpenTasksSettingsButton
+import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
+import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
 import com.udnahc.opentasks.ui.screens.SelectedOptionRow
 import com.udnahc.opentasks.ui.screens.SyncPullToRefresh
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
@@ -58,24 +59,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
-import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.calendar_view_day
 import opentasks.composeapp.generated.resources.calendar_view_list
 import opentasks.composeapp.generated.resources.calendar_view_month
 import opentasks.composeapp.generated.resources.calendar_view_three_day
 import opentasks.composeapp.generated.resources.calendar_view_week
 import opentasks.composeapp.generated.resources.calendar_view_year
-import opentasks.composeapp.generated.resources.ic_arrow_back
-import opentasks.composeapp.generated.resources.ic_check
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_list
-import opentasks.composeapp.generated.resources.ic_more_vert
 import opentasks.composeapp.generated.resources.ic_schedule
-import opentasks.composeapp.generated.resources.ic_settings
 import opentasks.composeapp.generated.resources.import_from_calendar
 import opentasks.composeapp.generated.resources.import_from_ics
-import opentasks.composeapp.generated.resources.more
-import opentasks.composeapp.generated.resources.settings
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -600,27 +594,13 @@ internal fun CalendarTopBar(
     onViewPickerDismiss: () -> Unit,
     onSettingsClick: () -> Unit = {},
 ) {
-    TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-        ),
+    OpenTasksTopBar(
+        title = title,
+        containerStyle = OpenTasksTopBarContainerStyle.Translucent,
         navigationIcon = {
             if (showBackButton) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_arrow_back),
-                        contentDescription = stringResource(Res.string.back),
-                        tint = MaterialTheme.colorScheme.onBackground,
-                    )
-                }
+                OpenTasksBackButton(onClick = onBack)
             }
-        },
-        title = {
-            Text(
-                text = title,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
         },
         actions = {
             if (currentView == CalendarViewType.LIST) {
@@ -647,13 +627,7 @@ internal fun CalendarTopBar(
                 )
             }
 
-            IconButton(onClick = onSettingsClick) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_settings),
-                    contentDescription = stringResource(Res.string.settings),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            OpenTasksSettingsButton(onClick = onSettingsClick)
 
         },
     )

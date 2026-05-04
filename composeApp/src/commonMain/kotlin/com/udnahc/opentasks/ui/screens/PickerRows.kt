@@ -169,3 +169,41 @@ internal fun LabelValueNavigationRow(
         }
     }
 }
+
+@Composable
+internal fun NoIconLabelValueNavigationRow(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    valueColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    val dimens = OpenTasksTheme.dimens
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onBackground,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = value,
+            color = valueColor,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Normal,
+        )
+        Spacer(Modifier.width(dimens.spacerSmall))
+        Icon(
+            painter = painterResource(Res.drawable.ic_chevron_right),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(dimens.iconMedium),
+        )
+    }
+}

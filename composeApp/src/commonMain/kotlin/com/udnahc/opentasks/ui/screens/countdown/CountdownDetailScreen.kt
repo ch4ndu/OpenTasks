@@ -15,12 +15,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,20 +30,19 @@ import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
+import com.udnahc.opentasks.ui.screens.OpenTasksBackButton
+import com.udnahc.opentasks.ui.screens.OpenTasksOverflowButton
+import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
+import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
-import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.countdown_days_since
 import opentasks.composeapp.generated.resources.countdown_days_until
 import opentasks.composeapp.generated.resources.countdown_today_is
 import opentasks.composeapp.generated.resources.delete
 import opentasks.composeapp.generated.resources.edit
-import opentasks.composeapp.generated.resources.ic_arrow_back
-import opentasks.composeapp.generated.resources.ic_more_vert
 import opentasks.composeapp.generated.resources.loading
-import opentasks.composeapp.generated.resources.more
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 
@@ -96,29 +91,15 @@ internal fun CountdownDetailContent(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Top bar
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-                ),
+            OpenTasksTopBar(
+                title = "",
+                containerStyle = OpenTasksTopBarContainerStyle.Translucent,
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            painter = painterResource(Res.drawable.ic_arrow_back),
-                            contentDescription = stringResource(Res.string.back),
-                            tint = MaterialTheme.colorScheme.onBackground,
-                        )
-                    }
+                    OpenTasksBackButton(onClick = onBack)
                 },
-                title = {},
                 actions = {
                     Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_more_vert),
-                                contentDescription = stringResource(Res.string.more),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        OpenTasksOverflowButton(onClick = { showMenu = true })
                         DropdownMenu(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false },
@@ -239,4 +220,3 @@ internal val previewCountdown = Countdown(
     countdownType = CountdownType.COUNTDOWN,
     countingMode = CountingMode.COUNTDOWN,
 )
-

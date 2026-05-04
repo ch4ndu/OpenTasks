@@ -14,7 +14,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -22,7 +21,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -44,7 +42,6 @@ import com.udnahc.opentasks.viewmodel.ExportResult
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.SyncStatus
 import org.jetbrains.compose.resources.getString
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
 import opentasks.composeapp.generated.resources.Res
@@ -56,7 +53,6 @@ import opentasks.composeapp.generated.resources.export_error
 import opentasks.composeapp.generated.resources.export_header
 import opentasks.composeapp.generated.resources.export_ics
 import opentasks.composeapp.generated.resources.export_success
-import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.import_header
 import opentasks.composeapp.generated.resources.appearance
@@ -207,20 +203,10 @@ internal fun SettingsContent(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(Res.string.settings),
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                },
+            OpenTasksTopBar(
+                title = stringResource(Res.string.settings),
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            painter = painterResource(Res.drawable.ic_arrow_back),
-                            contentDescription = stringResource(Res.string.back),
-                        )
-                    }
+                    OpenTasksBackButton(onClick = onBack)
                 },
             )
         },

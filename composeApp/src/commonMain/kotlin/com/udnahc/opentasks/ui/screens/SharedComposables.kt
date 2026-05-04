@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,9 +20,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,15 +33,213 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.cancel
+import opentasks.composeapp.generated.resources.close
 import opentasks.composeapp.generated.resources.complete_recurring_task_title
 import opentasks.composeapp.generated.resources.complete_series
 import opentasks.composeapp.generated.resources.complete_this_occurrence
+import opentasks.composeapp.generated.resources.done
+import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.ic_chevron_right
+import opentasks.composeapp.generated.resources.ic_close
 import opentasks.composeapp.generated.resources.ic_dropdown
+import opentasks.composeapp.generated.resources.ic_more_vert
+import opentasks.composeapp.generated.resources.ic_settings
+import opentasks.composeapp.generated.resources.more
+import opentasks.composeapp.generated.resources.ok
+import opentasks.composeapp.generated.resources.settings
+import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+
+// ── Top app bar ─────────────────────────────────────────────────────────────
+
+internal enum class OpenTasksTopBarContainerStyle {
+    Default,
+    Transparent,
+    Translucent,
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun OpenTasksTopBar(
+    title: String = "",
+    modifier: Modifier = Modifier,
+    containerStyle: OpenTasksTopBarContainerStyle = OpenTasksTopBarContainerStyle.Default,
+    navigationIcon: @Composable () -> Unit = {},
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    OpenTasksTopBar(
+        titleContent = {
+            OpenTasksTopBarTitle(title)
+        },
+        modifier = modifier,
+        containerStyle = containerStyle,
+        navigationIcon = navigationIcon,
+        actions = actions,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun OpenTasksTopBar(
+    titleContent: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    containerStyle: OpenTasksTopBarContainerStyle = OpenTasksTopBarContainerStyle.Default,
+    navigationIcon: @Composable () -> Unit = {},
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    val containerColor = when (containerStyle) {
+        OpenTasksTopBarContainerStyle.Default -> MaterialTheme.colorScheme.background
+        OpenTasksTopBarContainerStyle.Transparent -> Color.Transparent
+        OpenTasksTopBarContainerStyle.Translucent -> MaterialTheme.colorScheme.background.copy(alpha = 0.8f)
+    }
+
+    TopAppBar(
+        modifier = modifier,
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = containerColor),
+        navigationIcon = navigationIcon,
+        title = titleContent,
+        actions = actions,
+    )
+}
+
+@Composable
+internal fun OpenTasksTopBarTitle(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = title,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = modifier,
+    )
+}
+
+@Composable
+internal fun OpenTasksBackButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OpenTasksTopBarIconButton(
+        icon = Res.drawable.ic_arrow_back,
+        contentDescription = stringResource(Res.string.back),
+        onClick = onClick,
+        modifier = modifier,
+        tint = MaterialTheme.colorScheme.onBackground,
+    )
+}
+
+@Composable
+internal fun OpenTasksCloseButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OpenTasksTopBarIconButton(
+        icon = Res.drawable.ic_close,
+        contentDescription = stringResource(Res.string.close),
+        onClick = onClick,
+        modifier = modifier,
+        tint = MaterialTheme.colorScheme.onBackground,
+    )
+}
+
+@Composable
+internal fun OpenTasksSettingsButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OpenTasksTopBarIconButton(
+        icon = Res.drawable.ic_settings,
+        contentDescription = stringResource(Res.string.settings),
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
+
+@Composable
+internal fun OpenTasksOverflowButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OpenTasksTopBarIconButton(
+        icon = Res.drawable.ic_more_vert,
+        contentDescription = stringResource(Res.string.more),
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun OpenTasksTopBarIconButton(
+    icon: DrawableResource,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    IconButton(onClick = onClick, modifier = modifier) {
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = contentDescription,
+            tint = tint,
+        )
+    }
+}
+
+// ── Dialog buttons ──────────────────────────────────────────────────────────
+
+@Composable
+internal fun PrimaryDialogTextButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    TextButton(onClick = onClick, modifier = modifier) {
+        Text(text = text, color = PrimaryBlue)
+    }
+}
+
+@Composable
+internal fun DialogCancelTextButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    TextButton(onClick = onClick, modifier = modifier) {
+        Text(
+            text = stringResource(Res.string.cancel),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+internal fun DialogDoneTextButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PrimaryDialogTextButton(
+        text = stringResource(Res.string.done),
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
+
+@Composable
+internal fun DialogOkTextButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PrimaryDialogTextButton(
+        text = stringResource(Res.string.ok),
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
 
 // ── Empty placeholder ────────────────────────────────────────────────────────
 
@@ -198,9 +400,7 @@ fun CompleteSeriesDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(Res.string.cancel))
-            }
+            DialogCancelTextButton(onClick = onDismiss)
         },
     )
 }

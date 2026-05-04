@@ -26,12 +26,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,6 +44,9 @@ import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
+import com.udnahc.opentasks.ui.screens.OpenTasksSettingsButton
+import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
+import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.PriorityHigh
@@ -69,8 +69,6 @@ import opentasks.composeapp.generated.resources.countdown_filter_countdown
 import opentasks.composeapp.generated.resources.countdown_filter_holiday
 import opentasks.composeapp.generated.resources.countdown_no_items
 import opentasks.composeapp.generated.resources.countdown_title
-import opentasks.composeapp.generated.resources.ic_settings
-import opentasks.composeapp.generated.resources.settings
 import opentasks.composeapp.generated.resources.today
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
@@ -187,25 +185,11 @@ internal fun CountdownContent(
         }
 
         // Translucent Top bar overlay
-        TopAppBar(
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-            ),
-            title = {
-                Text(
-                    text = stringResource(Res.string.countdown_title),
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-            },
+        OpenTasksTopBar(
+            title = stringResource(Res.string.countdown_title),
+            containerStyle = OpenTasksTopBarContainerStyle.Translucent,
             actions = {
-                IconButton(onClick = onSettingsClick) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_settings),
-                        contentDescription = stringResource(Res.string.settings),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                OpenTasksSettingsButton(onClick = onSettingsClick)
             },
         )
     }
@@ -365,4 +349,3 @@ internal val previewCountdowns = listOf(
         countingMode = CountingMode.COUNTDOWN,
     ),
 )
-
