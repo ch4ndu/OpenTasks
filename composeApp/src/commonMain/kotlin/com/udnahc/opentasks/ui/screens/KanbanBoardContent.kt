@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -71,7 +72,6 @@ import opentasks.composeapp.generated.resources.status_todo
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
-import kotlinx.coroutines.delay
 
 private val KanbanTodoColor = PrimaryBlue
 private val KanbanInProgressColor = Color(0xFFFF9800)
@@ -99,7 +99,7 @@ fun KanbanBoardContent(
     var containerPosition by remember { mutableStateOf(Offset.Zero) }
     var initialTouchLocalOffset by remember { mutableStateOf(Offset.Zero) }
     var isDragging by remember { mutableStateOf(false) }
-    var fingerRootX by remember { mutableStateOf(0f) }
+    var pointerRootPosition by remember { mutableStateOf(Offset.Zero) }
     val phoneScrollState = rememberScrollState()
 
     BoxWithConstraints(
@@ -112,6 +112,21 @@ fun KanbanBoardContent(
             },
     ) {
         val isWideLayout = maxWidth >= 600.dp
+        fun findTargetColumn(pointerPosition: Offset): TaskStatus? =
+            columnBounds.entries.firstOrNull { (_, rect) -> rect.contains(pointerPosition) }?.key
+
+        fun updatePointerTarget() {
+            pointerRootPosition = cardStartPosition + initialTouchLocalOffset + dragOffset
+            highlightedColumn = findTargetColumn(pointerRootPosition)
+        }
+
+        fun resetDragState() {
+            isDragging = false
+            draggedTask = null
+            dragOffset = Offset.Zero
+            highlightedColumn = null
+            pointerRootPosition = Offset.Zero
+        }
 
         if (isWideLayout) {
             // Tablet/desktop: equal-width columns, no horizontal scroll
@@ -133,18 +148,18 @@ fun KanbanBoardContent(
                         isDropTarget = highlightedColumn == status,
                         draggedTaskId = draggedTask?.id,
                         onTaskClick = onTaskClick,
-                        onDragStart = { task, offset, width, _ ->
+                        onDragStart = { task, offset, width, localOffset ->
                             draggedTask = task
                             cardStartPosition = offset
                             draggedCardWidth = width
+                            initialTouchLocalOffset = localOffset
                             dragOffset = Offset.Zero
+                            isDragging = true
+                            updatePointerTarget()
                         },
                         onDrag = { delta ->
                             dragOffset += delta
-                            val currentPos = cardStartPosition + dragOffset
-                            highlightedColumn = columnBounds.entries
-                                .firstOrNull { (_, rect) -> rect.contains(currentPos) }
-                                ?.key
+                            updatePointerTarget()
                         },
                         onDragEnd = {
                             val target = highlightedColumn
@@ -152,15 +167,9 @@ fun KanbanBoardContent(
                             if (task != null && target != null && target != task.status) {
                                 onStatusChange(task, target)
                             }
-                            draggedTask = null
-                            dragOffset = Offset.Zero
-                            highlightedColumn = null
+                            resetDragState()
                         },
-                        onDragCancel = {
-                            draggedTask = null
-                            dragOffset = Offset.Zero
-                            highlightedColumn = null
-                        },
+                        onDragCancel = { resetDragState() },
                         onColumnPositioned = { rect -> columnBounds[status] = rect },
                         onToggleStar = onToggleStar,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -196,33 +205,21 @@ fun KanbanBoardContent(
                             dragOffset = Offset.Zero
                             initialTouchLocalOffset = localOffset
                             isDragging = true
-                            fingerRootX = offset.x + localOffset.x
+                            updatePointerTarget()
                         },
                         onDrag = { delta ->
                             dragOffset += delta
-                            fingerRootX = cardStartPosition.x + initialTouchLocalOffset.x + dragOffset.x
-                            val currentPos = cardStartPosition + dragOffset
-                            highlightedColumn = columnBounds.entries
-                                .firstOrNull { (_, rect) -> rect.contains(currentPos) }
-                                ?.key
+                            updatePointerTarget()
                         },
                         onDragEnd = {
-                            isDragging = false
                             val target = highlightedColumn
                             val task = draggedTask
                             if (task != null && target != null && target != task.status) {
                                 onStatusChange(task, target)
                             }
-                            draggedTask = null
-                            dragOffset = Offset.Zero
-                            highlightedColumn = null
+                            resetDragState()
                         },
-                        onDragCancel = {
-                            isDragging = false
-                            draggedTask = null
-                            dragOffset = Offset.Zero
-                            highlightedColumn = null
-                        },
+                        onDragCancel = { resetDragState() },
                         onColumnPositioned = { rect -> columnBounds[status] = rect },
                         onToggleStar = onToggleStar,
                         modifier = Modifier.width(columnWidth).fillMaxHeight(),
@@ -232,31 +229,33 @@ fun KanbanBoardContent(
 
             // Auto-scroll when finger is near viewport edges during drag
             val viewportWidthPx = with(density) { maxWidth.toPx() }
-            val leftEdgeThreshold = viewportWidthPx * 0.20f
-            val rightEdgeThreshold = viewportWidthPx * 0.80f
+            val edgeZonePx = viewportWidthPx * 0.20f
+            val rightEdgeStartPx = viewportWidthPx - edgeZonePx
             val autoScrollAmountPx = with(density) { dimens.kanbanAutoScrollAmount.toPx() }
+            val maxScrollPerFramePx = autoScrollAmountPx / 10f
 
             LaunchedEffect(isDragging) {
                 if (!isDragging) return@LaunchedEffect
 
                 while (isDragging) {
-                    delay(500L)
+                    withFrameNanos { }
 
-                    val fingerScreenX = fingerRootX - containerPosition.x
+                    val fingerScreenX = pointerRootPosition.x - containerPosition.x
                     val scrollDelta = when {
-                        fingerScreenX > rightEdgeThreshold -> autoScrollAmountPx
-                        fingerScreenX < leftEdgeThreshold -> -autoScrollAmountPx
+                        fingerScreenX < edgeZonePx -> {
+                            val proximity = ((edgeZonePx - fingerScreenX) / edgeZonePx).coerceIn(0f, 1f)
+                            -maxScrollPerFramePx * proximity
+                        }
+                        fingerScreenX > rightEdgeStartPx -> {
+                            val proximity = ((fingerScreenX - rightEdgeStartPx) / edgeZonePx).coerceIn(0f, 1f)
+                            maxScrollPerFramePx * proximity
+                        }
                         else -> 0f
                     }
 
                     if (scrollDelta != 0f) {
                         phoneScrollState.scrollBy(scrollDelta)
-                        // Wait one frame for column bounds to update after scroll
-                        delay(16L)
-                        val currentPos = cardStartPosition + dragOffset
-                        highlightedColumn = columnBounds.entries
-                            .firstOrNull { (_, rect) -> rect.contains(currentPos) }
-                            ?.key
+                        highlightedColumn = findTargetColumn(pointerRootPosition)
                     }
                 }
             }
@@ -497,4 +496,3 @@ private fun statusColor(status: TaskStatus): Color = when (status) {
     TaskStatus.IN_PROGRESS -> KanbanInProgressColor
     TaskStatus.DONE -> KanbanDoneColor
 }
-

@@ -175,9 +175,9 @@ class TaskListViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskListViewMode.LIST)
 
     val tasksByStatus: StateFlow<Map<TaskStatus, List<Task>>> =
-        tasksForSelectedCategory.map { tasks ->
+        combine(tasksForSelectedCategory, sortOption) { tasks, sort ->
             TaskStatus.entries.associateWith { status ->
-                tasks.filter { it.status == status }
+                sortTasks(tasks.filter { it.status == status }, sort)
             }
         }
         .flowOn(Dispatchers.Default)
@@ -187,8 +187,13 @@ class TaskListViewModel(
         viewModelScope.launch(Dispatchers.IO) { saveTaskListViewModeAction(mode) }
     }
 
-    fun updateTaskStatus(task: Task, newStatus: TaskStatus) {
-        viewModelScope.launch(Dispatchers.IO) { updateTaskStatusAction(task, newStatus) }
+    fun moveTaskToStatus(task: Task, targetStatus: TaskStatus) {
+        if (targetStatus == task.status) return
+        if (targetStatus == TaskStatus.DONE && task.status != TaskStatus.DONE) {
+            completionHandler.toggleComplete(task)
+        } else {
+            viewModelScope.launch(Dispatchers.IO) { updateTaskStatusAction(task, targetStatus) }
+        }
     }
 
     private fun sortTasks(tasks: List<Task>, sort: TaskSortOption): List<Task> = when (sort) {

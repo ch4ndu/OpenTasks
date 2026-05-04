@@ -3,4 +3,13 @@
     <string name="widget_description">Shows upcoming tasks on your home screen</string>
     <string name="calendar_widget_description">Month calendar showing days with tasks</string>
     <string name="week_widget_description">Week view showing daily tasks</string>
+    <string name="notification_channel_task_reminders">Task Reminders</string>
+    <string name="notification_channel_task_reminders_description">Notifications for task reminders</string>
+    <string name="notification_channel_all_day_tasks">All-Day Tasks</string>
+    <string name="notification_channel_all_day_tasks_description">Ongoing notifications for all-day tasks</string>
+    <string name="notification_all_day_task">All-day task</string>
+    <string name="notification_all_day_task_in_progress">All-day task in progress</string>
+    <string name="notification_action_mark_done">Mark Done</string>
+    <string name="notification_action_got_it">Got It</string>
+    <string name="notification_stopping">Stopping</string>
 </resources>

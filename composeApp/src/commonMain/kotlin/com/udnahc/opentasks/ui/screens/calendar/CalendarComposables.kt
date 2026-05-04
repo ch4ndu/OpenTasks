@@ -39,8 +39,6 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 
-private val DAY_NAME_HEADERS = arrayOf("S", "M", "T", "W", "T", "F", "S")
-
 // ── Day name headers (S M T W T F S) ────────────────────────────────────────
 
 /**
@@ -59,10 +57,10 @@ internal fun DayNameHeaders(compact: Boolean = false) {
             .then(if (!compact) Modifier.padding(horizontal = dimens.paddingSmall) else Modifier),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        DAY_NAME_HEADERS.forEach { label ->
+        repeat(7) { dayIndex ->
             if (compact) {
                 Text(
-                    text = label,
+                    text = calendarWeekdayNarrow(dayIndex),
                     style = OpenTasksTheme.typography.calendarEventOverflow,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -74,7 +72,7 @@ internal fun DayNameHeaders(compact: Boolean = false) {
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = label,
+                        text = calendarWeekdayNarrow(dayIndex),
                         style = OpenTasksTheme.typography.calendarDayNumber,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -174,7 +172,7 @@ internal fun MiniCalendarGrid(
     if (showMonthHeader) {
         val isCurrentMonth = year == todayYear && month == todayMonth
         Text(
-            text = monthNameShort(month),
+            text = calendarMonthNameShort(month),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
             color = if (isCurrentMonth) PrimaryBlue

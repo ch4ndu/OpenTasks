@@ -45,7 +45,7 @@ import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.extractMonth
-import com.udnahc.opentasks.domain.usecase.task.splitAllDayAndTimed
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
 import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.formatTime12Hr
@@ -67,6 +67,7 @@ internal fun DayViewContent(
     pagerState: PagerState,
     pagerCentre: Int,
     tasksByDay: Map<Long, List<Task>>,
+    timelineTasksByDay: Map<Long, CalendarDayTasks>,
     topBarHeight: Dp,
     navBarHeight: Dp,
     onTaskClick: (Task) -> Unit,
@@ -188,7 +189,7 @@ internal fun DayViewContent(
                     DayViewTimeline(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
-                        tasksByDay = tasksByDay,
+                        timelineTasksByDay = timelineTasksByDay,
                         hourHeight = hourHeight,
                         onTimelineScrolled = { scrollValue ->
                             scope.launch { timeColumnScrollState.scrollTo(scrollValue) }
@@ -230,7 +231,7 @@ internal fun DayViewStripItem(
             .clickable(onClick = onClick),
     ) {
         Text(
-            text = DAY_NAMES_SHORT[dayOfWeekIdx],
+            text = calendarWeekdayShort(dayOfWeekIdx),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onBackground
         )
@@ -277,7 +278,7 @@ internal fun DayViewStripItem(
 private fun DayViewTimeline(
     dayMillis: Long,
     todayMillis: Long,
-    tasksByDay: Map<Long, List<Task>>,
+    timelineTasksByDay: Map<Long, CalendarDayTasks>,
     hourHeight: Dp,
     onTimelineScrolled: (Int) -> Unit,
     onTaskClick: (Task) -> Unit,
@@ -289,10 +290,9 @@ private fun DayViewTimeline(
     }
     val dimens = OpenTasksTheme.dimens
     val dk = remember(dayMillis) { dayKey(dayMillis) }
-    val dayTasks = remember(dk, tasksByDay) { tasksByDay[dk] ?: emptyList() }
-    val (allDayTasks, timedTasks) = remember(dayTasks) {
-        splitAllDayAndTimed(dayTasks)
-    }
+    val dayTasks = timelineTasksByDay[dk] ?: CalendarDayTasks()
+    val allDayTasks = dayTasks.allDayTasks
+    val timedTasks = dayTasks.timedTasks
 
     Column(modifier = Modifier.fillMaxSize()) {
         // ── All-day events ───
@@ -386,4 +386,3 @@ private fun DayViewTimeline(
         }
     }
 }
-

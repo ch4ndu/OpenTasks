@@ -45,6 +45,8 @@ import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
+import com.udnahc.opentasks.domain.action.settings.SaveCalendarListDisplayModePreferenceAction
+import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskListViewModeAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
@@ -65,6 +67,8 @@ import com.udnahc.opentasks.domain.usecase.tag.ObserveTagsForTaskUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
+import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarListDisplayModePreferenceUseCase
+import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarViewPreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskListViewModeUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
@@ -154,6 +158,8 @@ val sharedModule = module {
     single { ObserveTaskListViewModeUseCase(get()) }
     single { ObserveThemePreferenceUseCase(get()) }
     single { ObserveTextSizePreferenceUseCase(get()) }
+    single { ObserveCalendarViewPreferenceUseCase(get()) }
+    single { ObserveCalendarListDisplayModePreferenceUseCase(get()) }
     single { CheckNotificationPermissionUseCase(get()) }
     single { CheckCalendarPermissionUseCase(get()) }
     single { FetchCalendarEventsUseCase(get()) }
@@ -190,9 +196,11 @@ val sharedModule = module {
     single { InitializeSyncAction(get(), get(), get()) }
     single { SaveTaskSortOptionAction(get()) }
     single { SaveTaskListViewModeAction(get()) }
-    single { UpdateTaskStatusAction(get()) }
+    single { UpdateTaskStatusAction(get(), get()) }
     single { SaveThemePreferenceAction(get()) }
     single { SaveTextSizePreferenceAction(get()) }
+    single { SaveCalendarViewPreferenceAction(get()) }
+    single { SaveCalendarListDisplayModePreferenceAction(get()) }
     single { ClearLocalDataAction(get(), get(), get(), get(), get()) }
 
     // Sync
@@ -221,7 +229,7 @@ val sharedModule = module {
     viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { TaskListViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
-    viewModel { CalendarViewModel(get(), get(), get(), get()) }
+    viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { NoteViewModel(get(), get(), get(), get(), get()) }
     viewModel { ImportCalendarViewModel(get(), get(), get()) }
     viewModel { ImportIcsViewModel(get(), get()) }

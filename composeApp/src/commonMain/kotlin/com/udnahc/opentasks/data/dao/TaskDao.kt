@@ -37,7 +37,7 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun findTaskByIdAnyState(id: String): Task?
 
-    @Query("SELECT * FROM tasks WHERE sourceExternalId = :externalId LIMIT 1")
+    @Query("SELECT * FROM tasks WHERE sourceExternalId = :externalId AND isDeleted = 0 LIMIT 1")
     suspend fun getTaskByExternalId(externalId: String): Task?
 
     @Query("SELECT * FROM tasks WHERE isSynced = 0")

@@ -7,6 +7,20 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.repository.TaskRepository
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.task_reminder_due_in_day
+import opentasks.composeapp.generated.resources.task_reminder_due_in_days
+import opentasks.composeapp.generated.resources.task_reminder_due_in_hour
+import opentasks.composeapp.generated.resources.task_reminder_due_in_hours
+import opentasks.composeapp.generated.resources.task_reminder_due_in_minutes
+import opentasks.composeapp.generated.resources.task_reminder_due_now
+import opentasks.composeapp.generated.resources.task_reminder_ending_now
+import opentasks.composeapp.generated.resources.task_reminder_overdue
+import opentasks.composeapp.generated.resources.task_reminder_starting_in_hour
+import opentasks.composeapp.generated.resources.task_reminder_starting_in_hours
+import opentasks.composeapp.generated.resources.task_reminder_starting_in_minutes
+import opentasks.composeapp.generated.resources.task_reminder_starting_now
+import org.jetbrains.compose.resources.getString
 import org.lighthousegames.logging.logging
 
 private val log = logging("ScheduleTaskRemindersAction")
@@ -36,11 +50,11 @@ class ScheduleTaskRemindersAction(
      * Schedule reminders for a task that already has raw UTC timestamps.
      * Used by RescheduleAllRemindersAction which bulk-reads from the UTC path.
      */
-    fun invokeWithUtcTask(task: Task) {
+    suspend fun invokeWithUtcTask(task: Task) {
         scheduleForTask(task)
     }
 
-    private fun scheduleForTask(task: Task) {
+    private suspend fun scheduleForTask(task: Task) {
         log.d { "Scheduling reminders for task ${task.id}" }
         scheduler.cancelReminders(task.id)
         scheduler.stopOngoing(task.id)
@@ -64,18 +78,7 @@ class ScheduleTaskRemindersAction(
                 scheduler.schedule(
                     taskId = task.id,
                     title = task.title,
-                    body = when {
-                        mins == 0 -> "Due now"
-                        mins < 60 -> "Due in $mins min"
-                        mins < 1440 -> {
-                            val hours = mins / 60
-                            "Due in $hours hour${if (hours > 1) "s" else ""}"
-                        }
-                        else -> {
-                            val days = mins / 1440
-                            "Due in $days day${if (days > 1) "s" else ""}"
-                        }
-                    },
+                    body = dueReminderBody(mins),
                     triggerAtMillis = triggerAt,
                     reminderId = index,
                 )
@@ -95,11 +98,10 @@ class ScheduleTaskRemindersAction(
                 scheduler.schedule(
                     taskId = task.id,
                     title = task.title,
-                    body = if (mins == -1) "Task ending now" else when {
-                        mins == 0 -> "Starting now"
-                        mins < 60 -> "Starting in $mins min"
-                        mins == 60 -> "Starting in 1 hour"
-                        else -> "Starting in ${mins / 60} hours"
+                    body = if (mins == -1) {
+                        getString(Res.string.task_reminder_ending_now)
+                    } else {
+                        startingReminderBody(mins)
                     },
                     triggerAtMillis = triggerAt,
                     reminderId = DURATION_REMINDER_OFFSET + index,
@@ -108,7 +110,7 @@ class ScheduleTaskRemindersAction(
         }
 
         // Overdue notification — fires at the moment the deadline passes
-        // Skip if a "Due now" (0-minute) date reminder already fires at the same time
+        // Skip if a zero-minute date reminder already fires at the same time.
         val hasDueNowReminder = dateReminderValues.any { it == 0 } ||
             durationReminderValues.any { mins ->
                 if (mins == -1) task.endDeadline == task.deadline else mins == 0
@@ -119,16 +121,58 @@ class ScheduleTaskRemindersAction(
             scheduler.schedule(
                 taskId = task.id,
                 title = task.title,
-                body = "Overdue",
+                body = getString(Res.string.task_reminder_overdue),
                 triggerAtMillis = task.deadline,
                 reminderId = OVERDUE_REMINDER_ID,
             )
         }
-
     }
 
     private fun String.parseMinuteValues(): List<Int> =
         split(",").mapNotNull { it.trim().toIntOrNull() }
+
+    private suspend fun dueReminderBody(minutes: Int): String = when {
+        minutes == 0 -> getString(Res.string.task_reminder_due_now)
+        minutes < 60 -> getString(Res.string.task_reminder_due_in_minutes, minutes)
+        minutes < 1440 -> {
+            val hours = minutes / 60
+            getString(
+                if (hours == 1) {
+                    Res.string.task_reminder_due_in_hour
+                } else {
+                    Res.string.task_reminder_due_in_hours
+                },
+                hours,
+            )
+        }
+        else -> {
+            val days = minutes / 1440
+            getString(
+                if (days == 1) {
+                    Res.string.task_reminder_due_in_day
+                } else {
+                    Res.string.task_reminder_due_in_days
+                },
+                days,
+            )
+        }
+    }
+
+    private suspend fun startingReminderBody(minutes: Int): String = when {
+        minutes == 0 -> getString(Res.string.task_reminder_starting_now)
+        minutes < 60 -> getString(Res.string.task_reminder_starting_in_minutes, minutes)
+        else -> {
+            val hours = minutes / 60
+            getString(
+                if (hours == 1) {
+                    Res.string.task_reminder_starting_in_hour
+                } else {
+                    Res.string.task_reminder_starting_in_hours
+                },
+                hours,
+            )
+        }
+    }
 
     private fun Task.legacyReminderMinutes(): List<Int> {
         if (dateReminders.isNotBlank() || durationReminders.isNotBlank()) return emptyList()

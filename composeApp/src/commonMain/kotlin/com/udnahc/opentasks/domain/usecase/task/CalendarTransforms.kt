@@ -4,6 +4,12 @@ import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.isCountdownItem
+
+data class CalendarDayTasks(
+    val allDayTasks: List<Task> = emptyList(),
+    val timedTasks: List<Task> = emptyList(),
+)
 
 /**
  * Returns tasks for a specific day, sorted by deadline.
@@ -18,9 +24,29 @@ fun tasksForDay(tasks: List<Task>, targetDayKey: Long): List<Task> =
  * Returns (allDayTasks, timedTasks).
  */
 fun splitAllDayAndTimed(tasks: List<Task>): Pair<List<Task>, List<Task>> =
-    tasks.partition { task ->
-        task.isAllDay || (task.deadline != null && extractHour(task.deadline) == 0 && extractMinute(task.deadline) == 0)
-    }
+    sortCalendarTasksForDay(tasks).partition { task -> task.isCalendarAllDay() }
+
+fun splitCalendarDayTasks(tasks: List<Task>): CalendarDayTasks {
+    val (allDayTasks, timedTasks) = splitAllDayAndTimed(tasks)
+    return CalendarDayTasks(
+        allDayTasks = allDayTasks,
+        timedTasks = timedTasks,
+    )
+}
+
+fun sortCalendarTasksForDay(tasks: List<Task>): List<Task> =
+    tasks.sortedWith(
+        compareBy<Task>(
+            { if (it.isCalendarAllDay()) 0 else 1 },
+            { it.deadline ?: Long.MAX_VALUE },
+            { if (it.isCountdownItem) 1 else 0 },
+            { it.title.lowercase() },
+            { it.id },
+        )
+    )
+
+private fun Task.isCalendarAllDay(): Boolean =
+    isAllDay || (deadline != null && extractHour(deadline) == 0 && extractMinute(deadline) == 0)
 
 /**
  * Truncates a task list for display, returning the visible portion and overflow count.

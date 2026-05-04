@@ -38,6 +38,12 @@ import com.udnahc.opentasks.data.model.Category
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.widget_filter_all
+import opentasks.composeapp.generated.resources.widget_filter_next_7_days
+import opentasks.composeapp.generated.resources.widget_filter_today
+import opentasks.composeapp.generated.resources.widget_filter_tomorrow
+import org.jetbrains.compose.resources.stringResource
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.lighthousegames.logging.logging
@@ -113,10 +119,16 @@ class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
                             )
 
                             val staticOptions = listOf(
-                                FilterOption("All", WidgetFilterType.ALL),
-                                FilterOption("Today", WidgetFilterType.TODAY),
-                                FilterOption("Tomorrow", WidgetFilterType.TOMORROW),
-                                FilterOption("Next 7 Days", WidgetFilterType.NEXT_7_DAYS),
+                                FilterOption(stringResource(Res.string.widget_filter_all), WidgetFilterType.ALL),
+                                FilterOption(stringResource(Res.string.widget_filter_today), WidgetFilterType.TODAY),
+                                FilterOption(
+                                    stringResource(Res.string.widget_filter_tomorrow),
+                                    WidgetFilterType.TOMORROW,
+                                ),
+                                FilterOption(
+                                    stringResource(Res.string.widget_filter_next_7_days),
+                                    WidgetFilterType.NEXT_7_DAYS,
+                                ),
                             )
 
                             val allOptions = staticOptions + categories.map { cat ->

@@ -73,6 +73,18 @@
     <string name="previous_month">Previous month</string>
     <string name="next_month">Next month</string>
     <string name="clear_reminder">Clear reminder</string>
+    <string name="task_reminder_due_now">Due now</string>
+    <string name="task_reminder_due_in_minutes">Due in %1$d min</string>
+    <string name="task_reminder_due_in_hour">Due in %1$d hour</string>
+    <string name="task_reminder_due_in_hours">Due in %1$d hours</string>
+    <string name="task_reminder_due_in_day">Due in %1$d day</string>
+    <string name="task_reminder_due_in_days">Due in %1$d days</string>
+    <string name="task_reminder_starting_now">Starting now</string>
+    <string name="task_reminder_starting_in_minutes">Starting in %1$d min</string>
+    <string name="task_reminder_starting_in_hour">Starting in %1$d hour</string>
+    <string name="task_reminder_starting_in_hours">Starting in %1$d hours</string>
+    <string name="task_reminder_ending_now">Task ending now</string>
+    <string name="task_reminder_overdue">Overdue</string>
 
     <!-- Reminder Options (Date tab) -->
     <string name="reminder">Reminder</string>
@@ -203,6 +215,8 @@
     <string name="calendar_permission_denied">Calendar permission was denied. Please enable it in Settings.</string>
     <string name="calendar_not_available">Calendar import is not available on this platform</string>
     <string name="import_button">Import</string>
+    <string name="calendar_import_all_day_event">All day event</string>
+    <string name="calendar_import_calendar_name">Calendar: %1$s</string>
 
     <!-- ICS Import -->
     <string name="import_from_ics">Import from .ics file</string>
@@ -283,6 +297,11 @@
 
     <!-- Widget -->
     <string name="widget_description">Shows upcoming tasks on your home screen</string>
+    <string name="widget_opacity">Opacity</string>
+    <string name="widget_filter_all">All</string>
+    <string name="widget_filter_today">Today</string>
+    <string name="widget_filter_tomorrow">Tomorrow</string>
+    <string name="widget_filter_next_7_days">Next 7 Days</string>
 
     <!-- Common -->
     <string name="edit">Edit</string>

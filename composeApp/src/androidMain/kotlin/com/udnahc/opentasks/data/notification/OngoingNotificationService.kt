@@ -18,7 +18,7 @@ class OngoingNotificationService : Service() {
             // in case this service was started via startForegroundService()
             val placeholder = NotificationCompat.Builder(this, NotificationScheduler.ONGOING_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("Stopping")
+                .setContentTitle(getString(R.string.notification_stopping))
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build()
             startForeground(1, placeholder)
@@ -28,7 +28,8 @@ class OngoingNotificationService : Service() {
         }
 
         val taskId = intent?.getStringExtra(NotificationScheduler.EXTRA_TASK_ID) ?: ""
-        val title = intent?.getStringExtra(NotificationScheduler.EXTRA_TITLE) ?: "All-day task"
+        val title = intent?.getStringExtra(NotificationScheduler.EXTRA_TITLE)
+            ?: getString(R.string.notification_all_day_task)
         val notificationId = NotificationScheduler.notificationId(taskId, 99)
 
         // Tap → open app and navigate to task details
@@ -43,7 +44,7 @@ class OngoingNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        // "Mark Done" action
+        // Completion action
         val markDoneIntent = Intent(this, NotificationActionReceiver::class.java).apply {
             action = NotificationScheduler.ACTION_MARK_DONE
             putExtra(NotificationScheduler.EXTRA_TASK_ID, taskId)
@@ -55,7 +56,7 @@ class OngoingNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        // "Got It" action
+        // Dismiss action
         val gotItIntent = Intent(this, NotificationActionReceiver::class.java).apply {
             action = NotificationScheduler.ACTION_GOT_IT
             putExtra(NotificationScheduler.EXTRA_TASK_ID, taskId)
@@ -70,12 +71,12 @@ class OngoingNotificationService : Service() {
         val notification = NotificationCompat.Builder(this, NotificationScheduler.ONGOING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
-            .setContentText("All-day task in progress")
+            .setContentText(getString(R.string.notification_all_day_task_in_progress))
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(tapPendingIntent)
-            .addAction(0, "Mark Done", markDonePendingIntent)
-            .addAction(0, "Got It", gotItPendingIntent)
+            .addAction(0, getString(R.string.notification_action_mark_done), markDonePendingIntent)
+            .addAction(0, getString(R.string.notification_action_got_it), gotItPendingIntent)
             .build()
 
         startForeground(notificationId, notification)

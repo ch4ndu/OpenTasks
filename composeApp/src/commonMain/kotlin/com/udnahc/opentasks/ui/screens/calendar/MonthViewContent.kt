@@ -86,8 +86,8 @@ internal fun MonthViewContent(
         val dimens = OpenTasksTheme.dimens
         val totalHeight = maxHeight
         val dayHeadersHeight = dimens.calendarDayHeaderHeight
-        val collapsedWeekHeight = COLLAPSED_WEEK_HEIGHT_DP.dp
-        val stackedEventsHeight = STACKED_EVENTS_HEIGHT_DP.dp
+        val collapsedWeekHeight = dimens.calendarCollapsedWeekHeight
+        val stackedEventsHeight = dimens.calendarStackedEventsHeight
         val gridAvailable = totalHeight - topBarHeight - dayHeadersHeight - navBarHeight - dimens.fabAreaBottom
 
         // Interpolate grid height: full available → collapsed week height
@@ -252,9 +252,7 @@ internal fun MonthViewContent(
                                 selectedDay.day == todayDay
                         Text(
                             text = if (isToday) stringResource(Res.string.today).uppercase()
-                            else "${
-                                monthName(selectedDay.month).uppercase().take(3)
-                            } ${selectedDay.day}",
+                            else "${calendarMonthNameShort(selectedDay.month).uppercase()} ${selectedDay.day}",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -322,7 +320,8 @@ private fun AnimatedMonthGrid(
     ) {
         val totalHeightPx = with(LocalDensity.current) { maxHeight.toPx() }
         val expandedRowHeightPx = totalHeightPx / weeks.size
-        val collapsedRowHeightPx = with(LocalDensity.current) { COLLAPSED_WEEK_HEIGHT_DP.dp.toPx() }
+        val collapsedRowHeightPx =
+            with(LocalDensity.current) { OpenTasksTheme.dimens.calendarCollapsedWeekHeight.toPx() }
 
         var cumulativeOffset = 0f
 

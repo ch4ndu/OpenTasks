@@ -7,8 +7,11 @@ import com.udnahc.opentasks.data.repository.TaskRepository
 
 class UpdateTaskStatusAction(
     private val repository: TaskRepository,
+    private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
 ) {
     suspend operator fun invoke(task: Task, newStatus: TaskStatus) {
-        repository.update(task.copy(status = newStatus, updatedAt = localNow()))
+        val updated = task.copy(status = newStatus, updatedAt = localNow())
+        repository.update(updated)
+        scheduleTaskRemindersAction(updated.id)
     }
 }

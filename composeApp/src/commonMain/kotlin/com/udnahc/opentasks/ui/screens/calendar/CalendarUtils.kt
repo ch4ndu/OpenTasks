@@ -41,26 +41,6 @@ internal fun buildMonthWeeks(
     return cells.chunked(7)
 }
 
-// ── Month names ─────────────────────────────────────────────────────────────
-
-internal val DAY_NAMES_SHORT = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-
-internal val MONTH_NAMES = arrayOf(
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
-)
-
-internal val MONTH_NAMES_SHORT = arrayOf(
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-)
-
-internal fun monthName(month: Int): String = MONTH_NAMES[month - 1]
-internal fun monthNameShort(month: Int): String = MONTH_NAMES_SHORT[month - 1]
-
-
 // ── Constants ───────────────────────────────────────────────────────────────
 
 internal const val PAGER_MONTH_RANGE = 240  // ±10 years
-internal const val COLLAPSED_WEEK_HEIGHT_DP = 48
-internal const val STACKED_EVENTS_HEIGHT_DP = 100

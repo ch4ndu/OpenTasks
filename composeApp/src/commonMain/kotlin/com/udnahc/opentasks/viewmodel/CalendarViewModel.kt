@@ -2,16 +2,25 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.model.CalendarListDisplayModePreference
+import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.data.model.toCalendarTask
+import com.udnahc.opentasks.domain.action.settings.SaveCalendarListDisplayModePreferenceAction
+import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAction
 import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
+import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarListDisplayModePreferenceUseCase
+import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarViewPreferenceUseCase
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
+import com.udnahc.opentasks.domain.usecase.task.splitCalendarDayTasks
+import com.udnahc.opentasks.domain.usecase.task.sortCalendarTasksForDay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,18 +29,41 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 class CalendarViewModel(
     observeTasksByDay: ObserveTasksByDayUseCase,
     observeAllCountdowns: ObserveAllCountdownsUseCase,
     observeAllCategories: ObserveAllCategoriesUseCase,
     toggleTaskCompleteAction: ToggleTaskCompleteAction,
+    observeCalendarViewPreference: ObserveCalendarViewPreferenceUseCase,
+    saveCalendarViewPreference: SaveCalendarViewPreferenceAction,
+    observeCalendarListDisplayModePreference: ObserveCalendarListDisplayModePreferenceUseCase,
+    saveCalendarListDisplayModePreference: SaveCalendarListDisplayModePreferenceAction,
 ) : ViewModel() {
 
     private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
     val taskPendingSeriesChoice: StateFlow<Task?> = completionHandler.taskPendingSeriesChoice
     private val _listSelectedDayKey = MutableStateFlow<Long?>(null)
     private val _monthSelectedDayKey = MutableStateFlow<Long?>(null)
+    private val saveCalendarViewPreferenceAction = saveCalendarViewPreference
+    private val saveCalendarListDisplayModePreferenceAction =
+        saveCalendarListDisplayModePreference
+
+    val calendarViewPreference: StateFlow<CalendarViewPreference> = observeCalendarViewPreference()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            CalendarViewPreference.MONTH,
+        )
+
+    val calendarListDisplayModePreference: StateFlow<CalendarListDisplayModePreference> =
+        observeCalendarListDisplayModePreference()
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                CalendarListDisplayModePreference.TIMELINE,
+            )
 
     val categoryNames: StateFlow<Map<String, String>> = observeAllCategories()
         .map { cats -> cats.associate { it.id to it.name } }
@@ -46,10 +78,15 @@ class CalendarViewModel(
         for (countdown in countdowns) {
             val dk = dayKey(countdown.targetDate)
             val existing = merged[dk].orEmpty()
-            merged[dk] = existing + countdown.toCalendarTask()
+            merged[dk] = sortCalendarTasksForDay(existing + countdown.toCalendarTask())
         }
-        merged
+        merged.mapValues { (_, tasks) -> sortCalendarTasksForDay(tasks) }
     }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val timelineTasksByDay: StateFlow<Map<Long, CalendarDayTasks>> = tasksByDay
+        .map { byDay -> byDay.mapValues { (_, tasks) -> splitCalendarDayTasks(tasks) } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
@@ -73,6 +110,18 @@ class CalendarViewModel(
 
     fun clearMonthSelectedDay() {
         _monthSelectedDayKey.value = null
+    }
+
+    fun saveCalendarViewPreference(preference: CalendarViewPreference) {
+        viewModelScope.launch {
+            saveCalendarViewPreferenceAction(preference)
+        }
+    }
+
+    fun saveCalendarListDisplayModePreference(preference: CalendarListDisplayModePreference) {
+        viewModelScope.launch {
+            saveCalendarListDisplayModePreferenceAction(preference)
+        }
     }
 
     fun selectMonthDay(year: Int, month: Int, day: Int) {

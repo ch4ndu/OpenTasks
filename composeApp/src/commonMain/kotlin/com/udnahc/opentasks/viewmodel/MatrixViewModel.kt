@@ -95,8 +95,13 @@ class MatrixViewModel(
     fun completeSeries() = completionHandler.completeSeries()
     fun dismissSeriesChoice() = completionHandler.dismissSeriesChoice()
 
-    fun updateTaskStatus(task: Task, newStatus: TaskStatus) {
-        viewModelScope.launch(Dispatchers.IO) { updateTaskStatusAction(task, newStatus) }
+    fun moveTaskToStatus(task: Task, targetStatus: TaskStatus) {
+        if (targetStatus == task.status) return
+        if (targetStatus == TaskStatus.DONE && task.status != TaskStatus.DONE) {
+            completionHandler.toggleComplete(task)
+        } else {
+            viewModelScope.launch(Dispatchers.IO) { updateTaskStatusAction(task, targetStatus) }
+        }
     }
 
     fun toggleStar(task: Task) {

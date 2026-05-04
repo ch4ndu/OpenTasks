@@ -6,6 +6,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.domain.usecase.task.splitCalendarDayTasks
 import com.udnahc.opentasks.ui.screens.calendar.DayViewContent
 import com.udnahc.opentasks.ui.screens.calendar.DayViewStripItem
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
@@ -38,6 +39,9 @@ private fun DayViewContentPreview() {
             pagerState = rememberPagerState(initialPage = 3650) { 7300 },
             pagerCentre = 3650,
             tasksByDay = PreviewSampleData.sampleTasksByDay,
+            timelineTasksByDay = PreviewSampleData.sampleTasksByDay.mapValues { (_, tasks) ->
+                splitCalendarDayTasks(tasks)
+            },
             topBarHeight = 64.dp,
             navBarHeight = 0.dp,
             onTaskClick = {},

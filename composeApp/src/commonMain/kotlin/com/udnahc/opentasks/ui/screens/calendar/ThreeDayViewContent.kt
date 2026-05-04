@@ -40,7 +40,7 @@ import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.extractMonth
-import com.udnahc.opentasks.domain.usecase.task.splitAllDayAndTimed
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
 import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.formatTime12Hr
@@ -61,6 +61,7 @@ internal fun ThreeDayViewContent(
     pagerState: PagerState,
     pagerCentre: Int,
     tasksByDay: Map<Long, List<Task>>,
+    timelineTasksByDay: Map<Long, CalendarDayTasks>,
     topBarHeight: Dp,
     navBarHeight: Dp,
     onTaskClick: (Task) -> Unit,
@@ -136,7 +137,7 @@ internal fun ThreeDayViewContent(
                     ThreeDayColumn(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
-                        tasksByDay = tasksByDay,
+                        timelineTasksByDay = timelineTasksByDay,
                         hourHeight = hourHeight,
                         dayHeaderHeight = dayHeaderHeight,
                         scrollState = scrollState,
@@ -155,7 +156,7 @@ internal fun ThreeDayViewContent(
 private fun ThreeDayColumn(
     dayMillis: Long,
     todayMillis: Long,
-    tasksByDay: Map<Long, List<Task>>,
+    timelineTasksByDay: Map<Long, CalendarDayTasks>,
     hourHeight: Dp,
     dayHeaderHeight: Dp,
     scrollState: androidx.compose.foundation.ScrollState,
@@ -171,12 +172,9 @@ private fun ThreeDayColumn(
         )
     }
     val dk = remember(dayMillis) { dayKey(dayMillis) }
-    val dayTasks = remember(dk, tasksByDay) {
-        tasksByDay[dk] ?: emptyList()
-    }
-    val (allDayTasks, timedTasks) = remember(dayTasks) {
-        splitAllDayAndTimed(dayTasks)
-    }
+    val dayTasks = timelineTasksByDay[dk] ?: CalendarDayTasks()
+    val allDayTasks = dayTasks.allDayTasks
+    val timedTasks = dayTasks.timedTasks
 
     Column(modifier = Modifier.fillMaxSize()) {
         // ── Day header ───
@@ -188,7 +186,7 @@ private fun ThreeDayColumn(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = DAY_NAMES_SHORT[dayOfWeekIdx],
+                text = calendarWeekdayShort(dayOfWeekIdx),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (isToday) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -294,4 +292,3 @@ private fun ThreeDayColumn(
         }
     }
 }
-

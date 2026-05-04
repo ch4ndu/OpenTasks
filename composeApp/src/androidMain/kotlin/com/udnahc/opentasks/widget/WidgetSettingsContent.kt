@@ -45,12 +45,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.udnahc.opentasks.data.dao.CategoryDao
 import com.udnahc.opentasks.data.model.Category
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.widget_filter_all
+import opentasks.composeapp.generated.resources.widget_filter_next_7_days
+import opentasks.composeapp.generated.resources.widget_filter_today
+import opentasks.composeapp.generated.resources.widget_filter_tomorrow
+import opentasks.composeapp.generated.resources.widget_opacity
+import org.jetbrains.compose.resources.stringResource
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
-import com.udnahc.opentasks.data.dao.CategoryDao
 
 private object CategoryProvider : KoinComponent {
     val categoryDao: CategoryDao by inject()
@@ -267,12 +274,13 @@ private fun WidgetPreviewSection(
     val dateColor = Color(0xFFC83C3C)
 
     val filterLabel = when (filterType) {
-        WidgetFilterType.ALL -> "All"
-        WidgetFilterType.TODAY -> "Today"
-        WidgetFilterType.TOMORROW -> "Tomorrow"
-        WidgetFilterType.NEXT_7_DAYS -> "Next 7 Days"
+        WidgetFilterType.ALL -> stringResource(Res.string.widget_filter_all)
+        WidgetFilterType.TODAY -> stringResource(Res.string.widget_filter_today)
+        WidgetFilterType.TOMORROW -> stringResource(Res.string.widget_filter_tomorrow)
+        WidgetFilterType.NEXT_7_DAYS -> stringResource(Res.string.widget_filter_next_7_days)
         WidgetFilterType.CATEGORY -> {
-            categories.find { it.id == filterCategoryId }?.name ?: "All"
+            categories.find { it.id == filterCategoryId }?.name
+                ?: stringResource(Res.string.widget_filter_all)
         }
     }
 
@@ -445,7 +453,7 @@ private fun OpacityRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Opacity",
+                text = stringResource(Res.string.widget_opacity),
                 color = Color.White,
                 fontSize = 15.sp,
             )
@@ -480,12 +488,13 @@ private fun FilterRow(
     var expanded by remember { mutableStateOf(false) }
 
     val currentLabel = when (filterType) {
-        WidgetFilterType.ALL -> "All"
-        WidgetFilterType.TODAY -> "Today"
-        WidgetFilterType.TOMORROW -> "Tomorrow"
-        WidgetFilterType.NEXT_7_DAYS -> "Next 7 Days"
+        WidgetFilterType.ALL -> stringResource(Res.string.widget_filter_all)
+        WidgetFilterType.TODAY -> stringResource(Res.string.widget_filter_today)
+        WidgetFilterType.TOMORROW -> stringResource(Res.string.widget_filter_tomorrow)
+        WidgetFilterType.NEXT_7_DAYS -> stringResource(Res.string.widget_filter_next_7_days)
         WidgetFilterType.CATEGORY -> {
-            categories.find { it.id == filterCategoryId }?.name ?: "All"
+            categories.find { it.id == filterCategoryId }?.name
+                ?: stringResource(Res.string.widget_filter_all)
         }
     }
 
@@ -514,28 +523,28 @@ private fun FilterRow(
             onDismissRequest = { expanded = false },
         ) {
             DropdownMenuItem(
-                text = { Text("All") },
+                text = { Text(stringResource(Res.string.widget_filter_all)) },
                 onClick = {
                     onFilterSelected(WidgetFilterType.ALL, null)
                     expanded = false
                 },
             )
             DropdownMenuItem(
-                text = { Text("Today") },
+                text = { Text(stringResource(Res.string.widget_filter_today)) },
                 onClick = {
                     onFilterSelected(WidgetFilterType.TODAY, null)
                     expanded = false
                 },
             )
             DropdownMenuItem(
-                text = { Text("Tomorrow") },
+                text = { Text(stringResource(Res.string.widget_filter_tomorrow)) },
                 onClick = {
                     onFilterSelected(WidgetFilterType.TOMORROW, null)
                     expanded = false
                 },
             )
             DropdownMenuItem(
-                text = { Text("Next 7 Days") },
+                text = { Text(stringResource(Res.string.widget_filter_next_7_days)) },
                 onClick = {
                     onFilterSelected(WidgetFilterType.NEXT_7_DAYS, null)
                     expanded = false

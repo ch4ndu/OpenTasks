@@ -232,7 +232,7 @@ internal fun WeekViewDayCell(
         ) {
             // Header: day name + date number
             Text(
-                text = DAY_NAMES_SHORT[dayIndex],
+                text = calendarWeekdayShort(dayIndex),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (isSelected) PrimaryBlue
                 else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -324,7 +324,7 @@ internal fun WeekViewMiniCalendar(
         ) {
             // Month name header
             Text(
-                text = "${monthNameShort(month)} $year",
+                text = "${calendarMonthNameShort(month)} $year",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = if (year == todayYear && month == todayMonth) PrimaryBlue
@@ -348,4 +348,3 @@ internal fun WeekViewMiniCalendar(
         }
     }
 }
-

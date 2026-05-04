@@ -12,6 +12,10 @@ import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.TagRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.domain.action.tag.AddTagAction
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.calendar_import_all_day_event
+import opentasks.composeapp.generated.resources.calendar_import_calendar_name
+import org.jetbrains.compose.resources.getString
 import org.lighthousegames.logging.logging
 
 private val log = logging("ImportCalendarEventsAction")
@@ -84,11 +88,11 @@ class ImportCalendarEventsAction(
         return importedCount
     }
 
-    private fun buildEventContent(event: CalendarEvent): String {
+    private suspend fun buildEventContent(event: CalendarEvent): String {
         val parts = mutableListOf<String>()
 
         if (event.isAllDay) {
-            parts.add("All day event")
+            parts.add(getString(Res.string.calendar_import_all_day_event))
         } else {
             // Convert external UTC to local millis for display formatting
             val startLocal = utcToLocal(event.startTimeUtcMillis)
@@ -104,7 +108,7 @@ class ImportCalendarEventsAction(
         }
 
         if (event.calendarName.isNotBlank()) {
-            parts.add("Calendar: ${event.calendarName}")
+            parts.add(getString(Res.string.calendar_import_calendar_name, event.calendarName))
         }
 
         if (event.description.isNotBlank()) {

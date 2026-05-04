@@ -7,7 +7,9 @@ import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Tag
 import com.udnahc.opentasks.data.model.TaskTag
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 class TagRepositoryImpl(
@@ -16,7 +18,9 @@ class TagRepositoryImpl(
 ) : TagRepository {
 
     override fun getAllTags(): Flow<List<Tag>> =
-        tagDao.getAllTags().map { tags -> tags.map { it.withLocalTimestamps() } }
+        tagDao.getAllTags()
+            .map { tags -> tags.map { it.withLocalTimestamps() } }
+            .flowOn(Dispatchers.Default)
 
     override suspend fun getTagById(id: String): Tag? =
         tagDao.getTagById(id)?.withLocalTimestamps()
@@ -25,7 +29,9 @@ class TagRepositoryImpl(
         tagDao.getTagByName(name)?.withLocalTimestamps()
 
     override fun getTagsForTask(taskId: String): Flow<List<Tag>> =
-        tagDao.getTagsForTask(taskId).map { tags -> tags.map { it.withLocalTimestamps() } }
+        tagDao.getTagsForTask(taskId)
+            .map { tags -> tags.map { it.withLocalTimestamps() } }
+            .flowOn(Dispatchers.Default)
 
     override suspend fun insertTag(tag: Tag): Long {
         val result = tagDao.insertTag(tag.withDefaultTimestamps().withUtcTimestamps())

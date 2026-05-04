@@ -34,7 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.currentMonth
 import com.udnahc.opentasks.data.extensions.currentYear
@@ -43,15 +45,18 @@ import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
+import com.udnahc.opentasks.data.model.CalendarListDisplayModePreference
+import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
 import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
 import com.udnahc.opentasks.ui.screens.SelectedOptionRow
 import com.udnahc.opentasks.ui.screens.SyncPullToRefresh
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.calendar_view_day
@@ -99,6 +104,12 @@ internal enum class CalendarViewType(val labelRes: StringResource) {
 
 internal enum class ListDisplayMode { TIMELINE, CARD }
 
+private data class TodayCalendarDate(
+    val year: Int,
+    val month: Int,
+    val day: Int,
+)
+
 // ── Public entry point ──────────────────────────────────────────────────────
 
 @Composable
@@ -112,12 +123,21 @@ fun CalendarScreen(
 ) {
     val tasksByDay by viewModel.tasksByDay.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
+    val calendarViewPreference by viewModel.calendarViewPreference.collectAsState()
+    val listDisplayModePreference by viewModel.calendarListDisplayModePreference.collectAsState()
 
     CalendarContent(
         tasksByDay = tasksByDay,
+        timelineTasksByDayFlow = viewModel.timelineTasksByDay,
         selectedListDayTasksFlow = viewModel.selectedListDayTasks,
         selectedMonthDayTasksFlow = viewModel.selectedMonthDayTasks,
         categoryNamesFlow = viewModel.categoryNames,
+        currentView = calendarViewPreference.toCalendarViewType(),
+        listDisplayMode = listDisplayModePreference.toListDisplayMode(),
+        onCalendarViewChanged = { viewModel.saveCalendarViewPreference(it.toPreference()) },
+        onListDisplayModeChanged = {
+            viewModel.saveCalendarListDisplayModePreference(it.toPreference())
+        },
         onListDaySelected = { viewModel.selectListDay(it) },
         onMonthDaySelected = { year, month, day -> viewModel.selectMonthDay(year, month, day) },
         onMonthDayCleared = { viewModel.clearMonthSelectedDay() },
@@ -144,9 +164,14 @@ fun CalendarScreen(
 @Composable
 private fun CalendarContent(
     tasksByDay: Map<Long, List<Task>>,
+    timelineTasksByDayFlow: StateFlow<Map<Long, CalendarDayTasks>>,
     selectedListDayTasksFlow: StateFlow<List<Task>>,
     selectedMonthDayTasksFlow: StateFlow<List<Task>>,
     categoryNamesFlow: StateFlow<Map<String, String>>,
+    currentView: CalendarViewType,
+    listDisplayMode: ListDisplayMode,
+    onCalendarViewChanged: (CalendarViewType) -> Unit,
+    onListDisplayModeChanged: (ListDisplayMode) -> Unit,
     onListDaySelected: (Long) -> Unit,
     onMonthDaySelected: (Int, Int, Int) -> Unit,
     onMonthDayCleared: () -> Unit,
@@ -163,13 +188,25 @@ private fun CalendarContent(
     val dimens = OpenTasksTheme.dimens
     val topBarHeight = dimens.topBarHeight + statusBarHeight
 
-    val todayYear = remember { currentYear() }
-    val todayMonth = remember { currentMonth() }
-    val todayDay = remember { currentDay() }
+    var todayDate by remember { mutableStateOf(currentTodayCalendarDate()) }
+    LifecycleResumeEffect(Unit) {
+        todayDate = currentTodayCalendarDate()
+        onPauseOrDispose { }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(MILLIS_PER_MINUTE)
+            val latestToday = currentTodayCalendarDate()
+            if (latestToday != todayDate) {
+                todayDate = latestToday
+            }
+        }
+    }
+    val todayYear = todayDate.year
+    val todayMonth = todayDate.month
+    val todayDay = todayDate.day
 
-    var currentView by remember { mutableStateOf(CalendarViewType.MONTH) }
     var showViewPicker by remember { mutableStateOf(false) }
-    var listDisplayMode by remember { mutableStateOf(ListDisplayMode.TIMELINE) }
     val scope = rememberCoroutineScope()
 
     // ── Month-pager state (shared by Month view) ───
@@ -220,8 +257,10 @@ private fun CalendarContent(
     val weekPagerState = rememberPagerState(initialPage = WEEK_PAGER_CENTRE) { WEEK_PAGER_RANGE }
 
     // Selected day for list view (defaults to today)
-    val todayMillis = remember { startOfDayLocalMillis(todayYear, todayMonth, todayDay) }
-    var listSelectedDayMillis by remember { mutableStateOf(todayMillis) }
+    val todayMillis = remember(todayYear, todayMonth, todayDay) {
+        startOfDayLocalMillis(todayYear, todayMonth, todayDay)
+    }
+    var listSelectedDayMillis by remember(todayMillis) { mutableStateOf(todayMillis) }
     LaunchedEffect(listSelectedDayMillis) {
         onListDaySelected(listSelectedDayMillis)
     }
@@ -261,7 +300,7 @@ private fun CalendarContent(
         derivedStateOf { extractMonth(weekViewSundayMillis) }
     }
 
-    var weekViewSelectedDayMillis by remember { mutableStateOf(todayMillis) }
+    var weekViewSelectedDayMillis by remember(todayMillis) { mutableStateOf(todayMillis) }
 
     // ── Three-day pager state (per-day pages) ───
     val threeDayPagerState = rememberPagerState(initialPage = DAY_PAGER_CENTRE) { DAY_PAGER_RANGE }
@@ -348,17 +387,17 @@ private fun CalendarContent(
     ) {
         val offset = (year - todayYear) * 12 + (month - todayMonth)
         scope.launch { pagerState.scrollToPage(centreIndex + offset) }
-        currentView = CalendarViewType.MONTH
+        onCalendarViewChanged(CalendarViewType.MONTH)
     }
 
     // ── Top bar title ───
     val topBarTitle = when (currentView) {
-        CalendarViewType.LIST -> monthName(listSelectedMonth)
+        CalendarViewType.LIST -> calendarMonthName(listSelectedMonth)
         CalendarViewType.YEAR -> yearViewYear.toString()
-        CalendarViewType.MONTH -> monthName(displayedMonth)
-        CalendarViewType.WEEK -> monthName(weekViewCalendarMonth)
-        CalendarViewType.THREE_DAY -> monthName(threeDayMonth)
-        CalendarViewType.DAY -> monthName(dayViewMonth)
+        CalendarViewType.MONTH -> calendarMonthName(displayedMonth)
+        CalendarViewType.WEEK -> calendarMonthName(weekViewCalendarMonth)
+        CalendarViewType.THREE_DAY -> calendarMonthName(threeDayMonth)
+        CalendarViewType.DAY -> calendarMonthName(dayViewMonth)
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -468,6 +507,7 @@ private fun CalendarContent(
             }
 
             CalendarViewType.THREE_DAY -> {
+                val timelineTasksByDay by timelineTasksByDayFlow.collectAsState()
                 ThreeDayViewContent(
                     todayMillis = todayMillis,
                     todayYear = todayYear,
@@ -476,6 +516,7 @@ private fun CalendarContent(
                     pagerState = threeDayPagerState,
                     pagerCentre = DAY_PAGER_CENTRE,
                     tasksByDay = tasksByDay,
+                    timelineTasksByDay = timelineTasksByDay,
                     topBarHeight = topBarHeight,
                     navBarHeight = navBarHeight,
                     onTaskClick = onTaskClick,
@@ -484,6 +525,7 @@ private fun CalendarContent(
             }
 
             CalendarViewType.DAY -> {
+                val timelineTasksByDay by timelineTasksByDayFlow.collectAsState()
                 DayViewContent(
                     todayMillis = todayMillis,
                     todayYear = todayYear,
@@ -492,6 +534,7 @@ private fun CalendarContent(
                     pagerState = dayViewPagerState,
                     pagerCentre = DAY_PAGER_CENTRE,
                     tasksByDay = tasksByDay,
+                    timelineTasksByDay = timelineTasksByDay,
                     topBarHeight = topBarHeight,
                     navBarHeight = navBarHeight,
                     onTaskClick = onTaskClick,
@@ -514,15 +557,15 @@ private fun CalendarContent(
                         onMonthDayCleared()
                     }
                 } else if (currentView == CalendarViewType.YEAR) {
-                    currentView = CalendarViewType.MONTH
+                    onCalendarViewChanged(CalendarViewType.MONTH)
                 }
             },
             listDisplayMode = listDisplayMode,
             onToggleDisplayMode = {
-                listDisplayMode = when (listDisplayMode) {
+                onListDisplayModeChanged(when (listDisplayMode) {
                     ListDisplayMode.TIMELINE -> ListDisplayMode.CARD
                     ListDisplayMode.CARD -> ListDisplayMode.TIMELINE
-                }
+                })
             },
             showViewPicker = showViewPicker,
             onViewPickerToggle = { showViewPicker = true },
@@ -532,7 +575,7 @@ private fun CalendarContent(
                     val targetPage = YEAR_PAGER_CENTRE + (displayedYear - todayYear)
                     scope.launch { yearPagerState.scrollToPage(targetPage) }
                 }
-                currentView = view
+                onCalendarViewChanged(view)
             },
             onViewPickerDismiss = { showViewPicker = false },
             onSettingsClick = onSettingsClick,
@@ -666,3 +709,38 @@ internal fun ViewPickerDropdown(
 }
 
 private val dimens @Composable get() = OpenTasksTheme.dimens
+
+private fun currentTodayCalendarDate(): TodayCalendarDate =
+    TodayCalendarDate(
+        year = currentYear(),
+        month = currentMonth(),
+        day = currentDay(),
+    )
+
+private fun CalendarViewPreference.toCalendarViewType(): CalendarViewType = when (this) {
+    CalendarViewPreference.LIST -> CalendarViewType.LIST
+    CalendarViewPreference.YEAR -> CalendarViewType.YEAR
+    CalendarViewPreference.MONTH -> CalendarViewType.MONTH
+    CalendarViewPreference.WEEK -> CalendarViewType.WEEK
+    CalendarViewPreference.THREE_DAY -> CalendarViewType.THREE_DAY
+    CalendarViewPreference.DAY -> CalendarViewType.DAY
+}
+
+private fun CalendarViewType.toPreference(): CalendarViewPreference = when (this) {
+    CalendarViewType.LIST -> CalendarViewPreference.LIST
+    CalendarViewType.YEAR -> CalendarViewPreference.YEAR
+    CalendarViewType.MONTH -> CalendarViewPreference.MONTH
+    CalendarViewType.WEEK -> CalendarViewPreference.WEEK
+    CalendarViewType.THREE_DAY -> CalendarViewPreference.THREE_DAY
+    CalendarViewType.DAY -> CalendarViewPreference.DAY
+}
+
+private fun CalendarListDisplayModePreference.toListDisplayMode(): ListDisplayMode = when (this) {
+    CalendarListDisplayModePreference.TIMELINE -> ListDisplayMode.TIMELINE
+    CalendarListDisplayModePreference.CARD -> ListDisplayMode.CARD
+}
+
+private fun ListDisplayMode.toPreference(): CalendarListDisplayModePreference = when (this) {
+    ListDisplayMode.TIMELINE -> CalendarListDisplayModePreference.TIMELINE
+    ListDisplayMode.CARD -> CalendarListDisplayModePreference.CARD
+}

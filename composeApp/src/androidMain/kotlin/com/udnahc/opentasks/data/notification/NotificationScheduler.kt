@@ -23,10 +23,10 @@ actual class NotificationScheduler(private val context: Context) {
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Task Reminders",
+            context.getString(R.string.notification_channel_task_reminders),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "Notifications for task reminders"
+            description = context.getString(R.string.notification_channel_task_reminders_description)
         }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(channel)
@@ -34,10 +34,10 @@ actual class NotificationScheduler(private val context: Context) {
         // Ongoing channel (lower importance, no sound)
         val ongoingChannel = NotificationChannel(
             ONGOING_CHANNEL_ID,
-            "All-Day Tasks",
+            context.getString(R.string.notification_channel_all_day_tasks),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Ongoing notifications for all-day tasks"
+            description = context.getString(R.string.notification_channel_all_day_tasks_description)
         }
         manager.createNotificationChannel(ongoingChannel)
     }
@@ -138,7 +138,7 @@ actual class NotificationScheduler(private val context: Context) {
         val notification = NotificationCompat.Builder(context, ONGOING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
-            .setContentText("All-day task in progress")
+            .setContentText(context.getString(R.string.notification_all_day_task_in_progress))
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()

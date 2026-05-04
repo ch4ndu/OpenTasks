@@ -12,6 +12,12 @@ import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.currentState
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.udnahc.opentasks.data.model.Category
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.widget_filter_all
+import opentasks.composeapp.generated.resources.widget_filter_next_7_days
+import opentasks.composeapp.generated.resources.widget_filter_today
+import opentasks.composeapp.generated.resources.widget_filter_tomorrow
+import org.jetbrains.compose.resources.getString
 import org.lighthousegames.logging.logging
 
 private val log = logging("TaskWidget")
@@ -27,14 +33,15 @@ private sealed class WidgetData {
     ) : WidgetData()
 }
 
-private fun resolveFilterLabel(prefs: WidgetPreferences, categories: List<Category>): String =
+private suspend fun resolveFilterLabel(prefs: WidgetPreferences, categories: List<Category>): String =
     when (prefs.filterType) {
-        WidgetFilterType.ALL -> "All"
-        WidgetFilterType.TODAY -> "Today"
-        WidgetFilterType.TOMORROW -> "Tomorrow"
-        WidgetFilterType.NEXT_7_DAYS -> "Next 7 Days"
+        WidgetFilterType.ALL -> getString(Res.string.widget_filter_all)
+        WidgetFilterType.TODAY -> getString(Res.string.widget_filter_today)
+        WidgetFilterType.TOMORROW -> getString(Res.string.widget_filter_tomorrow)
+        WidgetFilterType.NEXT_7_DAYS -> getString(Res.string.widget_filter_next_7_days)
         WidgetFilterType.CATEGORY ->
-            categories.find { it.id == prefs.filterCategoryId }?.name ?: "All"
+            categories.find { it.id == prefs.filterCategoryId }?.name
+                ?: getString(Res.string.widget_filter_all)
     }
 
 class TaskWidget : GlanceAppWidget() {
@@ -100,7 +107,11 @@ class TaskWidget : GlanceAppWidget() {
                     WidgetData.Ready(tasks, filterLabel, prefs)
                 } catch (e: Exception) {
                     log.e { "Widget data fetch failed: ${e.message}" }
-                    WidgetData.Ready(emptyList(), "All", WidgetPreferences(appWidgetId))
+                    WidgetData.Ready(
+                        emptyList(),
+                        getString(Res.string.widget_filter_all),
+                        WidgetPreferences(appWidgetId),
+                    )
                 }
             }
 

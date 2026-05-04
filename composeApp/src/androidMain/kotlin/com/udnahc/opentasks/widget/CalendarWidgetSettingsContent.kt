@@ -43,6 +43,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.widget_opacity
+import org.jetbrains.compose.resources.stringResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -373,7 +376,7 @@ private fun CalendarOpacityRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text = "Opacity", color = Color.White, fontSize = 15.sp)
+            Text(text = stringResource(Res.string.widget_opacity), color = Color.White, fontSize = 15.sp)
             Text(text = "${(opacity * 100).toInt()}%", color = accentColor, fontSize = 15.sp)
         }
         Spacer(modifier = Modifier.height(4.dp))

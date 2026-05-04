@@ -164,7 +164,7 @@ fun TaskListScreen(
                     KanbanBoardContent(
                         tasksByStatus = tasksByStatus,
                         onTaskClick = onTaskClick,
-                        onStatusChange = { task, newStatus -> viewModel.updateTaskStatus(task, newStatus) },
+                        onStatusChange = { task, newStatus -> viewModel.moveTaskToStatus(task, newStatus) },
                         onToggleStar = { viewModel.toggleStar(it) },
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,

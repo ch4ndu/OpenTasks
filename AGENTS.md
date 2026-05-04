@@ -25,6 +25,7 @@ Read this file first. Do not eagerly load every AI instruction document. Load on
 - Reuse existing UseCases, Actions, composables, utilities, strings, icons, and theme dimensions before creating new ones.
 - Keep changes scoped. Do not refactor unrelated code while implementing a feature or fix.
 - When durable architecture, workflow, or verification rules change, update the relevant `docs/ai/*` file. Do not duplicate those rules in tool-specific shims.
+- After running Gradle, stop Gradle daemons with `./gradlew --stop` before finishing the task to avoid orphaned processes.
 
 ## Karpathy-Style Coding Discipline
 
