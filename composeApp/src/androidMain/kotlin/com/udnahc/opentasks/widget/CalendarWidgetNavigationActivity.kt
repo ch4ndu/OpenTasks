@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.lighthousegames.logging.logging
 
 private val log = logging("CalendarWidgetNav")
@@ -30,7 +31,7 @@ class CalendarWidgetNavigationActivity : ComponentActivity() {
 
         lifecycleScope.launch(Dispatchers.IO) {
             CalendarWidget.navigateMonth(this@CalendarWidgetNavigationActivity, appWidgetId, delta)
-            finish()
+            withContext(Dispatchers.Main) { finish() }
         }
     }
 }

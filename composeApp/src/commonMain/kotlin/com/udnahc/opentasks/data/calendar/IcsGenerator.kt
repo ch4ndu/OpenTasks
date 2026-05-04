@@ -2,8 +2,11 @@ package com.udnahc.opentasks.data.calendar
 
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 
 /**
@@ -81,19 +84,23 @@ object IcsGenerator {
 
     /** Format UTC millis to ICS date-only format for the next day (exclusive end): 20260316 */
     private fun formatDateOnlyPlusOneDay(utcMillis: Long): String {
-        // Add 24 hours to get the next day
-        val nextDayMillis = utcMillis + 86_400_000L
-        return formatDateOnly(nextDayMillis)
+        val date = Instant.fromEpochMilliseconds(utcMillis)
+            .toLocalDateTime(TimeZone.UTC)
+            .date
+        return formatDateOnly(date.plus(1, DateTimeUnit.DAY))
     }
 
     /** Format UTC millis to ICS date-only format: 20260315 */
     private fun formatDateOnly(utcMillis: Long): String {
         val instant = Instant.fromEpochMilliseconds(utcMillis)
-        val dt = instant.toLocalDateTime(TimeZone.UTC)
+        return formatDateOnly(instant.toLocalDateTime(TimeZone.UTC).date)
+    }
+
+    private fun formatDateOnly(date: LocalDate): String {
         return buildString {
-            append(dt.year.toString().padStart(4, '0'))
-            append(dt.monthNumber.toString().padStart(2, '0'))
-            append(dt.dayOfMonth.toString().padStart(2, '0'))
+            append(date.year.toString().padStart(4, '0'))
+            append(date.monthNumber.toString().padStart(2, '0'))
+            append(date.dayOfMonth.toString().padStart(2, '0'))
         }
     }
 

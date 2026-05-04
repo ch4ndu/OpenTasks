@@ -55,8 +55,8 @@ class CalendarWidgetSettingsActivity : ComponentActivity() {
     }
 
     private fun saveAndFinish(prefs: CalendarWidgetPreferences, appWidgetId: Int) {
-        CalendarWidgetPreferences.save(this, prefs)
         lifecycleScope.launch(Dispatchers.IO) {
+            CalendarWidgetPreferences.save(this@CalendarWidgetSettingsActivity, prefs)
             CalendarWidget.refreshWidget(this@CalendarWidgetSettingsActivity, appWidgetId)
             withContext(Dispatchers.Main) {
                 setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId))

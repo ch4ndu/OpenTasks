@@ -19,6 +19,10 @@ import com.udnahc.opentasks.data.model.TaskPriority
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.today
+import opentasks.composeapp.generated.resources.widget_filter_tomorrow
+import org.jetbrains.compose.resources.getString
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
@@ -39,12 +43,15 @@ class WidgetDataProvider : KoinComponent {
     private val categoryDao: CategoryDao by inject()
     private val countdownDao: CountdownDao by inject()
 
-    suspend fun getCategories(): List<Category> = categoryDao.getAllCategoriesOnce()
+    suspend fun getCategories(): List<Category> =
+        categoryDao.getAllCategoriesOnce().filter { !it.isDeleted }
 
     suspend fun getWidgetTasks(prefs: WidgetPreferences): List<WidgetTask> {
         val tasks = fetchTasks(prefs)
         val sorted = sortTasks(tasks, prefs.sortBy)
-        return sorted.take(15).map { it.toWidgetTask() }
+        val todayLabel = getString(Res.string.today)
+        val tomorrowLabel = getString(Res.string.widget_filter_tomorrow)
+        return sorted.take(15).map { it.toWidgetTask(todayLabel, tomorrowLabel) }
     }
 
     private suspend fun fetchTasks(prefs: WidgetPreferences): List<Task> {
@@ -55,6 +62,7 @@ class WidgetDataProvider : KoinComponent {
             WidgetFilterType.NEXT_7_DAYS -> getTasksForDayRange(0, 7)
             WidgetFilterType.CATEGORY -> {
                 val catId = prefs.filterCategoryId ?: return taskDao.getActiveTasksOnce()
+                if (getCategories().none { it.id == catId }) return taskDao.getActiveTasksOnce()
                 taskDao.getActiveTasksOnce().filter { it.categoryId == catId }
             }
         }
@@ -165,14 +173,14 @@ class WidgetDataProvider : KoinComponent {
         const val MAX_TASKS_PER_WEEK_DAY = 1
     }
 
-    private fun Task.toWidgetTask(): WidgetTask {
+    private fun Task.toWidgetTask(todayLabel: String, tomorrowLabel: String): WidgetTask {
         val today = todayLocal()
         val deadlineLocal = deadline?.let { utcMillisToLocalMillis(it) }
         val dateLabel = if (deadlineLocal != null) {
             val deadlineDate = localMillisToLocalDate(deadlineLocal)
             when {
-                deadlineDate == today -> "Today"
-                deadlineDate == today.plus(1, DateTimeUnit.DAY) -> "Tomorrow"
+                deadlineDate == today -> todayLabel
+                deadlineDate == today.plus(1, DateTimeUnit.DAY) -> tomorrowLabel
                 else -> formatDateShort(deadlineLocal)
             }
         } else {

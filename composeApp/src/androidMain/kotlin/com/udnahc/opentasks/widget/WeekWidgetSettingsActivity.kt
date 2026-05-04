@@ -13,6 +13,9 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.week_widget_title
+import org.jetbrains.compose.resources.stringResource
 import org.lighthousegames.logging.logging
 
 private val log = logging("WeekWidgetSettingsActivity")
@@ -49,7 +52,7 @@ class WeekWidgetSettingsActivity : ComponentActivity() {
                     initialPreferences = initialPrefs,
                     onSave = { prefs -> saveAndFinish(prefs, appWidgetId) },
                     onCancel = { finish() },
-                    title = "Week Widget",
+                    title = stringResource(Res.string.week_widget_title),
                     previewContent = { theme, fontSize, opacity ->
                         WeekPreviewSection(theme, fontSize, opacity)
                     },
@@ -59,8 +62,8 @@ class WeekWidgetSettingsActivity : ComponentActivity() {
     }
 
     private fun saveAndFinish(prefs: CalendarWidgetPreferences, appWidgetId: Int) {
-        CalendarWidgetPreferences.save(this, prefs)
         lifecycleScope.launch(Dispatchers.IO) {
+            CalendarWidgetPreferences.save(this@WeekWidgetSettingsActivity, prefs)
             WeekWidget.refreshWidget(this@WeekWidgetSettingsActivity, appWidgetId)
             withContext(Dispatchers.Main) {
                 setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId))

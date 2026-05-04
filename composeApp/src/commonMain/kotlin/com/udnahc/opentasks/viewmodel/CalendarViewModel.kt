@@ -22,6 +22,7 @@ import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import com.udnahc.opentasks.domain.usecase.task.splitCalendarDayTasks
 import com.udnahc.opentasks.domain.usecase.task.sortCalendarTasksForDay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -113,13 +114,13 @@ class CalendarViewModel(
     }
 
     fun saveCalendarViewPreference(preference: CalendarViewPreference) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             saveCalendarViewPreferenceAction(preference)
         }
     }
 
     fun saveCalendarListDisplayModePreference(preference: CalendarListDisplayModePreference) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             saveCalendarListDisplayModePreferenceAction(preference)
         }
     }

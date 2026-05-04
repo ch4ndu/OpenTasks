@@ -45,23 +45,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.udnahc.opentasks.data.dao.CategoryDao
 import com.udnahc.opentasks.data.model.Category
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.widget_click_go_to_list
+import opentasks.composeapp.generated.resources.widget_click_open_task
 import opentasks.composeapp.generated.resources.widget_filter_all
 import opentasks.composeapp.generated.resources.widget_filter_next_7_days
 import opentasks.composeapp.generated.resources.widget_filter_today
 import opentasks.composeapp.generated.resources.widget_filter_tomorrow
+import opentasks.composeapp.generated.resources.widget_font_size_large
+import opentasks.composeapp.generated.resources.widget_font_size_normal
+import opentasks.composeapp.generated.resources.widget_font_size_small
+import opentasks.composeapp.generated.resources.widget_group_by_date
+import opentasks.composeapp.generated.resources.widget_group_by_priority
 import opentasks.composeapp.generated.resources.widget_opacity
+import opentasks.composeapp.generated.resources.widget_setting_font_size
+import opentasks.composeapp.generated.resources.widget_setting_group_by
+import opentasks.composeapp.generated.resources.widget_setting_hide_due_date
+import opentasks.composeapp.generated.resources.widget_setting_hide_due_date_description
+import opentasks.composeapp.generated.resources.widget_setting_list_tag
+import opentasks.composeapp.generated.resources.widget_setting_on_task_click
+import opentasks.composeapp.generated.resources.widget_setting_sort_by
+import opentasks.composeapp.generated.resources.widget_setting_theme
+import opentasks.composeapp.generated.resources.widget_settings_section_appearance
+import opentasks.composeapp.generated.resources.widget_settings_section_behavior
+import opentasks.composeapp.generated.resources.widget_settings_section_content
+import opentasks.composeapp.generated.resources.widget_settings_title
+import opentasks.composeapp.generated.resources.widget_sort_by_date
+import opentasks.composeapp.generated.resources.widget_sort_by_name
+import opentasks.composeapp.generated.resources.widget_sort_by_priority
+import opentasks.composeapp.generated.resources.widget_theme_dark
+import opentasks.composeapp.generated.resources.widget_theme_light
+import opentasks.composeapp.generated.resources.widget_theme_system
 import org.jetbrains.compose.resources.stringResource
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
-
-private object CategoryProvider : KoinComponent {
-    val categoryDao: CategoryDao by inject()
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,9 +101,15 @@ fun WidgetSettingsContent(
     var categories by remember { mutableStateOf(emptyList<Category>()) }
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            categories = CategoryProvider.categoryDao.getAllCategoriesOnce()
-                .filter { !it.isDeleted }
+        val loadedCategories = withContext(Dispatchers.IO) {
+            WidgetDataProvider().getCategories()
+        }
+        categories = loadedCategories
+        if (filterType == WidgetFilterType.CATEGORY &&
+            loadedCategories.none { it.id == filterCategoryId }
+        ) {
+            filterType = WidgetFilterType.ALL
+            filterCategoryId = null
         }
     }
 
@@ -99,7 +123,7 @@ fun WidgetSettingsContent(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "Widget Settings",
+                        text = stringResource(Res.string.widget_settings_title),
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White,
                     )
@@ -165,10 +189,10 @@ fun WidgetSettingsContent(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Appearance Section
-            SectionHeader(title = "Appearance")
+            SectionHeader(title = stringResource(Res.string.widget_settings_section_appearance))
             SettingsCard(cardColor = cardColor) {
                 DropdownSettingRow(
-                    label = "Theme",
+                    label = stringResource(Res.string.widget_setting_theme),
                     currentValue = theme.displayName(),
                     options = WidgetTheme.entries.map { it.name to it.displayName() },
                     onSelect = { theme = WidgetTheme.valueOf(it) },
@@ -176,7 +200,7 @@ fun WidgetSettingsContent(
                 )
                 SettingsDivider()
                 DropdownSettingRow(
-                    label = "Font Size",
+                    label = stringResource(Res.string.widget_setting_font_size),
                     currentValue = fontSize.displayName(),
                     options = WidgetFontSize.entries.map { it.name to it.displayName() },
                     onSelect = { fontSize = WidgetFontSize.valueOf(it) },
@@ -193,7 +217,7 @@ fun WidgetSettingsContent(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Content Section
-            SectionHeader(title = "Content")
+            SectionHeader(title = stringResource(Res.string.widget_settings_section_content))
             SettingsCard(cardColor = cardColor) {
                 FilterRow(
                     filterType = filterType,
@@ -207,7 +231,7 @@ fun WidgetSettingsContent(
                 )
                 SettingsDivider()
                 DropdownSettingRow(
-                    label = "Group by",
+                    label = stringResource(Res.string.widget_setting_group_by),
                     currentValue = groupBy.displayName(),
                     options = WidgetGroupBy.entries.map { it.name to it.displayName() },
                     onSelect = { groupBy = WidgetGroupBy.valueOf(it) },
@@ -215,7 +239,7 @@ fun WidgetSettingsContent(
                 )
                 SettingsDivider()
                 DropdownSettingRow(
-                    label = "Sort by",
+                    label = stringResource(Res.string.widget_setting_sort_by),
                     currentValue = sortBy.displayName(),
                     options = WidgetSortBy.entries.map { it.name to it.displayName() },
                     onSelect = { sortBy = WidgetSortBy.valueOf(it) },
@@ -223,8 +247,8 @@ fun WidgetSettingsContent(
                 )
                 SettingsDivider()
                 SwitchSettingRow(
-                    label = "Hide Due Date",
-                    description = "Remove date labels from task rows",
+                    label = stringResource(Res.string.widget_setting_hide_due_date),
+                    description = stringResource(Res.string.widget_setting_hide_due_date_description),
                     checked = hideDueDate,
                     onCheckedChange = { hideDueDate = it },
                     accentColor = accentColor,
@@ -234,10 +258,10 @@ fun WidgetSettingsContent(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Behavior Section
-            SectionHeader(title = "Behavior")
+            SectionHeader(title = stringResource(Res.string.widget_settings_section_behavior))
             SettingsCard(cardColor = cardColor) {
                 DropdownSettingRow(
-                    label = "On task click",
+                    label = stringResource(Res.string.widget_setting_on_task_click),
                     currentValue = onClickAction.displayName(),
                     options = WidgetClickAction.entries.map { it.name to it.displayName() },
                     onSelect = { onClickAction = WidgetClickAction.valueOf(it) },
@@ -508,7 +532,7 @@ private fun FilterRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "List / Tag",
+                text = stringResource(Res.string.widget_setting_list_tag),
                 color = Color.White,
                 fontSize = 15.sp,
             )
@@ -604,30 +628,35 @@ private fun SwitchSettingRow(
 
 // -- Display name extensions --
 
+@Composable
 private fun WidgetTheme.displayName(): String = when (this) {
-    WidgetTheme.DARK -> "Dark"
-    WidgetTheme.LIGHT -> "Light"
-    WidgetTheme.SYSTEM -> "System"
+    WidgetTheme.DARK -> stringResource(Res.string.widget_theme_dark)
+    WidgetTheme.LIGHT -> stringResource(Res.string.widget_theme_light)
+    WidgetTheme.SYSTEM -> stringResource(Res.string.widget_theme_system)
 }
 
+@Composable
 private fun WidgetFontSize.displayName(): String = when (this) {
-    WidgetFontSize.SMALL -> "Small"
-    WidgetFontSize.NORMAL -> "Normal"
-    WidgetFontSize.LARGE -> "Large"
+    WidgetFontSize.SMALL -> stringResource(Res.string.widget_font_size_small)
+    WidgetFontSize.NORMAL -> stringResource(Res.string.widget_font_size_normal)
+    WidgetFontSize.LARGE -> stringResource(Res.string.widget_font_size_large)
 }
 
+@Composable
 private fun WidgetGroupBy.displayName(): String = when (this) {
-    WidgetGroupBy.DATE -> "Date"
-    WidgetGroupBy.PRIORITY -> "Priority"
+    WidgetGroupBy.DATE -> stringResource(Res.string.widget_group_by_date)
+    WidgetGroupBy.PRIORITY -> stringResource(Res.string.widget_group_by_priority)
 }
 
+@Composable
 private fun WidgetSortBy.displayName(): String = when (this) {
-    WidgetSortBy.DATE -> "Date"
-    WidgetSortBy.PRIORITY -> "Priority"
-    WidgetSortBy.NAME -> "Name"
+    WidgetSortBy.DATE -> stringResource(Res.string.widget_sort_by_date)
+    WidgetSortBy.PRIORITY -> stringResource(Res.string.widget_sort_by_priority)
+    WidgetSortBy.NAME -> stringResource(Res.string.widget_sort_by_name)
 }
 
+@Composable
 private fun WidgetClickAction.displayName(): String = when (this) {
-    WidgetClickAction.OPEN_TASK -> "Open task"
-    WidgetClickAction.GO_TO_LIST -> "Go to list"
+    WidgetClickAction.OPEN_TASK -> stringResource(Res.string.widget_click_open_task)
+    WidgetClickAction.GO_TO_LIST -> stringResource(Res.string.widget_click_go_to_list)
 }

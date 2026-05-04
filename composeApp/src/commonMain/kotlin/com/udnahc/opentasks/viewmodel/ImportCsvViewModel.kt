@@ -18,7 +18,7 @@ private val log = logging("ImportCsvViewModel")
 data class ImportCsvUiState(
     val isLoading: Boolean = false,
     val importedCount: Int? = null,
-    val error: String? = null,
+    val error: ImportErrorState? = null,
     val fileName: String? = null,
 )
 
@@ -37,14 +37,27 @@ class ImportCsvViewModel(
             try {
                 val tasks = parseCsv(content)
                 if (tasks.isEmpty()) {
-                    _uiState.update { it.copy(isLoading = false, error = "No tasks found in file") }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = ImportErrorState(ImportErrorType.EMPTY_CSV_FILE),
+                        )
+                    }
                     return@launch
                 }
                 val count = importAction(tasks)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: Exception) {
                 log.e { "CSV import failed: ${e.message}" }
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Import failed") }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = ImportErrorState(
+                            type = ImportErrorType.GENERIC,
+                            detail = e.message,
+                        ),
+                    )
+                }
             }
         }
     }

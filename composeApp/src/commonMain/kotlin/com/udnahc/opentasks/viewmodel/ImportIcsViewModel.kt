@@ -18,7 +18,7 @@ private val log = logging("ImportIcsViewModel")
 data class ImportIcsUiState(
     val isLoading: Boolean = false,
     val importedCount: Int? = null,
-    val error: String? = null,
+    val error: ImportErrorState? = null,
     val fileName: String? = null,
 )
 
@@ -37,14 +37,27 @@ class ImportIcsViewModel(
             try {
                 val events = parseIcs(content)
                 if (events.isEmpty()) {
-                    _uiState.update { it.copy(isLoading = false, error = "No events found in file") }
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            error = ImportErrorState(ImportErrorType.EMPTY_ICS_FILE),
+                        )
+                    }
                     return@launch
                 }
                 val count = importAction(events)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: Exception) {
                 log.e { "ICS import failed: ${e.message}" }
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Import failed") }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = ImportErrorState(
+                            type = ImportErrorType.GENERIC,
+                            detail = e.message,
+                        ),
+                    )
+                }
             }
         }
     }

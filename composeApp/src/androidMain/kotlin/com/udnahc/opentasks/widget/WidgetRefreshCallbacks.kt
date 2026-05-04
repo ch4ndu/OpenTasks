@@ -9,6 +9,9 @@ import androidx.glance.appwidget.action.ActionCallback
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.widget_refreshing
+import org.jetbrains.compose.resources.getString
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.lighthousegames.logging.logging
@@ -26,7 +29,7 @@ class TaskRefreshCallback : ActionCallback, KoinComponent {
     ) {
         log.d { "Task widget refresh triggered" }
         withContext(Dispatchers.Main) {
-            Toast.makeText(context, "Refreshing\u2026", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
         }
         try {
             triggerSyncAction()
@@ -50,7 +53,7 @@ class CalendarRefreshCallback : ActionCallback, KoinComponent {
     ) {
         log.d { "Calendar widget refresh triggered" }
         withContext(Dispatchers.Main) {
-            Toast.makeText(context, "Refreshing\u2026", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
         }
         try {
             triggerSyncAction()
@@ -74,7 +77,7 @@ class WeekRefreshCallback : ActionCallback, KoinComponent {
     ) {
         log.d { "Week widget refresh triggered" }
         withContext(Dispatchers.Main) {
-            Toast.makeText(context, "Refreshing\u2026", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
         }
         try {
             triggerSyncAction()

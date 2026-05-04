@@ -44,7 +44,7 @@ private fun mainIntent(action: String, taskId: String? = null): Intent =
 private fun filterPickerIntent(appWidgetId: Int): Intent =
     Intent().apply {
         component = ComponentName(PKG, "$PKG.widget.WidgetFilterPickerActivity")
-        putExtra("appWidgetId", appWidgetId)
+        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         flags = Intent.FLAG_ACTIVITY_NEW_TASK
     }
 
@@ -61,6 +61,7 @@ fun TaskWidgetContent(
     filterLabel: String,
     prefs: WidgetPreferences,
     appWidgetId: Int,
+    emptyMessage: String?,
 ) {
     val isDark = prefs.theme != WidgetTheme.LIGHT
     val bgColor = ColorProvider(if (isDark) R.color.widget_bg_dark else R.color.widget_bg_light)
@@ -125,13 +126,13 @@ fun TaskWidgetContent(
         Spacer(modifier = GlanceModifier.height(8.dp))
 
         // Task list
-        if (tasks.isEmpty()) {
+        if (tasks.isEmpty() && emptyMessage != null) {
             Box(
                 modifier = GlanceModifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = "No upcoming tasks",
+                    text = emptyMessage,
                     style = TextStyle(color = grayColor, fontSize = fontSize),
                 )
             }

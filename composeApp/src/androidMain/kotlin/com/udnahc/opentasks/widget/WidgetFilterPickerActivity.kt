@@ -15,9 +15,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,26 +33,30 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
-import com.udnahc.opentasks.data.dao.CategoryDao
 import com.udnahc.opentasks.data.model.Category
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.cancel
+import opentasks.composeapp.generated.resources.widget_filter_picker_title
 import opentasks.composeapp.generated.resources.widget_filter_all
 import opentasks.composeapp.generated.resources.widget_filter_next_7_days
 import opentasks.composeapp.generated.resources.widget_filter_today
 import opentasks.composeapp.generated.resources.widget_filter_tomorrow
 import org.jetbrains.compose.resources.stringResource
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
 import org.lighthousegames.logging.logging
 
 private val log = logging("WidgetFilterPicker")
 
-class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
+private data class FilterOption(
+    val key: String,
+    val label: String,
+    val type: WidgetFilterType,
+    val categoryId: String? = null,
+)
 
-    private val categoryDao: CategoryDao by inject()
+class WidgetFilterPickerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,12 +77,42 @@ class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
             var categories by remember { mutableStateOf(emptyList<Category>()) }
             LaunchedEffect(Unit) {
                 categories = withContext(Dispatchers.IO) {
-                    categoryDao.getAllCategoriesOnce()
+                    WidgetDataProvider().getCategories()
                 }
             }
 
             val selectedFilterType = prefs.filterType
             val selectedCategoryId = prefs.filterCategoryId
+            val staticOptions = listOf(
+                FilterOption(
+                    key = "filter:${WidgetFilterType.ALL.name}",
+                    label = stringResource(Res.string.widget_filter_all),
+                    type = WidgetFilterType.ALL,
+                ),
+                FilterOption(
+                    key = "filter:${WidgetFilterType.TODAY.name}",
+                    label = stringResource(Res.string.widget_filter_today),
+                    type = WidgetFilterType.TODAY,
+                ),
+                FilterOption(
+                    key = "filter:${WidgetFilterType.TOMORROW.name}",
+                    label = stringResource(Res.string.widget_filter_tomorrow),
+                    type = WidgetFilterType.TOMORROW,
+                ),
+                FilterOption(
+                    key = "filter:${WidgetFilterType.NEXT_7_DAYS.name}",
+                    label = stringResource(Res.string.widget_filter_next_7_days),
+                    type = WidgetFilterType.NEXT_7_DAYS,
+                ),
+            )
+            val allOptions = staticOptions + categories.map { cat ->
+                FilterOption(
+                    key = "category:${cat.id}",
+                    label = cat.name,
+                    type = WidgetFilterType.CATEGORY,
+                    categoryId = cat.id,
+                )
+            }
 
             Box(
                 modifier = Modifier
@@ -99,7 +133,7 @@ class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
                 ) {
                     Column(modifier = Modifier.padding(vertical = 16.dp)) {
                         Text(
-                            text = "Choose List",
+                            text = stringResource(Res.string.widget_filter_picker_title),
                             color = Color.White,
                             fontSize = 18.sp,
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -107,35 +141,12 @@ class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
 
                         HorizontalDivider(color = Color(0xFF333333))
 
-                        Column(
+                        LazyColumn(
                             modifier = Modifier
                                 .weight(1f, fill = false)
-                                .verticalScroll(rememberScrollState()),
+                                .fillMaxWidth(),
                         ) {
-                            data class FilterOption(
-                                val label: String,
-                                val type: WidgetFilterType,
-                                val categoryId: String? = null,
-                            )
-
-                            val staticOptions = listOf(
-                                FilterOption(stringResource(Res.string.widget_filter_all), WidgetFilterType.ALL),
-                                FilterOption(stringResource(Res.string.widget_filter_today), WidgetFilterType.TODAY),
-                                FilterOption(
-                                    stringResource(Res.string.widget_filter_tomorrow),
-                                    WidgetFilterType.TOMORROW,
-                                ),
-                                FilterOption(
-                                    stringResource(Res.string.widget_filter_next_7_days),
-                                    WidgetFilterType.NEXT_7_DAYS,
-                                ),
-                            )
-
-                            val allOptions = staticOptions + categories.map { cat ->
-                                FilterOption(cat.name, WidgetFilterType.CATEGORY, cat.id)
-                            }
-
-                            allOptions.forEach { option ->
+                            items(allOptions, key = { it.key }) { option ->
                                 val isSelected = option.type == selectedFilterType &&
                                     (option.type != WidgetFilterType.CATEGORY || option.categoryId == selectedCategoryId)
 
@@ -148,12 +159,7 @@ class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
                                                 filterType = option.type,
                                                 filterCategoryId = option.categoryId,
                                             )
-                                            WidgetPreferences.save(
-                                                this@WidgetFilterPickerActivity,
-                                                updated,
-                                            )
-                                            log.d { "Prefs saved, updating widget $appWidgetId" }
-                                            updateWidgetAndFinish(appWidgetId)
+                                            saveSelectionAndFinish(updated, appWidgetId)
                                         }
                                         .padding(horizontal = 20.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -187,7 +193,7 @@ class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
                                 .padding(horizontal = 16.dp),
                         ) {
                             Text(
-                                text = "Cancel",
+                                text = stringResource(Res.string.cancel),
                                 color = Color(0xFFBBBBBB),
                                 fontSize = 14.sp,
                             )
@@ -198,8 +204,10 @@ class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
         }
     }
 
-    private fun updateWidgetAndFinish(appWidgetId: Int) {
+    private fun saveSelectionAndFinish(prefs: WidgetPreferences, appWidgetId: Int) {
         lifecycleScope.launch(Dispatchers.IO) {
+            WidgetPreferences.save(this@WidgetFilterPickerActivity, prefs)
+            log.d { "Prefs saved, updating widget $appWidgetId" }
             log.d { "Refreshing widget $appWidgetId" }
             TaskWidget.refreshWidget(this@WidgetFilterPickerActivity, appWidgetId)
             log.d { "Widget $appWidgetId refreshed" }

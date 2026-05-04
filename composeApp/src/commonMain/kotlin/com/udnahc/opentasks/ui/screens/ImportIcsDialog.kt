@@ -8,9 +8,7 @@ import com.udnahc.opentasks.viewmodel.ImportIcsViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.choose_ics_file
 import opentasks.composeapp.generated.resources.ics_import_description
-import opentasks.composeapp.generated.resources.import_error
 import opentasks.composeapp.generated.resources.import_from_ics
-import opentasks.composeapp.generated.resources.no_events_in_file
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -37,11 +35,7 @@ internal fun ImportIcsDialogContent(
     onDismiss: () -> Unit,
 ) {
     val errorText = uiState.error?.let { error ->
-        if (error == "No events found in file") {
-            stringResource(Res.string.no_events_in_file)
-        } else {
-            stringResource(Res.string.import_error, error)
-        }
+        importErrorText(error)
     }
 
     FileImportDialogContent(

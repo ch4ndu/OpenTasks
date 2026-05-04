@@ -3,6 +3,8 @@ package com.udnahc.opentasks.ui.screens
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.udnahc.opentasks.viewmodel.ImportErrorState
+import com.udnahc.opentasks.viewmodel.ImportErrorType
 import com.udnahc.opentasks.viewmodel.ImportCsvUiState
 import com.udnahc.opentasks.viewmodel.ImportCsvViewModel
 import opentasks.composeapp.generated.resources.Res
@@ -10,6 +12,8 @@ import opentasks.composeapp.generated.resources.choose_csv_file
 import opentasks.composeapp.generated.resources.csv_import_description
 import opentasks.composeapp.generated.resources.import_csv_ticktick
 import opentasks.composeapp.generated.resources.import_error
+import opentasks.composeapp.generated.resources.import_failed_generic
+import opentasks.composeapp.generated.resources.no_events_in_file
 import opentasks.composeapp.generated.resources.no_tasks_in_file
 import org.jetbrains.compose.resources.stringResource
 
@@ -37,11 +41,7 @@ internal fun ImportCsvDialogContent(
     onDismiss: () -> Unit,
 ) {
     val errorText = uiState.error?.let { error ->
-        if (error == "No tasks found in file") {
-            stringResource(Res.string.no_tasks_in_file)
-        } else {
-            stringResource(Res.string.import_error, error)
-        }
+        importErrorText(error)
     }
 
     FileImportDialogContent(
@@ -54,4 +54,13 @@ internal fun ImportCsvDialogContent(
         onPickFile = onPickFile,
         onDismiss = onDismiss,
     )
+}
+
+@Composable
+internal fun importErrorText(error: ImportErrorState): String = when (error.type) {
+    ImportErrorType.EMPTY_CSV_FILE -> stringResource(Res.string.no_tasks_in_file)
+    ImportErrorType.EMPTY_ICS_FILE -> stringResource(Res.string.no_events_in_file)
+    ImportErrorType.GENERIC -> error.detail?.let { detail ->
+        stringResource(Res.string.import_error, detail)
+    } ?: stringResource(Res.string.import_failed_generic)
 }

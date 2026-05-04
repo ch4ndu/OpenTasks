@@ -3,11 +3,18 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
-import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.nowUtcMillis
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.task.FetchCalendarEventsUseCase
+import kotlin.time.Instant
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +32,7 @@ data class ImportCalendarUiState(
     val permissionStatus: CalendarPermissionStatus = CalendarPermissionStatus.NOT_DETERMINED,
     val isLoading: Boolean = false,
     val importedCount: Int? = null,
-    val error: String? = null,
+    val error: ImportErrorState? = null,
     val rangeValue: Int = 1,
     val rangeUnit: ImportRangeUnit = ImportRangeUnit.MONTHS,
 )
@@ -72,17 +79,24 @@ class ImportCalendarViewModel(
             _uiState.update { it.copy(isLoading = true, error = null, importedCount = null) }
             try {
                 val now = nowUtcMillis()
-                val rangeMillis = computeRangeMillis(
-                    _uiState.value.rangeValue,
-                    _uiState.value.rangeUnit,
+                val (startUtcMillis, endUtcMillis) = computeRangeBoundsUtcMillis(
+                    nowUtcMillis = now,
+                    value = _uiState.value.rangeValue,
+                    unit = _uiState.value.rangeUnit,
                 )
-                val events = fetchCalendarEvents(now - rangeMillis, now + rangeMillis)
+                val events = fetchCalendarEvents(startUtcMillis, endUtcMillis)
                 val count = importAction(events)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: Exception) {
                 log.e { "Calendar import failed: ${e.message}" }
                 _uiState.update {
-                    it.copy(isLoading = false, error = e.message ?: "Import failed")
+                    it.copy(
+                        isLoading = false,
+                        error = ImportErrorState(
+                            type = ImportErrorType.GENERIC,
+                            detail = e.message,
+                        ),
+                    )
                 }
             }
         }
@@ -94,13 +108,31 @@ class ImportCalendarViewModel(
         }
     }
 
-    private fun computeRangeMillis(value: Int, unit: ImportRangeUnit): Long {
-        val days = when (unit) {
-            ImportRangeUnit.DAYS -> value.toLong()
-            ImportRangeUnit.WEEKS -> value.toLong() * 7
-            ImportRangeUnit.MONTHS -> value.toLong() * 30
-            ImportRangeUnit.YEARS -> value.toLong() * 365
+    private fun computeRangeBoundsUtcMillis(
+        nowUtcMillis: Long,
+        value: Int,
+        unit: ImportRangeUnit,
+    ): Pair<Long, Long> {
+        val timeZone = TimeZone.currentSystemDefault()
+        val nowLocal = Instant.fromEpochMilliseconds(nowUtcMillis).toLocalDateTime(timeZone)
+        val startDate = when (unit) {
+            ImportRangeUnit.DAYS -> nowLocal.date.minus(value, DateTimeUnit.DAY)
+            ImportRangeUnit.WEEKS -> nowLocal.date.minus(value * 7, DateTimeUnit.DAY)
+            ImportRangeUnit.MONTHS -> nowLocal.date.minus(value, DateTimeUnit.MONTH)
+            ImportRangeUnit.YEARS -> nowLocal.date.minus(value, DateTimeUnit.YEAR)
         }
-        return days * MILLIS_PER_DAY
+        val endDate = when (unit) {
+            ImportRangeUnit.DAYS -> nowLocal.date.plus(value, DateTimeUnit.DAY)
+            ImportRangeUnit.WEEKS -> nowLocal.date.plus(value * 7, DateTimeUnit.DAY)
+            ImportRangeUnit.MONTHS -> nowLocal.date.plus(value, DateTimeUnit.MONTH)
+            ImportRangeUnit.YEARS -> nowLocal.date.plus(value, DateTimeUnit.YEAR)
+        }
+        val startUtcMillis = LocalDateTime(startDate, nowLocal.time)
+            .toInstant(timeZone)
+            .toEpochMilliseconds()
+        val endUtcMillis = LocalDateTime(endDate, nowLocal.time)
+            .toInstant(timeZone)
+            .toEpochMilliseconds()
+        return startUtcMillis to endUtcMillis
     }
 }

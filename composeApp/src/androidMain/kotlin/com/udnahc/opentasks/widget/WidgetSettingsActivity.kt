@@ -56,8 +56,8 @@ class WidgetSettingsActivity : ComponentActivity() {
     }
 
     private fun saveAndFinish(prefs: WidgetPreferences, appWidgetId: Int) {
-        WidgetPreferences.save(this, prefs)
         lifecycleScope.launch(Dispatchers.IO) {
+            WidgetPreferences.save(this@WidgetSettingsActivity, prefs)
             TaskWidget.refreshWidget(this@WidgetSettingsActivity, appWidgetId)
             withContext(Dispatchers.Main) {
                 setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId))

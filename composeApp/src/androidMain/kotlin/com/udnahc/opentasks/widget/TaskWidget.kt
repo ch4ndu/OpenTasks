@@ -17,6 +17,7 @@ import opentasks.composeapp.generated.resources.widget_filter_all
 import opentasks.composeapp.generated.resources.widget_filter_next_7_days
 import opentasks.composeapp.generated.resources.widget_filter_today
 import opentasks.composeapp.generated.resources.widget_filter_tomorrow
+import opentasks.composeapp.generated.resources.widget_empty_tasks
 import org.jetbrains.compose.resources.getString
 import org.lighthousegames.logging.logging
 
@@ -30,6 +31,7 @@ private sealed class WidgetData {
         val tasks: List<WidgetTask>,
         val filterLabel: String,
         val prefs: WidgetPreferences,
+        val emptyMessage: String,
     ) : WidgetData()
 }
 
@@ -104,23 +106,24 @@ class TaskWidget : GlanceAppWidget() {
                     val categories = provider.getCategories()
                     val filterLabel = resolveFilterLabel(prefs, categories)
                     log.v { "Widget $appWidgetId: ${tasks.size} tasks, filter=$filterLabel, trigger=$refreshTrigger" }
-                    WidgetData.Ready(tasks, filterLabel, prefs)
+                    WidgetData.Ready(tasks, filterLabel, prefs, getString(Res.string.widget_empty_tasks))
                 } catch (e: Exception) {
                     log.e { "Widget data fetch failed: ${e.message}" }
                     WidgetData.Ready(
                         emptyList(),
                         getString(Res.string.widget_filter_all),
                         WidgetPreferences(appWidgetId),
+                        getString(Res.string.widget_empty_tasks),
                     )
                 }
             }
 
             when (val d = data.value) {
                 is WidgetData.Loading -> TaskWidgetContent(
-                    emptyList(), "...", WidgetPreferences(appWidgetId), appWidgetId,
+                    emptyList(), "...", WidgetPreferences(appWidgetId), appWidgetId, null,
                 )
                 is WidgetData.Ready -> TaskWidgetContent(
-                    d.tasks, d.filterLabel, d.prefs, appWidgetId,
+                    d.tasks, d.filterLabel, d.prefs, appWidgetId, d.emptyMessage,
                 )
             }
         }

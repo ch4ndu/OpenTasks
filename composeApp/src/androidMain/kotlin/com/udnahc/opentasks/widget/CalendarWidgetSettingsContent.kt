@@ -44,7 +44,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.calendar_widget_title
+import opentasks.composeapp.generated.resources.widget_font_size_large
+import opentasks.composeapp.generated.resources.widget_font_size_normal
+import opentasks.composeapp.generated.resources.widget_font_size_small
 import opentasks.composeapp.generated.resources.widget_opacity
+import opentasks.composeapp.generated.resources.widget_setting_font_size
+import opentasks.composeapp.generated.resources.widget_setting_theme
+import opentasks.composeapp.generated.resources.widget_settings_section_appearance
+import opentasks.composeapp.generated.resources.widget_theme_dark
+import opentasks.composeapp.generated.resources.widget_theme_light
+import opentasks.composeapp.generated.resources.widget_theme_system
 import org.jetbrains.compose.resources.stringResource
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,7 +63,7 @@ fun CalendarWidgetSettingsContent(
     initialPreferences: CalendarWidgetPreferences,
     onSave: (CalendarWidgetPreferences) -> Unit,
     onCancel: () -> Unit,
-    title: String = "Calendar Widget",
+    title: String? = null,
     previewContent: (@Composable (WidgetTheme, WidgetFontSize, Float) -> Unit)? = null,
 ) {
     var theme by remember { mutableStateOf(initialPreferences.theme) }
@@ -63,6 +73,7 @@ fun CalendarWidgetSettingsContent(
     val accentColor = Color(0xFF4D9EFF)
     val surfaceColor = Color(0xFF1E1E1E)
     val cardColor = Color(0xFF2A2A2A)
+    val screenTitle = title ?: stringResource(Res.string.calendar_widget_title)
 
     Scaffold(
         containerColor = surfaceColor,
@@ -70,7 +81,7 @@ fun CalendarWidgetSettingsContent(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = title,
+                        text = screenTitle,
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White,
                     )
@@ -127,7 +138,7 @@ fun CalendarWidgetSettingsContent(
 
             // Appearance Section
             Text(
-                text = "APPEARANCE",
+                text = stringResource(Res.string.widget_settings_section_appearance).uppercase(),
                 color = Color.Gray,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -141,7 +152,7 @@ fun CalendarWidgetSettingsContent(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                     CalendarDropdownRow(
-                        label = "Theme",
+                        label = stringResource(Res.string.widget_setting_theme),
                         currentValue = theme.calDisplayName(),
                         options = WidgetTheme.entries.map { it.name to it.calDisplayName() },
                         onSelect = { theme = WidgetTheme.valueOf(it) },
@@ -154,7 +165,7 @@ fun CalendarWidgetSettingsContent(
                             .background(Color(0xFF3A3A3A)),
                     )
                     CalendarDropdownRow(
-                        label = "Font Size",
+                        label = stringResource(Res.string.widget_setting_font_size),
                         currentValue = fontSize.calDisplayName(),
                         options = WidgetFontSize.entries.map { it.name to it.calDisplayName() },
                         onSelect = { fontSize = WidgetFontSize.valueOf(it) },
@@ -395,14 +406,16 @@ private fun CalendarOpacityRow(
 
 // -- Display name extensions --
 
+@Composable
 private fun WidgetTheme.calDisplayName(): String = when (this) {
-    WidgetTheme.DARK -> "Dark"
-    WidgetTheme.LIGHT -> "Light"
-    WidgetTheme.SYSTEM -> "System"
+    WidgetTheme.DARK -> stringResource(Res.string.widget_theme_dark)
+    WidgetTheme.LIGHT -> stringResource(Res.string.widget_theme_light)
+    WidgetTheme.SYSTEM -> stringResource(Res.string.widget_theme_system)
 }
 
+@Composable
 private fun WidgetFontSize.calDisplayName(): String = when (this) {
-    WidgetFontSize.SMALL -> "Small"
-    WidgetFontSize.NORMAL -> "Normal"
-    WidgetFontSize.LARGE -> "Large"
+    WidgetFontSize.SMALL -> stringResource(Res.string.widget_font_size_small)
+    WidgetFontSize.NORMAL -> stringResource(Res.string.widget_font_size_normal)
+    WidgetFontSize.LARGE -> stringResource(Res.string.widget_font_size_large)
 }

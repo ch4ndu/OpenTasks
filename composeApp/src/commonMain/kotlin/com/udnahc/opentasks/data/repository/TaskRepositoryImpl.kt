@@ -33,7 +33,7 @@ class TaskRepositoryImpl(
             .flowOn(Dispatchers.Default)
 
     override suspend fun getTaskByExternalId(externalId: String): Task? =
-        taskDao.getTaskByExternalId(externalId)
+        taskDao.getTaskByExternalId(externalId)?.withLocalTimestamps()
 
     override suspend fun insert(task: Task): Long {
         log.v { "Inserting task: ${task.id}" }

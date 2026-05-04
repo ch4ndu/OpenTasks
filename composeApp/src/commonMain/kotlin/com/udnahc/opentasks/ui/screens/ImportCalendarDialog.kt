@@ -38,7 +38,6 @@ import opentasks.composeapp.generated.resources.calendar_permission_denied
 import opentasks.composeapp.generated.resources.days
 import opentasks.composeapp.generated.resources.grant_calendar_permission
 import opentasks.composeapp.generated.resources.import_button
-import opentasks.composeapp.generated.resources.import_error
 import opentasks.composeapp.generated.resources.import_from_calendar
 import opentasks.composeapp.generated.resources.import_range_label
 import opentasks.composeapp.generated.resources.import_success
@@ -119,7 +118,7 @@ internal fun ImportCalendarDialogContent(
                         ImportSuccessText(stringResource(Res.string.import_success, uiState.importedCount))
                     }
                     uiState.error != null -> {
-                        ImportErrorText(stringResource(Res.string.import_error, uiState.error))
+                        ImportErrorText(importErrorText(uiState.error))
                     }
                     else -> {
                         // Range picker

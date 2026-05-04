@@ -211,6 +211,7 @@
     <string name="importing">Importing…</string>
     <string name="import_success">%1$d events imported</string>
     <string name="import_error">Import failed: %1$s</string>
+    <string name="import_failed_generic">Import failed</string>
     <string name="grant_calendar_permission">Grant calendar permission to import events</string>
     <string name="calendar_permission_denied">Calendar permission was denied. Please enable it in Settings.</string>
     <string name="calendar_not_available">Calendar import is not available on this platform</string>
@@ -302,6 +303,36 @@
     <string name="widget_filter_today">Today</string>
     <string name="widget_filter_tomorrow">Tomorrow</string>
     <string name="widget_filter_next_7_days">Next 7 Days</string>
+    <string name="widget_filter_picker_title">Choose List</string>
+    <string name="widget_empty_tasks">No upcoming tasks</string>
+    <string name="widget_settings_title">Widget Settings</string>
+    <string name="calendar_widget_title">Calendar Widget</string>
+    <string name="week_widget_title">Week Widget</string>
+    <string name="widget_settings_section_appearance">Appearance</string>
+    <string name="widget_settings_section_content">Content</string>
+    <string name="widget_settings_section_behavior">Behavior</string>
+    <string name="widget_setting_theme">Theme</string>
+    <string name="widget_setting_font_size">Font Size</string>
+    <string name="widget_setting_list_tag">List / Tag</string>
+    <string name="widget_setting_group_by">Group by</string>
+    <string name="widget_setting_sort_by">Sort by</string>
+    <string name="widget_setting_hide_due_date">Hide Due Date</string>
+    <string name="widget_setting_hide_due_date_description">Remove date labels from task rows</string>
+    <string name="widget_setting_on_task_click">On task click</string>
+    <string name="widget_theme_dark">Dark</string>
+    <string name="widget_theme_light">Light</string>
+    <string name="widget_theme_system">System</string>
+    <string name="widget_font_size_small">Small</string>
+    <string name="widget_font_size_normal">Normal</string>
+    <string name="widget_font_size_large">Large</string>
+    <string name="widget_group_by_date">Date</string>
+    <string name="widget_group_by_priority">Priority</string>
+    <string name="widget_sort_by_date">Date</string>
+    <string name="widget_sort_by_priority">Priority</string>
+    <string name="widget_sort_by_name">Name</string>
+    <string name="widget_click_open_task">Open task</string>
+    <string name="widget_click_go_to_list">Go to list</string>
+    <string name="widget_refreshing">Refreshing…</string>
 
     <!-- Common -->
     <string name="edit">Edit</string>
