@@ -7,6 +7,13 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.repository.TaskRepository
+import kotlin.time.Instant
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.task_reminder_due_in_day
 import opentasks.composeapp.generated.resources.task_reminder_due_in_days
@@ -27,6 +34,14 @@ private val log = logging("ScheduleTaskRemindersAction")
 
 private const val OVERDUE_REMINDER_ID = 49
 private const val DURATION_REMINDER_OFFSET = 50
+private const val MINUTES_PER_DAY = 1440
+private const val MINUTES_PER_WEEK = 10080
+private const val MONTH_REMINDER_LABEL_DAYS = 30
+
+internal data class ReminderTrigger(
+    val minutesForLabel: Int,
+    val triggerAtUtcMillis: Long,
+)
 
 class ScheduleTaskRemindersAction(
     private val scheduler: NotificationScheduler,
@@ -65,21 +80,21 @@ class ScheduleTaskRemindersAction(
         }
 
         val now = utcNow()
-        val dateReminderValues = task.dateReminders.parseMinuteValues().ifEmpty {
-            task.legacyReminderMinutes()
-        }
+        val dateReminderValues = task.dateReminders.parseMinuteValues()
         val durationReminderValues = task.durationReminders.parseMinuteValues()
+        val dateReminderTriggers = dateReminderValues
+            .map { mins -> ReminderTrigger(mins, task.deadline - (mins.toLong() * MILLIS_PER_MINUTE)) }
+            .ifEmpty { task.legacyReminderTriggers() }
 
         // Date reminders (minutes before deadline, stored as ReminderOption.minutesValue)
-        dateReminderValues.forEachIndexed { index, mins ->
-            val triggerAt = task.deadline - (mins * MILLIS_PER_MINUTE)
-            if (triggerAt > now) {
-                log.v { "Scheduled date reminder $index at $triggerAt" }
+        dateReminderTriggers.forEachIndexed { index, trigger ->
+            if (trigger.triggerAtUtcMillis > now) {
+                log.v { "Scheduled date reminder $index at ${trigger.triggerAtUtcMillis}" }
                 scheduler.schedule(
                     taskId = task.id,
                     title = task.title,
-                    body = dueReminderBody(mins),
-                    triggerAtMillis = triggerAt,
+                    body = dueReminderBody(trigger.minutesForLabel),
+                    triggerAtMillis = trigger.triggerAtUtcMillis,
                     reminderId = index,
                 )
             }
@@ -111,7 +126,7 @@ class ScheduleTaskRemindersAction(
 
         // Overdue notification — fires at the moment the deadline passes
         // Skip if a zero-minute date reminder already fires at the same time.
-        val hasDueNowReminder = dateReminderValues.any { it == 0 } ||
+        val hasDueNowReminder = dateReminderTriggers.any { it.triggerAtUtcMillis == task.deadline } ||
             durationReminderValues.any { mins ->
                 if (mins == -1) task.endDeadline == task.deadline else mins == 0
             }
@@ -174,15 +189,43 @@ class ScheduleTaskRemindersAction(
         }
     }
 
-    private fun Task.legacyReminderMinutes(): List<Int> {
+    internal fun Task.legacyReminderTriggers(): List<ReminderTrigger> {
         if (dateReminders.isNotBlank() || durationReminders.isNotBlank()) return emptyList()
         val value = notifyBeforeValue.takeIf { it > 0 } ?: return emptyList()
-        val minutes = when (notifyBeforeUnit) {
+        val minutesForLabel = when (notifyBeforeUnit) {
             NotifyBeforeUnit.NONE -> return emptyList()
-            NotifyBeforeUnit.DAYS -> value * 1440
-            NotifyBeforeUnit.WEEKS -> value * 10080
-            NotifyBeforeUnit.MONTHS -> value * 30 * 1440
+            NotifyBeforeUnit.DAYS -> value * MINUTES_PER_DAY
+            NotifyBeforeUnit.WEEKS -> value * MINUTES_PER_WEEK
+            NotifyBeforeUnit.MONTHS -> value * MONTH_REMINDER_LABEL_DAYS * MINUTES_PER_DAY
         }
-        return listOf(minutes)
+        return listOf(
+            ReminderTrigger(
+                minutesForLabel = minutesForLabel,
+                triggerAtUtcMillis = legacyReminderTriggerUtcMillis(
+                    deadlineUtcMillis = deadline ?: return emptyList(),
+                    value = value,
+                    unit = notifyBeforeUnit,
+                ),
+            )
+        )
     }
+}
+
+internal fun legacyReminderTriggerUtcMillis(
+    deadlineUtcMillis: Long,
+    value: Int,
+    unit: NotifyBeforeUnit,
+): Long {
+    val timeZone = TimeZone.currentSystemDefault()
+    val deadlineLocal = Instant.fromEpochMilliseconds(deadlineUtcMillis)
+        .toLocalDateTime(timeZone)
+    val startDate = when (unit) {
+        NotifyBeforeUnit.NONE -> return deadlineUtcMillis
+        NotifyBeforeUnit.DAYS -> deadlineLocal.date.minus(value, DateTimeUnit.DAY)
+        NotifyBeforeUnit.WEEKS -> deadlineLocal.date.minus(value * 7, DateTimeUnit.DAY)
+        NotifyBeforeUnit.MONTHS -> deadlineLocal.date.minus(value, DateTimeUnit.MONTH)
+    }
+    return LocalDateTime(startDate, deadlineLocal.time)
+        .toInstant(timeZone)
+        .toEpochMilliseconds()
 }

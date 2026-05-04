@@ -130,3 +130,30 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
         connection.execSQL("ALTER TABLE tasks ADD COLUMN subtasks TEXT NOT NULL DEFAULT ''")
     }
 }
+
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_isDeleted_updatedAt ON tasks(isDeleted, updatedAt)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_isDeleted_status_deadline ON tasks(isDeleted, status, deadline)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_categoryId ON tasks(categoryId)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_sourceExternalId ON tasks(sourceExternalId)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_isSynced ON tasks(isSynced)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_pbId ON tasks(pbId)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_categories_isDeleted_sortOrder ON categories(isDeleted, sortOrder)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_categories_name ON categories(name)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_categories_isSynced ON categories(isSynced)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_categories_pbId ON categories(pbId)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_notes_isDeleted_updatedAt ON notes(isDeleted, updatedAt)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_notes_isSynced ON notes(isSynced)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_notes_pbId ON notes(pbId)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tags_isDeleted_name ON tags(isDeleted, name)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tags_name ON tags(name)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tags_isSynced ON tags(isSynced)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tags_pbId ON tags(pbId)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_task_tags_isSynced ON task_tags(isSynced)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_task_tags_pbId ON task_tags(pbId)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_countdowns_isDeleted_targetDate ON countdowns(isDeleted, targetDate)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_countdowns_isSynced ON countdowns(isSynced)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_countdowns_pbId ON countdowns(pbId)")
+    }
+}

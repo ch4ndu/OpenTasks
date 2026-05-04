@@ -7,7 +7,11 @@ import androidx.room.Index
 @Entity(
     tableName = "task_tags",
     primaryKeys = ["taskId", "tagId"],
-    indices = [Index("tagId")],
+    indices = [
+        Index("tagId"),
+        Index("isSynced"),
+        Index("pbId"),
+    ],
     foreignKeys = [
         ForeignKey(
             entity = Task::class,

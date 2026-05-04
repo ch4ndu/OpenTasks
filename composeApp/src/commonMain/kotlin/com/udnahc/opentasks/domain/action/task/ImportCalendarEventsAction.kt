@@ -1,9 +1,9 @@
 package com.udnahc.opentasks.domain.action.task
 
+import com.udnahc.opentasks.data.extensions.formatDateShort
+import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.utcToLocal
-import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
-import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.CalendarEvent
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.Task
@@ -65,6 +65,7 @@ class ImportCalendarEventsAction(
                 title = event.title,
                 content = content,
                 deadline = utcToLocal(event.startTimeUtcMillis),
+                endDeadline = event.endTimeUtcMillis?.let { utcToLocal(it) },
                 isAllDay = event.isAllDay,
                 sourceExternalId = event.externalId,
                 categoryId = category.id,
@@ -100,8 +101,13 @@ class ImportCalendarEventsAction(
             val startTime = formatTimeFromLocalMillis(startLocal)
             if (event.endTimeUtcMillis != null) {
                 val endLocal = utcToLocal(event.endTimeUtcMillis)
+                val endDate = formatDateShort(endLocal)
                 val endTime = formatTimeFromLocalMillis(endLocal)
-                parts.add("$startDate $startTime – $endTime")
+                if (endDate == startDate) {
+                    parts.add("$startDate $startTime – $endTime")
+                } else {
+                    parts.add("$startDate $startTime – $endDate $endTime")
+                }
             } else {
                 parts.add("$startDate $startTime")
             }

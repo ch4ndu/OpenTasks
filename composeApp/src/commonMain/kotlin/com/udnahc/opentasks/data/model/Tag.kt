@@ -1,10 +1,19 @@
 package com.udnahc.opentasks.data.model
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.udnahc.opentasks.data.extensions.uuid4
 
-@Entity(tableName = "tags")
+@Entity(
+    tableName = "tags",
+    indices = [
+        Index("isDeleted", "name"),
+        Index("name"),
+        Index("isSynced"),
+        Index("pbId"),
+    ],
+)
 data class Tag(
     @PrimaryKey val id: String = uuid4(),
     val name: String,

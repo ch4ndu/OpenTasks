@@ -1,10 +1,21 @@
 package com.udnahc.opentasks.data.model
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.udnahc.opentasks.data.extensions.uuid4
 
-@Entity(tableName = "tasks")
+@Entity(
+    tableName = "tasks",
+    indices = [
+        Index("isDeleted", "updatedAt"),
+        Index("isDeleted", "status", "deadline"),
+        Index("categoryId"),
+        Index("sourceExternalId"),
+        Index("isSynced"),
+        Index("pbId"),
+    ],
+)
 data class Task(
     @PrimaryKey val id: String = uuid4(),
     val title: String,

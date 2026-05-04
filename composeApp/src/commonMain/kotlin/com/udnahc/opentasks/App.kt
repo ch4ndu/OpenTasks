@@ -150,8 +150,8 @@ fun App(
                 initializeSyncAction()
                 rescheduleAllRemindersAction()
                 rescheduleAllCountdownRemindersAction()
-                isSyncInitialized.value = true
             }
+            isSyncInitialized.value = true
         }
         val syncScope = rememberCoroutineScope()
         LifecycleResumeEffect(isSyncInitialized.value) {
@@ -568,9 +568,7 @@ private fun MainScreen(
                             editCountdown = countdown,
                             initialType = countdown.countdownType,
                             onSave = { updated ->
-                                viewModel.updateCountdown(updated) {
-                                    navController.popBackStack()
-                                }
+                                viewModel.updateCountdown(updated)
                             },
                             onBack = { navController.popBackStack() },
                         )

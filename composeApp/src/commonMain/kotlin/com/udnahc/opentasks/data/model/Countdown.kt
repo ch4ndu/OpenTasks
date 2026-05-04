@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.model
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.udnahc.opentasks.data.extensions.uuid4
 
@@ -28,7 +29,14 @@ fun Countdown.toCalendarTask(): Task = Task(
     status = if (isCompleted) TaskStatus.DONE else TaskStatus.TODO,
 )
 
-@Entity(tableName = "countdowns")
+@Entity(
+    tableName = "countdowns",
+    indices = [
+        Index("isDeleted", "targetDate"),
+        Index("isSynced"),
+        Index("pbId"),
+    ],
+)
 data class Countdown(
     @PrimaryKey val id: String = uuid4(),
     val title: String,

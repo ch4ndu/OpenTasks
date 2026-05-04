@@ -120,7 +120,7 @@ class SettingsViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             _syncStatus.value = SyncStatus.SYNCING
             try {
-                triggerSyncAction()
+                triggerSyncAction.syncNow()
                 _syncStatus.value = SyncStatus.SUCCESS
             } catch (e: Exception) {
                 log.e { "Sync failed: ${e.message}" }
