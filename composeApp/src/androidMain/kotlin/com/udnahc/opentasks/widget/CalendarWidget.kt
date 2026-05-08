@@ -61,7 +61,7 @@ class CalendarWidget : GlanceAppWidget() {
                 }
                 instance.update(context, glanceId)
             } catch (e: Exception) {
-                log.e { "Failed to refresh calendar widget $appWidgetId: ${e.message}" }
+                log.e(e) { "Failed to refresh calendar widget $appWidgetId" }
             }
         }
 
@@ -77,7 +77,7 @@ class CalendarWidget : GlanceAppWidget() {
                     instance.update(context, glanceId)
                 }
             } catch (e: Exception) {
-                log.e { "Failed to refresh all calendar widgets: ${e.message}" }
+                log.e(e) { "Failed to refresh all calendar widgets" }
             }
         }
 
@@ -107,7 +107,7 @@ class CalendarWidget : GlanceAppWidget() {
                 }
                 instance.update(context, glanceId)
             } catch (e: Exception) {
-                log.e { "Failed to navigate month for widget $appWidgetId: ${e.message}" }
+                log.e(e) { "Failed to navigate month for widget $appWidgetId" }
             }
         }
     }
@@ -116,7 +116,7 @@ class CalendarWidget : GlanceAppWidget() {
         val appWidgetId = try {
             GlanceAppWidgetManager(context).getAppWidgetId(id)
         } catch (e: Exception) {
-            log.e { "Failed to get widget ID: ${e.message}" }
+            log.e(e) { "Failed to get widget ID" }
             0
         }
 
@@ -155,7 +155,7 @@ class CalendarWidget : GlanceAppWidget() {
                         prefs = prefs,
                     )
                 } catch (e: Exception) {
-                    log.e { "Calendar widget data fetch failed: ${e.message}" }
+                    log.e(e) { "Calendar widget data fetch failed" }
                     val prefs = CalendarWidgetPreferences(appWidgetId)
                     val days = daysInMonth(displayedYear, displayedMonth)
                     val firstDayOffset = dayOfWeekIndex(displayedYear, displayedMonth, 1)

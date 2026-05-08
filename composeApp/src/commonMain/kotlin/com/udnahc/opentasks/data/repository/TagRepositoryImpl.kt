@@ -6,15 +6,19 @@ import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Tag
 import com.udnahc.opentasks.data.model.TaskTag
-import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import com.udnahc.opentasks.data.sync.SyncTrigger
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 class TagRepositoryImpl(
     private val tagDao: TagDao,
-    private val triggerSyncAction: TriggerSyncAction,
+    private val syncTrigger: SyncTrigger,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : TagRepository {
 
     override fun getAllTags(): Flow<List<Tag>> =
@@ -23,10 +27,10 @@ class TagRepositoryImpl(
             .flowOn(Dispatchers.Default)
 
     override suspend fun getTagById(id: String): Tag? =
-        tagDao.getTagById(id)?.withLocalTimestamps()
+        withContext(ioDispatcher) { tagDao.getTagById(id)?.withLocalTimestamps() }
 
     override suspend fun getTagByName(name: String): Tag? =
-        tagDao.getTagByName(name)?.withLocalTimestamps()
+        withContext(ioDispatcher) { tagDao.getTagByName(name)?.withLocalTimestamps() }
 
     override fun getTagsForTask(taskId: String): Flow<List<Tag>> =
         tagDao.getTagsForTask(taskId)
@@ -34,18 +38,24 @@ class TagRepositoryImpl(
             .flowOn(Dispatchers.Default)
 
     override suspend fun insertTag(tag: Tag): Long {
-        val result = tagDao.insertTag(tag.withDefaultTimestamps().withUtcTimestamps())
-        triggerSyncAction()
+        val result = withContext(ioDispatcher) {
+            tagDao.insertTag(tag.withDefaultTimestamps().withUtcTimestamps())
+        }
+        syncTrigger.triggerSync()
         return result
     }
 
     override suspend fun deleteTag(tag: Tag) {
-        tagDao.update(tag.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
-        triggerSyncAction()
+        withContext(ioDispatcher) {
+            tagDao.update(tag.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
+        }
+        syncTrigger.triggerSync()
     }
 
     override suspend fun insertTaskTag(taskTag: TaskTag) {
-        val existing = tagDao.findTaskTagByIdAnyState(taskTag.taskId, taskTag.tagId)?.withLocalTimestamps()
+        val existing = withContext(ioDispatcher) {
+            tagDao.findTaskTagByIdAnyState(taskTag.taskId, taskTag.tagId)?.withLocalTimestamps()
+        }
         val now = localNow()
         val current = existing ?: taskTag
         val stamped = current.copy(
@@ -54,22 +64,24 @@ class TagRepositoryImpl(
             createdAt = if (current.createdAt == 0L) now else current.createdAt,
             updatedAt = now,
         ).withUtcTimestamps()
-        tagDao.upsertTaskTag(stamped)
-        triggerSyncAction()
+        withContext(ioDispatcher) { tagDao.upsertTaskTag(stamped) }
+        syncTrigger.triggerSync()
     }
 
     override suspend fun deleteTaskTag(taskTag: TaskTag) {
-        val existing = tagDao.findTaskTagByIdAnyState(taskTag.taskId, taskTag.tagId)?.withLocalTimestamps() ?: taskTag
+        val existing = withContext(ioDispatcher) {
+            tagDao.findTaskTagByIdAnyState(taskTag.taskId, taskTag.tagId)?.withLocalTimestamps()
+        } ?: taskTag
         val now = localNow()
-        tagDao.updateTaskTag(
-            existing.copy(
+        withContext(ioDispatcher) {
+            tagDao.updateTaskTag(existing.copy(
                 isDeleted = true,
                 isSynced = false,
                 createdAt = if (existing.createdAt == 0L) now else existing.createdAt,
                 updatedAt = now,
-            ).withUtcTimestamps()
-        )
-        triggerSyncAction()
+            ).withUtcTimestamps())
+        }
+        syncTrigger.triggerSync()
     }
 
     private fun Tag.withDefaultTimestamps(): Tag {

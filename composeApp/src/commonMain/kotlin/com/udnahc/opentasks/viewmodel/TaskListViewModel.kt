@@ -140,6 +140,21 @@ class TaskListViewModel(
     val categories: StateFlow<List<Category>> = observeAllCategories()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val _categorySearchQuery = MutableStateFlow("")
+    val categorySearchQuery: StateFlow<String> = _categorySearchQuery
+
+    val filteredCategories: StateFlow<List<Category>> =
+        combine(categories, _categorySearchQuery) { categories, query ->
+            if (query.isBlank()) categories
+            else categories.filter { it.name.contains(query, ignoreCase = true) }
+        }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setCategorySearchQuery(query: String) {
+        _categorySearchQuery.value = query
+    }
+
     fun selectFilter(filter: TaskListFilter) { _filter.value = filter }
 
     fun selectCategory(categoryId: String) { selectFilter(TaskListFilter.Category(categoryId)) }

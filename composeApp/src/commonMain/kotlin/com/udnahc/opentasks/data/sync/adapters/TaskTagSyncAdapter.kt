@@ -60,6 +60,10 @@ class TaskTagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<TaskTag, Tas
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<TaskTagRecord>(collectionName, 200)
 
+    override suspend fun verifyCollection(client: PocketbaseClient) {
+        client.records.getList<TaskTagRecord>(collectionName, 1, 1, skipTotal = true)
+    }
+
     override suspend fun createRecord(client: PocketbaseClient, body: String) =
         client.records.create<TaskTagRecord>(collectionName, body)
 

@@ -86,7 +86,9 @@ import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
+import com.udnahc.opentasks.data.sync.PocketBaseConnectionVerifier
 import com.udnahc.opentasks.data.sync.SyncService
+import com.udnahc.opentasks.data.sync.SyncTrigger
 import com.udnahc.opentasks.data.sync.adapters.CategorySyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.CountdownSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.NoteSyncAdapter
@@ -120,6 +122,7 @@ val sharedModule = module {
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(connection: SQLiteConnection) {
                     super.onCreate(connection)
+                    // Stable default category name used for import/export and sync lookup.
                     connection.execSQL(
                         "INSERT OR IGNORE INTO `categories` (`id`, `name`, `icon`, `sortOrder`, `isSynced`, `isDeleted`, `createdAt`, `updatedAt`) VALUES ('${AppConstants.DEFAULT_INBOX_ID}', 'Inbox', 'inbox', 0, 0, 0, 0, 0)"
                     )
@@ -191,9 +194,10 @@ val sharedModule = module {
     single { RescheduleAllRemindersAction(get(), get()) }
     single { ScheduleCountdownRemindersAction(get(), get()) }
     single { RescheduleAllCountdownRemindersAction(get(), get()) }
-    single { SavePocketBaseUrlAction(get(), get(), get()) }
+    single { SavePocketBaseUrlAction(get(), get(), get(), get()) }
     single { ClearPocketBaseUrlAction(get(), get()) }
     single { TriggerSyncAction(get(), get()) }
+    single<SyncTrigger> { get<TriggerSyncAction>() }
     single { InitializeSyncAction(get(), get(), get()) }
     single { SaveTaskSortOptionAction(get()) }
     single { SaveTaskListViewModeAction(get()) }
@@ -212,6 +216,19 @@ val sharedModule = module {
     single { TaskTagSyncAdapter(get()) }
     single { NoteSyncAdapter(get()) }
     single { CountdownSyncAdapter(get()) }
+    single {
+        PocketBaseConnectionVerifier(
+            get(),
+            listOf(
+                get<CategorySyncAdapter>(),
+                get<TagSyncAdapter>(),
+                get<TaskSyncAdapter>(),
+                get<TaskTagSyncAdapter>(),
+                get<NoteSyncAdapter>(),
+                get<CountdownSyncAdapter>(),
+            ),
+        )
+    }
     single {
         SyncService(
             get(),

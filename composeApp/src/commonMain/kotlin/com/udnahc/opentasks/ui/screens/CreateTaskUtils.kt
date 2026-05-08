@@ -17,6 +17,9 @@ import opentasks.composeapp.generated.resources.reminder_5_mins_early
 import opentasks.composeapp.generated.resources.reminder_at_the_end
 import opentasks.composeapp.generated.resources.reminder_on_time
 import org.jetbrains.compose.resources.StringResource
+import org.lighthousegames.logging.logging
+
+private val log = logging("CreateTaskUtils")
 
 @Serializable
 data class SubtaskItem(
@@ -33,7 +36,10 @@ private val subtaskJson = Json {
 internal fun String.toSubtaskItems(): List<SubtaskItem> {
     if (isBlank()) return emptyList()
     return runCatching { subtaskJson.decodeFromString<List<SubtaskItem>>(this) }
-        .getOrElse { emptyList() }
+        .getOrElse {
+            log.w(it) { "Failed to parse subtasks JSON" }
+            emptyList()
+        }
         .filter { it.text.isNotBlank() }
 }
 

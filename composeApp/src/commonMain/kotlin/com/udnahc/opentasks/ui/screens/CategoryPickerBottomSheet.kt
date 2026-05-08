@@ -79,16 +79,12 @@ fun CategoryPickerBottomSheet(
     onDismiss: () -> Unit,
     showTitle: Boolean = true,
     showSearch: Boolean = true,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
     selectedFilter: TaskListFilter = TaskListFilter.Category(""),
     onFilterSelected: (TaskListFilter) -> Unit = {},
 ) {
-    var searchQuery by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
-
-    val filteredCategories = remember(categories, searchQuery) {
-        if (searchQuery.isBlank()) categories
-        else categories.filter { it.name.contains(searchQuery, ignoreCase = true) }
-    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -97,12 +93,12 @@ fun CategoryPickerBottomSheet(
         dragHandle = null,
     ) {
         CategoryPickerContent(
-            categories = filteredCategories,
+            categories = categories,
             selectedCategoryId = selectedCategoryId,
             showTitle = showTitle,
             showSearch = showSearch,
             searchQuery = searchQuery,
-            onSearchQueryChange = { searchQuery = it },
+            onSearchQueryChange = onSearchQueryChange,
             onCategorySelected = onCategorySelected,
             onAddCategoryClick = { showAddDialog = true },
             onDismiss = onDismiss,

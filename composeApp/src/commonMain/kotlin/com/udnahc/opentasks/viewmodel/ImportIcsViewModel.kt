@@ -50,7 +50,7 @@ class ImportIcsViewModel(
                 val count = importAction(events)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: Exception) {
-                log.e { "ICS import failed: ${e.message}" }
+                log.e(e) { "ICS import failed" }
                 _uiState.update {
                     it.copy(
                         isLoading = false,

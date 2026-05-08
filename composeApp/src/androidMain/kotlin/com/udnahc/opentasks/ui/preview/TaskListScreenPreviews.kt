@@ -13,6 +13,7 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 private fun TaskListScreenPreview() {
     OpenTasksTheme {
         TaskListContent(
+            listName = "Inbox",
             activeTasks = PreviewSampleData.sampleTasks.filter { it.status != TaskStatus.DONE },
             completedTasks = PreviewSampleData.sampleTasks.filter { it.status == TaskStatus.DONE },
             onTaskClick = {},
@@ -26,6 +27,7 @@ private fun TaskListScreenPreview() {
 private fun TaskListScreenEmptyPreview() {
     OpenTasksTheme {
         TaskListContent(
+            listName = "Inbox",
             onTaskClick = {},
             onToggleComplete = {},
         )

@@ -27,7 +27,7 @@ class AppViewModel(
             try {
                 triggerSyncAction.syncNow()
             } catch (e: Exception) {
-                log.e { "Pull-to-refresh sync failed: ${e.message}" }
+                log.e(e) { "Pull-to-refresh sync failed" }
             } finally {
                 _isRefreshing.value = false
             }

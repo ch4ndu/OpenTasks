@@ -6,6 +6,7 @@ import io.ktor.http.URLProtocol
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -116,6 +117,87 @@ class BaseSyncAdapterTest {
 
         assertTrue(adapter.local.all { it.synced })
     }
+
+    @Test
+    fun pullFailureIsPropagated() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(),
+            remote = mutableListOf(),
+            failFetch = true,
+        )
+
+        assertFailsWith<SyncAdapterException> {
+            adapter.pullAll(client)
+        }
+        Unit
+    }
+
+    @Test
+    fun createFailureDoesNotMarkEntitySynced() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(FakeEntity(id = "one", value = "local", synced = false, updatedAt = 20)),
+            remote = mutableListOf(),
+            failCreate = true,
+        )
+
+        assertFailsWith<SyncAdapterException> {
+            adapter.pushAll(client)
+        }
+        assertFalse(adapter.local.single().synced)
+    }
+
+    @Test
+    fun syncServiceContinuesThroughAdaptersAndReportsFinalFailure() = runBlocking {
+        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val failing = FakeAdapter(
+            local = mutableListOf(),
+            remote = mutableListOf(),
+            failFetch = true,
+        )
+        val succeeding = FakeAdapter(
+            local = mutableListOf(FakeEntity(id = "two", value = "local", synced = false, updatedAt = 20)),
+            remote = mutableListOf(),
+        )
+        val service = SyncService(provider, listOf(failing, succeeding))
+
+        assertFailsWith<SyncException> {
+            service.syncAll()
+        }
+        assertTrue(succeeding.local.single().synced)
+    }
+
+    @Test
+    fun connectionVerifierFailsWhenRequiredCollectionIsInaccessible() = runBlocking {
+        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val verifier = PocketBaseConnectionVerifier(
+            provider,
+            listOf(
+                FakeAdapter(mutableListOf(), mutableListOf()),
+                FakeAdapter(mutableListOf(), mutableListOf(), failVerify = true),
+            ),
+            healthCheck = {},
+        )
+
+        assertFailsWith<SyncException> {
+            verifier.verify()
+        }
+        Unit
+    }
+
+    @Test
+    fun connectionVerifierFailsWhenHealthCheckFails() = runBlocking {
+        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val verifier = PocketBaseConnectionVerifier(
+            provider,
+            listOf(FakeAdapter(mutableListOf(), mutableListOf())),
+            healthCheck = { throw IllegalStateException("health failed") },
+        )
+
+        assertFailsWith<PocketBaseConnectionException> {
+            verifier.verify()
+        }
+        Unit
+    }
 }
 
 private data class FakeEntity(
@@ -147,6 +229,9 @@ private class FakeRecordWithId(
 private class FakeAdapter(
     val local: MutableList<FakeEntity>,
     val remote: MutableList<FakeRecord>,
+    val failFetch: Boolean = false,
+    val failCreate: Boolean = false,
+    val failVerify: Boolean = false,
 ) : BaseSyncAdapter<FakeEntity, FakeRecord>() {
     var hardDeletedCount = 0
 
@@ -196,9 +281,17 @@ private class FakeAdapter(
     override fun toRecord(entity: FakeEntity) = FakeRecord(entity.id, entity.value, entity.deleted, entity.updatedAt)
     override fun toEntity(record: FakeRecord) = FakeEntity(record.localId, record.id, record.value, record.deleted, synced = true, record.updatedAt)
 
-    override suspend fun fetchAllRecords(client: PocketbaseClient) = remote.toList()
+    override suspend fun fetchAllRecords(client: PocketbaseClient): List<FakeRecord> {
+        if (failFetch) throw IllegalStateException("fetch failed")
+        return remote.toList()
+    }
+
+    override suspend fun verifyCollection(client: PocketbaseClient) {
+        if (failVerify) throw IllegalStateException("verify failed")
+    }
 
     override suspend fun createRecord(client: PocketbaseClient, body: String): FakeRecord {
+        if (failCreate) throw IllegalStateException("create failed")
         val entity = decode(body)
         val record = FakeRecord(entity.id, entity.value, entity.deleted, entity.updatedAt).withId("pb-${entity.id}")
         remote.add(record)

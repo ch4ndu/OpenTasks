@@ -43,6 +43,10 @@ class CategorySyncAdapter(private val dao: CategoryDao) : BaseSyncAdapter<Catego
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<CategoryRecord>(collectionName, 200)
 
+    override suspend fun verifyCollection(client: PocketbaseClient) {
+        client.records.getList<CategoryRecord>(collectionName, 1, 1, skipTotal = true)
+    }
+
     override suspend fun createRecord(client: PocketbaseClient, body: String) =
         client.records.create<CategoryRecord>(collectionName, body)
 

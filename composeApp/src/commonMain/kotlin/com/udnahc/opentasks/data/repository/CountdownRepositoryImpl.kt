@@ -5,18 +5,22 @@ import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Countdown
-import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import com.udnahc.opentasks.data.sync.SyncTrigger
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import org.lighthousegames.logging.logging
 
 private val log = logging("CountdownRepository")
 
 class CountdownRepositoryImpl(
     private val countdownDao: CountdownDao,
-    private val triggerSyncAction: TriggerSyncAction,
+    private val syncTrigger: SyncTrigger,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : CountdownRepository {
 
     override fun getAllCountdowns(): Flow<List<Countdown>> =
@@ -30,30 +34,36 @@ class CountdownRepositoryImpl(
             .flowOn(Dispatchers.Default)
 
     override suspend fun getCountdownById(id: String): Countdown? =
-        countdownDao.getCountdownById(id)?.withLocalTimestamps()
+        withContext(ioDispatcher) { countdownDao.getCountdownById(id)?.withLocalTimestamps() }
 
     override suspend fun getCountdownByIdUtc(id: String): Countdown? =
-        countdownDao.getCountdownByIdUtc(id)
+        withContext(ioDispatcher) { countdownDao.getCountdownByIdUtc(id) }
 
     override suspend fun getCountdownsWithTargetsUtc(): List<Countdown> =
-        countdownDao.getCountdownsWithTargetsUtc()
+        withContext(ioDispatcher) { countdownDao.getCountdownsWithTargetsUtc() }
 
     override suspend fun insert(countdown: Countdown) {
         log.v { "Inserting countdown: ${countdown.id}" }
-        countdownDao.insert(countdown.withDefaultTimestamps().withUtcTimestamps())
-        triggerSyncAction()
+        withContext(ioDispatcher) {
+            countdownDao.insert(countdown.withDefaultTimestamps().withUtcTimestamps())
+        }
+        syncTrigger.triggerSync()
     }
 
     override suspend fun update(countdown: Countdown) {
         log.v { "Updating countdown: ${countdown.id}" }
-        countdownDao.update(countdown.withUtcTimestamps().copy(isSynced = false))
-        triggerSyncAction()
+        withContext(ioDispatcher) {
+            countdownDao.update(countdown.withUtcTimestamps().copy(isSynced = false))
+        }
+        syncTrigger.triggerSync()
     }
 
     override suspend fun delete(countdown: Countdown) {
         log.v { "Soft-deleting countdown: ${countdown.id}" }
-        countdownDao.update(countdown.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
-        triggerSyncAction()
+        withContext(ioDispatcher) {
+            countdownDao.update(countdown.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
+        }
+        syncTrigger.triggerSync()
     }
 
     private fun Countdown.withDefaultTimestamps(): Countdown {

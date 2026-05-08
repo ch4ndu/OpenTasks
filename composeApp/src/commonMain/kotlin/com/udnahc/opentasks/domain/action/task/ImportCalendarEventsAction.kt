@@ -125,6 +125,7 @@ class ImportCalendarEventsAction(
     }
 
     companion object {
+        // Stable persisted names used for lookup/sync; intentionally not localized.
         const val CATEGORY_NAME = "Calendar Imports"
         const val TAG_NAME = "Imported"
     }

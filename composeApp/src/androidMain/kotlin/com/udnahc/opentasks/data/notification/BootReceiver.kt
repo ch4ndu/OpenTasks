@@ -29,7 +29,7 @@ class BootReceiver : BroadcastReceiver(), KoinComponent {
                 rescheduleAllRemindersAction()
                 rescheduleAllCountdownRemindersAction()
             } catch (e: Exception) {
-                log.e { "Failed to reschedule reminders on boot: ${e.message}" }
+                log.e(e) { "Failed to reschedule reminders on boot" }
             } finally {
                 pendingResult.finish()
             }

@@ -128,7 +128,7 @@ actual class NotificationScheduler(private val context: Context) {
             }
         } catch (e: Exception) {
             // Android 12+ blocks foreground service starts from the background
-            log.e { "Cannot start foreground service from background: ${e.message}" }
+            log.e(e) { "Cannot start foreground service from background" }
             showFallbackOngoingNotification(taskId, title)
         }
     }
@@ -145,7 +145,7 @@ actual class NotificationScheduler(private val context: Context) {
         try {
             NotificationManagerCompat.from(context).notify(nId, notification)
         } catch (e: SecurityException) {
-            log.e { "Failed to show fallback notification: ${e.message}" }
+            log.e(e) { "Failed to show fallback notification" }
         }
     }
 

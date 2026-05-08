@@ -24,18 +24,32 @@ class SyncService(
             return
         }
         try {
+            val failures = mutableListOf<SyncCollectionFailure>()
             do {
                 pendingSyncRequested = false
                 log.d { "Sync started" }
                 val sorted = adapters.sortedBy { it.order }
                 for (adapter in sorted) {
                     runCatching { adapter.pullAll(client) }
-                        .onFailure { log.e { "Pull ${adapter.collectionName} failed: ${it.message}" } }
+                        .onFailure {
+                            log.e(it) { "Pull ${adapter.collectionName} failed" }
+                            failures += SyncCollectionFailure(adapter.collectionName, "pull", it)
+                        }
                     runCatching { adapter.pushAll(client) }
-                        .onFailure { log.e { "Push ${adapter.collectionName} failed: ${it.message}" } }
+                        .onFailure {
+                            log.e(it) { "Push ${adapter.collectionName} failed" }
+                            failures += SyncCollectionFailure(adapter.collectionName, "push", it)
+                        }
                 }
-                log.d { "Sync completed" }
+                if (failures.isEmpty()) {
+                    log.d { "Sync completed" }
+                } else {
+                    log.e { "Sync completed with ${failures.size} failure(s)" }
+                }
             } while (pendingSyncRequested)
+            if (failures.isNotEmpty()) {
+                throw SyncException(failures)
+            }
         } finally {
             syncMutex.unlock()
         }

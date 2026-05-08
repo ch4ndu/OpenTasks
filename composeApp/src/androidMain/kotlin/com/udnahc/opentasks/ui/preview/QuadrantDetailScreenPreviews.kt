@@ -15,6 +15,7 @@ private fun QuadrantDetailPreview() {
         QuadrantDetailContent(
             title = "Urgent & Important",
             priority = TaskPriority.HIGH,
+            defaultCategoryName = "Inbox",
             categorizedTasks = listOf(
                 MatrixViewModel.TaskCategoryGroup(
                     TaskCategory.TODAY,

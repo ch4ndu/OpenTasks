@@ -42,6 +42,10 @@ class TaskSyncAdapter(private val dao: TaskDao) : BaseSyncAdapter<Task, TaskReco
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<TaskRecord>(collectionName, 200)
 
+    override suspend fun verifyCollection(client: PocketbaseClient) {
+        client.records.getList<TaskRecord>(collectionName, 1, 1, skipTotal = true)
+    }
+
     override suspend fun createRecord(client: PocketbaseClient, body: String) =
         client.records.create<TaskRecord>(collectionName, body)
 

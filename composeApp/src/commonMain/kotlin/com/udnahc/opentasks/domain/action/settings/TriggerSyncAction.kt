@@ -2,6 +2,7 @@ package com.udnahc.opentasks.domain.action.settings
 
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.SyncService
+import com.udnahc.opentasks.data.sync.SyncTrigger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,7 +16,7 @@ private val log = logging("TriggerSyncAction")
 class TriggerSyncAction(
     private val pbProvider: PocketBaseClientProvider,
     private val syncService: SyncService,
-) {
+) : SyncTrigger {
     // Long-lived scope: this class is a Koin `single` that lives for the app's lifetime.
     // SupervisorJob ensures individual sync failures don't cancel the entire scope.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -30,7 +31,9 @@ class TriggerSyncAction(
      * Rapid calls are debounced: only the last call within a 2-second window
      * actually triggers the sync.
      */
-    suspend operator fun invoke() {
+    suspend operator fun invoke() = triggerSync()
+
+    override suspend fun triggerSync() {
         log.d { "Triggering sync (debounced)" }
         if (!pbProvider.isConfigured) {
             log.d { "Sync skipped: PocketBase not configured" }
@@ -40,7 +43,11 @@ class TriggerSyncAction(
         debounceJob = scope.launch {
             delay(DEBOUNCE_DELAY_MS)
             log.d { "Debounce elapsed, starting sync" }
-            syncService.syncAll()
+            try {
+                syncService.syncAll()
+            } catch (e: Exception) {
+                log.e(e) { "Debounced sync failed" }
+            }
         }
     }
 

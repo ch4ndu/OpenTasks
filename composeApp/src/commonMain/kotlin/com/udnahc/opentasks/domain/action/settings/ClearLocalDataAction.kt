@@ -28,7 +28,7 @@ class ClearLocalDataAction(
         categoryDao.deleteAll()
         appSettingsRepository.deleteAll()
 
-        // Re-insert default Inbox category
+        // Re-insert stable default category name used for import/export and sync lookup.
         categoryDao.insert(
             Category(
                 id = INBOX_ID,

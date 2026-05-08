@@ -34,7 +34,7 @@ class SyncWorker(
             WeekWidget.refreshAllWidgets(applicationContext)
             Result.success()
         } catch (e: Exception) {
-            log.e { "SyncWorker failed, retrying: ${e.message}" }
+            log.e(e) { "SyncWorker failed, retrying" }
             Result.retry()
         }
     }

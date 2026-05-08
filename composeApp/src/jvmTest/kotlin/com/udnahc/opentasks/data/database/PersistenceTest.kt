@@ -9,9 +9,7 @@ import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
 import com.udnahc.opentasks.data.repository.TaskRepositoryImpl
-import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
-import com.udnahc.opentasks.data.sync.SyncService
-import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import com.udnahc.opentasks.data.sync.SyncTrigger
 import com.udnahc.opentasks.testutil.testCategory
 import com.udnahc.opentasks.testutil.testTask
 import java.io.File
@@ -26,6 +24,10 @@ import kotlin.test.assertTrue
 class PersistenceTest {
     private lateinit var databaseFile: File
     private lateinit var database: AppDatabase
+
+    private object NoOpSyncTrigger : SyncTrigger {
+        override suspend fun triggerSync() = Unit
+    }
 
     @BeforeTest
     fun createDatabase() {
@@ -58,7 +60,7 @@ class PersistenceTest {
     fun taskRepositoryConvertsLocalTimestampsAndSoftDeletes() = runTest {
         val repository = TaskRepositoryImpl(
             taskDao = database.taskDao(),
-            triggerSyncAction = TriggerSyncAction(PocketBaseClientProvider(), SyncService(PocketBaseClientProvider(), emptyList())),
+            syncTrigger = NoOpSyncTrigger,
         )
         val localDeadline = 1_778_000_000_000L
         val task = testTask(id = "task", deadline = localDeadline, createdAt = localDeadline, updatedAt = localDeadline)
@@ -94,7 +96,7 @@ class PersistenceTest {
     fun categoryRepositoryOrdersAndSoftDeletesCategories() = runTest {
         val repository = CategoryRepositoryImpl(
             categoryDao = database.categoryDao(),
-            triggerSyncAction = TriggerSyncAction(PocketBaseClientProvider(), SyncService(PocketBaseClientProvider(), emptyList())),
+            syncTrigger = NoOpSyncTrigger,
         )
         val first = testCategory(id = "first", name = "First", sortOrder = 2, createdAt = 1_000L, updatedAt = 1_000L)
         val second = testCategory(id = "second", name = "Second", sortOrder = 1, createdAt = 2_000L, updatedAt = 2_000L)

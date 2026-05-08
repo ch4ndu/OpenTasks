@@ -150,7 +150,7 @@ object CsvParser {
             val normalized = value.replace(Regex("([+-])(\\d{2})(\\d{2})$"), "$1$2:$3")
             Instant.parse(normalized).toEpochMilliseconds()
         } catch (e: Exception) {
-            log.d { "Failed to parse date '$value': ${e.message}" }
+            log.w(e) { "Failed to parse date '$value'" }
             null
         }
     }

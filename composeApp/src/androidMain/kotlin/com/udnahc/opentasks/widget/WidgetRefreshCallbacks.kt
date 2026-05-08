@@ -37,7 +37,7 @@ class TaskRefreshCallback : ActionCallback, KoinComponent {
             TaskWidget.refreshWidget(context, appWidgetId)
             log.d { "Task widget refreshed" }
         } catch (e: Exception) {
-            log.e { "Task widget refresh failed: ${e.message}" }
+            log.e(e) { "Task widget refresh failed" }
         }
     }
 }
@@ -61,7 +61,7 @@ class CalendarRefreshCallback : ActionCallback, KoinComponent {
             CalendarWidget.refreshWidget(context, appWidgetId)
             log.d { "Calendar widget refreshed" }
         } catch (e: Exception) {
-            log.e { "Calendar widget refresh failed: ${e.message}" }
+            log.e(e) { "Calendar widget refresh failed" }
         }
     }
 }
@@ -85,7 +85,7 @@ class WeekRefreshCallback : ActionCallback, KoinComponent {
             WeekWidget.refreshWidget(context, appWidgetId)
             log.d { "Week widget refreshed" }
         } catch (e: Exception) {
-            log.e { "Week widget refresh failed: ${e.message}" }
+            log.e(e) { "Week widget refresh failed" }
         }
     }
 }

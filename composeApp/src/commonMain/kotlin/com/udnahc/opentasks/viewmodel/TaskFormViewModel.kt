@@ -23,11 +23,15 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.lighthousegames.logging.logging
+
+private val log = logging("TaskFormViewModel")
 
 sealed class TaskFormSaveEvent {
     data class Saved(val formData: TaskFormData) : TaskFormSaveEvent()
@@ -62,8 +66,23 @@ class TaskFormViewModel(
     val categories: StateFlow<List<Category>> = observeAllCategories()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val _categorySearchQuery = MutableStateFlow("")
+    val categorySearchQuery: StateFlow<String> = _categorySearchQuery
+
+    val filteredCategories: StateFlow<List<Category>> =
+        combine(categories, _categorySearchQuery) { categories, query ->
+            if (query.isBlank()) categories
+            else categories.filter { it.name.contains(query, ignoreCase = true) }
+        }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun setTaskId(taskId: String) {
         _taskId.value = taskId
+    }
+
+    fun setCategorySearchQuery(query: String) {
+        _categorySearchQuery.value = query
     }
 
     fun saveNewTask(formData: TaskFormData) {
@@ -94,6 +113,7 @@ class TaskFormViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                log.e(e) { "Failed to save new task" }
                 _saveEvents.emit(TaskFormSaveEvent.Error(e))
             }
         }
@@ -130,6 +150,7 @@ class TaskFormViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                log.e(e) { "Failed to save existing task ${existingTask.id}" }
                 _saveEvents.emit(TaskFormSaveEvent.Error(e))
             }
         }

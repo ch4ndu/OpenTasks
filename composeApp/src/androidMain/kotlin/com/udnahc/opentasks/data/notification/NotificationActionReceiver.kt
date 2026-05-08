@@ -39,7 +39,7 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
                         }
                         notificationScheduler.cancelAll(taskId)
                     } catch (e: Exception) {
-                        log.e { "Failed to handle Mark Done action for task $taskId: ${e.message}" }
+                        log.e(e) { "Failed to handle Mark Done action for task $taskId" }
                     } finally {
                         pendingResult.finish()
                     }

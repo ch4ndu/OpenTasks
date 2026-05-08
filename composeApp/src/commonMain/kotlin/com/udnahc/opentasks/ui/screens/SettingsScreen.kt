@@ -48,6 +48,9 @@ import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.clear
 import opentasks.composeapp.generated.resources.connected
+import opentasks.composeapp.generated.resources.configured
+import opentasks.composeapp.generated.resources.connection_failed
+import opentasks.composeapp.generated.resources.checking_connection
 import opentasks.composeapp.generated.resources.export_csv
 import opentasks.composeapp.generated.resources.export_error
 import opentasks.composeapp.generated.resources.export_header
@@ -81,7 +84,6 @@ import opentasks.composeapp.generated.resources.pocketbase_url_hint
 import opentasks.composeapp.generated.resources.save
 import opentasks.composeapp.generated.resources.settings
 import opentasks.composeapp.generated.resources.sync
-import opentasks.composeapp.generated.resources.sync_error
 import opentasks.composeapp.generated.resources.syncing
 import opentasks.composeapp.generated.resources.text_size
 import opentasks.composeapp.generated.resources.text_size_large
@@ -293,9 +295,10 @@ internal fun SettingsContent(
                 item(key = "sync_now") {
                     val summary = when (syncStatus) {
                         SyncStatus.SYNCING -> stringResource(Res.string.syncing)
-                        SyncStatus.ERROR -> stringResource(Res.string.sync_error)
+                        SyncStatus.CHECKING -> stringResource(Res.string.checking_connection)
+                        SyncStatus.ERROR -> stringResource(Res.string.connection_failed)
                         SyncStatus.SUCCESS -> stringResource(Res.string.connected)
-                        SyncStatus.IDLE -> stringResource(Res.string.connected)
+                        SyncStatus.IDLE -> stringResource(Res.string.configured)
                     }
                     SettingsRow(
                         title = stringResource(Res.string.sync),

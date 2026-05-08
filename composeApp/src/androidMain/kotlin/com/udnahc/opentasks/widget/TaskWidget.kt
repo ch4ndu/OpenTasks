@@ -65,7 +65,7 @@ class TaskWidget : GlanceAppWidget() {
                 }
                 instance.update(context, glanceId)
             } catch (e: Exception) {
-                log.e { "Failed to refresh widget $appWidgetId: ${e.message}" }
+                log.e(e) { "Failed to refresh widget $appWidgetId" }
             }
         }
 
@@ -81,7 +81,7 @@ class TaskWidget : GlanceAppWidget() {
                     instance.update(context, glanceId)
                 }
             } catch (e: Exception) {
-                log.e { "Failed to refresh all widgets: ${e.message}" }
+                log.e(e) { "Failed to refresh all widgets" }
             }
         }
     }
@@ -90,7 +90,7 @@ class TaskWidget : GlanceAppWidget() {
         val appWidgetId = try {
             GlanceAppWidgetManager(context).getAppWidgetId(id)
         } catch (e: Exception) {
-            log.e { "Failed to get widget ID: ${e.message}" }
+            log.e(e) { "Failed to get widget ID" }
             0
         }
 
@@ -108,7 +108,7 @@ class TaskWidget : GlanceAppWidget() {
                     log.v { "Widget $appWidgetId: ${tasks.size} tasks, filter=$filterLabel, trigger=$refreshTrigger" }
                     WidgetData.Ready(tasks, filterLabel, prefs, getString(Res.string.widget_empty_tasks))
                 } catch (e: Exception) {
-                    log.e { "Widget data fetch failed: ${e.message}" }
+                    log.e(e) { "Widget data fetch failed" }
                     WidgetData.Ready(
                         emptyList(),
                         getString(Res.string.widget_filter_all),

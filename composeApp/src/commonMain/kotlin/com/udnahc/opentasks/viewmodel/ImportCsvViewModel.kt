@@ -50,7 +50,7 @@ class ImportCsvViewModel(
                 val count = importAction(tasks)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: Exception) {
-                log.e { "CSV import failed: ${e.message}" }
+                log.e(e) { "CSV import failed" }
                 _uiState.update {
                     it.copy(
                         isLoading = false,

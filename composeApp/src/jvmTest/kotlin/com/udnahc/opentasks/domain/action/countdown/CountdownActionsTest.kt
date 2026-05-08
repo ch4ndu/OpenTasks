@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class CountdownActionsTest {
     @Test
@@ -28,7 +29,7 @@ class CountdownActionsTest {
     }
 
     @Test
-    fun deleteCountdownUsesRepositoryDeleteContract() = runTest {
+    fun deleteCountdownSoftDeletesWithFreshTimestamp() = runTest {
         val countdown = testCountdown(id = "countdown")
         val repository = FakeCountdownRepository(listOf(countdown))
 
@@ -37,6 +38,9 @@ class CountdownActionsTest {
             ScheduleCountdownRemindersAction(NotificationScheduler(), repository),
         )(countdown)
 
-        assertEquals(countdown.id, repository.deleted.single().id)
+        val deleted = repository.updated.single()
+        assertEquals(countdown.id, deleted.id)
+        assertTrue(deleted.isDeleted)
+        assertNotEquals(countdown.updatedAt, deleted.updatedAt)
     }
 }

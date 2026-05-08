@@ -43,6 +43,10 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<TagRecord>(collectionName, 200)
 
+    override suspend fun verifyCollection(client: PocketbaseClient) {
+        client.records.getList<TagRecord>(collectionName, 1, 1, skipTotal = true)
+    }
+
     override suspend fun createRecord(client: PocketbaseClient, body: String) =
         client.records.create<TagRecord>(collectionName, body)
 

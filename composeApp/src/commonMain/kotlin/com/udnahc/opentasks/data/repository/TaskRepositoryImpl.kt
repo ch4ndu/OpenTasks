@@ -5,18 +5,22 @@ import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Task
-import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import com.udnahc.opentasks.data.sync.SyncTrigger
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import org.lighthousegames.logging.logging
 
 private val log = logging("TaskRepository")
 
 class TaskRepositoryImpl(
     private val taskDao: TaskDao,
-    private val triggerSyncAction: TriggerSyncAction,
+    private val syncTrigger: SyncTrigger,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : TaskRepository {
 
     override fun getAllTasks(): Flow<List<Task>> =
@@ -25,7 +29,7 @@ class TaskRepositoryImpl(
             .flowOn(Dispatchers.Default)
 
     override suspend fun getTaskById(id: String): Task? =
-        taskDao.getTaskById(id)?.withLocalTimestamps()
+        withContext(ioDispatcher) { taskDao.getTaskById(id)?.withLocalTimestamps() }
 
     override fun observeTaskById(id: String): Flow<Task?> =
         taskDao.observeTaskById(id)
@@ -33,44 +37,54 @@ class TaskRepositoryImpl(
             .flowOn(Dispatchers.Default)
 
     override suspend fun getTaskByExternalId(externalId: String): Task? =
-        taskDao.getTaskByExternalId(externalId)?.withLocalTimestamps()
+        withContext(ioDispatcher) { taskDao.getTaskByExternalId(externalId)?.withLocalTimestamps() }
 
     override suspend fun insert(task: Task): Long {
         log.v { "Inserting task: ${task.id}" }
-        val result = taskDao.insert(task.withDefaultTimestamps().withUtcTimestamps())
-        triggerSyncAction()
+        val result = withContext(ioDispatcher) {
+            taskDao.insert(task.withDefaultTimestamps().withUtcTimestamps())
+        }
+        syncTrigger.triggerSync()
         return result
     }
 
     override suspend fun update(task: Task) {
         log.v { "Updating task: ${task.id}" }
-        taskDao.update(task.withUtcTimestamps().copy(isSynced = false))
-        triggerSyncAction()
+        withContext(ioDispatcher) {
+            taskDao.update(task.withUtcTimestamps().copy(isSynced = false))
+        }
+        syncTrigger.triggerSync()
     }
 
     override suspend fun delete(task: Task) {
         log.v { "Soft-deleting task: ${task.id}" }
-        taskDao.update(task.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
-        triggerSyncAction()
+        withContext(ioDispatcher) {
+            taskDao.update(task.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
+        }
+        syncTrigger.triggerSync()
     }
 
     /** Returns tasks with raw UTC timestamps (no local conversion) for notification scheduling.
      *  ScheduleTaskRemindersAction and AlarmManager require UTC millis. */
     override suspend fun getTasksWithDeadlines(): List<Task> =
-        taskDao.getTasksWithDeadlines()
+        withContext(ioDispatcher) { taskDao.getTasksWithDeadlines() }
 
     /** Returns a single task with raw UTC timestamps for notification scheduling. */
     override suspend fun getTaskByIdUtc(id: String): Task? =
-        taskDao.getTaskById(id)
+        withContext(ioDispatcher) { taskDao.getTaskById(id) }
 
     override suspend fun getAllTasksOnce(): List<Task> =
-        taskDao.getAllTasksOnce()
-            .filter { !it.isDeleted }
-            .map { it.withLocalTimestamps() }
+        withContext(ioDispatcher) {
+            taskDao.getAllTasksOnce()
+                .filter { !it.isDeleted }
+                .map { it.withLocalTimestamps() }
+        }
 
     override suspend fun getAllTasksOnceUtc(): List<Task> =
-        taskDao.getAllTasksOnce()
-            .filter { !it.isDeleted }
+        withContext(ioDispatcher) {
+            taskDao.getAllTasksOnce()
+                .filter { !it.isDeleted }
+        }
 
     /** Fills in 0L timestamps with current local time before insert. */
     private fun Task.withDefaultTimestamps(): Task {

@@ -179,7 +179,12 @@ object IcsParser {
                 // TZID-qualified or floating time
                 val tzid = params["TZID"]
                 val tz = if (tzid != null) {
-                    try { TimeZone.of(tzid) } catch (e: Exception) { log.d { "Unknown timezone '$tzid', using system default: ${e.message}" }; TimeZone.currentSystemDefault() }
+                    try {
+                        TimeZone.of(tzid)
+                    } catch (e: Exception) {
+                        log.w(e) { "Unknown timezone '$tzid', using system default" }
+                        TimeZone.currentSystemDefault()
+                    }
                 } else {
                     TimeZone.currentSystemDefault()
                 }
@@ -188,7 +193,7 @@ object IcsParser {
                 millis to false
             }
         } catch (e: Exception) {
-            log.d { "Failed to parse ICS datetime '$value': ${e.message}" }
+            log.w(e) { "Failed to parse ICS datetime '$value'" }
             null
         }
     }

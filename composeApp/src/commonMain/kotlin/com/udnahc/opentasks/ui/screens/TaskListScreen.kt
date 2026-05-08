@@ -94,6 +94,8 @@ fun TaskListScreen(
     var showCategoryPicker by remember { mutableStateOf(false) }
 
     val categories by viewModel.categories.collectAsState()
+    val filteredCategories by viewModel.filteredCategories.collectAsState()
+    val categorySearchQuery by viewModel.categorySearchQuery.collectAsState()
     val defaultListName = stringResource(Res.string.inbox)
     val starredName = stringResource(Res.string.starred)
     val todayName = stringResource(Res.string.today)
@@ -193,7 +195,7 @@ fun TaskListScreen(
         val listPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         CategoryPickerBottomSheet(
             sheetState = listPickerState,
-            categories = categories,
+            categories = filteredCategories,
             selectedCategoryId = if (currentFilter is TaskListFilter.Category) {
                 (currentFilter as TaskListFilter.Category).id
             } else {
@@ -202,15 +204,22 @@ fun TaskListScreen(
             onCategorySelected = { category ->
                 viewModel.selectFilter(TaskListFilter.Category(category.id))
                 onSelectedCategoryChanged(category.id)
+                viewModel.setCategorySearchQuery("")
                 showCategoryPicker = false
             },
             onAddCategory = { name -> viewModel.addCategory(name) },
-            onDismiss = { showCategoryPicker = false },
+            onDismiss = {
+                viewModel.setCategorySearchQuery("")
+                showCategoryPicker = false
+            },
             showTitle = false,
             showSearch = false,
+            searchQuery = categorySearchQuery,
+            onSearchQueryChange = { viewModel.setCategorySearchQuery(it) },
             selectedFilter = currentFilter,
             onFilterSelected = { filter ->
                 viewModel.selectFilter(filter)
+                viewModel.setCategorySearchQuery("")
                 showCategoryPicker = false
             },
         )
@@ -220,7 +229,7 @@ fun TaskListScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TaskListContent(
-    listName: String = "Inbox",
+    listName: String,
     activeTasks: List<Task> = emptyList(),
     completedTasks: List<Task> = emptyList(),
     groupedActiveTasks: List<SectionGroup> = emptyList(),

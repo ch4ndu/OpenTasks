@@ -7,6 +7,9 @@ import android.os.Environment
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.lighthousegames.logging.logging
+
+private val log = logging("AndroidFileSaver")
 
 class AndroidFileSaver(private val context: Context) : FileSaver {
 
@@ -19,6 +22,7 @@ class AndroidFileSaver(private val context: Context) : FileSaver {
                     saveToDownloadsLegacy(fileName, content)
                 }
             } catch (e: Exception) {
+                log.e(e) { "Failed to save file $fileName" }
                 false
             }
         }

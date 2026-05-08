@@ -183,7 +183,7 @@ internal fun QuadrantDetailContent(
     priority: TaskPriority,
     categorizedTasks: List<MatrixViewModel.TaskCategoryGroup>,
     categoryNames: Map<String, String> = emptyMap(),
-    defaultCategoryName: String = "Inbox",
+    defaultCategoryName: String,
     onBack: () -> Unit,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,

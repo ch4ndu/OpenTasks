@@ -43,6 +43,10 @@ class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteReco
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<NoteRecord>(collectionName, 200)
 
+    override suspend fun verifyCollection(client: PocketbaseClient) {
+        client.records.getList<NoteRecord>(collectionName, 1, 1, skipTotal = true)
+    }
+
     override suspend fun createRecord(client: PocketbaseClient, body: String) =
         client.records.create<NoteRecord>(collectionName, body)
 

@@ -115,10 +115,12 @@ import opentasks.composeapp.generated.resources.urgent_unimportant
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import org.lighthousegames.logging.logging
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 private val IosTransitionEasing = CubicBezierEasing(0.2833f, 0.99f, 0.31833f, 0.99f)
+private val log = logging("App")
 
 private fun isTabScreen(key: Any): Boolean =
     key is Screen.Matrix || key is Screen.TaskList || key is Screen.Calendar || key is Screen.Notes || key is Screen.Countdown
@@ -147,9 +149,21 @@ fun App(
         val isSyncInitialized = remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) {
-                initializeSyncAction()
-                rescheduleAllRemindersAction()
-                rescheduleAllCountdownRemindersAction()
+                try {
+                    initializeSyncAction()
+                } catch (e: Exception) {
+                    log.e(e) { "Initial sync failed" }
+                }
+                try {
+                    rescheduleAllRemindersAction()
+                } catch (e: Exception) {
+                    log.e(e) { "Initial task reminder reschedule failed" }
+                }
+                try {
+                    rescheduleAllCountdownRemindersAction()
+                } catch (e: Exception) {
+                    log.e(e) { "Initial countdown reminder reschedule failed" }
+                }
             }
             isSyncInitialized.value = true
         }
@@ -411,6 +425,8 @@ private fun MainScreen(
                 entry<Screen.CreateTask> { screen ->
                     val taskFormViewModel: TaskFormViewModel = koinViewModel()
                     val categories by taskFormViewModel.categories.collectAsState()
+                    val filteredCategories by taskFormViewModel.filteredCategories.collectAsState()
+                    val categorySearchQuery by taskFormViewModel.categorySearchQuery.collectAsState()
                     var pendingPostSaveReminderCheck by remember {
                         mutableStateOf<TaskFormData?>(
                             null
@@ -454,6 +470,11 @@ private fun MainScreen(
                         initialMonth = screen.month,
                         initialYear = screen.year,
                         categories = categories,
+                        filteredCategories = filteredCategories,
+                        categorySearchQuery = categorySearchQuery,
+                        onCategorySearchQueryChange = {
+                            taskFormViewModel.setCategorySearchQuery(it)
+                        },
                         onAddCategory = { name -> taskFormViewModel.addCategory(name) },
                         onSave = { formData -> taskFormViewModel.saveNewTask(formData) },
                     )
@@ -498,12 +519,19 @@ private fun MainScreen(
                     LaunchedEffect(screen.taskId) { taskFormViewModel.setTaskId(screen.taskId) }
                     val editTask by taskFormViewModel.editTask.collectAsState()
                     val categories by taskFormViewModel.categories.collectAsState()
+                    val filteredCategories by taskFormViewModel.filteredCategories.collectAsState()
+                    val categorySearchQuery by taskFormViewModel.categorySearchQuery.collectAsState()
                     val currentEditTask = editTask
                     if (currentEditTask != null) {
                         CreateTaskScreen(
                             onBack = { navController.popBackStack() },
                             editTask = currentEditTask,
                             categories = categories,
+                            filteredCategories = filteredCategories,
+                            categorySearchQuery = categorySearchQuery,
+                            onCategorySearchQueryChange = {
+                                taskFormViewModel.setCategorySearchQuery(it)
+                            },
                             onAddCategory = { name -> taskFormViewModel.addCategory(name) },
                             onSave = { formData ->
                                 taskFormViewModel.saveExistingTask(currentEditTask, formData)

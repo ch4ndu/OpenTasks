@@ -43,6 +43,10 @@ class CountdownSyncAdapter(private val dao: CountdownDao) : BaseSyncAdapter<Coun
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<CountdownRecord>(collectionName, 200)
 
+    override suspend fun verifyCollection(client: PocketbaseClient) {
+        client.records.getList<CountdownRecord>(collectionName, 1, 1, skipTotal = true)
+    }
+
     override suspend fun createRecord(client: PocketbaseClient, body: String) =
         client.records.create<CountdownRecord>(collectionName, body)
 

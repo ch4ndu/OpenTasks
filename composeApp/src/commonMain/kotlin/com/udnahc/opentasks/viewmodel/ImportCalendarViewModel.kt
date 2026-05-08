@@ -91,7 +91,7 @@ class ImportCalendarViewModel(
                 val count = importAction(events)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: Exception) {
-                log.e { "Calendar import failed: ${e.message}" }
+                log.e(e) { "Calendar import failed" }
                 _uiState.update {
                     it.copy(
                         isLoading = false,

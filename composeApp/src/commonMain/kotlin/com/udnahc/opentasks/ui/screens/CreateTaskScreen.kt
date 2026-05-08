@@ -77,6 +77,7 @@ import opentasks.composeapp.generated.resources.ic_flag
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_repeat
 import opentasks.composeapp.generated.resources.ic_unfold
+import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.priority
 import opentasks.composeapp.generated.resources.select
 import opentasks.composeapp.generated.resources.subtasks
@@ -96,6 +97,9 @@ fun CreateTaskScreen(
     initialYear: Int = 0,
     editTask: Task? = null,
     categories: List<Category> = emptyList(),
+    filteredCategories: List<Category> = categories,
+    categorySearchQuery: String = "",
+    onCategorySearchQueryChange: (String) -> Unit = {},
     onAddCategory: (String) -> Unit = {},
     onSave: (TaskFormData) -> Unit = {},
     onDelete: (() -> Unit)? = null,
@@ -110,6 +114,9 @@ fun CreateTaskScreen(
         initialYear = initialYear,
         editTask = editTask,
         categories = categories,
+        filteredCategories = filteredCategories,
+        categorySearchQuery = categorySearchQuery,
+        onCategorySearchQueryChange = onCategorySearchQueryChange,
         onAddCategory = onAddCategory,
         onSave = onSave,
         onDelete = onDelete,
@@ -128,6 +135,9 @@ private fun CreateTaskContent(
     initialYear: Int = 0,
     editTask: Task? = null,
     categories: List<Category> = emptyList(),
+    filteredCategories: List<Category> = categories,
+    categorySearchQuery: String = "",
+    onCategorySearchQueryChange: (String) -> Unit = {},
     onAddCategory: (String) -> Unit = {},
     onSave: (TaskFormData) -> Unit = {},
     onDelete: (() -> Unit)? = null,
@@ -152,6 +162,7 @@ private fun CreateTaskContent(
     val descriptionFocusRequester = remember { FocusRequester() }
     val subtaskFocusRequester = remember { FocusRequester() }
     val richTextState = rememberRichTextState()
+    val inboxName = stringResource(Res.string.inbox)
 
     LaunchedEffect(stateKey) {
         if (editTask != null && editTask.content.isNotBlank()) {
@@ -214,7 +225,7 @@ private fun CreateTaskContent(
             .imePadding(),
     ) {
         CreateTaskTopBar(
-            listName = categories.find { it.id == selectedCategoryId }?.name ?: "Inbox",
+            listName = categories.find { it.id == selectedCategoryId }?.name ?: inboxName,
             priority = priority,
             showPriorityMenu = showPriorityMenu,
             onShowPriorityMenu = { showPriorityMenu = it },
@@ -440,14 +451,20 @@ private fun CreateTaskContent(
         val listPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         CategoryPickerBottomSheet(
             sheetState = listPickerState,
-            categories = categories,
+            categories = filteredCategories,
             selectedCategoryId = selectedCategoryId,
             onCategorySelected = { category ->
                 selectedCategoryId = category.id
+                onCategorySearchQueryChange("")
                 showCategoryPicker = false
             },
             onAddCategory = onAddCategory,
-            onDismiss = { showCategoryPicker = false },
+            onDismiss = {
+                onCategorySearchQueryChange("")
+                showCategoryPicker = false
+            },
+            searchQuery = categorySearchQuery,
+            onSearchQueryChange = onCategorySearchQueryChange,
         )
     }
 }
@@ -513,7 +530,7 @@ private fun TaskRichDescriptionField(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CreateTaskTopBar(
-    listName: String = "Inbox",
+    listName: String,
     priority: TaskPriority,
     showPriorityMenu: Boolean,
     onShowPriorityMenu: (Boolean) -> Unit,

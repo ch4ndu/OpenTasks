@@ -45,6 +45,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
 
     // PocketBase operations (concrete adapters provide reified type wrappers)
     abstract suspend fun fetchAllRecords(client: PocketbaseClient): List<Record>
+    abstract suspend fun verifyCollection(client: PocketbaseClient)
     abstract suspend fun createRecord(client: PocketbaseClient, body: String): Record
     abstract suspend fun updateRecord(client: PocketbaseClient, pbId: String, body: String): Record
     abstract suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): Record?
@@ -55,6 +56,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     /** Push all unsynced entities to server. */
     suspend fun pushAll(client: PocketbaseClient) {
         val unsynced = getUnsynced()
+        val failures = mutableListOf<Throwable>()
         log.d { "Pushing ${unsynced.size} $collectionName" }
         for (entity in unsynced) {
             try {
@@ -73,7 +75,11 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
 
                 if (entityPbId != null) {
                     val updated = updateByPbIdOrRecover(client, entityLocalId, entityPbId, body)
-                    if (updated) markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
+                    if (updated) {
+                        markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
+                    } else {
+                        failures += SyncAdapterException("Failed to update $collectionName $entityLocalId")
+                    }
                 } else {
                     val created = runCatching { createRecord(client, body) }
                     if (created.isSuccess) {
@@ -82,17 +88,25 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                             try {
                                 updatePbId(entityLocalId, newPbId)
                             } catch (e: Exception) {
-                                log.e { "Failed to save pbId for $collectionName $entityLocalId: ${e.message}" }
+                                log.e(e) { "Failed to save pbId for $collectionName $entityLocalId" }
                             }
                         }
                         markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
                     } else {
-                        log.e { "Failed to create $collectionName $entityLocalId: ${created.exceptionOrNull()?.message}" }
+                        val error = created.exceptionOrNull()
+                        if (error != null) {
+                            log.e(error) { "Failed to create $collectionName $entityLocalId" }
+                            failures += error
+                        }
                     }
                 }
             } catch (e: Exception) {
-                log.e { "Failed to push $collectionName ${localId(entity)}: ${e.message}" }
+                log.e(e) { "Failed to push $collectionName ${localId(entity)}" }
+                failures += e
             }
+        }
+        if (failures.isNotEmpty()) {
+            throw SyncAdapterException("Failed to push $collectionName", failures.first())
         }
     }
 
@@ -125,13 +139,14 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                             log.w { "Recovering missing $collectionName ${localId(local)}: server row absent, marking unsynced for recreation" }
                             markUnsynced(localId(local))
                         } catch (e: Exception) {
-                            log.e { "Failed to mark missing $collectionName ${localId(local)} unsynced: ${e.message}" }
+                            log.e(e) { "Failed to mark missing $collectionName ${localId(local)} unsynced" }
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            log.e { "Failed to pull $collectionName: ${e.message}" }
+            log.e(e) { "Failed to pull $collectionName" }
+            throw SyncAdapterException("Failed to pull $collectionName", e)
         }
     }
 
@@ -154,25 +169,25 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
 
         val error = updated.exceptionOrNull()
         if (!error.isNotFound()) {
-            log.e { "Failed to update $collectionName $localId: ${error?.message}" }
+            if (error != null) log.e(error) { "Failed to update $collectionName $localId" }
             return false
         }
 
         log.w { "Stale pbId for $collectionName $localId; looking up by localId" }
         val existing = runCatching { findRecordByLocalId(client, localId) }
-            .onFailure { log.e { "Failed localId lookup for $collectionName $localId: ${it.message}" } }
+            .onFailure { log.e(it) { "Failed localId lookup for $collectionName $localId" } }
             .getOrNull()
         val serverId = existing?.id ?: return runCatching { createRecord(client, body) }
             .onSuccess { created ->
                 val newPbId = created.id
                 if (newPbId != null) updatePbIdSafely(localId, newPbId)
             }
-            .onFailure { log.e { "Failed to recreate missing $collectionName $localId: ${it.message}" } }
+            .onFailure { log.e(it) { "Failed to recreate missing $collectionName $localId" } }
             .isSuccess
 
         updatePbIdSafely(localId, serverId)
         return runCatching { updateRecord(client, serverId, body) }
-            .onFailure { log.e { "Failed to update recovered $collectionName $localId: ${it.message}" } }
+            .onFailure { log.e(it) { "Failed to update recovered $collectionName $localId" } }
             .isSuccess
     }
 
@@ -183,7 +198,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 log.w { "Skipped markSynced for $collectionName $localId: local row changed during push" }
             }
         } catch (e: Exception) {
-            log.w { "Failed to markSynced for $collectionName $localId (will retry): ${e.message}" }
+            log.w(e) { "Failed to markSynced for $collectionName $localId (will retry)" }
         }
     }
 
@@ -191,7 +206,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         try {
             updatePbId(localId, pbId)
         } catch (e: Exception) {
-            log.e { "Failed to save pbId for $collectionName $localId: ${e.message}" }
+            log.e(e) { "Failed to save pbId for $collectionName $localId" }
         }
     }
 

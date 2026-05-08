@@ -34,7 +34,12 @@ class FormViewModelTest : MainDispatcherRule() {
     @Test
     fun taskFormViewModelLoadsEditTaskAndEmitsSaveEvents() = runTest(dispatcher) {
         val taskRepository = FakeTaskRepository(listOf(testTask(id = "task", title = "Old")))
-        val categoryRepository = FakeCategoryRepository(listOf(testCategory(id = "inbox", name = "Inbox")))
+        val categoryRepository = FakeCategoryRepository(
+            listOf(
+                testCategory(id = "inbox", name = "Inbox"),
+                testCategory(id = "work", name = "Work"),
+            )
+        )
         val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
         val viewModel = TaskFormViewModel(
             observeTaskByIdUseCase = ObserveTaskByIdUseCase(taskRepository),
@@ -71,6 +76,12 @@ class FormViewModelTest : MainDispatcherRule() {
         advanceUntilIdle()
         assertEquals("Projects", categoryRepository.inserted.single().name)
         assertTrue(taskRepository.updated.last().isDeleted)
+
+        viewModel.setCategorySearchQuery("wo")
+        viewModel.filteredCategories.test {
+            assertEquals(listOf("work"), awaitMatching { it.map { category -> category.id } == listOf("work") }.map { it.id })
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
@@ -99,8 +110,9 @@ class FormViewModelTest : MainDispatcherRule() {
         advanceUntilIdle()
 
         assertEquals("new", repository.inserted.single().id)
-        assertEquals("Updated", repository.updated.single().title)
-        assertEquals("countdown", repository.deleted.single().id)
+        assertEquals("Updated", repository.updated.first().title)
+        assertEquals("countdown", repository.updated.last().id)
+        assertTrue(repository.updated.last().isDeleted)
         assertEquals(3, completed)
     }
 

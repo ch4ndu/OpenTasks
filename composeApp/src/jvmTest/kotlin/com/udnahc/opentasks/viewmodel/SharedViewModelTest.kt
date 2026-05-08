@@ -139,7 +139,13 @@ class SharedViewModelTest : MainDispatcherRule() {
             )
         )
         val settingsRepository = FakeAppSettingsRepository(mapOf("task_list_sort_option" to TaskSortOption.BY_TITLE.name))
-        val categoryRepository = FakeCategoryRepository(listOf(testCategory(id = "inbox", name = "Inbox")))
+        val categoryRepository = FakeCategoryRepository(
+            listOf(
+                testCategory(id = "inbox", name = "Inbox"),
+                testCategory(id = "work", name = "Work"),
+                testCategory(id = "personal", name = "Personal"),
+            )
+        )
         val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
         val viewModel = TaskListViewModel(
             observeTasksForCategory = ObserveTasksForCategoryUseCase(taskRepository),
@@ -158,6 +164,12 @@ class SharedViewModelTest : MainDispatcherRule() {
         )
 
         viewModel.selectCategory("inbox")
+        viewModel.setCategorySearchQuery("wo")
+        viewModel.filteredCategories.test {
+            assertEquals(listOf("work"), awaitMatching { it.map { category -> category.id } == listOf("work") }.map { it.id })
+            cancelAndIgnoreRemainingEvents()
+        }
+
         viewModel.activeTasksForSelectedCategory.test {
             assertEquals(listOf("todo", "starred"), awaitMatching { it.size == 2 }.map { it.id })
             cancelAndIgnoreRemainingEvents()

@@ -33,7 +33,7 @@ import org.lighthousegames.logging.logging
 
 private val log = logging("SettingsViewModel")
 
-enum class SyncStatus { IDLE, SYNCING, SUCCESS, ERROR }
+enum class SyncStatus { IDLE, CHECKING, SYNCING, SUCCESS, ERROR }
 
 sealed class ExportResult {
     data object Idle : ExportResult()
@@ -97,12 +97,12 @@ class SettingsViewModel(
         }
         log.d { "Saving PocketBase URL: $normalized" }
         viewModelScope.launch(Dispatchers.IO) {
-            _syncStatus.value = SyncStatus.SYNCING
+            _syncStatus.value = SyncStatus.CHECKING
             try {
                 savePocketBaseUrlAction(normalized)
                 _syncStatus.value = SyncStatus.SUCCESS
             } catch (e: Exception) {
-                log.e { "Failed to save PocketBase URL: ${e.message}" }
+                log.e(e) { "Failed to save PocketBase URL" }
                 _syncStatus.value = SyncStatus.ERROR
             }
         }
@@ -123,7 +123,7 @@ class SettingsViewModel(
                 triggerSyncAction.syncNow()
                 _syncStatus.value = SyncStatus.SUCCESS
             } catch (e: Exception) {
-                log.e { "Sync failed: ${e.message}" }
+                log.e(e) { "Sync failed" }
                 _syncStatus.value = SyncStatus.ERROR
             }
         }
@@ -165,7 +165,7 @@ class SettingsViewModel(
                 val saved = fileSaver.save(fileName, content, "text/csv")
                 _exportResult.value = if (saved) ExportResult.Success(count) else ExportResult.Error
             } catch (e: Exception) {
-                log.e { "CSV export failed: ${e.message}" }
+                log.e(e) { "CSV export failed" }
                 _exportResult.value = ExportResult.Error
             }
         }
@@ -179,7 +179,7 @@ class SettingsViewModel(
                 val saved = fileSaver.save(fileName, content, "text/calendar")
                 _exportResult.value = if (saved) ExportResult.Success(count) else ExportResult.Error
             } catch (e: Exception) {
-                log.e { "ICS export failed: ${e.message}" }
+                log.e(e) { "ICS export failed" }
                 _exportResult.value = ExportResult.Error
             }
         }
@@ -196,7 +196,7 @@ class SettingsViewModel(
                 _syncStatus.value = SyncStatus.IDLE
                 withContext(Dispatchers.Main) { onComplete() }
             } catch (e: Exception) {
-                log.e { "Clear local data failed: ${e.message}" }
+                log.e(e) { "Clear local data failed" }
             }
         }
     }

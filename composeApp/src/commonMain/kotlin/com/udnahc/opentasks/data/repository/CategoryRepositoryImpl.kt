@@ -5,18 +5,22 @@ import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Category
-import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import com.udnahc.opentasks.data.sync.SyncTrigger
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import org.lighthousegames.logging.logging
 
 private val log = logging("CategoryRepository")
 
 class CategoryRepositoryImpl(
     private val categoryDao: CategoryDao,
-    private val triggerSyncAction: TriggerSyncAction,
+    private val syncTrigger: SyncTrigger,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : CategoryRepository {
 
     override fun getAllCategories(): Flow<List<Category>> =
@@ -25,28 +29,34 @@ class CategoryRepositoryImpl(
             .flowOn(Dispatchers.Default)
 
     override suspend fun getCategoryById(id: String): Category? =
-        categoryDao.getCategoryById(id)?.withLocalTimestamps()
+        withContext(ioDispatcher) { categoryDao.getCategoryById(id)?.withLocalTimestamps() }
 
     override suspend fun getCategoryByName(name: String): Category? =
-        categoryDao.getCategoryByName(name)?.withLocalTimestamps()
+        withContext(ioDispatcher) { categoryDao.getCategoryByName(name)?.withLocalTimestamps() }
 
     override suspend fun insert(category: Category): Long {
         log.v { "Inserting category: ${category.id}" }
-        val result = categoryDao.insert(category.withDefaultTimestamps().withUtcTimestamps())
-        triggerSyncAction()
+        val result = withContext(ioDispatcher) {
+            categoryDao.insert(category.withDefaultTimestamps().withUtcTimestamps())
+        }
+        syncTrigger.triggerSync()
         return result
     }
 
     override suspend fun update(category: Category) {
         log.v { "Updating category: ${category.id}" }
-        categoryDao.update(category.withUtcTimestamps().copy(isSynced = false))
-        triggerSyncAction()
+        withContext(ioDispatcher) {
+            categoryDao.update(category.withUtcTimestamps().copy(isSynced = false))
+        }
+        syncTrigger.triggerSync()
     }
 
     override suspend fun delete(category: Category) {
         log.v { "Soft-deleting category: ${category.id}" }
-        categoryDao.update(category.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
-        triggerSyncAction()
+        withContext(ioDispatcher) {
+            categoryDao.update(category.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
+        }
+        syncTrigger.triggerSync()
     }
 
     private fun Category.withDefaultTimestamps(): Category {

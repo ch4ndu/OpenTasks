@@ -9,28 +9,55 @@ private val log = logging("PocketBaseClientProvider")
 class PocketBaseClientProvider {
     private var _client: PocketbaseClient? = null
     val client: PocketbaseClient? get() = _client
+    private var _endpoint: PocketBaseEndpoint? = null
+    val endpoint: PocketBaseEndpoint? get() = _endpoint
 
     val isConfigured: Boolean get() = _client != null
 
     fun configure(url: String) {
-        val cleaned = url.trimEnd('/')
-        val useHttps = cleaned.startsWith("https://")
-        val withoutProtocol = cleaned
-            .removePrefix("https://")
-            .removePrefix("http://")
-        val parts = withoutProtocol.split(":")
-        val host = parts[0]
-        val port = if (parts.size > 1) parts[1].toIntOrNull() ?: 8090 else 8090
+        val endpoint = parsePocketBaseEndpoint(url)
 
         _client = PocketbaseClient({
-            protocol = if (useHttps) URLProtocol.HTTPS else URLProtocol.HTTP
-            this.host = host
-            this.port = port
+            protocol = endpoint.protocol
+            host = endpoint.host
+            port = endpoint.port
         })
-        log.d { "PocketBase client configured" }
+        _endpoint = endpoint
+        log.d { "PocketBase client configured: ${endpoint.protocol.name.lowercase()}://${endpoint.host}:${endpoint.port}" }
     }
 
     fun disconnect() {
         _client = null
+        _endpoint = null
     }
+}
+
+data class PocketBaseEndpoint(
+    val protocol: URLProtocol,
+    val host: String,
+    val port: Int,
+)
+
+internal fun parsePocketBaseEndpoint(url: String): PocketBaseEndpoint {
+    val cleaned = url.trim().trimEnd('/')
+    require(cleaned.isNotBlank()) { "PocketBase URL is blank" }
+
+    val useHttps = cleaned.startsWith("https://")
+    val useHttp = cleaned.startsWith("http://")
+    val protocol = if (useHttps) URLProtocol.HTTPS else URLProtocol.HTTP
+    val withoutProtocol = cleaned
+        .removePrefix("https://")
+        .removePrefix("http://")
+        .substringBefore('/')
+    val separator = withoutProtocol.lastIndexOf(':')
+    val host = if (separator > 0) withoutProtocol.substring(0, separator) else withoutProtocol
+    val explicitPort = if (separator > 0) withoutProtocol.substring(separator + 1).toIntOrNull() else null
+    val port = explicitPort ?: when {
+        useHttps -> 443
+        useHttp -> 80
+        else -> 80
+    }
+
+    require(host.isNotBlank()) { "PocketBase URL host is blank" }
+    return PocketBaseEndpoint(protocol, host, port)
 }

@@ -4,6 +4,9 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import org.lighthousegames.logging.logging
+
+private val log = logging("OpenInMaps")
 
 @Composable
 actual fun rememberOpenInMapsAction(): (String) -> Unit {
@@ -16,7 +19,8 @@ actual fun rememberOpenInMapsAction(): (String) -> Unit {
         }
         try {
             context.startActivity(intent)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            log.e(e) { "Failed to open location in maps app" }
             val browserUri = Uri.parse("https://www.google.com/maps/search/$encodedLocation")
             context.startActivity(Intent(Intent.ACTION_VIEW, browserUri).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK

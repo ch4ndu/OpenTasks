@@ -71,7 +71,7 @@ class WeekWidget : GlanceAppWidget() {
                 }
                 instance.update(context, glanceId)
             } catch (e: Exception) {
-                log.e { "Failed to refresh week widget $appWidgetId: ${e.message}" }
+                log.e(e) { "Failed to refresh week widget $appWidgetId" }
             }
         }
 
@@ -87,7 +87,7 @@ class WeekWidget : GlanceAppWidget() {
                     instance.update(context, glanceId)
                 }
             } catch (e: Exception) {
-                log.e { "Failed to refresh all week widgets: ${e.message}" }
+                log.e(e) { "Failed to refresh all week widgets" }
             }
         }
 
@@ -105,7 +105,7 @@ class WeekWidget : GlanceAppWidget() {
                 }
                 instance.update(context, glanceId)
             } catch (e: Exception) {
-                log.e { "Failed to navigate week for widget $appWidgetId: ${e.message}" }
+                log.e(e) { "Failed to navigate week for widget $appWidgetId" }
             }
         }
     }
@@ -114,7 +114,7 @@ class WeekWidget : GlanceAppWidget() {
         val appWidgetId = try {
             GlanceAppWidgetManager(context).getAppWidgetId(id)
         } catch (e: Exception) {
-            log.e { "Failed to get widget ID: ${e.message}" }
+            log.e(e) { "Failed to get widget ID" }
             0
         }
 
@@ -161,7 +161,7 @@ class WeekWidget : GlanceAppWidget() {
                         prefs = prefs,
                     )
                 } catch (e: Exception) {
-                    log.e { "Week widget data fetch failed: ${e.message}" }
+                    log.e(e) { "Week widget data fetch failed" }
                     val prefs = CalendarWidgetPreferences(appWidgetId)
                     WeekWidgetData.Ready(
                         weekLabel = "This Week",

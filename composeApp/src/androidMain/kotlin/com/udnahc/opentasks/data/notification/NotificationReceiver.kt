@@ -42,7 +42,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
                     showNotification(context, taskId, title, body, notificationId)
                 } catch (e: Exception) {
                     // Fail-open: show notification if DB lookup fails
-                    log.e { "Task lookup failed, showing notification anyway: ${e.message}" }
+                    log.e(e) { "Task lookup failed, showing notification anyway" }
                     showNotification(context, taskId, title, body, notificationId)
                 } finally {
                     pendingResult.finish()
@@ -85,7 +85,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
         try {
             NotificationManagerCompat.from(context).notify(notificationId, notification)
         } catch (e: SecurityException) {
-            log.e { "Failed to show notification (permission denied): ${e.message}" }
+            log.e(e) { "Failed to show notification (permission denied)" }
         }
     }
 }
