@@ -16,6 +16,7 @@ import com.udnahc.opentasks.data.database.MIGRATION_8_9
 import com.udnahc.opentasks.data.database.MIGRATION_9_10
 import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
+import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
 import com.udnahc.opentasks.data.repository.NoteRepository
 import com.udnahc.opentasks.data.repository.NoteRepositoryImpl
@@ -192,7 +193,7 @@ val sharedModule = module {
     single { TagTaskAction(get()) }
     single { ImportCalendarEventsAction(get(), get(), get(), get(), get()) }
     single { ImportCsvTasksAction(get(), get(), get()) }
-    single { ScheduleTaskRemindersAction(get(), get(), get()) }
+    single { ScheduleTaskRemindersAction(get<NotificationScheduler>(), get(), get()) }
     single { RescheduleAllRemindersAction(get(), get()) }
     single { ScheduleCountdownRemindersAction(get(), get()) }
     single { RescheduleAllCountdownRemindersAction(get(), get()) }
