@@ -14,7 +14,7 @@ import org.lighthousegames.logging.logging
 
 private val log = logging("NotificationScheduler")
 
-actual class NotificationScheduler(private val context: Context) {
+actual class NotificationScheduler(private val context: Context) : ReminderScheduler {
 
     init {
         createNotificationChannel()
@@ -42,7 +42,7 @@ actual class NotificationScheduler(private val context: Context) {
         manager.createNotificationChannel(ongoingChannel)
     }
 
-    actual fun schedule(
+    actual override fun schedule(
         taskId: String,
         title: String,
         body: String,
@@ -87,7 +87,7 @@ actual class NotificationScheduler(private val context: Context) {
         }
     }
 
-    actual fun cancel(taskId: String, reminderId: Int) {
+    actual override fun cancel(taskId: String, reminderId: Int) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, NotificationReceiver::class.java)
         val pendingIntent = PendingIntent.getBroadcast(
@@ -99,7 +99,7 @@ actual class NotificationScheduler(private val context: Context) {
         pendingIntent?.let { alarmManager.cancel(it) }
     }
 
-    actual fun cancelReminders(taskId: String) {
+    actual override fun cancelReminders(taskId: String) {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         // Loop 0..98 — skip 99 (ongoing foreground service, managed by stopOngoing())
@@ -109,13 +109,14 @@ actual class NotificationScheduler(private val context: Context) {
         }
     }
 
-    actual fun cancelAll(taskId: String) {
+    actual override fun cancelAll(taskId: String) {
         cancelReminders(taskId)
         stopOngoing(taskId)
     }
 
-    actual fun startOngoing(taskId: String, title: String) {
+    actual override fun startOngoing(taskId: String, title: String) {
         log.d { "Starting ongoing notification for task=$taskId" }
+        logOngoingChannelState()
         val intent = Intent(context, OngoingNotificationService::class.java).apply {
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_TITLE, title)
@@ -135,6 +136,7 @@ actual class NotificationScheduler(private val context: Context) {
 
     private fun showFallbackOngoingNotification(taskId: String, title: String) {
         val nId = notificationId(taskId, 99)
+        log.d { "Showing fallback ongoing notification for task=$taskId notificationId=$nId" }
         val notification = NotificationCompat.Builder(context, ONGOING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -149,7 +151,26 @@ actual class NotificationScheduler(private val context: Context) {
         }
     }
 
-    actual fun stopOngoing(taskId: String) {
+    private fun logOngoingChannelState() {
+        val notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            log.d { "All-day notification channel state: notificationsEnabled=$notificationsEnabled" }
+            return
+        }
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channel = manager.getNotificationChannel(ONGOING_CHANNEL_ID)
+        if (channel == null) {
+            log.d { "All-day notification channel state: missing, notificationsEnabled=$notificationsEnabled" }
+            return
+        }
+        log.d {
+            "All-day notification channel state: importance=${channel.importance}, " +
+                "blocked=${channel.importance == NotificationManager.IMPORTANCE_NONE}, " +
+                "notificationsEnabled=$notificationsEnabled"
+        }
+    }
+
+    actual override fun stopOngoing(taskId: String) {
         log.d { "Stopping ongoing notification for task=$taskId" }
         val intent = Intent(context, OngoingNotificationService::class.java).apply {
             action = ACTION_STOP_ONGOING

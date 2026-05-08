@@ -67,6 +67,9 @@ import opentasks.composeapp.generated.resources.logout_confirm_title
 import opentasks.composeapp.generated.resources.logout_description
 import opentasks.composeapp.generated.resources.notifications
 import opentasks.composeapp.generated.resources.exact_reminder_timing
+import opentasks.composeapp.generated.resources.exact_reminder_available
+import opentasks.composeapp.generated.resources.exact_reminder_permission_needed
+import opentasks.composeapp.generated.resources.exact_reminder_not_required
 import opentasks.composeapp.generated.resources.calendar_access
 import opentasks.composeapp.generated.resources.permission_granted
 import opentasks.composeapp.generated.resources.permission_not_granted
@@ -256,9 +259,9 @@ internal fun SettingsContent(
             }
             item(key = "perm_exact_reminders") {
                 val exactSummary = when (exactReminderStatus) {
-                    ExactReminderPermissionStatus.GRANTED -> stringResource(Res.string.permission_granted)
-                    ExactReminderPermissionStatus.NOT_GRANTED -> stringResource(Res.string.permission_not_granted)
-                    ExactReminderPermissionStatus.NOT_REQUIRED -> stringResource(Res.string.permission_not_required)
+                    ExactReminderPermissionStatus.GRANTED -> stringResource(Res.string.exact_reminder_available)
+                    ExactReminderPermissionStatus.NOT_GRANTED -> stringResource(Res.string.exact_reminder_permission_needed)
+                    ExactReminderPermissionStatus.NOT_REQUIRED -> stringResource(Res.string.exact_reminder_not_required)
                 }
                 SettingsRow(
                     title = stringResource(Res.string.exact_reminder_timing),

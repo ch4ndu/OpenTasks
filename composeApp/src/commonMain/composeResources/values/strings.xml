@@ -266,6 +266,9 @@
     <string name="permission_granted">Granted</string>
     <string name="permission_not_granted">Not granted</string>
     <string name="permission_not_required">Not required</string>
+    <string name="exact_reminder_available">Available. Android may not list auto-granted access under Alarms &amp; reminders.</string>
+    <string name="exact_reminder_permission_needed">Permission needed</string>
+    <string name="exact_reminder_not_required">Not required on this device</string>
     <string name="exact_reminder_permission_message">Exact reminder timing is off. Reminders may be delayed.</string>
     <string name="open_settings">Open settings</string>
 

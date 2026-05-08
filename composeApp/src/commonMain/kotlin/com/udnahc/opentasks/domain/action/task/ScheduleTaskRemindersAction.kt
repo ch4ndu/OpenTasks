@@ -5,7 +5,8 @@ import com.udnahc.opentasks.data.extensions.utcNow
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
-import com.udnahc.opentasks.data.notification.NotificationScheduler
+import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
+import com.udnahc.opentasks.data.notification.ReminderScheduler
 import com.udnahc.opentasks.data.repository.TaskRepository
 import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
@@ -44,8 +45,10 @@ internal data class ReminderTrigger(
 )
 
 class ScheduleTaskRemindersAction(
-    private val scheduler: NotificationScheduler,
+    private val scheduler: ReminderScheduler,
     private val taskRepository: TaskRepository,
+    private val allDayDismissalStore: AllDayNotificationDismissalStore? = null,
+    private val nowUtcMillisProvider: () -> Long = ::utcNow,
 ) {
     /**
      * Schedule reminders by task ID. Re-reads the task from DB with raw UTC timestamps
@@ -56,6 +59,7 @@ class ScheduleTaskRemindersAction(
         if (task == null) {
             log.d { "Task $taskId not found, cancelling reminders" }
             scheduler.cancelReminders(taskId)
+            scheduler.stopOngoing(taskId)
             return
         }
         scheduleForTask(task)
@@ -79,7 +83,9 @@ class ScheduleTaskRemindersAction(
             return
         }
 
-        val now = utcNow()
+        val now = nowUtcMillisProvider()
+        scheduleAllDayOngoingIfNeeded(task, now)
+
         val dateReminderValues = task.dateReminders.parseMinuteValues()
         val durationReminderValues = task.durationReminders.parseMinuteValues()
         val dateReminderTriggers = dateReminderValues
@@ -97,6 +103,8 @@ class ScheduleTaskRemindersAction(
                     triggerAtMillis = trigger.triggerAtUtcMillis,
                     reminderId = index,
                 )
+            } else {
+                log.v { "Skipped past date reminder $index at ${trigger.triggerAtUtcMillis}" }
             }
         }
 
@@ -121,6 +129,8 @@ class ScheduleTaskRemindersAction(
                     triggerAtMillis = triggerAt,
                     reminderId = DURATION_REMINDER_OFFSET + index,
                 )
+            } else {
+                log.v { "Skipped past duration reminder $index at $triggerAt" }
             }
         }
 
@@ -141,6 +151,28 @@ class ScheduleTaskRemindersAction(
                 reminderId = OVERDUE_REMINDER_ID,
             )
         }
+    }
+
+    private suspend fun scheduleAllDayOngoingIfNeeded(task: Task, now: Long) {
+        if (!task.isAllDay) return
+        if (!task.isDueToday(now)) {
+            log.d { "Skipped all-day ongoing notification for task ${task.id}: not due today" }
+            return
+        }
+        if (allDayDismissalStore?.isDismissedToday(task.id) == true) {
+            log.d { "Skipped all-day ongoing notification for task ${task.id}: dismissed today" }
+            return
+        }
+        log.d { "Starting all-day ongoing notification for task ${task.id}" }
+        scheduler.startOngoing(task.id, task.title)
+    }
+
+    private fun Task.isDueToday(now: Long): Boolean {
+        val deadlineValue = deadline ?: return false
+        val timeZone = TimeZone.currentSystemDefault()
+        val today = Instant.fromEpochMilliseconds(now).toLocalDateTime(timeZone).date
+        val dueDate = Instant.fromEpochMilliseconds(deadlineValue).toLocalDateTime(timeZone).date
+        return dueDate == today
     }
 
     private fun String.parseMinuteValues(): List<Int> =

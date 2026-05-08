@@ -10,11 +10,11 @@ import platform.Foundation.NSCalendar
 import platform.Foundation.NSDate
 import platform.Foundation.dateWithTimeIntervalSince1970
 
-actual class NotificationScheduler {
+actual class NotificationScheduler : ReminderScheduler {
 
     private val center = UNUserNotificationCenter.currentNotificationCenter()
 
-    actual fun schedule(
+    actual override fun schedule(
         taskId: String,
         title: String,
         body: String,
@@ -60,28 +60,28 @@ actual class NotificationScheduler {
         center.addNotificationRequest(request, withCompletionHandler = null)
     }
 
-    actual fun cancel(taskId: String, reminderId: Int) {
+    actual override fun cancel(taskId: String, reminderId: Int) {
         center.removePendingNotificationRequestsWithIdentifiers(
             listOf(requestId(taskId, reminderId))
         )
     }
 
-    actual fun cancelReminders(taskId: String) {
+    actual override fun cancelReminders(taskId: String) {
         val ids = (0 until 100).map { requestId(taskId, it) } + legacyOngoingIds(taskId)
         center.removePendingNotificationRequestsWithIdentifiers(ids)
         center.removeDeliveredNotificationsWithIdentifiers(ids)
     }
 
-    actual fun cancelAll(taskId: String) {
+    actual override fun cancelAll(taskId: String) {
         cancelReminders(taskId)
         stopOngoing(taskId)
     }
 
-    actual fun startOngoing(taskId: String, title: String) {
+    actual override fun startOngoing(taskId: String, title: String) {
         stopOngoing(taskId)
     }
 
-    actual fun stopOngoing(taskId: String) {
+    actual override fun stopOngoing(taskId: String) {
         val ids = legacyOngoingIds(taskId)
         center.removePendingNotificationRequestsWithIdentifiers(ids)
         center.removeDeliveredNotificationsWithIdentifiers(ids)
