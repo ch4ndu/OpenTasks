@@ -33,6 +33,7 @@ replay_pid*
 !src/**/build/
 local.properties
 .idea
+.claude/settings.local.json
 .DS_Store
 captures
 .externalNativeBuild

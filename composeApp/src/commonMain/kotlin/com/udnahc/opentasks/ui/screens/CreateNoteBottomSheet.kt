@@ -178,7 +178,7 @@ internal fun CreateNoteBottomSheetContent(
         // Rich text editor
         BasicRichTextEditor(
             state = richTextState,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(
+            textStyle = MaterialTheme.typography.titleMedium.copy(
                 color = MaterialTheme.colorScheme.onBackground,
             ),
             cursorBrush = SolidColor(PrimaryBlue),
