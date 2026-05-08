@@ -87,6 +87,35 @@ class BaseSyncAdapterTest {
 
         assertFalse(adapter.local.first { it.id == "one" }.synced)
     }
+
+    @Test
+    fun stalePbIdRecoversByLocalIdBeforeUpdatingRemote() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(FakeEntity(id = "one", pbId = "stale-pb", value = "local", synced = false, updatedAt = 30)),
+            remote = mutableListOf(FakeRecord(localId = "one", value = "remote", updatedAt = 20).withId("current-pb")),
+        )
+
+        adapter.pushAll(client)
+
+        assertEquals("current-pb", adapter.local.single().pbId)
+        assertEquals("local", adapter.remote.single().value)
+        assertTrue(adapter.local.single().synced)
+    }
+
+    @Test
+    fun suspiciouslySmallRemoteResponseDoesNotMarkManySyncedRowsUnsynced() = runBlocking {
+        val local = (1..20).map { index ->
+            FakeEntity(id = "local-$index", pbId = "pb-$index", value = "$index", synced = true, updatedAt = 30)
+        }.toMutableList()
+        val adapter = FakeAdapter(
+            local = local,
+            remote = mutableListOf(FakeRecord(localId = "local-1", value = "remote", updatedAt = 30).withId("pb-1")),
+        )
+
+        adapter.pullAll(client)
+
+        assertTrue(adapter.local.all { it.synced })
+    }
 }
 
 private data class FakeEntity(

@@ -12,6 +12,7 @@ import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.CancellationException
@@ -40,6 +41,7 @@ class TaskFormViewModel(
     private val updateTaskAction: UpdateTaskAction,
     private val deleteTaskAction: DeleteTaskAction,
     private val addCategoryAction: AddCategoryAction,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val _taskId = MutableStateFlow<String?>(null)
@@ -65,7 +67,7 @@ class TaskFormViewModel(
     }
 
     fun saveNewTask(formData: TaskFormData) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             try {
                 addTaskAction(
                     title = formData.title,
@@ -98,7 +100,7 @@ class TaskFormViewModel(
     }
 
     fun saveExistingTask(existingTask: Task, formData: TaskFormData) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             try {
                 updateTaskAction(
                     existingTask.copy(
@@ -134,11 +136,11 @@ class TaskFormViewModel(
     }
 
     fun deleteTask(task: Task) {
-        viewModelScope.launch(Dispatchers.IO) { deleteTaskAction(task) }
+        viewModelScope.launch(ioDispatcher) { deleteTaskAction(task) }
     }
 
     fun addCategory(name: String) {
-        viewModelScope.launch(Dispatchers.IO) { addCategoryAction(name) }
+        viewModelScope.launch(ioDispatcher) { addCategoryAction(name) }
     }
 
     private fun TaskFormData.notifyBeforeUnit(): NotifyBeforeUnit =

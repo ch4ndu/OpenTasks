@@ -7,6 +7,7 @@ import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.UpdateCountdownAction
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveCountdownByIdUseCase
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
@@ -23,6 +24,7 @@ class CountdownFormViewModel(
     private val updateCountdownAction: UpdateCountdownAction,
     private val deleteCountdownAction: DeleteCountdownAction,
     private val observeCountdownByIdUseCase: ObserveCountdownByIdUseCase,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val _countdownId = MutableStateFlow<String?>(null)
@@ -37,21 +39,21 @@ class CountdownFormViewModel(
     }
 
     fun addCountdown(countdown: Countdown, onComplete: () -> Unit = {}) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             addCountdownAction(countdown)
             onComplete()
         }
     }
 
     fun updateCountdown(countdown: Countdown, onComplete: () -> Unit = {}) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             updateCountdownAction(countdown)
             onComplete()
         }
     }
 
     fun deleteCountdown(countdown: Countdown, onComplete: () -> Unit = {}) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             deleteCountdownAction(countdown)
             onComplete()
         }

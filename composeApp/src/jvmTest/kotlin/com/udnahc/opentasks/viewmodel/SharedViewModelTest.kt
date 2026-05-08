@@ -102,6 +102,7 @@ class SharedViewModelTest : MainDispatcherRule() {
             saveCalendarViewPreference = SaveCalendarViewPreferenceAction(settingsRepository),
             observeCalendarListDisplayModePreference = ObserveCalendarListDisplayModePreferenceUseCase(settingsRepository),
             saveCalendarListDisplayModePreference = SaveCalendarListDisplayModePreferenceAction(settingsRepository),
+            ioDispatcher = dispatcher,
         )
 
         viewModel.tasksByDay.test {

@@ -49,5 +49,6 @@ For a new persisted entity or schema change:
 - For broad shared-core changes, prefer `./gradlew :composeApp:allTests` when the local Kotlin/Native/iOS toolchain is available.
 - For platform-sensitive changes, also run the relevant Android or iOS compile task.
 - For broad shared changes, prefer `./gradlew :composeApp:compileKotlinJvm :composeApp:compileKotlinIosSimulatorArm64`.
+- For coverage-sensitive changes, run the Kover report task in report-only mode and inspect the generated report before proposing threshold changes.
 - Search changed code for `!!`, raw day millis such as `86400000`, hardcoded user-visible strings, and calendar filtering that removes completed tasks.
 - After running Gradle, stop daemons with `./gradlew --stop`.

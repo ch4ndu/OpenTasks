@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,7 @@ data class ImportIcsUiState(
 class ImportIcsViewModel(
     private val parseIcs: ParseIcsUseCase,
     private val importAction: ImportCalendarEventsAction,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ImportIcsUiState())
@@ -32,7 +34,7 @@ class ImportIcsViewModel(
 
     fun importFromIcsContent(fileName: String, content: String) {
         log.d { "Importing ICS events" }
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             _uiState.update { it.copy(isLoading = true, error = null, importedCount = null, fileName = fileName) }
             try {
                 val events = parseIcs(content)

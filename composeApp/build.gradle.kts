@@ -10,6 +10,7 @@ plugins {
     alias(libs.plugins.composeHotReload)
     alias(libs.plugins.jetbrains.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.kover)
     alias(libs.plugins.room)
 }
 
@@ -147,6 +148,38 @@ room {
 
 composeCompiler {
     featureFlags.add(ComposeFeatureFlag.StrongSkipping)
+}
+
+kover {
+    reports {
+        filters {
+            excludes {
+                classes(
+                    "*.BuildConfig",
+                    "*.ComposableSingletons*",
+                    "*.MainActivity",
+                    "*.OpenTasksApplication",
+                    "*.Platform*",
+                    "*.Res",
+                    "*.Res\$*",
+                    "*.ThemeKt",
+                    "*.SystemThemeKt",
+                    "*.Preview*",
+                    "*.PlatformModule*",
+                    "*.AppModuleKt",
+                    "*.AppDatabaseConstructor*",
+                )
+                packages(
+                    "com.udnahc.opentasks.di",
+                    "com.udnahc.opentasks.ui",
+                    "com.udnahc.opentasks.ui.*",
+                    "com.udnahc.opentasks.widget",
+                    "com.udnahc.opentasks.widget.*",
+                    "opentasks.composeapp.generated.resources",
+                )
+            }
+        }
+    }
 }
 
 compose.desktop {

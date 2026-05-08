@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
 import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,7 @@ data class ImportCsvUiState(
 class ImportCsvViewModel(
     private val parseCsv: ParseCsvUseCase,
     private val importAction: ImportCsvTasksAction,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ImportCsvUiState())
@@ -32,7 +34,7 @@ class ImportCsvViewModel(
 
     fun importFromCsvContent(fileName: String, content: String) {
         log.d { "Importing CSV tasks" }
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             _uiState.update { it.copy(isLoading = true, error = null, importedCount = null, fileName = fileName) }
             try {
                 val tasks = parseCsv(content)

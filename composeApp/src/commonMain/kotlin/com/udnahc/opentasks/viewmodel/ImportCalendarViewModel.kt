@@ -15,6 +15,7 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +42,8 @@ class ImportCalendarViewModel(
     private val fetchCalendarEvents: FetchCalendarEventsUseCase,
     private val checkCalendarPermission: CheckCalendarPermissionUseCase,
     private val importAction: ImportCalendarEventsAction,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val nowUtcMillisProvider: () -> Long = ::nowUtcMillis,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ImportCalendarUiState())
@@ -49,7 +52,7 @@ class ImportCalendarViewModel(
     val isAvailable: Boolean = fetchCalendarEvents.isAvailable()
 
     fun checkPermission() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             val status = checkCalendarPermission()
             _uiState.update { it.copy(permissionStatus = status) }
         }
@@ -75,10 +78,10 @@ class ImportCalendarViewModel(
     fun importEvents() {
         val selectedEvents = _uiState.value
         log.d { "Importing ${selectedEvents.rangeValue} ${selectedEvents.rangeUnit} of calendar events" }
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             _uiState.update { it.copy(isLoading = true, error = null, importedCount = null) }
             try {
-                val now = nowUtcMillis()
+                val now = nowUtcMillisProvider()
                 val (startUtcMillis, endUtcMillis) = computeRangeBoundsUtcMillis(
                     nowUtcMillis = now,
                     value = _uiState.value.rangeValue,
