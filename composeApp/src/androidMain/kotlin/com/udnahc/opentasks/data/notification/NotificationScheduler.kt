@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.udnahc.opentasks.MainActivity
 import com.udnahc.opentasks.R
 import org.lighthousegames.logging.logging
 
@@ -117,38 +118,68 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
     actual override fun startOngoing(taskId: String, title: String) {
         log.d { "Starting ongoing notification for task=$taskId" }
         logOngoingChannelState()
-        val intent = Intent(context, OngoingNotificationService::class.java).apply {
-            putExtra(EXTRA_TASK_ID, taskId)
-            putExtra(EXTRA_TITLE, title)
-        }
+        showOngoingNotification(taskId, title)
+    }
+
+    private fun showOngoingNotification(taskId: String, title: String) {
+        val notificationId = notificationId(taskId, ONGOING_REMINDER_ID)
+        val notification = buildOngoingNotification(taskId, title, notificationId)
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-        } catch (e: Exception) {
-            // Android 12+ blocks foreground service starts from the background
-            log.e(e) { "Cannot start foreground service from background" }
-            showFallbackOngoingNotification(taskId, title)
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
+            log.d { "Posted ongoing notification for task=$taskId notificationId=$notificationId" }
+        } catch (e: SecurityException) {
+            log.e(e) { "Failed to post ongoing notification for task=$taskId" }
         }
     }
 
-    private fun showFallbackOngoingNotification(taskId: String, title: String) {
-        val nId = notificationId(taskId, 99)
-        log.d { "Showing fallback ongoing notification for task=$taskId notificationId=$nId" }
-        val notification = NotificationCompat.Builder(context, ONGOING_CHANNEL_ID)
+    private fun buildOngoingNotification(
+        taskId: String,
+        title: String,
+        notificationId: Int,
+    ): android.app.Notification {
+        val tapIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_TASK_ID, taskId)
+        }
+        val tapPendingIntent = PendingIntent.getActivity(
+            context,
+            notificationId,
+            tapIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val markDoneIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = ACTION_MARK_DONE
+            putExtra(EXTRA_TASK_ID, taskId)
+        }
+        val markDonePendingIntent = PendingIntent.getBroadcast(
+            context,
+            notificationId + 1,
+            markDoneIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val gotItIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = ACTION_GOT_IT
+            putExtra(EXTRA_TASK_ID, taskId)
+        }
+        val gotItPendingIntent = PendingIntent.getBroadcast(
+            context,
+            notificationId + 2,
+            gotItIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        return NotificationCompat.Builder(context, ONGOING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(context.getString(R.string.notification_all_day_task_in_progress))
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(tapPendingIntent)
+            .addAction(0, context.getString(R.string.notification_action_mark_done), markDonePendingIntent)
+            .addAction(0, context.getString(R.string.notification_action_got_it), gotItPendingIntent)
             .build()
-        try {
-            NotificationManagerCompat.from(context).notify(nId, notification)
-        } catch (e: SecurityException) {
-            log.e(e) { "Failed to show fallback notification" }
-        }
     }
 
     private fun logOngoingChannelState() {
@@ -172,11 +203,8 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
 
     actual override fun stopOngoing(taskId: String) {
         log.d { "Stopping ongoing notification for task=$taskId" }
-        val intent = Intent(context, OngoingNotificationService::class.java).apply {
-            action = ACTION_STOP_ONGOING
-            putExtra(EXTRA_TASK_ID, taskId)
-        }
-        context.startService(intent)
+        val notificationId = notificationId(taskId, ONGOING_REMINDER_ID)
+        NotificationManagerCompat.from(context).cancel(notificationId)
     }
 
     companion object {
@@ -186,10 +214,10 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         const val EXTRA_TITLE = "title"
         const val EXTRA_BODY = "body"
         const val EXTRA_NOTIFICATION_ID = "notification_id"
-        const val ACTION_STOP_ONGOING = "com.udnahc.opentasks.STOP_ONGOING"
         const val ACTION_MARK_DONE = "com.udnahc.opentasks.ACTION_MARK_DONE"
         const val ACTION_GOT_IT = "com.udnahc.opentasks.ACTION_GOT_IT"
         private const val MAX_REMINDERS_PER_TASK = 100
+        private const val ONGOING_REMINDER_ID = 99
 
         fun notificationId(taskId: String, reminderId: Int): Int =
             "$taskId:$reminderId".hashCode().and(0x7FFFFFFF)
