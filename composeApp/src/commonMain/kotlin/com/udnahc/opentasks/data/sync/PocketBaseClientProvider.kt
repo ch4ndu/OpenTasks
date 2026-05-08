@@ -16,15 +16,23 @@ class PocketBaseClientProvider {
 
     fun configure(url: String) {
         val endpoint = parsePocketBaseEndpoint(url)
+        configure(endpoint)
+    }
 
-        _client = PocketbaseClient({
+    fun configure(endpoint: PocketBaseEndpoint) {
+        _client = createClient(endpoint)
+        _endpoint = endpoint
+        log.d { "PocketBase client configured: ${endpoint.protocol.name.lowercase()}://${endpoint.host}:${endpoint.port}" }
+    }
+
+    fun createClient(url: String): PocketbaseClient = createClient(parsePocketBaseEndpoint(url))
+
+    private fun createClient(endpoint: PocketBaseEndpoint): PocketbaseClient =
+        PocketbaseClient({
             protocol = endpoint.protocol
             host = endpoint.host
             port = endpoint.port
         })
-        _endpoint = endpoint
-        log.d { "PocketBase client configured: ${endpoint.protocol.name.lowercase()}://${endpoint.host}:${endpoint.port}" }
-    }
 
     fun disconnect() {
         _client = null

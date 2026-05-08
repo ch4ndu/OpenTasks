@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.sync.adapters
 
 import com.udnahc.opentasks.data.dao.TagDao
+import com.udnahc.opentasks.data.dao.TaskDao
 import com.udnahc.opentasks.data.model.TaskTag
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
 import com.udnahc.opentasks.data.sync.records.TaskTagRecord
@@ -12,7 +13,10 @@ import io.github.agrevster.pocketbaseKotlin.dsl.query.Filter
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class TaskTagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<TaskTag, TaskTagRecord>() {
+class TaskTagSyncAdapter(
+    private val dao: TagDao,
+    private val taskDao: TaskDao,
+) : BaseSyncAdapter<TaskTag, TaskTagRecord>() {
 
     override val collectionName = "task_tags"
     override val order = 20
@@ -73,6 +77,17 @@ class TaskTagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<TaskTag, Tas
     override suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): TaskTagRecord? =
         client.records.getList<TaskTagRecord>(collectionName, 1, 1, filterBy = Filter("localId='$localId'"))
             .items.firstOrNull()
+
+    override suspend fun validateRemoteRecord(record: TaskTagRecord): String? {
+        val task = taskDao.findTaskByIdAnyState(record.taskId)
+        val tag = dao.findTagByIdAnyState(record.tagId)
+        return when {
+            task == null && tag == null -> "Skipping orphan task_tags ${record.localId}: missing task ${record.taskId} and tag ${record.tagId}"
+            task == null -> "Skipping orphan task_tags ${record.localId}: missing task ${record.taskId}"
+            tag == null -> "Skipping orphan task_tags ${record.localId}: missing tag ${record.tagId}"
+            else -> null
+        }
+    }
 
     private fun splitLocalId(localId: String): Pair<String, String>? {
         val separator = localId.indexOf(':')

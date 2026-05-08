@@ -50,6 +50,9 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     abstract suspend fun updateRecord(client: PocketbaseClient, pbId: String, body: String): Record
     abstract suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): Record?
 
+    /** Return a message when a remote row should be skipped but surfaced as degraded sync. */
+    open suspend fun validateRemoteRecord(record: Record): String? = null
+
     /** Serialize entity to JSON body string for PocketBase. */
     abstract fun toJsonBody(entity: Entity): String
 
@@ -127,8 +130,15 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             log.d { "Pulled ${remoteRecords.size} $collectionName" }
 
             val localSyncedSnapshot = getAllOnce().filter { isSynced(it) && !isDeleted(it) }
+            val degradedMessages = mutableListOf<String>()
 
             for (record in remoteRecords) {
+                val validationMessage = validateRemoteRecord(record)
+                if (validationMessage != null) {
+                    log.w { validationMessage }
+                    degradedMessages += validationMessage
+                    continue
+                }
                 val rLocalId = recordLocalId(record)
                 val local = getById(rLocalId)
 
@@ -138,8 +148,12 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             }
 
             val remoteIds = remoteRecords.map { recordLocalId(it) }.toSet()
-            if (remoteRecords.isEmpty() && localSyncedSnapshot.isNotEmpty()) {
-                log.w { "Skipping $collectionName missing-row recovery: server returned 0 records but ${localSyncedSnapshot.size} local synced exist -- possible empty response" }
+            if (degradedMessages.isNotEmpty()) {
+                log.w { "Skipping $collectionName missing-row recovery because pull is already degraded" }
+            } else if (remoteRecords.isEmpty() && localSyncedSnapshot.isNotEmpty()) {
+                val message = "Degraded $collectionName sync: server returned 0 records but ${localSyncedSnapshot.size} local synced exist; skipping missing-row recovery"
+                log.w { message }
+                degradedMessages += message
             } else if (remoteRecords.size < localSyncedSnapshot.size * 0.1 && localSyncedSnapshot.isNotEmpty()) {
                 log.w { "Skipping $collectionName missing-row recovery: server returned ${remoteRecords.size} records but ${localSyncedSnapshot.size} local synced exist -- possible partial response" }
             } else {
@@ -153,6 +167,9 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                         }
                     }
                 }
+            }
+            if (degradedMessages.isNotEmpty()) {
+                throw SyncDegradedException(degradedMessages.joinToString("; "))
             }
         } catch (e: Exception) {
             log.e(e) { "Failed to pull $collectionName" }

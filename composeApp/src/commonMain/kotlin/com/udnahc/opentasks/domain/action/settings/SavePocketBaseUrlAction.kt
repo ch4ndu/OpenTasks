@@ -15,12 +15,13 @@ class SavePocketBaseUrlAction(
     private val connectionVerifier: PocketBaseConnectionVerifier,
     private val syncService: SyncService,
 ) {
-    /** Saves the URL, verifies the sync client, and triggers a full sync. */
+    /** Verifies the URL and initial sync before saving it or swapping the active client. */
     suspend operator fun invoke(url: String) {
         log.d { "Saving PocketBase URL" }
+        val verifiedClient = pbProvider.createClient(url)
+        connectionVerifier.verify(verifiedClient)
+        syncService.syncAll(verifiedClient)
         appSettingsRepository.setValue(KEY_POCKETBASE_URL, url)
         pbProvider.configure(url)
-        connectionVerifier.verify()
-        syncService.syncAll()
     }
 }

@@ -12,7 +12,10 @@ class PocketBaseConnectionVerifier(
 ) {
     suspend fun verify() {
         val client = pbProvider.client ?: throw PocketBaseConnectionException("PocketBase client is not configured")
+        verify(client)
+    }
 
+    suspend fun verify(client: PocketbaseClient) {
         runCatching { healthCheck(client) }
             .onFailure { log.e(it) { "PocketBase health check failed" } }
             .getOrElse { throw PocketBaseConnectionException("PocketBase health check failed", it) }

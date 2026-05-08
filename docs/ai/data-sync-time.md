@@ -49,7 +49,10 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - Normal synced deletes are pushed as durable PocketBase tombstones with `isDeleted = true`; do not hard-delete server rows for app deletes.
 - Pull remote tombstones by upserting synced local tombstones.
 - Hard-delete locally only for never-synced tombstones with no `pbId`.
-- After a successful full fetch, physically missing server rows are treated as damage/manual deletion: synced active local rows absent from the remote `localId` set are marked unsynced for recreation.
+- After a successful non-empty full fetch, physically missing server rows are treated as damage/manual deletion: synced active local rows absent from the remote `localId` set are marked unsynced for recreation.
+- If a remote collection fetch returns zero rows while synced active local rows exist, treat sync as degraded and skip missing-row recovery; do not automatically recreate wiped collections during normal sync.
+- Remote `task_tags` rows whose task or tag parent is missing are skipped and reported as degraded sync while valid links continue to merge.
+- A collection push must be skipped when that collection's pull failed; dependent pushes must also be skipped when parent pulls fail.
 - Push bookkeeping must mark rows synced only if `updatedAt` and `isDeleted` still match the pushed state.
 - Task-tag assignments sync through `task_tags` with derived `localId = "$taskId:$tagId"` and local primary key `(taskId, tagId)`.
 - `tasks.subtasks` is a synced JSON array string for editor subtask state. Each entry must contain exactly `id`, `text`, and `isChecked`; blank subtask rows are dropped before save. Existing task content is not automatically migrated into this field.

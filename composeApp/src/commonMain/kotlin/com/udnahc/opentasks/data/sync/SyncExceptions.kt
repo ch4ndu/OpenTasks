@@ -5,6 +5,11 @@ class SyncAdapterException(
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
+class SyncDegradedException(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause)
+
 data class SyncCollectionFailure(
     val collectionName: String,
     val operation: String,

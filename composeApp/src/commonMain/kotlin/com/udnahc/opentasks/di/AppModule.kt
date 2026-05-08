@@ -47,6 +47,7 @@ import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
+import com.udnahc.opentasks.domain.action.settings.ConfigurePocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarListDisplayModePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAction
@@ -201,7 +202,8 @@ val sharedModule = module {
     single { ClearPocketBaseUrlAction(get(), get()) }
     single { TriggerSyncAction(get(), get()) }
     single<SyncTrigger> { get<TriggerSyncAction>() }
-    single { InitializeSyncAction(get(), get(), get()) }
+    single { ConfigurePocketBaseUrlAction(get(), get()) }
+    single { InitializeSyncAction(get(), get()) }
     single { SaveTaskSortOptionAction(get()) }
     single { SaveTaskListViewModeAction(get()) }
     single { UpdateTaskStatusAction(get(), get()) }
@@ -216,7 +218,7 @@ val sharedModule = module {
     single { TaskSyncAdapter(get()) }
     single { CategorySyncAdapter(get()) }
     single { TagSyncAdapter(get()) }
-    single { TaskTagSyncAdapter(get()) }
+    single { TaskTagSyncAdapter(get(), get()) }
     single { NoteSyncAdapter(get()) }
     single { CountdownSyncAdapter(get()) }
     single {
