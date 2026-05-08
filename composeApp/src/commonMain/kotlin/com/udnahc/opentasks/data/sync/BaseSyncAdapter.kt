@@ -95,7 +95,6 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                     } else {
                         val error = created.exceptionOrNull()
                         if (error != null) {
-                            log.e(error) { "Failed to create $collectionName $entityLocalId" }
                             val recovered = recoverCreateFailureByLocalId(
                                 client = client,
                                 localId = entityLocalId,
@@ -105,6 +104,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                             if (recovered) {
                                 markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
                             } else {
+                                log.e(error) { "Failed to create $collectionName $entityLocalId" }
                                 failures += error
                             }
                         }
