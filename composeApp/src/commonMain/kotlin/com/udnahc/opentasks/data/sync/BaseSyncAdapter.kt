@@ -96,7 +96,17 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                         val error = created.exceptionOrNull()
                         if (error != null) {
                             log.e(error) { "Failed to create $collectionName $entityLocalId" }
-                            failures += error
+                            val recovered = recoverCreateFailureByLocalId(
+                                client = client,
+                                localId = entityLocalId,
+                                updatedAt = entityUpdatedAt,
+                                body = body,
+                            )
+                            if (recovered) {
+                                markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
+                            } else {
+                                failures += error
+                            }
                         }
                     }
                 }
@@ -188,6 +198,30 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         updatePbIdSafely(localId, serverId)
         return runCatching { updateRecord(client, serverId, body) }
             .onFailure { log.e(it) { "Failed to update recovered $collectionName $localId" } }
+            .isSuccess
+    }
+
+    private suspend fun recoverCreateFailureByLocalId(
+        client: PocketbaseClient,
+        localId: String,
+        updatedAt: Long,
+        body: String,
+    ): Boolean {
+        log.w { "Create failed for $collectionName $localId; looking up existing server row by localId" }
+        val existing = runCatching { findRecordByLocalId(client, localId) }
+            .onFailure { log.e(it) { "Failed localId lookup after create failure for $collectionName $localId" } }
+            .getOrNull()
+            ?: return false
+        val serverId = existing.id ?: return false
+
+        updatePbIdSafely(localId, serverId)
+        if (recordUpdatedAt(existing) > updatedAt) {
+            upsert(toEntity(existing))
+            return true
+        }
+
+        return runCatching { updateRecord(client, serverId, body) }
+            .onFailure { log.e(it) { "Failed to update existing $collectionName $localId after create conflict" } }
             .isSuccess
     }
 

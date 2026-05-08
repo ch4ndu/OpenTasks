@@ -14,6 +14,7 @@ import com.udnahc.opentasks.data.sync.records.toTag
 import com.udnahc.opentasks.data.sync.records.toTagRecord
 import com.udnahc.opentasks.data.sync.records.toTask
 import com.udnahc.opentasks.data.sync.records.toTaskRecord
+import com.udnahc.opentasks.data.sync.records.TaskRecord
 import com.udnahc.opentasks.data.sync.records.toTaskTag
 import com.udnahc.opentasks.data.sync.records.toTaskTagRecord
 import com.udnahc.opentasks.testutil.testCategory
@@ -25,6 +26,8 @@ import com.udnahc.opentasks.testutil.testTaskTag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
 class SyncRecordMappingTest {
     @Test
@@ -53,6 +56,22 @@ class SyncRecordMappingTest {
         assertTrue(roundTrip.isSynced)
         assertEquals(task.isDeleted, roundTrip.isDeleted)
         assertEquals(task.updatedAt, roundTrip.updatedAt)
+    }
+
+    @Test
+    fun taskRecordTreatsNullSubtasksAsEmpty() {
+        val record = Json.decodeFromString<TaskRecord>(
+            """
+            {
+              "id": "pb-task",
+              "localId": "task-1",
+              "title": "Task",
+              "subtasks": null
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("", record.toTask().subtasks)
     }
 
     @Test

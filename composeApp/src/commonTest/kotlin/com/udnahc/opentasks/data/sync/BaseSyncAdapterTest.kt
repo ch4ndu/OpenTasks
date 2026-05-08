@@ -147,6 +147,21 @@ class BaseSyncAdapterTest {
     }
 
     @Test
+    fun duplicateCreateRecoversByLocalIdAndUpdatesServerRow() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(FakeEntity(id = "one", value = "local", synced = false, updatedAt = 30)),
+            remote = mutableListOf(FakeRecord(localId = "one", value = "remote", updatedAt = 20).withId("pb-one")),
+            failCreate = true,
+        )
+
+        adapter.pushAll(client)
+
+        assertEquals("pb-one", adapter.local.single().pbId)
+        assertEquals("local", adapter.remote.single().value)
+        assertTrue(adapter.local.single().synced)
+    }
+
+    @Test
     fun syncServiceContinuesThroughAdaptersAndReportsFinalFailure() = runBlocking {
         val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
         val failing = FakeAdapter(
