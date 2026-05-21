@@ -49,6 +49,9 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         body: String,
         triggerAtMillis: Long,
         reminderId: Int,
+        occurrenceDeadlineUtcMillis: Long?,
+        allowMarkDone: Boolean,
+        rescheduleAfterFire: Boolean,
     ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
@@ -66,6 +69,9 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             putExtra(EXTRA_TITLE, title)
             putExtra(EXTRA_BODY, body)
             putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+            occurrenceDeadlineUtcMillis?.let { putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, it) }
+            putExtra(EXTRA_ALLOW_MARK_DONE, allowMarkDone)
+            putExtra(EXTRA_RESCHEDULE_AFTER_FIRE, rescheduleAfterFire)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -103,8 +109,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
     actual override fun cancelReminders(taskId: String) {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        // Loop 0..98 — skip 99 (ongoing foreground service, managed by stopOngoing())
-        for (i in 0 until MAX_REMINDERS_PER_TASK - 1) {
+        for (i in REMINDER_NOTIFICATION_IDS) {
             cancel(taskId, i)
             notificationManager.cancel(notificationId(taskId, i))
         }
@@ -115,15 +120,23 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         stopOngoing(taskId)
     }
 
-    actual override fun startOngoing(taskId: String, title: String) {
+    actual override fun startOngoing(
+        taskId: String,
+        title: String,
+        occurrenceDeadlineUtcMillis: Long?,
+    ) {
         log.d { "Starting ongoing notification for task=$taskId" }
         logOngoingChannelState()
-        showOngoingNotification(taskId, title)
+        showOngoingNotification(taskId, title, occurrenceDeadlineUtcMillis)
     }
 
-    private fun showOngoingNotification(taskId: String, title: String) {
+    private fun showOngoingNotification(
+        taskId: String,
+        title: String,
+        occurrenceDeadlineUtcMillis: Long?,
+    ) {
         val notificationId = notificationId(taskId, ONGOING_REMINDER_ID)
-        val notification = buildOngoingNotification(taskId, title, notificationId)
+        val notification = buildOngoingNotification(taskId, title, notificationId, occurrenceDeadlineUtcMillis)
         try {
             NotificationManagerCompat.from(context).notify(notificationId, notification)
             log.d { "Posted ongoing notification for task=$taskId notificationId=$notificationId" }
@@ -136,6 +149,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         taskId: String,
         title: String,
         notificationId: Int,
+        occurrenceDeadlineUtcMillis: Long?,
     ): android.app.Notification {
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -145,17 +159,6 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             context,
             notificationId,
             tapIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
-        val markDoneIntent = Intent(context, NotificationActionReceiver::class.java).apply {
-            action = ACTION_MARK_DONE
-            putExtra(EXTRA_TASK_ID, taskId)
-        }
-        val markDonePendingIntent = PendingIntent.getBroadcast(
-            context,
-            notificationId + 1,
-            markDoneIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
@@ -177,7 +180,11 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(tapPendingIntent)
-            .addAction(0, context.getString(R.string.notification_action_mark_done), markDonePendingIntent)
+            .addAction(
+                0,
+                context.getString(R.string.notification_action_mark_done),
+                markDonePendingIntent(context, taskId, notificationId, occurrenceDeadlineUtcMillis),
+            )
             .addAction(0, context.getString(R.string.notification_action_got_it), gotItPendingIntent)
             .build()
     }
@@ -214,12 +221,50 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         const val EXTRA_TITLE = "title"
         const val EXTRA_BODY = "body"
         const val EXTRA_NOTIFICATION_ID = "notification_id"
+        const val EXTRA_OCCURRENCE_DEADLINE_UTC = "occurrence_deadline_utc"
+        const val EXTRA_ALLOW_MARK_DONE = "allow_mark_done"
+        const val EXTRA_RESCHEDULE_AFTER_FIRE = "reschedule_after_fire"
         const val ACTION_MARK_DONE = "com.udnahc.opentasks.ACTION_MARK_DONE"
         const val ACTION_GOT_IT = "com.udnahc.opentasks.ACTION_GOT_IT"
-        private const val MAX_REMINDERS_PER_TASK = 100
         private const val ONGOING_REMINDER_ID = 99
+        private val REMINDER_NOTIFICATION_IDS = 0 until ONGOING_REMINDER_ID
 
         fun notificationId(taskId: String, reminderId: Int): Int =
             "$taskId:$reminderId".hashCode().and(0x7FFFFFFF)
+
+        fun markDonePendingIntent(
+            context: Context,
+            taskId: String,
+            notificationId: Int,
+            occurrenceDeadlineUtcMillis: Long?,
+        ): PendingIntent {
+            val intent = Intent(context, NotificationActionReceiver::class.java).apply {
+                action = ACTION_MARK_DONE
+                putExtra(EXTRA_TASK_ID, taskId)
+                putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+                occurrenceDeadlineUtcMillis?.let { putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, it) }
+            }
+            return PendingIntent.getBroadcast(
+                context,
+                markDoneRequestCode(notificationId),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+
+        fun cancelDisplayedReminders(
+            context: Context,
+            eventId: String,
+            exceptNotificationId: Int? = null,
+        ) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            REMINDER_NOTIFICATION_IDS
+                .map { notificationId(eventId, it) }
+                .filter { it != exceptNotificationId }
+                .forEach(manager::cancel)
+        }
+
+        private fun markDoneRequestCode(notificationId: Int): Int =
+            "mark_done:$notificationId".hashCode().and(0x7FFFFFFF)
     }
 }

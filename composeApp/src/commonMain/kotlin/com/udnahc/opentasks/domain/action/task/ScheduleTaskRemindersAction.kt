@@ -1,8 +1,10 @@
 package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
+import com.udnahc.opentasks.data.extensions.computeNextDeadlineUtc
 import com.udnahc.opentasks.data.extensions.utcNow
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
+import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
@@ -44,6 +46,17 @@ internal data class ReminderTrigger(
     val triggerAtUtcMillis: Long,
 )
 
+private data class DurationReminderTrigger(
+    val index: Int,
+    val minutesForLabel: Int,
+    val triggerAtUtcMillis: Long,
+)
+
+private data class SchedulingOccurrence(
+    val deadlineUtcMillis: Long,
+    val endDeadlineUtcMillis: Long?,
+)
+
 class ScheduleTaskRemindersAction(
     private val scheduler: ReminderScheduler,
     private val taskRepository: TaskRepository,
@@ -65,6 +78,17 @@ class ScheduleTaskRemindersAction(
         scheduleForTask(task)
     }
 
+    suspend fun invokeAfterOccurrence(taskId: String, occurrenceDeadlineUtcMillis: Long) {
+        val task = taskRepository.getTaskByIdUtc(taskId)
+        if (task == null) {
+            log.d { "Task $taskId not found, cancelling reminders" }
+            scheduler.cancelReminders(taskId)
+            scheduler.stopOngoing(taskId)
+            return
+        }
+        scheduleForTask(task, afterOccurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis)
+    }
+
     /**
      * Schedule reminders for a task that already has raw UTC timestamps.
      * Used by RescheduleAllRemindersAction which bulk-reads from the UTC path.
@@ -73,7 +97,10 @@ class ScheduleTaskRemindersAction(
         scheduleForTask(task)
     }
 
-    private suspend fun scheduleForTask(task: Task) {
+    private suspend fun scheduleForTask(
+        task: Task,
+        afterOccurrenceDeadlineUtcMillis: Long? = null,
+    ) {
         log.d { "Scheduling reminders for task ${task.id}" }
         scheduler.cancelReminders(task.id)
         scheduler.stopOngoing(task.id)
@@ -84,13 +111,36 @@ class ScheduleTaskRemindersAction(
         }
 
         val now = nowUtcMillisProvider()
-        scheduleAllDayOngoingIfNeeded(task, now)
+        val occurrence = task.schedulingOccurrence(now, afterOccurrenceDeadlineUtcMillis) ?: return
+        val taskForOccurrence = task.copy(
+            deadline = occurrence.deadlineUtcMillis,
+            endDeadline = occurrence.endDeadlineUtcMillis,
+        )
 
-        val dateReminderValues = task.dateReminders.parseMinuteValues()
-        val durationReminderValues = task.durationReminders.parseMinuteValues()
+        scheduleAllDayOngoingIfNeeded(taskForOccurrence, now)
+
+        val dateReminderValues = taskForOccurrence.dateReminders.parseMinuteValues()
+        val durationReminderValues = taskForOccurrence.durationReminders.parseMinuteValues()
         val dateReminderTriggers = dateReminderValues
-            .map { mins -> ReminderTrigger(mins, task.deadline - (mins.toLong() * MILLIS_PER_MINUTE)) }
-            .ifEmpty { task.legacyReminderTriggers() }
+            .map { mins -> ReminderTrigger(mins, occurrence.deadlineUtcMillis - (mins.toLong() * MILLIS_PER_MINUTE)) }
+            .ifEmpty { taskForOccurrence.legacyReminderTriggers() }
+        val durationReminderTriggers = durationReminderValues.mapIndexedNotNull { index, mins ->
+            val triggerAt = if (mins == -1) {
+                taskForOccurrence.endDeadline ?: return@mapIndexedNotNull null
+            } else {
+                occurrence.deadlineUtcMillis - (mins * MILLIS_PER_MINUTE)
+            }
+            DurationReminderTrigger(index, mins, triggerAt)
+        }
+        val hasDueNowReminder = dateReminderTriggers.any { it.triggerAtUtcMillis == occurrence.deadlineUtcMillis }
+        val overdueTriggerAt = occurrence.deadlineUtcMillis.takeIf { it > now && !hasDueNowReminder }
+        val lastScheduledTriggerAt = (
+            dateReminderTriggers.map { it.triggerAtUtcMillis } +
+                durationReminderTriggers.map { it.triggerAtUtcMillis } +
+                listOfNotNull(overdueTriggerAt)
+            )
+            .filter { it > now }
+            .maxOrNull()
 
         // Date reminders (minutes before deadline, stored as ReminderOption.minutesValue)
         dateReminderTriggers.forEachIndexed { index, trigger ->
@@ -102,6 +152,10 @@ class ScheduleTaskRemindersAction(
                     body = dueReminderBody(trigger.minutesForLabel),
                     triggerAtMillis = trigger.triggerAtUtcMillis,
                     reminderId = index,
+                    occurrenceDeadlineUtcMillis = occurrence.deadlineUtcMillis,
+                    allowMarkDone = trigger.triggerAtUtcMillis == occurrence.deadlineUtcMillis,
+                    rescheduleAfterFire = task.recurrenceType != RecurrenceType.NONE &&
+                        trigger.triggerAtUtcMillis == lastScheduledTriggerAt,
                 )
             } else {
                 log.v { "Skipped past date reminder $index at ${trigger.triggerAtUtcMillis}" }
@@ -109,52 +163,51 @@ class ScheduleTaskRemindersAction(
         }
 
         // Duration reminders (minutes before deadline)
-        durationReminderValues.forEachIndexed { index, mins ->
-            val triggerAt = if (mins == -1) {
-                // AT_THE_END: fire at endDeadline if available, skip otherwise
-                task.endDeadline ?: return@forEachIndexed
-            } else {
-                task.deadline - (mins * MILLIS_PER_MINUTE)
-            }
+        durationReminderTriggers.forEach { trigger ->
+            val triggerAt = trigger.triggerAtUtcMillis
             if (triggerAt > now) {
-                log.v { "Scheduled duration reminder $index at $triggerAt" }
+                log.v { "Scheduled duration reminder ${trigger.index} at $triggerAt" }
                 scheduler.schedule(
-                    taskId = task.id,
-                    title = task.title,
-                    body = if (mins == -1) {
+                    taskId = taskForOccurrence.id,
+                    title = taskForOccurrence.title,
+                    body = if (trigger.minutesForLabel == -1) {
                         getString(Res.string.task_reminder_ending_now)
                     } else {
-                        startingReminderBody(mins)
+                        startingReminderBody(trigger.minutesForLabel)
                     },
                     triggerAtMillis = triggerAt,
-                    reminderId = DURATION_REMINDER_OFFSET + index,
+                    reminderId = DURATION_REMINDER_OFFSET + trigger.index,
+                    occurrenceDeadlineUtcMillis = occurrence.deadlineUtcMillis,
+                    allowMarkDone = false,
+                    rescheduleAfterFire = task.recurrenceType != RecurrenceType.NONE &&
+                        triggerAt == lastScheduledTriggerAt,
                 )
             } else {
-                log.v { "Skipped past duration reminder $index at $triggerAt" }
+                log.v { "Skipped past duration reminder ${trigger.index} at $triggerAt" }
             }
         }
 
         // Overdue notification — fires at the moment the deadline passes
         // Skip if a zero-minute date reminder already fires at the same time.
-        val hasDueNowReminder = dateReminderTriggers.any { it.triggerAtUtcMillis == task.deadline } ||
-            durationReminderValues.any { mins ->
-                if (mins == -1) task.endDeadline == task.deadline else mins == 0
-            }
-
-        if (task.deadline > now && !hasDueNowReminder) {
-            log.v { "Scheduled overdue notification at ${task.deadline}" }
+        if (overdueTriggerAt != null) {
+            log.v { "Scheduled overdue notification at ${occurrence.deadlineUtcMillis}" }
             scheduler.schedule(
-                taskId = task.id,
-                title = task.title,
+                taskId = taskForOccurrence.id,
+                title = taskForOccurrence.title,
                 body = getString(Res.string.task_reminder_overdue),
-                triggerAtMillis = task.deadline,
+                triggerAtMillis = overdueTriggerAt,
                 reminderId = OVERDUE_REMINDER_ID,
+                occurrenceDeadlineUtcMillis = occurrence.deadlineUtcMillis,
+                allowMarkDone = true,
+                rescheduleAfterFire = task.recurrenceType != RecurrenceType.NONE &&
+                    overdueTriggerAt == lastScheduledTriggerAt,
             )
         }
     }
 
     private suspend fun scheduleAllDayOngoingIfNeeded(task: Task, now: Long) {
         if (!task.isAllDay) return
+        val occurrenceDeadline = task.deadline ?: return
         if (!task.isDueToday(now)) {
             log.d { "Skipped all-day ongoing notification for task ${task.id}: not due today" }
             return
@@ -164,7 +217,11 @@ class ScheduleTaskRemindersAction(
             return
         }
         log.d { "Starting all-day ongoing notification for task ${task.id}" }
-        scheduler.startOngoing(task.id, task.title)
+        scheduler.startOngoing(
+            task.id,
+            task.title,
+            occurrenceDeadlineUtcMillis = occurrenceDeadline,
+        )
     }
 
     private fun Task.isDueToday(now: Long): Boolean {
@@ -177,6 +234,77 @@ class ScheduleTaskRemindersAction(
 
     private fun String.parseMinuteValues(): List<Int> =
         split(",").mapNotNull { it.trim().toIntOrNull() }
+
+    private fun Task.schedulingOccurrence(
+        now: Long,
+        afterOccurrenceDeadlineUtcMillis: Long?,
+    ): SchedulingOccurrence? {
+        val storedDeadline = deadline ?: return null
+        val occurrenceDeadline = if (recurrenceType == RecurrenceType.NONE) {
+            storedDeadline
+        } else if (isAllDay) {
+            firstAllDayOccurrenceOnOrAfterToday(storedDeadline, now, afterOccurrenceDeadlineUtcMillis)
+        } else {
+            firstTimedOccurrenceAfterNow(storedDeadline, now, afterOccurrenceDeadlineUtcMillis)
+        }
+        val duration = endDeadline?.let { it - storedDeadline }
+        return SchedulingOccurrence(
+            deadlineUtcMillis = occurrenceDeadline,
+            endDeadlineUtcMillis = duration?.let { occurrenceDeadline + it },
+        )
+    }
+
+    private fun Task.firstTimedOccurrenceAfterNow(
+        storedDeadline: Long,
+        now: Long,
+        afterOccurrenceDeadlineUtcMillis: Long?,
+    ): Long {
+        var candidate = storedDeadline
+        if (afterOccurrenceDeadlineUtcMillis != null) {
+            while (candidate <= afterOccurrenceDeadlineUtcMillis) {
+                candidate = computeNextDeadlineUtc(
+                    currentDeadlineUtcMillis = candidate,
+                    recurrenceType = recurrenceType.name,
+                    interval = recurrenceInterval,
+                )
+            }
+        }
+        while (candidate <= now) {
+            candidate = computeNextDeadlineUtc(
+                currentDeadlineUtcMillis = candidate,
+                recurrenceType = recurrenceType.name,
+                interval = recurrenceInterval,
+            )
+        }
+        return candidate
+    }
+
+    private fun Task.firstAllDayOccurrenceOnOrAfterToday(
+        storedDeadline: Long,
+        now: Long,
+        afterOccurrenceDeadlineUtcMillis: Long?,
+    ): Long {
+        val timeZone = TimeZone.currentSystemDefault()
+        val today = Instant.fromEpochMilliseconds(now).toLocalDateTime(timeZone).date
+        var candidate = storedDeadline
+        if (afterOccurrenceDeadlineUtcMillis != null) {
+            while (candidate <= afterOccurrenceDeadlineUtcMillis) {
+                candidate = computeNextDeadlineUtc(
+                    currentDeadlineUtcMillis = candidate,
+                    recurrenceType = recurrenceType.name,
+                    interval = recurrenceInterval,
+                )
+            }
+        }
+        while (Instant.fromEpochMilliseconds(candidate).toLocalDateTime(timeZone).date < today) {
+            candidate = computeNextDeadlineUtc(
+                currentDeadlineUtcMillis = candidate,
+                recurrenceType = recurrenceType.name,
+                interval = recurrenceInterval,
+            )
+        }
+        return candidate
+    }
 
     private suspend fun dueReminderBody(minutes: Int): String = when {
         minutes == 0 -> getString(Res.string.task_reminder_due_now)

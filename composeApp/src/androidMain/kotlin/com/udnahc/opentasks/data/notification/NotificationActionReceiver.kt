@@ -3,6 +3,8 @@ package com.udnahc.opentasks.data.notification
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.udnahc.opentasks.data.extensions.utcToLocal
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import kotlinx.coroutines.CoroutineScope
@@ -44,11 +46,33 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
                         val task = taskRepository.getTaskById(taskId)
-                        if (task != null) {
-                            // Use ToggleTaskCompleteAction so recurring tasks advance correctly
-                            toggleTaskCompleteAction(task)
+                        if (task == null) {
+                            log.d { "Task $taskId not found for Mark Done action" }
+                            return@launch
                         }
-                        notificationScheduler.cancelAll(taskId)
+                        val occurrenceDeadlineLocalMillis = intent.occurrenceDeadlineUtcMillis()?.let { utcToLocal(it) }
+                        if (task.status == TaskStatus.DONE) {
+                            NotificationScheduler.cancelDisplayedReminders(context, taskId)
+                            notificationScheduler.stopOngoing(taskId)
+                            return@launch
+                        }
+                        if (
+                            occurrenceDeadlineLocalMillis != null &&
+                            task.deadline != null &&
+                            task.deadline > occurrenceDeadlineLocalMillis
+                        ) {
+                            log.d { "Ignoring stale Mark Done action for task $taskId" }
+                            NotificationScheduler.cancelDisplayedReminders(context, taskId)
+                            notificationScheduler.stopOngoing(taskId)
+                            return@launch
+                        }
+                        // Use ToggleTaskCompleteAction so recurring tasks advance correctly.
+                        toggleTaskCompleteAction(
+                            task = task,
+                            occurrenceDeadlineLocalMillis = occurrenceDeadlineLocalMillis,
+                        )
+                        NotificationScheduler.cancelDisplayedReminders(context, taskId)
+                        notificationScheduler.stopOngoing(taskId)
                     } catch (e: Exception) {
                         log.e(e) { "Failed to handle Mark Done action for task $taskId" }
                     } finally {
@@ -58,4 +82,11 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
             }
         }
     }
+
+    private fun Intent.occurrenceDeadlineUtcMillis(): Long? =
+        if (hasExtra(NotificationScheduler.EXTRA_OCCURRENCE_DEADLINE_UTC)) {
+            getLongExtra(NotificationScheduler.EXTRA_OCCURRENCE_DEADLINE_UTC, 0L)
+        } else {
+            null
+        }
 }

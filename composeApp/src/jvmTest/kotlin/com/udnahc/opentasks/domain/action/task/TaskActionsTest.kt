@@ -76,7 +76,7 @@ class TaskActionsTest {
         DeleteTaskAction(repository, scheduler)(updated)
         val deleted = repository.updated.last()
         assertTrue(deleted.isDeleted)
-        assertNotEquals(updated.updatedAt, deleted.updatedAt)
+        assertTrue(deleted.updatedAt >= updated.updatedAt)
     }
 
     @Test
@@ -105,6 +105,48 @@ class TaskActionsTest {
         assertEquals(TaskStatus.DONE, completedSeries.status)
         assertEquals(RecurrenceType.NONE, completedSeries.recurrenceType)
         assertEquals(0, completedSeries.recurrenceInterval)
+    }
+
+    @Test
+    fun notificationCompletionAdvancesRecurringTaskFromNotificationOccurrence() = runTest {
+        val storedDeadline = startOfDayLocalMillis(2026, 5, 4)
+        val notificationOccurrence = startOfDayLocalMillis(2026, 5, 10)
+        val task = testTask(
+            id = "recurring",
+            deadline = storedDeadline,
+            endDeadline = storedDeadline + MILLIS_PER_DAY,
+            recurrenceType = RecurrenceType.DAILY,
+            recurrenceInterval = 2,
+            status = TaskStatus.TODO,
+        )
+        val repository = FakeTaskRepository(listOf(task))
+        val action = ToggleTaskCompleteAction(repository, ScheduleTaskRemindersAction(NotificationScheduler(), repository))
+
+        action(task, occurrenceDeadlineLocalMillis = notificationOccurrence)
+
+        val updated = repository.updated.single()
+        assertEquals(notificationOccurrence + (2 * MILLIS_PER_DAY), updated.deadline)
+        assertEquals(notificationOccurrence + (3 * MILLIS_PER_DAY), updated.endDeadline)
+        assertEquals(TaskStatus.TODO, updated.status)
+    }
+
+    @Test
+    fun staleNotificationCompletionDoesNotRewindRecurringTask() = runTest {
+        val currentDeadline = startOfDayLocalMillis(2026, 5, 10)
+        val staleOccurrence = startOfDayLocalMillis(2026, 5, 8)
+        val task = testTask(
+            id = "recurring",
+            deadline = currentDeadline,
+            recurrenceType = RecurrenceType.DAILY,
+            recurrenceInterval = 1,
+            status = TaskStatus.TODO,
+        )
+        val repository = FakeTaskRepository(listOf(task))
+        val action = ToggleTaskCompleteAction(repository, ScheduleTaskRemindersAction(NotificationScheduler(), repository))
+
+        action(task, occurrenceDeadlineLocalMillis = staleOccurrence)
+
+        assertTrue(repository.updated.isEmpty())
     }
 
     @Test

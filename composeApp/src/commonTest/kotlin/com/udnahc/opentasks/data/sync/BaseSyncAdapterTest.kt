@@ -305,10 +305,54 @@ class BaseSyncAdapterTest {
     @Test
     fun configurePocketBaseUrlNoOpsWhenNoUrlIsSaved() = runBlocking {
         val provider = PocketBaseClientProvider()
-        val configured = ConfigurePocketBaseUrlAction(FakeAppSettingsRepository(), provider)()
+        val configured = ConfigurePocketBaseUrlAction(
+            FakeAppSettingsRepository(),
+            provider,
+            buildTimePocketBaseUrl = "",
+        )()
 
         assertFalse(configured)
         assertFalse(provider.isConfigured)
+    }
+
+    @Test
+    fun configurePocketBaseUrlUsesBuildTimeUrlWhenNoUrlIsSaved() = runBlocking {
+        val provider = PocketBaseClientProvider()
+        val configured = ConfigurePocketBaseUrlAction(
+            FakeAppSettingsRepository(),
+            provider,
+            buildTimePocketBaseUrl = "http://build.example:8090",
+        )()
+
+        assertTrue(configured)
+        assertEquals("build.example", provider.endpoint?.host)
+        assertEquals(8090, provider.endpoint?.port)
+    }
+
+    @Test
+    fun configurePocketBaseUrlUsesBuildTimeUrlWhenSavedUrlIsBlank() = runBlocking {
+        val provider = PocketBaseClientProvider()
+        val configured = ConfigurePocketBaseUrlAction(
+            FakeAppSettingsRepository(mapOf(KEY_POCKETBASE_URL to "")),
+            provider,
+            buildTimePocketBaseUrl = "http://build.example:8090",
+        )()
+
+        assertTrue(configured)
+        assertEquals("build.example", provider.endpoint?.host)
+    }
+
+    @Test
+    fun configurePocketBaseUrlPrefersSavedUrlOverBuildTimeUrl() = runBlocking {
+        val provider = PocketBaseClientProvider()
+        val configured = ConfigurePocketBaseUrlAction(
+            FakeAppSettingsRepository(mapOf(KEY_POCKETBASE_URL to "http://saved.example:8090")),
+            provider,
+            buildTimePocketBaseUrl = "http://build.example:8090",
+        )()
+
+        assertTrue(configured)
+        assertEquals("saved.example", provider.endpoint?.host)
     }
 
     @Test

@@ -1,6 +1,79 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.compose.compiler.gradle.ComposeFeatureFlag
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+import java.util.Properties
+
+abstract class GenerateLocalSyncDefaultsTask : DefaultTask() {
+    @get:Optional
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val localProperties: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @get:Input
+    abstract val pocketBaseUrl: Property<String>
+
+    @TaskAction
+    fun generate() {
+        val props = Properties()
+        val localPropertiesFile = localProperties.asFile.get()
+        if (localPropertiesFile.isFile) {
+            localPropertiesFile.inputStream().use(props::load)
+        }
+        val url = props.getProperty("opentasks.pocketbase.url")
+            ?: pocketBaseUrl.get()
+        val packageDir = outputDir.file("com/udnahc/opentasks").get().asFile
+        packageDir.mkdirs()
+        packageDir.resolve("LocalSyncDefaults.kt").writeText(
+            """
+            package com.udnahc.opentasks
+
+            object LocalSyncDefaults {
+                const val POCKETBASE_URL: String = ${url.kotlinLiteral()}
+            }
+            """.trimIndent()
+        )
+    }
+
+    private fun String.kotlinLiteral(): String =
+        buildString {
+            append('"')
+            this@kotlinLiteral.forEach { char ->
+                when (char) {
+                    '\\' -> append("\\\\")
+                    '"' -> append("\\\"")
+                    '\n' -> append("\\n")
+                    '\r' -> append("\\r")
+                    '\t' -> append("\\t")
+                    else -> append(char)
+                }
+            }
+            append('"')
+        }
+}
+
+val generateLocalSyncDefaults by tasks.registering(GenerateLocalSyncDefaultsTask::class) {
+    localProperties.set(rootProject.layout.projectDirectory.file("local.properties"))
+    pocketBaseUrl.set(
+        providers.gradleProperty("opentasks.pocketbase.url")
+            .orElse(providers.environmentVariable("OPENTASKS_POCKETBASE_URL"))
+            .orElse("")
+    )
+    outputDir.set(layout.buildDirectory.dir("generated/source/localSyncDefaults/commonMain/kotlin"))
+}
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -34,6 +107,9 @@ kotlin {
     jvm()
     
     sourceSets {
+        commonMain {
+            kotlin.srcDir(generateLocalSyncDefaults)
+        }
         androidMain.dependencies {
             implementation(libs.compose.uiTooling)
             implementation(libs.compose.uiToolingPreview)

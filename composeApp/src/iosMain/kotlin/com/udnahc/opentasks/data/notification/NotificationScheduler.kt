@@ -20,6 +20,9 @@ actual class NotificationScheduler : ReminderScheduler {
         body: String,
         triggerAtMillis: Long,
         reminderId: Int,
+        occurrenceDeadlineUtcMillis: Long?,
+        allowMarkDone: Boolean,
+        rescheduleAfterFire: Boolean,
     ) {
         val identifier = requestId(taskId, reminderId)
         center.removePendingNotificationRequestsWithIdentifiers(listOf(identifier))
@@ -29,6 +32,7 @@ actual class NotificationScheduler : ReminderScheduler {
             setTitle(title)
             setBody(body)
             setSound(UNNotificationSound.defaultSound)
+            setThreadIdentifier("opentasks_reminder_$taskId")
             setUserInfo(mapOf(NOTIFICATION_DEEP_LINK_EVENT_ID_KEY to taskId))
         }
 
@@ -77,7 +81,11 @@ actual class NotificationScheduler : ReminderScheduler {
         stopOngoing(taskId)
     }
 
-    actual override fun startOngoing(taskId: String, title: String) {
+    actual override fun startOngoing(
+        taskId: String,
+        title: String,
+        occurrenceDeadlineUtcMillis: Long?,
+    ) {
         stopOngoing(taskId)
     }
 

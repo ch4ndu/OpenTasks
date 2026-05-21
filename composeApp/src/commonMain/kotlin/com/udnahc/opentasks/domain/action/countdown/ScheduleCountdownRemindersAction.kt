@@ -66,6 +66,9 @@ class ScheduleCountdownRemindersAction(
                     body = reminderBody(offsetMinutes),
                     triggerAtMillis = triggerAt,
                     reminderId = index,
+                    occurrenceDeadlineUtcMillis = null,
+                    allowMarkDone = false,
+                    rescheduleAfterFire = false,
                 )
             }
         }

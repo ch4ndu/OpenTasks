@@ -1,6 +1,8 @@
 package com.udnahc.opentasks.domain.action.task
 
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_HOUR
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
+import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.ReminderScheduler
@@ -125,6 +127,136 @@ class ScheduleTaskRemindersActionTest {
     }
 
     @Test
+    fun pastRecurringTaskSchedulesNextFutureOccurrenceWithoutUpdatingStoredDeadline() = runTest {
+        val timeZone = TimeZone.currentSystemDefault()
+        val now = LocalDateTime(2026, 5, 10, 11, 30).toInstant(timeZone).toEpochMilliseconds()
+        val storedDeadline = LocalDateTime(2026, 5, 8, 13, 0).toInstant(timeZone).toEpochMilliseconds()
+        val nextOccurrence = LocalDateTime(2026, 5, 10, 13, 0).toInstant(timeZone).toEpochMilliseconds()
+        val scheduler = FakeReminderScheduler()
+        val repository = FakeTaskRepository(
+            listOf(
+                testTask(
+                    id = "recurring",
+                    deadline = storedDeadline,
+                    recurrenceType = RecurrenceType.DAILY,
+                    recurrenceInterval = 1,
+                    dateReminders = "60,0",
+                )
+            )
+        )
+        val action = ScheduleTaskRemindersAction(
+            scheduler = scheduler,
+            taskRepository = repository,
+            nowUtcMillisProvider = { now },
+        )
+
+        action("recurring")
+
+        assertEquals(storedDeadline, repository.tasks.single().deadline)
+        assertEquals(
+            listOf(nextOccurrence - MILLIS_PER_HOUR, nextOccurrence),
+            scheduler.scheduled.map { it.triggerAtMillis },
+        )
+        assertEquals(listOf(false, true), scheduler.scheduled.map { it.allowMarkDone })
+        assertEquals(listOf(false, true), scheduler.scheduled.map { it.rescheduleAfterFire })
+        assertEquals(listOf(nextOccurrence, nextOccurrence), scheduler.scheduled.map { it.occurrenceDeadlineUtcMillis })
+    }
+
+    @Test
+    fun durationOnTimeReminderDoesNotSuppressDueNotificationWithMarkDone() = runTest {
+        val timeZone = TimeZone.currentSystemDefault()
+        val now = LocalDateTime(2026, 5, 8, 12, 0).toInstant(timeZone).toEpochMilliseconds()
+        val deadline = LocalDateTime(2026, 5, 8, 13, 0).toInstant(timeZone).toEpochMilliseconds()
+        val scheduler = FakeReminderScheduler()
+        val task = testTask(id = "duration", deadline = deadline, durationReminders = "0")
+        val action = ScheduleTaskRemindersAction(
+            scheduler = scheduler,
+            taskRepository = FakeTaskRepository(listOf(task)),
+            nowUtcMillisProvider = { now },
+        )
+
+        action("duration")
+
+        assertEquals(listOf(false, true), scheduler.scheduled.map { it.allowMarkDone })
+        assertEquals(listOf(false, false), scheduler.scheduled.map { it.rescheduleAfterFire })
+        assertEquals(listOf(deadline, deadline), scheduler.scheduled.map { it.triggerAtMillis })
+    }
+
+    @Test
+    fun nonRecurringPastTaskDoesNotScheduleFutureOccurrence() = runTest {
+        val timeZone = TimeZone.currentSystemDefault()
+        val now = LocalDateTime(2026, 5, 10, 12, 0).toInstant(timeZone).toEpochMilliseconds()
+        val deadline = LocalDateTime(2026, 5, 8, 13, 0).toInstant(timeZone).toEpochMilliseconds()
+        val scheduler = FakeReminderScheduler()
+        val task = testTask(id = "past", deadline = deadline, dateReminders = "0")
+        val action = ScheduleTaskRemindersAction(
+            scheduler = scheduler,
+            taskRepository = FakeTaskRepository(listOf(task)),
+            nowUtcMillisProvider = { now },
+        )
+
+        action("past")
+
+        assertTrue(scheduler.scheduled.isEmpty())
+    }
+
+    @Test
+    fun pastRecurringAllDayTaskStartsOngoingForTodayOccurrence() = runTest {
+        val timeZone = TimeZone.currentSystemDefault()
+        val now = LocalDateTime(2026, 5, 9, 12, 0).toInstant(timeZone).toEpochMilliseconds()
+        val storedDeadline = LocalDateTime(2026, 5, 8, 0, 0).toInstant(timeZone).toEpochMilliseconds()
+        val todayOccurrence = LocalDateTime(2026, 5, 9, 0, 0).toInstant(timeZone).toEpochMilliseconds()
+        val scheduler = FakeReminderScheduler()
+        val task = testTask(
+            id = "all-day",
+            deadline = storedDeadline,
+            isAllDay = true,
+            recurrenceType = RecurrenceType.DAILY,
+            recurrenceInterval = 1,
+        )
+        val action = ScheduleTaskRemindersAction(
+            scheduler = scheduler,
+            taskRepository = FakeTaskRepository(listOf(task)),
+            allDayDismissalStore = AllDayNotificationDismissalStore(FakeAppSettingsRepository()) { now },
+            nowUtcMillisProvider = { now },
+        )
+
+        action("all-day")
+
+        assertEquals(listOf("all-day"), scheduler.startedOngoing)
+        assertEquals(listOf<Long?>(todayOccurrence), scheduler.ongoingOccurrences)
+    }
+
+    @Test
+    fun scheduleAfterOccurrenceMovesRecurringAllDayTaskToNextDay() = runTest {
+        val timeZone = TimeZone.currentSystemDefault()
+        val now = LocalDateTime(2026, 5, 9, 12, 0).toInstant(timeZone).toEpochMilliseconds()
+        val storedDeadline = LocalDateTime(2026, 5, 8, 0, 0).toInstant(timeZone).toEpochMilliseconds()
+        val todayOccurrence = LocalDateTime(2026, 5, 9, 0, 0).toInstant(timeZone).toEpochMilliseconds()
+        val nextOccurrence = LocalDateTime(2026, 5, 10, 0, 0).toInstant(timeZone).toEpochMilliseconds()
+        val scheduler = FakeReminderScheduler()
+        val task = testTask(
+            id = "all-day",
+            deadline = storedDeadline,
+            isAllDay = true,
+            recurrenceType = RecurrenceType.DAILY,
+            recurrenceInterval = 1,
+        )
+        val action = ScheduleTaskRemindersAction(
+            scheduler = scheduler,
+            taskRepository = FakeTaskRepository(listOf(task)),
+            allDayDismissalStore = AllDayNotificationDismissalStore(FakeAppSettingsRepository()) { now },
+            nowUtcMillisProvider = { now },
+        )
+
+        action.invokeAfterOccurrence("all-day", todayOccurrence)
+
+        assertTrue(scheduler.startedOngoing.isEmpty())
+        assertEquals(listOf(nextOccurrence), scheduler.scheduled.map { it.triggerAtMillis })
+        assertEquals(listOf(true), scheduler.scheduled.map { it.rescheduleAfterFire })
+    }
+
+    @Test
     fun legacyMonthReminderUsesCalendarMonthAndPreservesLocalTime() {
         val timeZone = TimeZone.currentSystemDefault()
         val deadlineUtc = LocalDateTime(2026, 3, 31, 10, 30)
@@ -168,9 +300,18 @@ class ScheduleTaskRemindersActionTest {
 }
 
 private class FakeReminderScheduler : ReminderScheduler {
+    data class ScheduledReminder(
+        val triggerAtMillis: Long,
+        val occurrenceDeadlineUtcMillis: Long?,
+        val allowMarkDone: Boolean,
+        val rescheduleAfterFire: Boolean,
+    )
+
     val cancelledReminders = mutableListOf<String>()
     val startedOngoing = mutableListOf<String>()
+    val ongoingOccurrences = mutableListOf<Long?>()
     val scheduledAt = mutableListOf<Long>()
+    val scheduled = mutableListOf<ScheduledReminder>()
 
     override fun schedule(
         taskId: String,
@@ -178,8 +319,19 @@ private class FakeReminderScheduler : ReminderScheduler {
         body: String,
         triggerAtMillis: Long,
         reminderId: Int,
+        occurrenceDeadlineUtcMillis: Long?,
+        allowMarkDone: Boolean,
+        rescheduleAfterFire: Boolean,
     ) {
         scheduledAt.add(triggerAtMillis)
+        scheduled.add(
+            ScheduledReminder(
+                triggerAtMillis = triggerAtMillis,
+                occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
+                allowMarkDone = allowMarkDone,
+                rescheduleAfterFire = rescheduleAfterFire,
+            )
+        )
     }
 
     override fun cancel(taskId: String, reminderId: Int) = Unit
@@ -190,8 +342,13 @@ private class FakeReminderScheduler : ReminderScheduler {
 
     override fun cancelAll(taskId: String) = Unit
 
-    override fun startOngoing(taskId: String, title: String) {
+    override fun startOngoing(
+        taskId: String,
+        title: String,
+        occurrenceDeadlineUtcMillis: Long?,
+    ) {
         startedOngoing.add(taskId)
+        ongoingOccurrences.add(occurrenceDeadlineUtcMillis)
     }
 
     override fun stopOngoing(taskId: String) = Unit

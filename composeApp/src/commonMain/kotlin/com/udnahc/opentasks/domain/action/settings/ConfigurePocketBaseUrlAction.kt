@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.domain.action.settings
 
+import com.udnahc.opentasks.LocalSyncDefaults
 import com.udnahc.opentasks.data.repository.AppSettingsRepository
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase.Companion.KEY_POCKETBASE_URL
@@ -10,11 +11,14 @@ private val log = logging("ConfigurePocketBaseUrlAction")
 class ConfigurePocketBaseUrlAction(
     private val appSettingsRepository: AppSettingsRepository,
     private val pbProvider: PocketBaseClientProvider,
+    private val buildTimePocketBaseUrl: String = LocalSyncDefaults.POCKETBASE_URL,
 ) {
-    /** Configures PocketBase from the saved URL. Returns false when no URL is saved. */
+    /** Configures PocketBase from the saved URL, falling back to local build defaults. */
     suspend operator fun invoke(): Boolean {
         val url = appSettingsRepository.getValue(KEY_POCKETBASE_URL)
-        if (url.isNullOrBlank()) {
+            ?.takeIf { it.isNotBlank() }
+            ?: buildTimePocketBaseUrl.takeIf { it.isNotBlank() }
+        if (url == null) {
             log.d { "PocketBase URL not configured" }
             return false
         }

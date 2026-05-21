@@ -14,7 +14,26 @@ class ToggleTaskCompleteAction(
     private val repository: TaskRepository,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
 ) {
-    suspend operator fun invoke(task: Task, completeSeries: Boolean = false) {
+    suspend operator fun invoke(
+        task: Task,
+        completeSeries: Boolean = false,
+        occurrenceDeadlineLocalMillis: Long? = null,
+    ) {
+        if (occurrenceDeadlineLocalMillis != null) {
+            if (task.status == TaskStatus.DONE) {
+                log.d { "Ignoring stale Mark Done for already completed task ${task.id}" }
+                return
+            }
+            val currentDeadline = task.deadline
+            if (currentDeadline != null && currentDeadline > occurrenceDeadlineLocalMillis) {
+                log.d {
+                    "Ignoring stale Mark Done for task ${task.id}: " +
+                        "currentDeadline=$currentDeadline occurrence=$occurrenceDeadlineLocalMillis"
+                }
+                return
+            }
+        }
+
         val markingComplete = task.status != TaskStatus.DONE
         log.d { "Toggling task ${task.id} complete=$markingComplete completeSeries=$completeSeries" }
 
@@ -27,7 +46,7 @@ class ToggleTaskCompleteAction(
                     updatedAt = localNow(),
                 )
             } else {
-                advanceRecurrence(task)
+                advanceRecurrence(task, occurrenceDeadlineLocalMillis)
             }
         } else {
             task.copy(status = if (task.status == TaskStatus.DONE) TaskStatus.TODO else TaskStatus.DONE, updatedAt = localNow())
@@ -37,16 +56,17 @@ class ToggleTaskCompleteAction(
         scheduleTaskRemindersAction(updated.id)
     }
 
-    private fun advanceRecurrence(task: Task): Task {
+    private fun advanceRecurrence(task: Task, occurrenceDeadlineLocalMillis: Long? = null): Task {
         val currentDeadline = task.deadline ?: return task.copy(status = TaskStatus.DONE, updatedAt = localNow())
+        val occurrenceDeadline = occurrenceDeadlineLocalMillis ?: currentDeadline
         val nextDeadline = computeNextDeadlineLocal(
-            currentDeadlineLocalMillis = currentDeadline,
+            currentDeadlineLocalMillis = occurrenceDeadline,
             recurrenceType = task.recurrenceType.name,
             interval = task.recurrenceInterval,
         )
-        val delta = nextDeadline - currentDeadline
-        val nextEndDeadline = task.endDeadline?.let { it + delta }
-        log.d { "Advancing recurring task ${task.id}: deadline $currentDeadline → $nextDeadline" }
+        val duration = task.endDeadline?.let { it - currentDeadline }
+        val nextEndDeadline = duration?.let { nextDeadline + it }
+        log.d { "Advancing recurring task ${task.id}: deadline $occurrenceDeadline → $nextDeadline" }
         return task.copy(
             deadline = nextDeadline,
             endDeadline = nextEndDeadline,
