@@ -3,8 +3,6 @@ package com.udnahc.opentasks.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,12 +11,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -35,7 +35,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import com.udnahc.opentasks.data.extensions.formatDateShort
@@ -52,13 +51,12 @@ import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.eisenhower_matrix
 import opentasks.composeapp.generated.resources.ic_check
-import opentasks.composeapp.generated.resources.ic_more_vert
+import opentasks.composeapp.generated.resources.ic_settings
 import opentasks.composeapp.generated.resources.not_urgent_important
 import opentasks.composeapp.generated.resources.not_urgent_unimportant
+import opentasks.composeapp.generated.resources.settings
 import opentasks.composeapp.generated.resources.urgent_important
 import opentasks.composeapp.generated.resources.urgent_unimportant
-import opentasks.composeapp.generated.resources.ic_settings
-import opentasks.composeapp.generated.resources.settings
 import opentasks.composeapp.generated.resources.view_more
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -355,9 +353,16 @@ internal fun QuadrantTaskRow(
                 .size(dimens.checkboxSize)
                 .then(
                     if (task.status == TaskStatus.DONE) {
-                        Modifier.background(color.copy(alpha = 0.4f), RoundedCornerShape(dimens.checkboxCorner))
+                        Modifier.background(
+                            color.copy(alpha = 0.4f),
+                            RoundedCornerShape(dimens.checkboxCorner)
+                        )
                     } else {
-                        Modifier.border(dimens.checkboxBorder, color, RoundedCornerShape(dimens.checkboxCorner))
+                        Modifier.border(
+                            dimens.checkboxBorder,
+                            color,
+                            RoundedCornerShape(dimens.checkboxCorner)
+                        )
                     }
                 )
                 .clickable(onClick = onToggleComplete),
@@ -379,8 +384,10 @@ internal fun QuadrantTaskRow(
             Text(
                 text = task.title,
                 style = MaterialTheme.typography.labelLarge,
-                color = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                        else MaterialTheme.colorScheme.onBackground,
+                color = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                    alpha = 0.4f
+                )
+                else MaterialTheme.colorScheme.onBackground,
                 textDecoration = if (task.status == TaskStatus.DONE) TextDecoration.LineThrough else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,

@@ -61,7 +61,9 @@ class CountdownRepositoryImpl(
     override suspend fun delete(countdown: Countdown) {
         log.v { "Soft-deleting countdown: ${countdown.id}" }
         withContext(ioDispatcher) {
-            countdownDao.update(countdown.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
+            countdownDao.update(
+                countdown.withUtcTimestamps().copy(isDeleted = true, isSynced = false)
+            )
         }
         syncTrigger.triggerSync()
     }

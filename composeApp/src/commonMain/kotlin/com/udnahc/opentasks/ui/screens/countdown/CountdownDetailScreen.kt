@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
+import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
@@ -55,7 +56,9 @@ private val MONTH_NAMES_SHORT = arrayOf(
 private fun formatTargetDateLabel(localMillis: Long): String {
     val date = localMillisToLocalDate(localMillis)
     val dayName = DAY_NAMES[date.dayOfWeek.ordinal]
-    return "$dayName, ${date.year}.${date.monthNumber.toString().padStart(2, '0')}.${date.dayOfMonth.toString().padStart(2, '0')}"
+    return "$dayName, ${date.year}.${
+        date.monthNumber.toString().padStart(2, '0')
+    }.${date.dayOfMonth.toString().padStart(2, '0')}"
 }
 
 @Composable
@@ -129,7 +132,10 @@ internal fun CountdownDetailContent(
             )
 
             if (countdown != null) {
-                val daysLeft = computeDaysUntil(countdown.targetDate)
+                val today = todayLocal()
+                val daysLeft = remember(countdown.targetDate, today) {
+                    computeDaysUntil(countdown.targetDate, today)
+                }
                 val isCountUp = countdown.countingMode == CountingMode.COUNT_UP
                 val displayDays = abs(daysLeft)
                 val subtitlePrefix = when {

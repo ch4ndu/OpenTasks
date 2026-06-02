@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -42,8 +41,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
-import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
@@ -76,8 +75,6 @@ internal fun MonthViewContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
 ) {
-    val progress = collapseProgress.value
-
     // We need to know available height so we can interpolate grid height
     // from "fill all space" → "single collapsed week row"
     BoxWithConstraints(
@@ -88,211 +85,294 @@ internal fun MonthViewContent(
         val dayHeadersHeight = dimens.calendarDayHeaderHeight
         val collapsedWeekHeight = dimens.calendarCollapsedWeekHeight
         val stackedEventsHeight = dimens.calendarStackedEventsHeight
-        val gridAvailable = totalHeight - topBarHeight - dayHeadersHeight - navBarHeight - dimens.fabAreaBottom
-
-        // Interpolate grid height: full available → collapsed week height
-        val gridHeight = gridAvailable - (gridAvailable - collapsedWeekHeight) * progress
+        val gridAvailable =
+            totalHeight - topBarHeight - dayHeadersHeight - navBarHeight - dimens.fabAreaBottom
 
         Column(modifier = Modifier.fillMaxSize()) {
             Spacer(Modifier.height(topBarHeight))
             DayNameHeaders()
 
-            // ── Animated month pager ───
-            HorizontalPager(
-                state = pagerState,
+            CollapsibleMonthPager(
+                collapseProgress = collapseProgress,
+                pagerState = pagerState,
+                centreIndex = centreIndex,
+                todayYear = todayYear,
+                todayMonth = todayMonth,
+                todayDay = todayDay,
+                selectedDay = selectedDay,
+                gridAvailable = gridAvailable,
+                collapsedWeekHeight = collapsedWeekHeight,
+                tasksByDay = tasksByDay,
+                onDayClick = onDayClick,
+            )
+
+            StackedMonthEvents(
+                collapseProgress = collapseProgress,
+                pagerState = pagerState,
+                centreIndex = centreIndex,
+                todayYear = todayYear,
+                todayMonth = todayMonth,
+                selectedDay = selectedDay,
+                stackedEventsHeight = stackedEventsHeight,
+                tasksByDay = tasksByDay,
+                onDayClick = onDayClick,
+            )
+
+            MonthSelectedTaskList(
+                collapseProgress = collapseProgress,
+                selectedTasks = selectedTasks,
+                selectedDay = selectedDay,
+                todayYear = todayYear,
+                todayMonth = todayMonth,
+                todayDay = todayDay,
+                categoryNames = categoryNames,
+                navBarHeight = navBarHeight,
+                onTaskClick = onTaskClick,
+                onToggleComplete = onToggleComplete,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CollapsibleMonthPager(
+    collapseProgress: Animatable<Float, *>,
+    pagerState: PagerState,
+    centreIndex: Int,
+    todayYear: Int,
+    todayMonth: Int,
+    todayDay: Int,
+    selectedDay: CalendarDay?,
+    gridAvailable: Dp,
+    collapsedWeekHeight: Dp,
+    tasksByDay: Map<Long, List<Task>>,
+    onDayClick: (CalendarDay) -> Unit,
+) {
+    val progress = collapseProgress.value
+    val gridHeight = gridAvailable - (gridAvailable - collapsedWeekHeight) * progress
+
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(gridHeight),
+        userScrollEnabled = progress == 0f,
+    ) { page ->
+        val offset = page - centreIndex
+        var y = todayYear
+        var m = todayMonth + offset
+        while (m > 12) {
+            m -= 12; y++
+        }
+        while (m < 1) {
+            m += 12; y--
+        }
+
+        val weeks = remember(y, m) { buildMonthWeeks(y, m) }
+        val isCurrentPage = page == pagerState.currentPage
+        val pageSelectedDay = if (isCurrentPage) selectedDay else null
+        val pageProgress = if (isCurrentPage) progress else 0f
+
+        AnimatedMonthGrid(
+            weeks = weeks,
+            todayYear = todayYear,
+            todayMonth = todayMonth,
+            todayDay = todayDay,
+            selectedDay = pageSelectedDay,
+            collapseProgress = pageProgress,
+            tasksByDay = tasksByDay,
+            onDayClick = onDayClick,
+        )
+    }
+}
+
+@Composable
+private fun StackedMonthEvents(
+    collapseProgress: Animatable<Float, *>,
+    pagerState: PagerState,
+    centreIndex: Int,
+    todayYear: Int,
+    todayMonth: Int,
+    selectedDay: CalendarDay?,
+    stackedEventsHeight: Dp,
+    tasksByDay: Map<Long, List<Task>>,
+    onDayClick: (CalendarDay) -> Unit,
+) {
+    val progress = collapseProgress.value
+    if (progress <= 0f || selectedDay == null) return
+
+    val dimens = OpenTasksTheme.dimens
+    val currentPageOffset = pagerState.currentPage - centreIndex
+    var pageYear = todayYear
+    var pageMonth = todayMonth + currentPageOffset
+    while (pageMonth > 12) {
+        pageMonth -= 12; pageYear++
+    }
+    while (pageMonth < 1) {
+        pageMonth += 12; pageYear--
+    }
+    val currentWeeks = remember(pageYear, pageMonth) { buildMonthWeeks(pageYear, pageMonth) }
+    val selectedWeek = currentWeeks.firstOrNull { week -> week.any { it == selectedDay } }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(stackedEventsHeight * progress)
+            .alpha(progress)
+            .graphicsLayer { clip = true },
+    ) {
+        if (selectedWeek != null) {
+            Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(gridHeight),
-                userScrollEnabled = progress == 0f,
-            ) { page ->
-                val offset = page - centreIndex
-                var y = todayYear
-                var m = todayMonth + offset
-                while (m > 12) {
-                    m -= 12; y++
-                }
-                while (m < 1) {
-                    m += 12; y--
-                }
+                    .fillMaxSize()
+                    .padding(horizontal = dimens.paddingSmall),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                selectedWeek.forEach { day ->
+                    val isSelected = day == selectedDay
+                    val dk = dayKeyFromDate(day.year, day.month, day.day)
+                    val dayEvents = tasksByDay[dk] ?: emptyList()
 
-                val weeks = remember(y, m) { buildMonthWeeks(y, m) }
-                val isCurrentPage = page == pagerState.currentPage
-                val pageSelectedDay = if (isCurrentPage) selectedDay else null
-                val pageProgress = if (isCurrentPage) progress else 0f
-
-                AnimatedMonthGrid(
-                    weeks = weeks,
-                    todayYear = todayYear,
-                    todayMonth = todayMonth,
-                    todayDay = todayDay,
-                    selectedDay = pageSelectedDay,
-                    collapseProgress = pageProgress,
-                    tasksByDay = tasksByDay,
-                    onDayClick = onDayClick,
-                )
-            }
-
-            // ── Stacked events area (entire week's events under each day column) ───
-            if (progress > 0f && selectedDay != null) {
-                // Find the week containing the selected day
-                val currentPageOffset = pagerState.currentPage - centreIndex
-                var pageYear = todayYear
-                var pageMonth = todayMonth + currentPageOffset
-                while (pageMonth > 12) {
-                    pageMonth -= 12; pageYear++
-                }
-                while (pageMonth < 1) {
-                    pageMonth += 12; pageYear--
-                }
-                val currentWeeks =
-                    remember(pageYear, pageMonth) { buildMonthWeeks(pageYear, pageMonth) }
-                val selectedWeek =
-                    currentWeeks.firstOrNull { week -> week.any { it == selectedDay } }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(stackedEventsHeight * progress)
-                        .alpha(progress)
-                        .graphicsLayer { clip = true },
-                ) {
-                    if (selectedWeek != null) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = dimens.paddingSmall),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                        ) {
-                            selectedWeek.forEach { day ->
-                                val isSelected = day == selectedDay
-                                val dk = dayKeyFromDate(day.year, day.month, day.day)
-                                val dayEvents =
-                                    tasksByDay[dk] ?: emptyList()
-
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight()
-                                        .then(
-                                            if (isSelected) {
-                                                Modifier.background(
-                                                    PrimaryBlue.copy(alpha = 0.25f),
-                                                    RoundedCornerShape(
-                                                        topStart = 0.dp,
-                                                        topEnd = 0.dp,
-                                                        bottomStart = dimens.cornerLarge,
-                                                        bottomEnd = dimens.cornerLarge,
-                                                    ),
-                                                )
-                                            } else Modifier
-                                        )
-                                        .clickable(enabled = day.isCurrentMonth) { onDayClick(day) }
-                                        .padding(horizontal = 1.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
-                                    val (visibleEvents, overflow) = truncateWithOverflow(dayEvents, 5)
-                                    visibleEvents.forEach { task ->
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(dimens.calendarMonthGridEventHeight)
-                                                .padding(vertical = 1.dp)
-                                                .clip(RoundedCornerShape(dimens.cornerTiny))
-                                                .background(
-                                                    priorityColor(task.priority).copy(
-                                                        alpha = 0.2f
-                                                    )
-                                                )
-                                                .padding(horizontal = 2.dp),
-                                            contentAlignment = Alignment.CenterStart,
-                                        ) {
-                                            Text(
-                                                text = task.title,
-                                                style = OpenTasksTheme.typography.calendarEventTitle,
-                                                color = priorityColor(task.priority),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        }
-                                    }
-                                    if (overflow > 0) {
-                                        Text(
-                                            text = "+$overflow",
-                                            style = OpenTasksTheme.typography.calendarEventOverflow,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .then(
+                                if (isSelected) {
+                                    Modifier.background(
+                                        PrimaryBlue.copy(alpha = 0.25f),
+                                        RoundedCornerShape(
+                                            topStart = 0.dp,
+                                            topEnd = 0.dp,
+                                            bottomStart = dimens.cornerLarge,
+                                            bottomEnd = dimens.cornerLarge,
+                                        ),
+                                    )
+                                } else Modifier
+                            )
+                            .clickable(enabled = day.isCurrentMonth) { onDayClick(day) }
+                            .padding(horizontal = 1.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        val (visibleEvents, overflow) = remember(dk, dayEvents, 5) {
+                            truncateWithOverflow(dayEvents, 5)
                         }
-                    }
-                }
-
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    thickness = dimens.dividerThin,
-                    modifier = Modifier.alpha(progress),
-                )
-            }
-
-            // ── Task list (fades in as collapse progresses) ───
-            if (progress > 0f && selectedDay != null) {
-                val defaultCategoryName = stringResource(Res.string.inbox)
-
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f)
-                        .alpha(progress),
-                    contentPadding = PaddingValues(bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge),
-                ) {
-                    item(key = "date_header") {
-                        val isToday = selectedDay.year == todayYear &&
-                                selectedDay.month == todayMonth &&
-                                selectedDay.day == todayDay
-                        Text(
-                            text = if (isToday) stringResource(Res.string.today).uppercase()
-                            else "${calendarMonthNameShort(selectedDay.month).uppercase()} ${selectedDay.day}",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
-                        )
-                    }
-
-                    items(selectedTasks, key = { it.id }) { task ->
-                        CalendarTaskRow(
-                            task = task,
-                            categoryName = categoryNames[task.categoryId] ?: defaultCategoryName,
-                            onToggleComplete = { onToggleComplete(task) },
-                            onClick = { onTaskClick(task) },
-                        )
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            thickness = dimens.dividerThin,
-                        )
-                    }
-
-                    if (selectedTasks.isEmpty()) {
-                        item(key = "empty") {
+                        visibleEvents.forEach { task ->
                             Box(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = dimens.calendarEmptyPadding),
-                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(dimens.calendarMonthGridEventHeight)
+                                    .padding(vertical = 1.dp)
+                                    .clip(RoundedCornerShape(dimens.cornerTiny))
+                                    .background(priorityColor(task.priority).copy(alpha = 0.2f))
+                                    .padding(horizontal = 2.dp),
+                                contentAlignment = Alignment.CenterStart,
                             ) {
                                 Text(
-                                    text = stringResource(Res.string.no_tasks),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    text = task.title,
+                                    style = OpenTasksTheme.typography.calendarEventTitle,
+                                    color = priorityColor(task.priority),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
+                        if (overflow > 0) {
+                            Text(
+                                text = "+$overflow",
+                                style = OpenTasksTheme.typography.calendarEventOverflow,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
-            } else {
-                // Bottom padding when fully expanded
-                Spacer(Modifier.weight(1f))
             }
         }
+    }
+
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        thickness = dimens.dividerThin,
+        modifier = Modifier.alpha(progress),
+    )
+}
+
+@Composable
+private fun MonthSelectedTaskList(
+    collapseProgress: Animatable<Float, *>,
+    selectedTasks: List<Task>,
+    selectedDay: CalendarDay?,
+    todayYear: Int,
+    todayMonth: Int,
+    todayDay: Int,
+    categoryNames: Map<String, String>,
+    navBarHeight: Dp,
+    onTaskClick: (Task) -> Unit,
+    onToggleComplete: (Task) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val progress = collapseProgress.value
+    if (progress > 0f && selectedDay != null) {
+        val dimens = OpenTasksTheme.dimens
+        val defaultCategoryName = stringResource(Res.string.inbox)
+
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .alpha(progress),
+            contentPadding = PaddingValues(
+                bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge
+            ),
+        ) {
+            item(key = "date_header") {
+                val isToday = selectedDay.year == todayYear &&
+                        selectedDay.month == todayMonth &&
+                        selectedDay.day == todayDay
+                Text(
+                    text = if (isToday) stringResource(Res.string.today).uppercase()
+                    else "${calendarMonthNameShort(selectedDay.month).uppercase()} ${selectedDay.day}",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(
+                        horizontal = dimens.paddingXLarge,
+                        vertical = dimens.paddingLarge
+                    ),
+                )
+            }
+
+            items(selectedTasks, key = { it.id }) { task ->
+                CalendarTaskRow(
+                    task = task,
+                    categoryName = categoryNames[task.categoryId] ?: defaultCategoryName,
+                    onToggleComplete = { onToggleComplete(task) },
+                    onClick = { onTaskClick(task) },
+                )
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    thickness = dimens.dividerThin,
+                )
+            }
+
+            if (selectedTasks.isEmpty()) {
+                item(key = "empty") {
+                    Box(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(vertical = dimens.calendarEmptyPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(Res.string.no_tasks),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    } else {
+        Spacer(modifier)
     }
 }
 
@@ -435,10 +515,12 @@ private fun WeekRowContent(
                                 isSelected && collapseProgress > 0f -> Modifier.background(
                                     PrimaryBlue, CircleShape
                                 )
+
                                 isToday -> Modifier.background(
                                     MaterialTheme.colorScheme.surfaceVariant,
                                     CircleShape
                                 )
+
                                 else -> Modifier
                             }
                         ),
@@ -466,7 +548,9 @@ private fun WeekRowContent(
                         val maxVisible =
                             ((availableHeight - overflowHeight) / eventBarHeight).toInt()
                                 .coerceAtLeast(1)
-                        val (visibleTasks, overflow) = truncateWithOverflow(dayTasks, maxVisible)
+                        val (visibleTasks, overflow) = remember(dk, dayTasks, maxVisible) {
+                            truncateWithOverflow(dayTasks, maxVisible)
+                        }
 
                         Column {
                             visibleTasks.forEach { task ->

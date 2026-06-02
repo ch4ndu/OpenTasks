@@ -1,9 +1,9 @@
 package com.udnahc.opentasks.data.sync
 
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
-import kotlin.concurrent.Volatile
 import kotlinx.coroutines.sync.Mutex
 import org.lighthousegames.logging.logging
+import kotlin.concurrent.Volatile
 
 private val log = logging("SyncService")
 
@@ -12,7 +12,8 @@ class SyncService(
     private val adapters: List<BaseSyncAdapter<*, *>>,
 ) {
     private val syncMutex = Mutex()
-    @Volatile private var pendingSyncRequested = false
+    @Volatile
+    private var pendingSyncRequested = false
 
     suspend fun syncAll() {
         val client = pbProvider.client ?: run {
@@ -79,15 +80,21 @@ class SyncService(
         return failures
     }
 
-    private fun shouldSkipPull(collectionName: String, failedPulls: Set<String>): Boolean =
+    private fun shouldSkipPull(
+        collectionName: String,
+        failedPulls: Set<String>
+    ): Boolean =
         collectionName == COLLECTION_TASK_TAGS &&
-            (COLLECTION_TASKS in failedPulls || COLLECTION_TAGS in failedPulls)
+                (COLLECTION_TASKS in failedPulls || COLLECTION_TAGS in failedPulls)
 
-    private fun shouldSkipPush(collectionName: String, failedPulls: Set<String>): Boolean =
+    private fun shouldSkipPush(
+        collectionName: String,
+        failedPulls: Set<String>
+    ): Boolean =
         collectionName in failedPulls ||
-            (collectionName == COLLECTION_TASKS && COLLECTION_CATEGORIES in failedPulls) ||
-            (collectionName == COLLECTION_TASK_TAGS &&
-                (COLLECTION_TASKS in failedPulls || COLLECTION_TAGS in failedPulls))
+                (collectionName == COLLECTION_TASKS && COLLECTION_CATEGORIES in failedPulls) ||
+                (collectionName == COLLECTION_TASK_TAGS &&
+                        (COLLECTION_TASKS in failedPulls || COLLECTION_TAGS in failedPulls))
 
     private companion object {
         const val COLLECTION_CATEGORIES = "categories"

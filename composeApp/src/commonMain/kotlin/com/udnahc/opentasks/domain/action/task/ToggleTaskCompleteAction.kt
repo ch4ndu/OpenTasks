@@ -28,7 +28,7 @@ class ToggleTaskCompleteAction(
             if (currentDeadline != null && currentDeadline > occurrenceDeadlineLocalMillis) {
                 log.d {
                     "Ignoring stale Mark Done for task ${task.id}: " +
-                        "currentDeadline=$currentDeadline occurrence=$occurrenceDeadlineLocalMillis"
+                            "currentDeadline=$currentDeadline occurrence=$occurrenceDeadlineLocalMillis"
                 }
                 return
             }
@@ -49,15 +49,22 @@ class ToggleTaskCompleteAction(
                 advanceRecurrence(task, occurrenceDeadlineLocalMillis)
             }
         } else {
-            task.copy(status = if (task.status == TaskStatus.DONE) TaskStatus.TODO else TaskStatus.DONE, updatedAt = localNow())
+            task.copy(
+                status = if (task.status == TaskStatus.DONE) TaskStatus.TODO else TaskStatus.DONE,
+                updatedAt = localNow()
+            )
         }
 
         repository.update(updated)
         scheduleTaskRemindersAction(updated.id)
     }
 
-    private fun advanceRecurrence(task: Task, occurrenceDeadlineLocalMillis: Long? = null): Task {
-        val currentDeadline = task.deadline ?: return task.copy(status = TaskStatus.DONE, updatedAt = localNow())
+    private fun advanceRecurrence(
+        task: Task,
+        occurrenceDeadlineLocalMillis: Long? = null
+    ): Task {
+        val currentDeadline =
+            task.deadline ?: return task.copy(status = TaskStatus.DONE, updatedAt = localNow())
         val occurrenceDeadline = occurrenceDeadlineLocalMillis ?: currentDeadline
         val nextDeadline = computeNextDeadlineLocal(
             currentDeadlineLocalMillis = occurrenceDeadline,

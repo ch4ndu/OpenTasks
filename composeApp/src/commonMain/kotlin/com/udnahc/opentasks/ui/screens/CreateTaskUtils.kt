@@ -3,7 +3,6 @@ package com.udnahc.opentasks.ui.screens
 import com.udnahc.opentasks.data.extensions.computeLocalMillis
 import com.udnahc.opentasks.data.extensions.uuid4
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.none
@@ -49,7 +48,10 @@ internal fun List<SubtaskItem>.toSubtasksJson(): String {
     return if (cleaned.isEmpty()) "" else subtaskJson.encodeToString(cleaned)
 }
 
-internal enum class ReminderOption(val labelRes: StringResource, val minutesValue: Int) {
+internal enum class ReminderOption(
+    val labelRes: StringResource,
+    val minutesValue: Int
+) {
     NONE(Res.string.none, Int.MIN_VALUE),
     ON_TIME(Res.string.reminder_on_time, 0),
     FIVE_MINS_BEFORE(Res.string.reminder_5_mins_early, 5),

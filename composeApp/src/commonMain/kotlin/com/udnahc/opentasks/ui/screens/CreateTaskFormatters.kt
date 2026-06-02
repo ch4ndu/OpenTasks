@@ -9,8 +9,8 @@ import opentasks.composeapp.generated.resources.april
 import opentasks.composeapp.generated.resources.aug
 import opentasks.composeapp.generated.resources.august
 import opentasks.composeapp.generated.resources.daily
-import opentasks.composeapp.generated.resources.december
 import opentasks.composeapp.generated.resources.dec
+import opentasks.composeapp.generated.resources.december
 import opentasks.composeapp.generated.resources.every_weekday
 import opentasks.composeapp.generated.resources.feb
 import opentasks.composeapp.generated.resources.february

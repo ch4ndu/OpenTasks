@@ -26,7 +26,9 @@ object IcsParser {
             if (unfoldedLines[i].uppercase().trim() == "BEGIN:VEVENT") {
                 i++
                 val eventLines = mutableListOf<String>()
-                while (i < unfoldedLines.size && unfoldedLines[i].uppercase().trim() != "END:VEVENT") {
+                while (i < unfoldedLines.size && unfoldedLines[i].uppercase()
+                        .trim() != "END:VEVENT"
+                ) {
                     eventLines.add(unfoldedLines[i])
                     i++
                 }
@@ -62,7 +64,10 @@ object IcsParser {
         return ""
     }
 
-    private fun parseVEvent(lines: List<String>, calendarName: String): CalendarEvent? {
+    private fun parseVEvent(
+        lines: List<String>,
+        calendarName: String
+    ): CalendarEvent? {
         var uid = ""
         var summary = ""
         var description = ""
@@ -97,6 +102,7 @@ object IcsParser {
                     val cn = params["CN"]?.removeSurrounding("\"")
                     organizer = cn ?: value.trim().removePrefix("mailto:").removePrefix("MAILTO:")
                 }
+
                 "ATTENDEE" -> {
                     val cn = params["CN"]?.removeSurrounding("\"")
                     val name = cn ?: value.trim().removePrefix("mailto:").removePrefix("MAILTO:")
@@ -157,7 +163,10 @@ object IcsParser {
      *
      * Returns (utcMillis, isAllDay)
      */
-    private fun parseDateTime(value: String, params: Map<String, String>): Pair<Long, Boolean>? {
+    private fun parseDateTime(
+        value: String,
+        params: Map<String, String>
+    ): Pair<Long, Boolean>? {
         return try {
             val isAllDay = params["VALUE"]?.equals("DATE", ignoreCase = true) == true
                     || (value.length == 8 && value.all { it.isDigit() })

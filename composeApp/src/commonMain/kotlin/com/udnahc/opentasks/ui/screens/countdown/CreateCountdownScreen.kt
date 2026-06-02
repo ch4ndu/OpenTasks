@@ -3,14 +3,12 @@ package com.udnahc.opentasks.ui.screens.countdown
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -23,7 +21,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -38,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import com.udnahc.opentasks.data.extensions.computeLocalMillis
 import com.udnahc.opentasks.data.extensions.currentDay
@@ -69,7 +65,6 @@ import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add
-import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.countdown_counting_count_up
 import opentasks.composeapp.generated.resources.countdown_counting_countdown
 import opentasks.composeapp.generated.resources.countdown_counting_mode
@@ -92,7 +87,6 @@ import opentasks.composeapp.generated.resources.edit
 import opentasks.composeapp.generated.resources.monthly
 import opentasks.composeapp.generated.resources.name_label
 import opentasks.composeapp.generated.resources.none
-import opentasks.composeapp.generated.resources.ok
 import opentasks.composeapp.generated.resources.reminder
 import opentasks.composeapp.generated.resources.repeat
 import opentasks.composeapp.generated.resources.save
@@ -103,7 +97,10 @@ import org.jetbrains.compose.resources.stringResource
 
 // ---- Reminder options for countdowns ----
 
-private enum class CountdownReminderOption(val labelRes: StringResource, val minutesValue: Int) {
+private enum class CountdownReminderOption(
+    val labelRes: StringResource,
+    val minutesValue: Int
+) {
     NONE(Res.string.none, Int.MIN_VALUE),
     ON_THE_DAY(Res.string.countdown_reminder_on_the_day, 0),
     ONE_DAY_EARLY(Res.string.countdown_reminder_1_day_early, 1440),
@@ -168,7 +165,10 @@ private fun pageToMonthYear(page: Int): Pair<Int, Int> {
     return month to year
 }
 
-private fun monthYearToPage(month: Int, year: Int): Int {
+private fun monthYearToPage(
+    month: Int,
+    year: Int
+): Int {
     val currentMonth = currentMonth()
     val currentYear = currentYear()
     val currentTotal = currentYear * 12 + currentMonth - 1
@@ -369,7 +369,8 @@ internal fun CreateCountdownContent(
             Button(
                 onClick = {
                     if (name.isBlank()) return@Button
-                    val targetDateMillis = computeLocalMillis(selectedYear, selectedMonth, selectedDay, 0, 0)
+                    val targetDateMillis =
+                        computeLocalMillis(selectedYear, selectedMonth, selectedDay, 0, 0)
                     val countdown = if (editCountdown != null) {
                         editCountdown.copy(
                             title = name,
@@ -499,14 +500,14 @@ private fun CountdownDatePickerDialog(
             MonthPagerHeader(
                 title = "${monthName(displayMonth)} $displayYear",
                 onPreviousMonth = {
-                        coroutineScope.launch {
-                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                        }
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                    }
                 },
                 onNextMonth = {
-                        coroutineScope.launch {
-                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                        }
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    }
                 },
             )
         },
@@ -678,7 +679,12 @@ private fun CountingModePickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(Res.string.countdown_counting_mode), fontWeight = FontWeight.Bold) },
+        title = {
+            Text(
+                stringResource(Res.string.countdown_counting_mode),
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             Column {
                 CountingMode.entries.forEach { option ->
@@ -710,7 +716,12 @@ private fun SmartListPickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(Res.string.countdown_smart_list), fontWeight = FontWeight.Bold) },
+        title = {
+            Text(
+                stringResource(Res.string.countdown_smart_list),
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             Column {
                 SmartListVisibility.entries.forEach { option ->

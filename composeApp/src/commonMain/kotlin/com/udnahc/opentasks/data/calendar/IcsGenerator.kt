@@ -30,7 +30,10 @@ object IcsGenerator {
         return sb.toString()
     }
 
-    private fun appendVEvent(sb: StringBuilder, task: Task) {
+    private fun appendVEvent(
+        sb: StringBuilder,
+        task: Task
+    ) {
         // Determine start/end times. Tasks without deadlines use createdAt as fallback.
         // Tasks are provided with raw UTC timestamps from the repository.
         val startUtcMillis = task.deadline ?: task.createdAt

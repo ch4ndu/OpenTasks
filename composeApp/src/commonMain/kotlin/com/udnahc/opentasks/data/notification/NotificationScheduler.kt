@@ -11,7 +11,12 @@ interface ReminderScheduler {
         allowMarkDone: Boolean = false,
         rescheduleAfterFire: Boolean = false,
     )
-    fun cancel(taskId: String, reminderId: Int)
+
+    fun cancel(
+        taskId: String,
+        reminderId: Int
+    )
+
     fun cancelReminders(taskId: String)
     fun cancelAll(taskId: String)
     fun startOngoing(
@@ -19,6 +24,7 @@ interface ReminderScheduler {
         title: String,
         occurrenceDeadlineUtcMillis: Long? = null,
     )
+
     fun stopOngoing(taskId: String)
 }
 
@@ -33,7 +39,12 @@ expect class NotificationScheduler : ReminderScheduler {
         allowMarkDone: Boolean,
         rescheduleAfterFire: Boolean,
     )
-    override fun cancel(taskId: String, reminderId: Int)
+
+    override fun cancel(
+        taskId: String,
+        reminderId: Int
+    )
+
     override fun cancelReminders(taskId: String)
     override fun cancelAll(taskId: String)
     override fun startOngoing(
@@ -41,5 +52,6 @@ expect class NotificationScheduler : ReminderScheduler {
         title: String,
         occurrenceDeadlineUtcMillis: Long?,
     )
+
     override fun stopOngoing(taskId: String)
 }

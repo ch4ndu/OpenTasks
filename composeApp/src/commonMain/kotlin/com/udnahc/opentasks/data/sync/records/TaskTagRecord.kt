@@ -34,5 +34,8 @@ fun TaskTagRecord.toTaskTag(): TaskTag = TaskTag(
     updatedAt = updatedAtUtc,
 )
 
-fun taskTagLocalId(taskId: String, tagId: String): String = "$taskId:$tagId"
+fun taskTagLocalId(
+    taskId: String,
+    tagId: String
+): String = "$taskId:$tagId"
 

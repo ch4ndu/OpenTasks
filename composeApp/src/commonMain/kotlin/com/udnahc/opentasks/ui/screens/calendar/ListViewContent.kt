@@ -28,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.extractDay
@@ -166,11 +165,18 @@ private fun CardTaskList(
 ) {
     val dimens = OpenTasksTheme.dimens
     Text(
-        text = if (isToday) stringResource(Res.string.today).uppercase() else formatDateLabel(selectedDayMillis),
+        text = if (isToday) stringResource(Res.string.today).uppercase() else formatDateLabel(
+            selectedDayMillis
+        ),
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = dimens.paddingXLarge, end = dimens.paddingXLarge, top = dimens.paddingXLarge, bottom = dimens.paddingMedium),
+        modifier = Modifier.padding(
+            start = dimens.paddingXLarge,
+            end = dimens.paddingXLarge,
+            top = dimens.paddingXLarge,
+            bottom = dimens.paddingMedium
+        ),
     )
 
     val defaultCategoryName = stringResource(Res.string.inbox)
@@ -209,15 +215,16 @@ internal fun WeekStripPage(
     tasksByDay: Map<Long, List<Task>>,
     onDaySelected: (Long) -> Unit,
 ) {
-    val dayLabels = listOf(
-        stringResource(Res.string.sun),
-        stringResource(Res.string.mon),
-        stringResource(Res.string.tue),
-        stringResource(Res.string.wed),
-        stringResource(Res.string.thu),
-        stringResource(Res.string.fri),
-        stringResource(Res.string.sat),
-    )
+    val sun = stringResource(Res.string.sun)
+    val mon = stringResource(Res.string.mon)
+    val tue = stringResource(Res.string.tue)
+    val wed = stringResource(Res.string.wed)
+    val thu = stringResource(Res.string.thu)
+    val fri = stringResource(Res.string.fri)
+    val sat = stringResource(Res.string.sat)
+    val dayLabels = remember(sun, mon, tue, wed, thu, fri, sat) {
+        listOf(sun, mon, tue, wed, thu, fri, sat)
+    }
 
     val dimens = OpenTasksTheme.dimens
     Row(
@@ -253,7 +260,11 @@ internal fun WeekStripPage(
                         .then(
                             when {
                                 isSelected -> Modifier.background(PrimaryBlue, CircleShape)
-                                isToday -> Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                                isToday -> Modifier.background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    CircleShape
+                                )
+
                                 else -> Modifier
                             }
                         ),

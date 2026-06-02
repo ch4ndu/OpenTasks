@@ -1,15 +1,16 @@
 package com.udnahc.opentasks.ui.screens
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.layout.size
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.StarGold
 import opentasks.composeapp.generated.resources.Res
@@ -88,8 +89,9 @@ internal fun TaskContentPreviewText(
     modifier: Modifier = Modifier,
 ) {
     if (content.isNotBlank()) {
+        val previewText = remember(content) { stripHtmlTags(content) }
         Text(
-            text = stripHtmlTags(content),
+            text = previewText,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

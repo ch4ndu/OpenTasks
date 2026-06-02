@@ -8,7 +8,6 @@ import com.udnahc.opentasks.data.sync.records.toTag
 import com.udnahc.opentasks.data.sync.records.toTagRecord
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.dsl.query.Filter
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>() {
@@ -19,9 +18,18 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllTagsOnce()
     override suspend fun getById(localId: String) = dao.findTagByIdAnyState(localId)
-    override suspend fun markSyncedIfUnchanged(localId: String, updatedAt: Long, isDeleted: Boolean) =
+    override suspend fun markSyncedIfUnchanged(
+        localId: String,
+        updatedAt: Long,
+        isDeleted: Boolean
+    ) =
         dao.markSyncedIfUnchanged(localId, updatedAt, isDeleted)
-    override suspend fun updatePbId(localId: String, pbId: String) = dao.updatePbId(localId, pbId)
+
+    override suspend fun updatePbId(
+        localId: String,
+        pbId: String
+    ) = dao.updatePbId(localId, pbId)
+
     override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
     override suspend fun hardDeleteLocalNeverSynced(entity: Tag) = dao.deleteTag(entity)
     override suspend fun upsert(entity: Tag) = dao.upsert(entity)
@@ -47,13 +55,28 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
         client.records.getList<TagRecord>(collectionName, 1, 1, skipTotal = true)
     }
 
-    override suspend fun createRecord(client: PocketbaseClient, body: String) =
+    override suspend fun createRecord(
+        client: PocketbaseClient,
+        body: String
+    ) =
         client.records.create<TagRecord>(collectionName, body)
 
-    override suspend fun updateRecord(client: PocketbaseClient, pbId: String, body: String) =
+    override suspend fun updateRecord(
+        client: PocketbaseClient,
+        pbId: String,
+        body: String
+    ) =
         client.records.update<TagRecord>(collectionName, pbId, body)
 
-    override suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): TagRecord? =
-        client.records.getList<TagRecord>(collectionName, 1, 1, filterBy = Filter("localId='$localId'"))
+    override suspend fun findRecordByLocalId(
+        client: PocketbaseClient,
+        localId: String
+    ): TagRecord? =
+        client.records.getList<TagRecord>(
+            collectionName,
+            1,
+            1,
+            filterBy = Filter("localId='$localId'")
+        )
             .items.firstOrNull()
 }

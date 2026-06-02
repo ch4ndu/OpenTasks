@@ -6,6 +6,17 @@
 	<array>
 		<string>com.udnahc.opentasks.sync</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>OpenTasks Share</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>opentasks</string>
+			</array>
+		</dict>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>

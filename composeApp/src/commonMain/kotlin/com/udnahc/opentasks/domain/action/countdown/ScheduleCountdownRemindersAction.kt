@@ -11,7 +11,6 @@ import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.countdown_notification_in_day
 import opentasks.composeapp.generated.resources.countdown_notification_in_days
@@ -21,6 +20,7 @@ import opentasks.composeapp.generated.resources.countdown_notification_in_minute
 import opentasks.composeapp.generated.resources.countdown_notification_today
 import org.jetbrains.compose.resources.getString
 import org.lighthousegames.logging.logging
+import kotlin.time.Instant
 
 private val log = logging("ScheduleCountdownRemindersAction")
 
@@ -111,6 +111,7 @@ class ScheduleCountdownRemindersAction(
                 hours,
             )
         }
+
         else -> {
             val days = offsetMinutes / 1440
             getString(

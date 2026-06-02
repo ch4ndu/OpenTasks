@@ -37,8 +37,8 @@ import opentasks.composeapp.generated.resources.sun
 import opentasks.composeapp.generated.resources.thu
 import opentasks.composeapp.generated.resources.tue
 import opentasks.composeapp.generated.resources.wed
-import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 internal fun MonthPagerHeader(
@@ -146,6 +146,7 @@ internal fun SelectableDayGrid(
                                                 PrimaryBlue.copy(alpha = 0.3f),
                                                 shape,
                                             )
+
                                             else -> Modifier
                                         }
                                     ),

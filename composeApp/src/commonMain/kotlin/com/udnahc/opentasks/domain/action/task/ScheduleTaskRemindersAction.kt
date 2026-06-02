@@ -10,7 +10,6 @@ import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.ReminderScheduler
 import com.udnahc.opentasks.data.repository.TaskRepository
-import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
@@ -32,6 +31,7 @@ import opentasks.composeapp.generated.resources.task_reminder_starting_in_minute
 import opentasks.composeapp.generated.resources.task_reminder_starting_now
 import org.jetbrains.compose.resources.getString
 import org.lighthousegames.logging.logging
+import kotlin.time.Instant
 
 private val log = logging("ScheduleTaskRemindersAction")
 
@@ -78,7 +78,10 @@ class ScheduleTaskRemindersAction(
         scheduleForTask(task)
     }
 
-    suspend fun invokeAfterOccurrence(taskId: String, occurrenceDeadlineUtcMillis: Long) {
+    suspend fun invokeAfterOccurrence(
+        taskId: String,
+        occurrenceDeadlineUtcMillis: Long
+    ) {
         val task = taskRepository.getTaskByIdUtc(taskId)
         if (task == null) {
             log.d { "Task $taskId not found, cancelling reminders" }
@@ -122,7 +125,12 @@ class ScheduleTaskRemindersAction(
         val dateReminderValues = taskForOccurrence.dateReminders.parseMinuteValues()
         val durationReminderValues = taskForOccurrence.durationReminders.parseMinuteValues()
         val dateReminderTriggers = dateReminderValues
-            .map { mins -> ReminderTrigger(mins, occurrence.deadlineUtcMillis - (mins.toLong() * MILLIS_PER_MINUTE)) }
+            .map { mins ->
+                ReminderTrigger(
+                    mins,
+                    occurrence.deadlineUtcMillis - (mins.toLong() * MILLIS_PER_MINUTE)
+                )
+            }
             .ifEmpty { taskForOccurrence.legacyReminderTriggers() }
         val durationReminderTriggers = durationReminderValues.mapIndexedNotNull { index, mins ->
             val triggerAt = if (mins == -1) {
@@ -132,13 +140,15 @@ class ScheduleTaskRemindersAction(
             }
             DurationReminderTrigger(index, mins, triggerAt)
         }
-        val hasDueNowReminder = dateReminderTriggers.any { it.triggerAtUtcMillis == occurrence.deadlineUtcMillis }
-        val overdueTriggerAt = occurrence.deadlineUtcMillis.takeIf { it > now && !hasDueNowReminder }
+        val hasDueNowReminder =
+            dateReminderTriggers.any { it.triggerAtUtcMillis == occurrence.deadlineUtcMillis }
+        val overdueTriggerAt =
+            occurrence.deadlineUtcMillis.takeIf { it > now && !hasDueNowReminder }
         val lastScheduledTriggerAt = (
-            dateReminderTriggers.map { it.triggerAtUtcMillis } +
-                durationReminderTriggers.map { it.triggerAtUtcMillis } +
-                listOfNotNull(overdueTriggerAt)
-            )
+                dateReminderTriggers.map { it.triggerAtUtcMillis } +
+                        durationReminderTriggers.map { it.triggerAtUtcMillis } +
+                        listOfNotNull(overdueTriggerAt)
+                )
             .filter { it > now }
             .maxOrNull()
 
@@ -155,7 +165,7 @@ class ScheduleTaskRemindersAction(
                     occurrenceDeadlineUtcMillis = occurrence.deadlineUtcMillis,
                     allowMarkDone = trigger.triggerAtUtcMillis == occurrence.deadlineUtcMillis,
                     rescheduleAfterFire = task.recurrenceType != RecurrenceType.NONE &&
-                        trigger.triggerAtUtcMillis == lastScheduledTriggerAt,
+                            trigger.triggerAtUtcMillis == lastScheduledTriggerAt,
                 )
             } else {
                 log.v { "Skipped past date reminder $index at ${trigger.triggerAtUtcMillis}" }
@@ -180,7 +190,7 @@ class ScheduleTaskRemindersAction(
                     occurrenceDeadlineUtcMillis = occurrence.deadlineUtcMillis,
                     allowMarkDone = false,
                     rescheduleAfterFire = task.recurrenceType != RecurrenceType.NONE &&
-                        triggerAt == lastScheduledTriggerAt,
+                            triggerAt == lastScheduledTriggerAt,
                 )
             } else {
                 log.v { "Skipped past duration reminder ${trigger.index} at $triggerAt" }
@@ -200,12 +210,15 @@ class ScheduleTaskRemindersAction(
                 occurrenceDeadlineUtcMillis = occurrence.deadlineUtcMillis,
                 allowMarkDone = true,
                 rescheduleAfterFire = task.recurrenceType != RecurrenceType.NONE &&
-                    overdueTriggerAt == lastScheduledTriggerAt,
+                        overdueTriggerAt == lastScheduledTriggerAt,
             )
         }
     }
 
-    private suspend fun scheduleAllDayOngoingIfNeeded(task: Task, now: Long) {
+    private suspend fun scheduleAllDayOngoingIfNeeded(
+        task: Task,
+        now: Long
+    ) {
         if (!task.isAllDay) return
         val occurrenceDeadline = task.deadline ?: return
         if (!task.isDueToday(now)) {
@@ -243,7 +256,11 @@ class ScheduleTaskRemindersAction(
         val occurrenceDeadline = if (recurrenceType == RecurrenceType.NONE) {
             storedDeadline
         } else if (isAllDay) {
-            firstAllDayOccurrenceOnOrAfterToday(storedDeadline, now, afterOccurrenceDeadlineUtcMillis)
+            firstAllDayOccurrenceOnOrAfterToday(
+                storedDeadline,
+                now,
+                afterOccurrenceDeadlineUtcMillis
+            )
         } else {
             firstTimedOccurrenceAfterNow(storedDeadline, now, afterOccurrenceDeadlineUtcMillis)
         }
@@ -320,6 +337,7 @@ class ScheduleTaskRemindersAction(
                 hours,
             )
         }
+
         else -> {
             val days = minutes / 1440
             getString(

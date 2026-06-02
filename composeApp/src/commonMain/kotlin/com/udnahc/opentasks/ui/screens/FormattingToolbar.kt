@@ -126,13 +126,16 @@ private fun FormattingToolbarButton(
     }
 }
 
+private val HTML_TAG_REGEX = Regex("<[^>]*>")
+private val WHITESPACE_REGEX = Regex("\\s+")
+
 /** Strips HTML tags and returns clean text for preview display. */
 fun stripHtmlTags(html: String): String =
     html
-        .replace(Regex("<[^>]*>"), " ")
+        .replace(HTML_TAG_REGEX, " ")
         .replace("&nbsp;", " ")
         .replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
-        .replace(Regex("\\s+"), " ")
+        .replace(WHITESPACE_REGEX, " ")
         .trim()

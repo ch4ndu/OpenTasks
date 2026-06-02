@@ -24,15 +24,20 @@ class ObserveTodayTasksUseCase(
     operator fun invoke(): Flow<TodayTasks> = repository.getAllTasks()
         .map { tasks ->
             val today = todayLocal()
-            val startOfToday = startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)
+            val startOfToday =
+                startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)
             val tomorrow = today.plus(1, DateTimeUnit.DAY)
-            val startOfTomorrow = startOfDayLocalMillis(tomorrow.year, tomorrow.monthNumber, tomorrow.dayOfMonth)
+            val startOfTomorrow =
+                startOfDayLocalMillis(tomorrow.year, tomorrow.monthNumber, tomorrow.dayOfMonth)
 
             val active = tasks.filter { it.status != TaskStatus.DONE }
             TodayTasks(
-                overdue = active.filter { it.deadline != null && it.deadline < startOfToday }.sortedBy { it.deadline },
-                today = active.filter { it.deadline != null && it.deadline >= startOfToday && it.deadline < startOfTomorrow }.sortedBy { it.deadline },
-                completedToday = tasks.filter { it.status == TaskStatus.DONE && it.updatedAt >= startOfToday && it.updatedAt < startOfTomorrow }.sortedByDescending { it.updatedAt },
+                overdue = active.filter { it.deadline != null && it.deadline < startOfToday }
+                    .sortedBy { it.deadline },
+                today = active.filter { it.deadline != null && it.deadline >= startOfToday && it.deadline < startOfTomorrow }
+                    .sortedBy { it.deadline },
+                completedToday = tasks.filter { it.status == TaskStatus.DONE && it.updatedAt >= startOfToday && it.updatedAt < startOfTomorrow }
+                    .sortedByDescending { it.updatedAt },
             )
         }
         .flowOn(Dispatchers.Default)

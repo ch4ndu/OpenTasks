@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -26,6 +27,7 @@ class CategoryRepositoryImpl(
     override fun getAllCategories(): Flow<List<Category>> =
         categoryDao.getAllCategories()
             .map { categories -> categories.map { it.withLocalTimestamps() } }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
     override suspend fun getCategoryById(id: String): Category? =
@@ -54,7 +56,9 @@ class CategoryRepositoryImpl(
     override suspend fun delete(category: Category) {
         log.v { "Soft-deleting category: ${category.id}" }
         withContext(ioDispatcher) {
-            categoryDao.update(category.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
+            categoryDao.update(
+                category.withUtcTimestamps().copy(isDeleted = true, isSynced = false)
+            )
         }
         syncTrigger.triggerSync()
     }

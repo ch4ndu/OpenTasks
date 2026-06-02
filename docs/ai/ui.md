@@ -29,6 +29,7 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 
 - Strong skipping is enabled; do not add `@Immutable` or `@Stable`.
 - Do not transform data in composables. Filtering, sorting, mapping, and grouping belong in UseCases or ViewModels.
+- Do not compute per-row display values in composition (HTML stripping, day-count/date math, text truncation). Precompute them in a ViewModel row projection so scrolling and unrelated recomposition do not repeat the work.
 - Pass `StateFlow` to children when useful and collect at the lowest practical scope.
 - Collect mode-specific flows only inside the active UI branch. List-only projections should not stay subscribed while a board/calendar mode is visible, and board-only projections should not stay subscribed while list mode is visible.
 - Screens should consume ViewModel-provided projections or keyed lookup maps instead of filtering full task lists in composables.

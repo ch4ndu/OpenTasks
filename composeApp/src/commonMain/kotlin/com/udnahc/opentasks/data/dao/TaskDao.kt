@@ -47,13 +47,20 @@ interface TaskDao {
     suspend fun markSynced(id: String)
 
     @Query("UPDATE tasks SET isSynced = 1 WHERE id = :id AND updatedAt = :updatedAt AND isDeleted = :isDeleted")
-    suspend fun markSyncedIfUnchanged(id: String, updatedAt: Long, isDeleted: Boolean): Int
+    suspend fun markSyncedIfUnchanged(
+        id: String,
+        updatedAt: Long,
+        isDeleted: Boolean
+    ): Int
 
     @Query("UPDATE tasks SET isSynced = 0 WHERE id = :id")
     suspend fun markUnsynced(id: String)
 
     @Query("UPDATE tasks SET pbId = :pbId WHERE id = :id")
-    suspend fun updatePbId(id: String, pbId: String)
+    suspend fun updatePbId(
+        id: String,
+        pbId: String
+    )
 
     @Upsert
     suspend fun upsert(task: Task)
@@ -65,7 +72,10 @@ interface TaskDao {
     suspend fun deleteAll()
 
     @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND status != 'DONE' AND deadline IS NOT NULL AND deadline >= :startUtc AND deadline < :endUtc ORDER BY deadline ASC")
-    suspend fun getTasksInDateRange(startUtc: Long, endUtc: Long): List<Task>
+    suspend fun getTasksInDateRange(
+        startUtc: Long,
+        endUtc: Long
+    ): List<Task>
 
     @Query("SELECT * FROM tasks WHERE isDeleted = 0 AND status != 'DONE' ORDER BY deadline ASC, updatedAt DESC")
     suspend fun getActiveTasksOnce(): List<Task>

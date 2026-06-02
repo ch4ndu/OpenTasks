@@ -11,9 +11,11 @@ import kotlinx.coroutines.flow.map
 class ObserveTaskSortOptionUseCase(
     private val repository: AppSettingsRepository,
 ) {
-    operator fun invoke(): Flow<TaskSortOption> = repository.observeValue(SettingsKeys.TASK_LIST_SORT_OPTION)
-        .map { value ->
-            TaskSortOption.entries.firstOrNull { it.name == value } ?: TaskSortOption.RECENTLY_UPDATED
-        }
-        .flowOn(Dispatchers.Default)
+    operator fun invoke(): Flow<TaskSortOption> =
+        repository.observeValue(SettingsKeys.TASK_LIST_SORT_OPTION)
+            .map { value ->
+                TaskSortOption.entries.firstOrNull { it.name == value }
+                    ?: TaskSortOption.RECENTLY_UPDATED
+            }
+            .flowOn(Dispatchers.Default)
 }

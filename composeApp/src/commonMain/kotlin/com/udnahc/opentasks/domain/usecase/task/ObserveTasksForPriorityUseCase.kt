@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.domain.usecase.task
 
+import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.repository.TaskRepository
 import kotlinx.coroutines.Dispatchers
@@ -7,7 +8,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
-import com.udnahc.opentasks.data.model.Task
 
 class ObserveTasksForPriorityUseCase(private val repository: TaskRepository) {
     operator fun invoke(priority: StateFlow<TaskPriority>): Flow<List<Task>> =

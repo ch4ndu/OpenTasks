@@ -8,7 +8,10 @@ import org.lighthousegames.logging.logging
 private val log = logging("AddNoteAction")
 
 class AddNoteAction(private val repository: NoteRepository) {
-    suspend operator fun invoke(title: String, content: String) {
+    suspend operator fun invoke(
+        title: String,
+        content: String
+    ) {
         log.d { "Adding note: '$title'" }
         val now = localNow()
         repository.insert(

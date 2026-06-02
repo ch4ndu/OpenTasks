@@ -21,8 +21,17 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     abstract suspend fun getUnsynced(): List<Entity>
     abstract suspend fun getAllOnce(): List<Entity>
     abstract suspend fun getById(localId: String): Entity?
-    abstract suspend fun markSyncedIfUnchanged(localId: String, updatedAt: Long, isDeleted: Boolean): Int
-    abstract suspend fun updatePbId(localId: String, pbId: String)
+    abstract suspend fun markSyncedIfUnchanged(
+        localId: String,
+        updatedAt: Long,
+        isDeleted: Boolean
+    ): Int
+
+    abstract suspend fun updatePbId(
+        localId: String,
+        pbId: String
+    )
+
     abstract suspend fun markUnsynced(localId: String)
     abstract suspend fun hardDeleteLocalNeverSynced(entity: Entity)
     abstract suspend fun upsert(entity: Entity)
@@ -46,12 +55,30 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     // PocketBase operations (concrete adapters provide reified type wrappers)
     abstract suspend fun fetchAllRecords(client: PocketbaseClient): List<Record>
     abstract suspend fun verifyCollection(client: PocketbaseClient)
-    abstract suspend fun createRecord(client: PocketbaseClient, body: String): Record
-    abstract suspend fun updateRecord(client: PocketbaseClient, pbId: String, body: String): Record
-    abstract suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): Record?
+    abstract suspend fun createRecord(
+        client: PocketbaseClient,
+        body: String
+    ): Record
+
+    abstract suspend fun updateRecord(
+        client: PocketbaseClient,
+        pbId: String,
+        body: String
+    ): Record
+
+    abstract suspend fun findRecordByLocalId(
+        client: PocketbaseClient,
+        localId: String
+    ): Record?
+
+    /** Prefetch any local state needed to validate remote rows for this pull. */
+    open suspend fun prepareRemoteValidation(records: List<Record>) {}
 
     /** Return a message when a remote row should be skipped but surfaced as degraded sync. */
     open suspend fun validateRemoteRecord(record: Record): String? = null
+
+    /** Clear validation state created for this pull. */
+    open fun clearRemoteValidation() {}
 
     /** Serialize entity to JSON body string for PocketBase. */
     abstract fun toJsonBody(entity: Entity): String
@@ -129,29 +156,37 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             val remoteRecords = fetchAllRecords(client)
             log.d { "Pulled ${remoteRecords.size} $collectionName" }
 
-            val localSyncedSnapshot = getAllOnce().filter { isSynced(it) && !isDeleted(it) }
+            val localSnapshot = getAllOnce()
+            val localById = localSnapshot.associateBy { localId(it) }
+            val localSyncedSnapshot = localSnapshot.filter { isSynced(it) && !isDeleted(it) }
             val degradedMessages = mutableListOf<String>()
 
-            for (record in remoteRecords) {
-                val validationMessage = validateRemoteRecord(record)
-                if (validationMessage != null) {
-                    log.w { validationMessage }
-                    degradedMessages += validationMessage
-                    continue
-                }
-                val rLocalId = recordLocalId(record)
-                val local = getById(rLocalId)
+            try {
+                prepareRemoteValidation(remoteRecords)
+                for (record in remoteRecords) {
+                    val validationMessage = validateRemoteRecord(record)
+                    if (validationMessage != null) {
+                        log.w { validationMessage }
+                        degradedMessages += validationMessage
+                        continue
+                    }
+                    val rLocalId = recordLocalId(record)
+                    val local = localById[rLocalId]
 
-                if (local == null || recordUpdatedAt(record) > updatedAt(local)) {
-                    upsert(toEntity(record))
+                    if (local == null || recordUpdatedAt(record) > updatedAt(local)) {
+                        upsert(toEntity(record))
+                    }
                 }
+            } finally {
+                clearRemoteValidation()
             }
 
             val remoteIds = remoteRecords.map { recordLocalId(it) }.toSet()
             if (degradedMessages.isNotEmpty()) {
                 log.w { "Skipping $collectionName missing-row recovery because pull is already degraded" }
             } else if (remoteRecords.isEmpty() && localSyncedSnapshot.isNotEmpty()) {
-                val message = "Degraded $collectionName sync: server returned 0 records but ${localSyncedSnapshot.size} local synced exist; skipping missing-row recovery"
+                val message =
+                    "Degraded $collectionName sync: server returned 0 records but ${localSyncedSnapshot.size} local synced exist; skipping missing-row recovery"
                 log.w { message }
                 degradedMessages += message
             } else if (remoteRecords.size < localSyncedSnapshot.size * 0.1 && localSyncedSnapshot.isNotEmpty()) {
@@ -242,7 +277,11 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             .isSuccess
     }
 
-    private suspend fun markSyncedAfterPush(localId: String, updatedAt: Long, isDeleted: Boolean) {
+    private suspend fun markSyncedAfterPush(
+        localId: String,
+        updatedAt: Long,
+        isDeleted: Boolean
+    ) {
         try {
             val changed = markSyncedIfUnchanged(localId, updatedAt, isDeleted)
             if (changed == 0) {
@@ -253,7 +292,10 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         }
     }
 
-    private suspend fun updatePbIdSafely(localId: String, pbId: String) {
+    private suspend fun updatePbIdSafely(
+        localId: String,
+        pbId: String
+    ) {
         try {
             updatePbId(localId, pbId)
         } catch (e: Exception) {

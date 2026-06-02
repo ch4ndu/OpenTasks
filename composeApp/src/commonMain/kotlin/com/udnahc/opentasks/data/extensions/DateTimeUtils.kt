@@ -1,17 +1,16 @@
 package com.udnahc.opentasks.data.extensions
 
-import kotlin.time.Clock
-import kotlin.time.Instant
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.datetime.until
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 const val MILLIS_PER_DAY = 86400000L
 const val MILLIS_PER_HOUR = 3600000L
@@ -66,8 +65,11 @@ fun localMillisToLocalDate(localMillis: Long): LocalDate =
 
 // ── Pure-arithmetic component extractors (no kotlinx-datetime, safe for previews) ──
 
-fun extractHour(localMillis: Long): Int = ((localMillis % MILLIS_PER_DAY + MILLIS_PER_DAY) % MILLIS_PER_DAY / MILLIS_PER_HOUR).toInt()
-fun extractMinute(localMillis: Long): Int = ((localMillis % MILLIS_PER_HOUR + MILLIS_PER_HOUR) % MILLIS_PER_HOUR / MILLIS_PER_MINUTE).toInt()
+fun extractHour(localMillis: Long): Int =
+    ((localMillis % MILLIS_PER_DAY + MILLIS_PER_DAY) % MILLIS_PER_DAY / MILLIS_PER_HOUR).toInt()
+
+fun extractMinute(localMillis: Long): Int =
+    ((localMillis % MILLIS_PER_HOUR + MILLIS_PER_HOUR) % MILLIS_PER_HOUR / MILLIS_PER_MINUTE).toInt()
 
 /**
  * Extract year, month, day from local-shifted epoch millis using civil date arithmetic.
@@ -99,7 +101,11 @@ fun extractDay(localMillis: Long): Int = civilFromMillis(localMillis).third
  * Local-shifted epoch millis for midnight of a given date.
  * Equivalent to the old `startOfDayMillis(year, month, day)`.
  */
-fun startOfDayLocalMillis(year: Int, month: Int, day: Int): Long {
+fun startOfDayLocalMillis(
+    year: Int,
+    month: Int,
+    day: Int
+): Long {
     val dt = LocalDateTime(year, month, day, 0, 0)
     return dt.toInstant(TimeZone.UTC).toEpochMilliseconds()
 }
@@ -109,8 +115,11 @@ fun startOfDayLocalMillis(year: Int, month: Int, day: Int): Long {
  * This is stored in the DB as UTC.
  */
 fun computeDeadlineUtcMillis(
-    year: Int, month: Int, day: Int,
-    hour: Int = 9, minute: Int = 0,
+    year: Int,
+    month: Int,
+    day: Int,
+    hour: Int = 9,
+    minute: Int = 0,
 ): Long {
     val h = if (hour >= 0) hour else 9
     val m = if (minute >= 0) minute else 0
@@ -124,8 +133,11 @@ fun computeDeadlineUtcMillis(
  * which handle the local→UTC conversion before storing.
  */
 fun computeLocalMillis(
-    year: Int, month: Int, day: Int,
-    hour: Int = 9, minute: Int = 0,
+    year: Int,
+    month: Int,
+    day: Int,
+    hour: Int = 9,
+    minute: Int = 0,
 ): Long {
     val h = if (hour >= 0) hour else 9
     val m = if (minute >= 0) minute else 0
@@ -222,15 +234,23 @@ fun computeNextDeadlineLocal(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Day of week: 0=Sun, 1=Mon, …, 6=Sat.  Pure arithmetic (Tomohiko Sakamoto). */
-fun dayOfWeekIndex(year: Int, month: Int, day: Int): Int {
+fun dayOfWeekIndex(
+    year: Int,
+    month: Int,
+    day: Int
+): Int {
     val t = intArrayOf(0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4)
+
     @Suppress("NAME_SHADOWING")
     val y = if (month < 3) year - 1 else year
     return (y + y / 4 - y / 100 + y / 400 + t[month - 1] + day) % 7
 }
 
 /** Number of days in a given month. */
-fun daysInMonth(year: Int, month: Int): Int {
+fun daysInMonth(
+    year: Int,
+    month: Int
+): Int {
     val start = LocalDate(year, month, 1)
     val next = start.plus(1, DateTimeUnit.MONTH)
     return start.until(next, DateTimeUnit.DAY).toInt()
@@ -244,7 +264,11 @@ fun daysInMonth(year: Int, month: Int): Int {
 fun dayKey(localMillis: Long): Long = localMillis / MILLIS_PER_DAY
 
 /** Day key from a year/month/day. */
-fun dayKeyFromDate(year: Int, month: Int, day: Int): Long =
+fun dayKeyFromDate(
+    year: Int,
+    month: Int,
+    day: Int
+): Long =
     startOfDayLocalMillis(year, month, day) / MILLIS_PER_DAY
 
 /** Local-shifted millis from a day key. */
@@ -279,7 +303,10 @@ fun formatDateShort(localMillis: Long): String {
 }
 
 /** Format hour/minute as 12-hour time, e.g. "9:05 AM". */
-fun formatTime12Hr(hour: Int, minute: Int): String {
+fun formatTime12Hr(
+    hour: Int,
+    minute: Int
+): String {
     val displayHour = when {
         hour == 0 -> 12
         hour > 12 -> hour - 12

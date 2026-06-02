@@ -39,9 +39,40 @@ import opentasks.composeapp.generated.resources.empty_notes
 import opentasks.composeapp.generated.resources.notes
 import org.jetbrains.compose.resources.stringResource
 
-/** Strips HTML tags and returns the first meaningful line as a preview. */
+/** Converts saved rich-text HTML into a compact Markdown-style preview. */
 internal fun noteContentPreview(content: String): String =
-    stripHtmlTags(content).take(120)
+    content.toMarkdownPreview().take(160)
+
+private fun String.toMarkdownPreview(): String =
+    this
+        .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("</p\\s*>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("<li\\b[^>]*>", RegexOption.IGNORE_CASE), "- ")
+        .replace(Regex("</li\\s*>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("<strong\\b[^>]*>|<b\\b[^>]*>", RegexOption.IGNORE_CASE), "**")
+        .replace(Regex("</strong\\s*>|</b\\s*>", RegexOption.IGNORE_CASE), "**")
+        .replace(Regex("<em\\b[^>]*>|<i\\b[^>]*>", RegexOption.IGNORE_CASE), "_")
+        .replace(Regex("</em\\s*>|</i\\s*>", RegexOption.IGNORE_CASE), "_")
+        .replace(Regex("<code\\b[^>]*>", RegexOption.IGNORE_CASE), "`")
+        .replace(Regex("</code\\s*>", RegexOption.IGNORE_CASE), "`")
+        .replace(Regex("<s\\b[^>]*>|<strike\\b[^>]*>|<del\\b[^>]*>", RegexOption.IGNORE_CASE), "~~")
+        .replace(Regex("</s\\s*>|</strike\\s*>|</del\\s*>", RegexOption.IGNORE_CASE), "~~")
+        .replace(Regex("<u\\b[^>]*>", RegexOption.IGNORE_CASE), "__")
+        .replace(Regex("</u\\s*>", RegexOption.IGNORE_CASE), "__")
+        .replace(Regex("<[^>]*>"), "")
+        .decodeHtmlEntities()
+        .lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString("\n")
+
+private fun String.decodeHtmlEntities(): String =
+    replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
 
 private fun formatNoteDate(localMillis: Long): String {
     if (localMillis == 0L) return ""
@@ -149,9 +180,10 @@ internal fun NoteCard(
             if (note.title.isNotBlank()) {
                 Text(
                     text = note.title,
+                    modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(dimens.spacerSmall))
@@ -160,6 +192,7 @@ internal fun NoteCard(
                 val preview = remember(note.content) { noteContentPreview(note.content) }
                 Text(
                     text = preview,
+                    modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

@@ -3,7 +3,6 @@ package com.udnahc.opentasks.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,12 +36,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.currentMonth
 import com.udnahc.opentasks.data.extensions.currentYear
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
-import com.udnahc.opentasks.data.extensions.daysInMonth
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -59,27 +55,17 @@ import opentasks.composeapp.generated.resources.duration_hours
 import opentasks.composeapp.generated.resources.duration_hours_minutes
 import opentasks.composeapp.generated.resources.duration_hours_plural
 import opentasks.composeapp.generated.resources.duration_minutes
-import opentasks.composeapp.generated.resources.fri
 import opentasks.composeapp.generated.resources.ic_alarm
 import opentasks.composeapp.generated.resources.ic_check
-import opentasks.composeapp.generated.resources.ic_chevron_left
 import opentasks.composeapp.generated.resources.ic_chevron_right
 import opentasks.composeapp.generated.resources.ic_close
 import opentasks.composeapp.generated.resources.ic_repeat
 import opentasks.composeapp.generated.resources.ic_schedule
-import opentasks.composeapp.generated.resources.mon
-import opentasks.composeapp.generated.resources.next_month
 import opentasks.composeapp.generated.resources.none
-import opentasks.composeapp.generated.resources.previous_month
 import opentasks.composeapp.generated.resources.reminder
 import opentasks.composeapp.generated.resources.repeat
-import opentasks.composeapp.generated.resources.sat
-import opentasks.composeapp.generated.resources.sun
-import opentasks.composeapp.generated.resources.thu
 import opentasks.composeapp.generated.resources.time
 import opentasks.composeapp.generated.resources.today
-import opentasks.composeapp.generated.resources.tue
-import opentasks.composeapp.generated.resources.wed
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -109,7 +95,8 @@ internal fun DateReminderBottomSheet(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState =
+        androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedTab by remember { mutableIntStateOf(initialTab) }
     var showTimePicker by remember { mutableStateOf(false) }
     var showReminderDialog by remember { mutableStateOf(false) }
@@ -376,14 +363,14 @@ private fun DateTabContent(
         MonthPagerHeader(
             title = "${monthName(displayMonth)} $displayYear",
             onPreviousMonth = {
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                    }
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                }
             },
             onNextMonth = {
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                    }
+                coroutineScope.launch {
+                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                }
             },
         )
 

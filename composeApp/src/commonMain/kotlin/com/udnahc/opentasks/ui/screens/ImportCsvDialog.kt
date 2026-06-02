@@ -3,10 +3,10 @@ package com.udnahc.opentasks.ui.screens
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import com.udnahc.opentasks.viewmodel.ImportErrorState
-import com.udnahc.opentasks.viewmodel.ImportErrorType
 import com.udnahc.opentasks.viewmodel.ImportCsvUiState
 import com.udnahc.opentasks.viewmodel.ImportCsvViewModel
+import com.udnahc.opentasks.viewmodel.ImportErrorState
+import com.udnahc.opentasks.viewmodel.ImportErrorType
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.choose_csv_file
 import opentasks.composeapp.generated.resources.csv_import_description

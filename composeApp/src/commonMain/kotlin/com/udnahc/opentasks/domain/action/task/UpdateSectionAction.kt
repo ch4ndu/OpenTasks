@@ -7,11 +7,17 @@ import com.udnahc.opentasks.data.repository.TaskRepository
 class UpdateSectionAction(
     private val repository: TaskRepository,
 ) {
-    suspend operator fun invoke(task: Task, section: String?) {
+    suspend operator fun invoke(
+        task: Task,
+        section: String?
+    ) {
         repository.update(task.copy(section = section, updatedAt = localNow()))
     }
 
-    suspend fun renameSection(tasks: List<Task>, newName: String) {
+    suspend fun renameSection(
+        tasks: List<Task>,
+        newName: String
+    ) {
         val now = localNow()
         for (task in tasks) {
             repository.update(task.copy(section = newName, updatedAt = now))

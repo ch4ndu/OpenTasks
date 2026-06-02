@@ -32,16 +32,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.RecurrenceType
@@ -59,8 +55,6 @@ import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
 import opentasks.composeapp.generated.resources.completed
 import opentasks.composeapp.generated.resources.ic_add
-import opentasks.composeapp.generated.resources.ic_check_box
-import opentasks.composeapp.generated.resources.ic_check_box_outline
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_repeat
@@ -115,6 +109,7 @@ fun QuadrantDetailScreen(
                 onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.BOARD) },
             )
         }
+
         TaskListViewMode.BOARD -> {
             val tasksByStatus by viewModel.tasksByStatus.collectAsState()
             Box(
@@ -125,7 +120,12 @@ fun QuadrantDetailScreen(
                 KanbanBoardContent(
                     tasksByStatus = tasksByStatus,
                     onTaskClick = onTaskClick,
-                    onStatusChange = { task, newStatus -> viewModel.moveTaskToStatus(task, newStatus) },
+                    onStatusChange = { task, newStatus ->
+                        viewModel.moveTaskToStatus(
+                            task,
+                            newStatus
+                        )
+                    },
                     onToggleStar = { viewModel.toggleStar(it) },
                     topBarHeight = topBarHeight,
                     navBarHeight = 0.dp,

@@ -8,7 +8,10 @@ import org.lighthousegames.logging.logging
 private val log = logging("AddTagAction")
 
 class AddTagAction(private val repository: TagRepository) {
-    suspend operator fun invoke(name: String, color: String? = null): String {
+    suspend operator fun invoke(
+        name: String,
+        color: String? = null
+    ): String {
         log.d { "Adding tag: '$name'" }
         val tag = Tag(
             name = name,

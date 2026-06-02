@@ -7,15 +7,18 @@ import com.udnahc.opentasks.ui.screens.TaskListContent
 import com.udnahc.opentasks.ui.screens.TaskListTopBar
 import com.udnahc.opentasks.ui.screens.TaskRow
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.viewmodel.TaskListViewModel.ActiveTaskListSection
+import com.udnahc.opentasks.viewmodel.TaskListViewModel.SectionGroup
 
 @Composable
 @LightDarkPreview
 private fun TaskListScreenPreview() {
     OpenTasksTheme {
+        val activeTasks = PreviewSampleData.sampleTasks.filter { it.status != TaskStatus.DONE }
         TaskListContent(
             listName = "Inbox",
-            activeTasks = PreviewSampleData.sampleTasks.filter { it.status != TaskStatus.DONE },
             completedTasks = PreviewSampleData.sampleTasks.filter { it.status == TaskStatus.DONE },
+            groupedActiveTasks = listOf(SectionGroup(ActiveTaskListSection.UPCOMING, activeTasks)),
             onTaskClick = {},
             onToggleComplete = {},
         )

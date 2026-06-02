@@ -2,13 +2,13 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
+import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskCategory
 import com.udnahc.opentasks.data.model.TaskListViewMode
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
-import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
-import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
@@ -17,14 +17,14 @@ import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -40,7 +40,10 @@ class MatrixViewModel(
     private val updateTaskStatusAction: UpdateTaskStatusAction,
 ) : ViewModel() {
 
-    data class TaskCategoryGroup(val category: TaskCategory, val tasks: List<Task>)
+    data class TaskCategoryGroup(
+        val category: TaskCategory,
+        val tasks: List<Task>
+    )
 
     private val _selectedPriority = MutableStateFlow(TaskPriority.HIGH)
     private val _viewMode = MutableStateFlow(TaskListViewMode.LIST)
@@ -87,15 +90,23 @@ class MatrixViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    fun selectPriority(priority: TaskPriority) { _selectedPriority.value = priority }
-    fun setViewMode(mode: TaskListViewMode) { _viewMode.value = mode }
+    fun selectPriority(priority: TaskPriority) {
+        _selectedPriority.value = priority
+    }
+
+    fun setViewMode(mode: TaskListViewMode) {
+        _viewMode.value = mode
+    }
 
     fun toggleComplete(task: Task) = completionHandler.toggleComplete(task)
     fun completeOccurrence() = completionHandler.completeOccurrence()
     fun completeSeries() = completionHandler.completeSeries()
     fun dismissSeriesChoice() = completionHandler.dismissSeriesChoice()
 
-    fun moveTaskToStatus(task: Task, targetStatus: TaskStatus) {
+    fun moveTaskToStatus(
+        task: Task,
+        targetStatus: TaskStatus
+    ) {
         if (targetStatus == task.status) return
         if (targetStatus == TaskStatus.DONE && task.status != TaskStatus.DONE) {
             completionHandler.toggleComplete(task)
@@ -113,7 +124,8 @@ class MatrixViewModel(
         val tomorrow = today.plus(1, DateTimeUnit.DAY)
         val next7 = today.plus(7, DateTimeUnit.DAY)
         val startOfToday = startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)
-        val startOfTomorrow = startOfDayLocalMillis(tomorrow.year, tomorrow.monthNumber, tomorrow.dayOfMonth)
+        val startOfTomorrow =
+            startOfDayLocalMillis(tomorrow.year, tomorrow.monthNumber, tomorrow.dayOfMonth)
         val endOfNext7Days = startOfDayLocalMillis(next7.year, next7.monthNumber, next7.dayOfMonth)
 
         val incomplete = tasks.filter { it.status != TaskStatus.DONE }

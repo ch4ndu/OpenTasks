@@ -17,6 +17,7 @@ Feature ideas inspired by Todoist and Google Tasks, organized by implementation 
 - ~~**Drag-to-reorder tasks**~~ — Won't do
 - [x] **Smart filters** — Overdue, No Date, High Priority, Due This Week + Filters/Lists section dividers in category picker
 - [x] **Export to CSV/ICS** — TickTick-compatible CSV + RFC 5545 ICS export, file save on all platforms
+- [x] **System share-to-task** — Android share targets + iOS Share Extension for text, URLs, and calendar payloads. Text/URLs open Create Task with description prefilled and URLs copied into the URL field; shared calendar data is routed through the ICS importer.
 
 ## Higher Effort
 
@@ -29,6 +30,8 @@ Feature ideas inspired by Todoist and Google Tasks, organized by implementation 
 ## Deferred / Low Priority
 
 - [ ] **Collaboration/sharing** — Shared projects, task assignment, comments
+- [ ] **Share extension App Group handoff** — Replace the iOS custom-URL payload bridge with an App Group container for large ICS payloads and future file/image support
+- [ ] **Share-to-task images/files** — Accept shared images and documents after task attachment/storage behavior is defined
 - [ ] **Location-based reminders** — Trigger reminders based on GPS location
 - [ ] **Email-to-task** — Create tasks from forwarded emails
 - [ ] **AI features** — Task assist, filter assist, natural language filter generation

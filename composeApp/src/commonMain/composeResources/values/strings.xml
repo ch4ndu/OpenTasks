@@ -148,6 +148,7 @@
     <!-- Quadrant Detail -->
     <string name="no_date">NO DATE</string>
     <string name="overdue">OVERDUE</string>
+    <string name="upcoming">UPCOMING</string>
     <string name="next_7_days">NEXT 7 DAYS</string>
     <string name="later">LATER</string>
     <string name="completed">COMPLETED</string>

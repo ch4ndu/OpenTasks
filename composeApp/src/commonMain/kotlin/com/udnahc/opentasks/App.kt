@@ -59,7 +59,9 @@ import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemind
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
+import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
+import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import com.udnahc.opentasks.navigation.AppNavController
 import com.udnahc.opentasks.navigation.Screen
 import com.udnahc.opentasks.ui.screens.CreateNoteBottomSheet
@@ -107,17 +109,20 @@ import opentasks.composeapp.generated.resources.ic_check_box
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_note
 import opentasks.composeapp.generated.resources.ic_schedule
+import opentasks.composeapp.generated.resources.import_failed_generic
+import opentasks.composeapp.generated.resources.import_success
 import opentasks.composeapp.generated.resources.not_urgent_important
 import opentasks.composeapp.generated.resources.not_urgent_unimportant
 import opentasks.composeapp.generated.resources.open_settings
 import opentasks.composeapp.generated.resources.urgent_important
 import opentasks.composeapp.generated.resources.urgent_unimportant
 import org.jetbrains.compose.resources.DrawableResource
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import org.lighthousegames.logging.logging
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
+import org.lighthousegames.logging.logging
 
 private val IosTransitionEasing = CubicBezierEasing(0.2833f, 0.99f, 0.31833f, 0.99f)
 private val log = logging("App")
@@ -127,7 +132,6 @@ private fun isTabScreen(key: Any): Boolean =
 
 @Composable
 fun App(
-    sharedText: String = "",
     deepLinkTaskId: String = "",
     deepLinkCountdownId: String = "",
     widgetAction: String = "",
@@ -173,11 +177,6 @@ fun App(
                 syncScope.launch(Dispatchers.IO) { triggerSyncAction() }
             }
             onPauseOrDispose { }
-        }
-        if (sharedText.isNotEmpty()) {
-            LaunchedEffect(Unit) {
-                navController.navigate(Screen.CreateTask(title = sharedText))
-            }
         }
         if (deepLinkTaskId.isNotEmpty()) {
             LaunchedEffect(deepLinkTaskId) {
@@ -243,6 +242,8 @@ private fun MainScreen(
     var showImportCsv by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val checkNotificationPermissionUseCase = koinInject<CheckNotificationPermissionUseCase>()
+    val parseIcsUseCase = koinInject<ParseIcsUseCase>()
+    val importCalendarEventsAction = koinInject<ImportCalendarEventsAction>()
     val snackbarScope = rememberCoroutineScope()
 
     val tabs = remember {
@@ -276,6 +277,40 @@ private fun MainScreen(
             && currentScreen !is Screen.EditCountdown
 
     val onSettingsClick = remember { { navController.navigate(Screen.Settings) } }
+
+    LaunchedEffect(navController) {
+        sharedTaskPayload.collect { payload ->
+            if (payload == null) return@collect
+            when {
+                payload.hasIcsContent -> {
+                    try {
+                        val count = withContext(Dispatchers.IO) {
+                            val events = parseIcsUseCase(payload.icsContent)
+                            importCalendarEventsAction(events)
+                        }
+                        snackbarHostState.showSnackbar(getString(Res.string.import_success, count))
+                    } catch (e: Exception) {
+                        log.e(e) { "Shared ICS import failed" }
+                        snackbarHostState.showSnackbar(getString(Res.string.import_failed_generic))
+                    } finally {
+                        clearSharedTaskPayload(payload.id)
+                    }
+                }
+
+                payload.hasTaskContent -> {
+                    navController.navigate(
+                        Screen.CreateTask(
+                            description = payload.description,
+                            url = payload.url,
+                        )
+                    )
+                    clearSharedTaskPayload(payload.id)
+                }
+
+                else -> clearSharedTaskPayload(payload.id)
+            }
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -466,6 +501,8 @@ private fun MainScreen(
                         initialPriority = TaskPriority.entries[screen.priorityOrdinal],
                         initialCategoryId = screen.categoryId,
                         initialTitle = screen.title,
+                        initialDescription = screen.description,
+                        initialUrl = screen.url,
                         initialDay = screen.day,
                         initialMonth = screen.month,
                         initialYear = screen.year,

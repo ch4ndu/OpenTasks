@@ -1,7 +1,6 @@
 package com.udnahc.opentasks.ui.screens.countdown
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,13 +24,13 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,10 +53,9 @@ import com.udnahc.opentasks.ui.theme.PriorityMedium
 import com.udnahc.opentasks.ui.theme.PriorityNone
 import com.udnahc.opentasks.viewmodel.CountdownViewModel
 import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.until
 import opentasks.composeapp.generated.resources.Res
-import opentasks.composeapp.generated.resources.countdown_counting_count_up
-import opentasks.composeapp.generated.resources.countdown_counting_countdown
 import opentasks.composeapp.generated.resources.countdown_days_ago
 import opentasks.composeapp.generated.resources.countdown_days_left
 import opentasks.composeapp.generated.resources.countdown_days_since
@@ -71,7 +69,6 @@ import opentasks.composeapp.generated.resources.countdown_no_items
 import opentasks.composeapp.generated.resources.countdown_title
 import opentasks.composeapp.generated.resources.today
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 
@@ -103,8 +100,10 @@ internal fun countdownTypeInitial(type: CountdownType): String = when (type) {
     CountdownType.COUNTDOWN -> "C"
 }
 
-internal fun computeDaysUntil(targetDateLocalMillis: Long): Int {
-    val today = todayLocal()
+internal fun computeDaysUntil(
+    targetDateLocalMillis: Long,
+    today: LocalDate,
+): Int {
     val targetDate = localMillisToLocalDate(targetDateLocalMillis)
     return today.until(targetDate, DateTimeUnit.DAY).toInt()
 }
@@ -137,6 +136,7 @@ internal fun CountdownContent(
     onSettingsClick: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
+    val today = todayLocal()
     val density = LocalDensity.current
     val statusBarHeight = with(density) {
         WindowInsets.statusBars.getTop(this).toDp()
@@ -169,6 +169,7 @@ internal fun CountdownContent(
                 items(countdowns, key = { it.id }) { countdown ->
                     CountdownCard(
                         countdown = countdown,
+                        today = today,
                         onClick = { onCountdownClick(countdown) },
                     )
                 }
@@ -240,10 +241,13 @@ private fun FilterChipRow(
 @Composable
 internal fun CountdownCard(
     countdown: Countdown,
+    today: LocalDate,
     onClick: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
-    val daysLeft = computeDaysUntil(countdown.targetDate)
+    val daysLeft = remember(countdown.targetDate, today) {
+        computeDaysUntil(countdown.targetDate, today)
+    }
     val isCountUp = countdown.countingMode == CountingMode.COUNT_UP
     val displayDays = if (isCountUp) abs(daysLeft) else daysLeft
     val subtitle = when {

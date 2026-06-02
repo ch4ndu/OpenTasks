@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +24,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.border
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +41,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
@@ -60,7 +61,6 @@ import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.PriorityHigh
 import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.ui.util.rememberOpenInMapsAction
-import com.mohamedrejeb.richeditor.model.RichTextState
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.all_day
 import opentasks.composeapp.generated.resources.cancel
@@ -68,7 +68,6 @@ import opentasks.composeapp.generated.resources.date_and_reminder
 import opentasks.composeapp.generated.resources.delete
 import opentasks.composeapp.generated.resources.delete_task_message
 import opentasks.composeapp.generated.resources.delete_task_title
-import opentasks.composeapp.generated.resources.description_hint
 import opentasks.composeapp.generated.resources.done
 import opentasks.composeapp.generated.resources.ic_alarm
 import opentasks.composeapp.generated.resources.ic_check
@@ -92,6 +91,8 @@ fun CreateTaskScreen(
     initialPriority: TaskPriority = TaskPriority.HIGH,
     initialCategoryId: String = "00000000-0000-0000-0000-000000000001",
     initialTitle: String = "",
+    initialDescription: String = "",
+    initialUrl: String = "",
     initialDay: Int = 0,
     initialMonth: Int = 0,
     initialYear: Int = 0,
@@ -109,6 +110,8 @@ fun CreateTaskScreen(
         initialPriority = initialPriority,
         initialCategoryId = initialCategoryId,
         initialTitle = initialTitle,
+        initialDescription = initialDescription,
+        initialUrl = initialUrl,
         initialDay = initialDay,
         initialMonth = initialMonth,
         initialYear = initialYear,
@@ -130,6 +133,8 @@ private fun CreateTaskContent(
     initialPriority: TaskPriority = TaskPriority.HIGH,
     initialCategoryId: String = "00000000-0000-0000-0000-000000000001",
     initialTitle: String = "",
+    initialDescription: String = "",
+    initialUrl: String = "",
     initialDay: Int = 0,
     initialMonth: Int = 0,
     initialYear: Int = 0,
@@ -142,12 +147,25 @@ private fun CreateTaskContent(
     onSave: (TaskFormData) -> Unit = {},
     onDelete: (() -> Unit)? = null,
 ) {
-    val stateKey = editTask?.id ?: ""
+    val stateKey = editTask?.id ?: listOf(
+        initialPriority.name,
+        initialCategoryId,
+        initialTitle,
+        initialDescription,
+        initialUrl,
+        initialDay.toString(),
+        initialMonth.toString(),
+        initialYear.toString(),
+    ).joinToString("|")
     var title by remember(stateKey) { mutableStateOf(editTask?.title ?: initialTitle) }
-    var description by remember(stateKey) { mutableStateOf(editTask?.content ?: "") }
+    var description by remember(stateKey) { mutableStateOf(editTask?.content ?: initialDescription) }
     var priority by remember(stateKey) { mutableStateOf(editTask?.priority ?: initialPriority) }
     var isCompleted by remember(stateKey) { mutableStateOf(editTask?.status == TaskStatus.DONE) }
-    var selectedCategoryId by remember(stateKey) { mutableStateOf(editTask?.categoryId ?: initialCategoryId) }
+    var selectedCategoryId by remember(stateKey) {
+        mutableStateOf(
+            editTask?.categoryId ?: initialCategoryId
+        )
+    }
     var section by remember(stateKey) { mutableStateOf(editTask?.section ?: "") }
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showPriorityMenu by remember { mutableStateOf(false) }
@@ -155,7 +173,7 @@ private fun CreateTaskContent(
     var subtaskToggleCount by remember { mutableIntStateOf(0) }
     val subtasks = remember(stateKey) { mutableStateListOf<SubtaskItem>() }
     var location by remember(stateKey) { mutableStateOf(editTask?.location ?: "") }
-    var taskUrl by remember(stateKey) { mutableStateOf(editTask?.url ?: "") }
+    var taskUrl by remember(stateKey) { mutableStateOf(editTask?.url ?: initialUrl) }
     var organizer by remember(stateKey) { mutableStateOf(editTask?.organizer ?: "") }
     var eventStatus by remember(stateKey) { mutableStateOf(editTask?.eventStatus ?: "") }
     var attendees by remember(stateKey) { mutableStateOf(editTask?.attendees ?: "") }
@@ -165,8 +183,9 @@ private fun CreateTaskContent(
     val inboxName = stringResource(Res.string.inbox)
 
     LaunchedEffect(stateKey) {
-        if (editTask != null && editTask.content.isNotBlank()) {
-            richTextState.setHtml(editTask.content)
+        val initialContent = editTask?.content ?: initialDescription
+        if (initialContent.isNotBlank()) {
+            richTextState.setHtml(initialContent)
         }
         subtasks.clear()
         subtasks.addAll(editTask?.subtasks?.toSubtaskItems().orEmpty())
@@ -193,11 +212,41 @@ private fun CreateTaskContent(
 
     // Date & Reminder state
     var showDateSheet by remember { mutableStateOf(false) }
-    var selectedDay by remember(stateKey) { mutableIntStateOf(editTask?.deadline?.let { extractDay(it) } ?: initialDay) }
-    var selectedMonth by remember(stateKey) { mutableIntStateOf(editTask?.deadline?.let { extractMonth(it) } ?: initialMonth) }
-    var selectedYear by remember(stateKey) { mutableIntStateOf(editTask?.deadline?.let { extractYear(it) } ?: initialYear) }
-    var selectedHour by remember(stateKey) { mutableIntStateOf(editTask?.deadline?.let { extractHour(it) } ?: 8) }
-    var selectedMinute by remember(stateKey) { mutableIntStateOf(editTask?.deadline?.let { extractMinute(it) } ?: 0) }
+    var selectedDay by remember(stateKey) {
+        mutableIntStateOf(editTask?.deadline?.let {
+            extractDay(
+                it
+            )
+        } ?: initialDay)
+    }
+    var selectedMonth by remember(stateKey) {
+        mutableIntStateOf(editTask?.deadline?.let {
+            extractMonth(
+                it
+            )
+        } ?: initialMonth)
+    }
+    var selectedYear by remember(stateKey) {
+        mutableIntStateOf(editTask?.deadline?.let {
+            extractYear(
+                it
+            )
+        } ?: initialYear)
+    }
+    var selectedHour by remember(stateKey) {
+        mutableIntStateOf(editTask?.deadline?.let {
+            extractHour(
+                it
+            )
+        } ?: 8)
+    }
+    var selectedMinute by remember(stateKey) {
+        mutableIntStateOf(editTask?.deadline?.let {
+            extractMinute(
+                it
+            )
+        } ?: 0)
+    }
     var selectedReminders by remember(stateKey) {
         val initial = if ((editTask?.durationReminders ?: "").isNotBlank()) {
             editTask?.durationReminders?.toReminderSet() ?: emptySet()
@@ -206,8 +255,16 @@ private fun CreateTaskContent(
         }
         mutableStateOf(initial.ifEmpty { setOf(ReminderOption.ON_TIME) })
     }
-    var selectedRecurrence by remember(stateKey) { mutableStateOf(editTask?.recurrenceType ?: RecurrenceType.NONE) }
-    var durationReminders by remember(stateKey) { mutableStateOf(editTask?.durationReminders ?: "") }
+    var selectedRecurrence by remember(stateKey) {
+        mutableStateOf(
+            editTask?.recurrenceType ?: RecurrenceType.NONE
+        )
+    }
+    var durationReminders by remember(stateKey) {
+        mutableStateOf(
+            editTask?.durationReminders ?: ""
+        )
+    }
     var endHour by remember(stateKey) {
         mutableIntStateOf(editTask?.endDeadline?.let { extractHour(it) } ?: -1)
     }
@@ -282,7 +339,8 @@ private fun CreateTaskContent(
                         },
                         onSubtaskCheckedChange = { id, checked ->
                             val index = subtasks.indexOfFirst { it.id == id }
-                            if (index >= 0) subtasks[index] = subtasks[index].copy(isChecked = checked)
+                            if (index >= 0) subtasks[index] =
+                                subtasks[index].copy(isChecked = checked)
                         },
                         onDeleteSubtask = { id ->
                             val index = subtasks.indexOfFirst { it.id == id }
@@ -330,7 +388,7 @@ private fun CreateTaskContent(
         var showDetails by remember {
             mutableStateOf(
                 location.isNotBlank() || taskUrl.isNotBlank() || organizer.isNotBlank() ||
-                    eventStatus.isNotBlank() || attendees.isNotBlank()
+                        eventStatus.isNotBlank() || attendees.isNotBlank()
             )
         }
 
@@ -390,7 +448,13 @@ private fun CreateTaskContent(
                             subtasks = subtasksToSave,
                             priority = priority,
                             deadline = deadlineMs,
-                            endDeadline = if (endHour >= 0 && selectedDay > 0) computeDeadlineMillis(selectedYear, selectedMonth, selectedDay, endHour, endMinute) else null,
+                            endDeadline = if (endHour >= 0 && selectedDay > 0) computeDeadlineMillis(
+                                selectedYear,
+                                selectedMonth,
+                                selectedDay,
+                                endHour,
+                                endMinute
+                            ) else null,
                             isAllDay = isAllDay,
                             recurrence = selectedRecurrence,
                             categoryId = selectedCategoryId,
@@ -656,9 +720,16 @@ internal fun DateReminderRow(
                     .size(dimens.priorityIndicatorSize)
                     .then(
                         if (isCompleted) {
-                            Modifier.background(PriorityHigh, RoundedCornerShape(dimens.cornerMedium))
+                            Modifier.background(
+                                PriorityHigh,
+                                RoundedCornerShape(dimens.cornerMedium)
+                            )
                         } else {
-                            Modifier.border(dimens.priorityIndicatorBorder, PriorityHigh, RoundedCornerShape(dimens.cornerMedium))
+                            Modifier.border(
+                                dimens.priorityIndicatorBorder,
+                                PriorityHigh,
+                                RoundedCornerShape(dimens.cornerMedium)
+                            )
                         }
                     )
                     .clickable(onClick = onToggleComplete),

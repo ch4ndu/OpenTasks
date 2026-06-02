@@ -37,7 +37,10 @@ object CsvGenerator {
         "Is Floating",
     )
 
-    fun generate(tasks: List<Task>, categories: List<Category>): String {
+    fun generate(
+        tasks: List<Task>,
+        categories: List<Category>
+    ): String {
         val categoryMap = categories.associateBy { it.id }
         val sb = StringBuilder()
 

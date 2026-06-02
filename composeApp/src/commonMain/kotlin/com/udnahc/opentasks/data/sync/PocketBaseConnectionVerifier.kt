@@ -1,7 +1,7 @@
 package com.udnahc.opentasks.data.sync
 
-import org.lighthousegames.logging.logging
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
+import org.lighthousegames.logging.logging
 
 private val log = logging("PocketBaseConnectionVerifier")
 
@@ -11,7 +11,8 @@ class PocketBaseConnectionVerifier(
     private val healthCheck: suspend (PocketbaseClient) -> Unit = { it.health.healthCheck() },
 ) {
     suspend fun verify() {
-        val client = pbProvider.client ?: throw PocketBaseConnectionException("PocketBase client is not configured")
+        val client = pbProvider.client
+            ?: throw PocketBaseConnectionException("PocketBase client is not configured")
         verify(client)
     }
 

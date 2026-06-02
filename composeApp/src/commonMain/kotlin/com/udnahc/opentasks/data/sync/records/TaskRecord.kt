@@ -1,10 +1,10 @@
 package com.udnahc.opentasks.data.sync.records
 
+import com.udnahc.opentasks.data.model.NotifyBeforeUnit
+import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
-import com.udnahc.opentasks.data.model.NotifyBeforeUnit
-import com.udnahc.opentasks.data.model.RecurrenceType
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -84,8 +84,10 @@ fun TaskRecord.toTask(): Task = Task(
     deadline = deadline,
     endDeadline = endDeadline,
     notifyBeforeValue = notifyBeforeValue,
-    notifyBeforeUnit = NotifyBeforeUnit.entries.firstOrNull { it.name == notifyBeforeUnit } ?: NotifyBeforeUnit.NONE,
-    recurrenceType = RecurrenceType.entries.firstOrNull { it.name == recurrenceType } ?: RecurrenceType.NONE,
+    notifyBeforeUnit = NotifyBeforeUnit.entries.firstOrNull { it.name == notifyBeforeUnit }
+        ?: NotifyBeforeUnit.NONE,
+    recurrenceType = RecurrenceType.entries.firstOrNull { it.name == recurrenceType }
+        ?: RecurrenceType.NONE,
     recurrenceInterval = recurrenceInterval,
     status = TaskStatus.entries.firstOrNull { it.name == status } ?: TaskStatus.TODO,
     isStarred = isStarred,

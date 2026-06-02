@@ -1,7 +1,6 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,7 +27,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -40,11 +38,11 @@ import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.extractMonth
-import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
-import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.formatTime12Hr
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
+import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 
@@ -71,7 +69,8 @@ internal fun ThreeDayViewContent(
     val timeColumnWidth = dimens.calendarTimeColumnWidth
     val hourHeight = dimens.calendarTimelineHeight
     val scrollState = rememberScrollState()
-    val dayHeaderHeight = dimens.paddingMedium + dimens.calendarDayHeaderHeight + dimens.spacerSmall + dimens.calendarWeekDayCircle + dimens.paddingSmall
+    val dayHeaderHeight =
+        dimens.paddingMedium + dimens.calendarDayHeaderHeight + dimens.spacerSmall + dimens.calendarWeekDayCircle + dimens.paddingSmall
 
     Column(modifier = Modifier.fillMaxSize()) {
         Spacer(Modifier.height(topBarHeight))
@@ -195,7 +194,10 @@ private fun ThreeDayColumn(
                 modifier = Modifier
                     .size(dimens.calendarWeekDayCircle)
                     .then(
-                        if (isToday) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                        if (isToday) Modifier.background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            CircleShape
+                        )
                         else Modifier
                     ),
                 contentAlignment = Alignment.Center,

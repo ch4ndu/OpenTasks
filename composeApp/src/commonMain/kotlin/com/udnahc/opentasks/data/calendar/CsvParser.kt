@@ -7,6 +7,12 @@ import org.lighthousegames.logging.logging
 
 private val log = logging("CsvParser")
 
+private val ISO_OFFSET_REGEX = Regex("([+-])(\\d{2})(\\d{2})$")
+private val DURATION_HOUR_REGEX = Regex("(\\d+)H")
+private val DURATION_MIN_REGEX = Regex("(\\d+)M")
+private val DURATION_SEC_REGEX = Regex("(\\d+)S")
+private val RRULE_FREQ_REGEX = Regex("FREQ=(\\w+)")
+
 /**
  * Parsed row from a TickTick CSV export.
  */
@@ -59,7 +65,10 @@ object CsvParser {
         return tasks
     }
 
-    private fun parseCsvTask(fields: List<String>, col: Map<String, Int>): CsvTask? {
+    private fun parseCsvTask(
+        fields: List<String>,
+        col: Map<String, Int>
+    ): CsvTask? {
         val title = fields.getOrNull(col["Title"] ?: -1)?.trim() ?: return null
         if (title.isBlank()) return null
 
@@ -113,11 +122,13 @@ object CsvParser {
                         currentField.append(c)
                     }
                 }
+
                 c == '"' -> inQuotes = true
                 c == ',' -> {
                     currentRow.add(currentField.toString())
                     currentField.clear()
                 }
+
                 c == '\n' -> {
                     currentRow.add(currentField.toString())
                     currentField.clear()
@@ -126,6 +137,7 @@ object CsvParser {
                     }
                     currentRow.clear()
                 }
+
                 else -> currentField.append(c)
             }
             i++
@@ -147,7 +159,7 @@ object CsvParser {
         if (value.isBlank()) return null
         return try {
             // Normalize offset: +0000 → +00:00
-            val normalized = value.replace(Regex("([+-])(\\d{2})(\\d{2})$"), "$1$2:$3")
+            val normalized = value.replace(ISO_OFFSET_REGEX, "$1$2:$3")
             Instant.parse(normalized).toEpochMilliseconds()
         } catch (e: Exception) {
             log.w(e) { "Failed to parse date '$value'" }
@@ -182,9 +194,9 @@ object CsvParser {
         if (cleaned.isBlank()) return null
 
         var minutes = 0
-        val hourMatch = Regex("(\\d+)H").find(cleaned)
-        val minMatch = Regex("(\\d+)M").find(cleaned)
-        val secMatch = Regex("(\\d+)S").find(cleaned)
+        val hourMatch = DURATION_HOUR_REGEX.find(cleaned)
+        val minMatch = DURATION_MIN_REGEX.find(cleaned)
+        val secMatch = DURATION_SEC_REGEX.find(cleaned)
 
         if (hourMatch != null) minutes += hourMatch.groupValues[1].toInt() * 60
         if (minMatch != null) minutes += minMatch.groupValues[1].toInt()
@@ -196,7 +208,7 @@ object CsvParser {
     /** Extract FREQ from RRULE and map to RecurrenceType. */
     private fun parseRecurrence(value: String): RecurrenceType {
         if (value.isBlank()) return RecurrenceType.NONE
-        val freq = Regex("FREQ=(\\w+)").find(value)?.groupValues?.get(1)?.uppercase()
+        val freq = RRULE_FREQ_REGEX.find(value)?.groupValues?.get(1)?.uppercase()
         return when (freq) {
             "DAILY" -> RecurrenceType.DAILY
             "WEEKLY" -> RecurrenceType.WEEKLY

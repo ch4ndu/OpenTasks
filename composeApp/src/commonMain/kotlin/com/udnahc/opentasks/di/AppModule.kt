@@ -5,7 +5,6 @@ import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import com.udnahc.opentasks.data.database.AppDatabase
-import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.database.MIGRATION_2_3
 import com.udnahc.opentasks.data.database.MIGRATION_3_4
 import com.udnahc.opentasks.data.database.MIGRATION_4_5
@@ -14,37 +13,40 @@ import com.udnahc.opentasks.data.database.MIGRATION_6_7
 import com.udnahc.opentasks.data.database.MIGRATION_7_8
 import com.udnahc.opentasks.data.database.MIGRATION_8_9
 import com.udnahc.opentasks.data.database.MIGRATION_9_10
-import com.udnahc.opentasks.data.repository.CategoryRepository
+import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
-import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
-import com.udnahc.opentasks.data.repository.NoteRepository
-import com.udnahc.opentasks.data.repository.NoteRepositoryImpl
-import com.udnahc.opentasks.data.repository.TaskRepository
-import com.udnahc.opentasks.data.repository.TaskRepositoryImpl
-import com.udnahc.opentasks.data.repository.TagRepository
-import com.udnahc.opentasks.data.repository.TagRepositoryImpl
 import com.udnahc.opentasks.data.repository.AppSettingsRepository
 import com.udnahc.opentasks.data.repository.AppSettingsRepositoryImpl
+import com.udnahc.opentasks.data.repository.CategoryRepository
+import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
 import com.udnahc.opentasks.data.repository.CountdownRepository
 import com.udnahc.opentasks.data.repository.CountdownRepositoryImpl
+import com.udnahc.opentasks.data.repository.NoteRepository
+import com.udnahc.opentasks.data.repository.NoteRepositoryImpl
+import com.udnahc.opentasks.data.repository.TagRepository
+import com.udnahc.opentasks.data.repository.TagRepositoryImpl
+import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.data.repository.TaskRepositoryImpl
+import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
+import com.udnahc.opentasks.data.sync.PocketBaseConnectionVerifier
+import com.udnahc.opentasks.data.sync.SyncService
+import com.udnahc.opentasks.data.sync.SyncTrigger
+import com.udnahc.opentasks.data.sync.adapters.CategorySyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.CountdownSyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.NoteSyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.TagSyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.TaskSyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.TaskTagSyncAdapter
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemindersAction
 import com.udnahc.opentasks.domain.action.countdown.ScheduleCountdownRemindersAction
 import com.udnahc.opentasks.domain.action.countdown.UpdateCountdownAction
-import com.udnahc.opentasks.domain.action.tag.AddTagAction
-import com.udnahc.opentasks.domain.action.tag.TagTaskAction
 import com.udnahc.opentasks.domain.action.note.AddNoteAction
 import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
 import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
-import com.udnahc.opentasks.domain.action.task.AddTaskAction
-import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
-import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
-import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
-import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
-import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.ConfigurePocketBaseUrlAction
@@ -57,18 +59,26 @@ import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
 import com.udnahc.opentasks.domain.action.settings.SaveTextSizePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveThemePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import com.udnahc.opentasks.domain.action.tag.AddTagAction
+import com.udnahc.opentasks.domain.action.tag.TagTaskAction
+import com.udnahc.opentasks.domain.action.task.AddTaskAction
+import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
+import com.udnahc.opentasks.domain.action.task.GenerateCsvExportAction
+import com.udnahc.opentasks.domain.action.task.GenerateIcsExportAction
+import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
+import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
+import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
+import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
+import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
+import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
+import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
+import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
+import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveCountdownByIdUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveNoteByIdUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
-import com.udnahc.opentasks.domain.usecase.tag.ObserveTagsForTaskUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarListDisplayModePreferenceUseCase
@@ -78,38 +88,28 @@ import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskListViewModeUseCa
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTextSizePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
+import com.udnahc.opentasks.domain.usecase.tag.ObserveTagsForTaskUseCase
 import com.udnahc.opentasks.domain.usecase.task.FetchCalendarEventsUseCase
-import com.udnahc.opentasks.domain.action.task.GenerateCsvExportAction
-import com.udnahc.opentasks.domain.action.task.GenerateIcsExportAction
+import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
-import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
-import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
-import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
-import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
-import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
-import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
-import com.udnahc.opentasks.data.sync.PocketBaseConnectionVerifier
-import com.udnahc.opentasks.data.sync.SyncService
-import com.udnahc.opentasks.data.sync.SyncTrigger
-import com.udnahc.opentasks.data.sync.adapters.CategorySyncAdapter
-import com.udnahc.opentasks.data.sync.adapters.CountdownSyncAdapter
-import com.udnahc.opentasks.data.sync.adapters.NoteSyncAdapter
-import com.udnahc.opentasks.data.sync.adapters.TagSyncAdapter
-import com.udnahc.opentasks.data.sync.adapters.TaskTagSyncAdapter
-import com.udnahc.opentasks.data.sync.adapters.TaskSyncAdapter
 import com.udnahc.opentasks.viewmodel.AppViewModel
-import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
-import com.udnahc.opentasks.viewmodel.TaskFormViewModel
-import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
+import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
+import com.udnahc.opentasks.viewmodel.CountdownViewModel
 import com.udnahc.opentasks.viewmodel.ImportCalendarViewModel
 import com.udnahc.opentasks.viewmodel.ImportCsvViewModel
 import com.udnahc.opentasks.viewmodel.ImportIcsViewModel
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
-import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
-import com.udnahc.opentasks.viewmodel.CountdownViewModel
 import com.udnahc.opentasks.viewmodel.NoteViewModel
+import com.udnahc.opentasks.viewmodel.SettingsViewModel
+import com.udnahc.opentasks.viewmodel.TaskFormViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModel
@@ -120,7 +120,16 @@ expect val platformModule: Module
 val sharedModule = module {
     single<AppDatabase> {
         get<androidx.room.RoomDatabase.Builder<AppDatabase>>()
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+            .addMigrations(
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+                MIGRATION_6_7,
+                MIGRATION_7_8,
+                MIGRATION_8_9,
+                MIGRATION_9_10
+            )
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onCreate(connection: SQLiteConnection) {
@@ -251,7 +260,23 @@ val sharedModule = module {
     // ViewModels
     viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get()) }
-    viewModel { TaskListViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel {
+        TaskListViewModel(
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get()
+        )
+    }
     viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { NoteViewModel(get(), get(), get(), get(), get()) }
     viewModel { ImportCalendarViewModel(get(), get(), get()) }
@@ -259,6 +284,23 @@ val sharedModule = module {
     viewModel { ImportCsvViewModel(get(), get()) }
     viewModel { CountdownViewModel(get(), get()) }
     viewModel { CountdownFormViewModel(get(), get(), get(), get()) }
-    viewModel { SettingsViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel {
+        SettingsViewModel(
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get(),
+            get()
+        )
+    }
     viewModel { AppViewModel(get()) }
 }

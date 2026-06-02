@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -24,6 +25,7 @@ class TagRepositoryImpl(
     override fun getAllTags(): Flow<List<Tag>> =
         tagDao.getAllTags()
             .map { tags -> tags.map { it.withLocalTimestamps() } }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
     override suspend fun getTagById(id: String): Tag? =
@@ -35,6 +37,7 @@ class TagRepositoryImpl(
     override fun getTagsForTask(taskId: String): Flow<List<Tag>> =
         tagDao.getTagsForTask(taskId)
             .map { tags -> tags.map { it.withLocalTimestamps() } }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
     override suspend fun insertTag(tag: Tag): Long {
@@ -74,12 +77,14 @@ class TagRepositoryImpl(
         } ?: taskTag
         val now = localNow()
         withContext(ioDispatcher) {
-            tagDao.updateTaskTag(existing.copy(
-                isDeleted = true,
-                isSynced = false,
-                createdAt = if (existing.createdAt == 0L) now else existing.createdAt,
-                updatedAt = now,
-            ).withUtcTimestamps())
+            tagDao.updateTaskTag(
+                existing.copy(
+                    isDeleted = true,
+                    isSynced = false,
+                    createdAt = if (existing.createdAt == 0L) now else existing.createdAt,
+                    updatedAt = now,
+                ).withUtcTimestamps()
+            )
         }
         syncTrigger.triggerSync()
     }

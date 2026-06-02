@@ -121,5 +121,8 @@ private fun SubtaskRow(
             )
         }
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = dimens.dividerThin)
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        thickness = dimens.dividerThin
+    )
 }

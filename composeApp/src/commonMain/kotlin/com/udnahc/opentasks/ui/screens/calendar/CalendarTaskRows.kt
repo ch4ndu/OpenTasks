@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,13 +25,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.formatTime12Hr
 import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.model.isCountdownItem
@@ -44,11 +42,10 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.all_day
 import opentasks.composeapp.generated.resources.ic_alarm
 import opentasks.composeapp.generated.resources.ic_check_box
 import opentasks.composeapp.generated.resources.ic_check_box_outline
-import opentasks.composeapp.generated.resources.all_day
-import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.no_tasks
 import opentasks.composeapp.generated.resources.today
 import org.jetbrains.compose.resources.painterResource
@@ -78,7 +75,9 @@ internal fun TimelineTaskRow(
         val timeText = if (task.deadline != null) {
             val h = extractHour(task.deadline)
             val m = extractMinute(task.deadline)
-            if (h == 0 && m == 0) stringResource(Res.string.all_day) else formatTimeFromLocalMillis(task.deadline)
+            if (h == 0 && m == 0) stringResource(Res.string.all_day) else formatTimeFromLocalMillis(
+                task.deadline
+            )
         } else stringResource(Res.string.all_day)
 
         Text(
@@ -119,7 +118,9 @@ internal fun TimelineTaskRow(
                     else Res.drawable.ic_check_box_outline
                 ),
                 contentDescription = null,
-                tint = if (!isCountdownItem && task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                tint = if (!isCountdownItem && task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                    alpha = 0.4f
+                )
                 else priorityColor(task.priority),
                 modifier = Modifier
                     .size(dimens.calendarTimelineMarkerSize)
@@ -215,7 +216,8 @@ internal fun CardTaskRow(
                 isCompleted = task.status == TaskStatus.DONE,
             )
             if (task.deadline != null) {
-                val dayPrefix = if (isToday) stringResource(Res.string.today) else formatDateShort(task.deadline)
+                val dayPrefix =
+                    if (isToday) stringResource(Res.string.today) else formatDateShort(task.deadline)
                 val h = extractHour(task.deadline)
                 val m = extractMinute(task.deadline)
                 val timeStr =

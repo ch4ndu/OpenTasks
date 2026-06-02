@@ -1,6 +1,7 @@
 package com.udnahc.opentasks
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -19,6 +20,8 @@ import androidx.work.WorkManager
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.sync.SyncWorker
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
@@ -40,12 +43,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
 
-        val sharedText = if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
-        } else {
-            ""
-        }
-
+        publishShareIntent(intent)
         handleDeepLinkIntent(intent)
         widgetAction = intent?.getStringExtra("widget_action").orEmpty()
 
@@ -53,7 +51,6 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             App(
-                sharedText = sharedText,
                 deepLinkTaskId = deepLinkTaskId,
                 deepLinkCountdownId = deepLinkCountdownId,
                 widgetAction = widgetAction,
@@ -78,9 +75,60 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        publishShareIntent(intent)
         handleDeepLinkIntent(intent)
         widgetAction = intent.getStringExtra("widget_action").orEmpty()
     }
+
+    private fun publishShareIntent(intent: Intent?) {
+        val payload = intent?.toSharedTaskPayload() ?: return
+        publishSharedTaskPayload(
+            id = System.currentTimeMillis(),
+            description = payload.description,
+            url = payload.url,
+            icsContent = payload.icsContent,
+        )
+    }
+
+    private fun Intent.toSharedTaskPayload(): AndroidSharedTaskPayload? {
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return null
+
+        val mimeType = type.orEmpty()
+        val text = getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
+        val icsContent = when {
+            text.isIcsContent() -> text
+            mimeType.isCalendarMimeType() -> streamUris().mapNotNull { readTextFromUri(it) }
+                .joinToString("\n")
+
+            else -> ""
+        }
+
+        return if (icsContent.isNotBlank()) {
+            AndroidSharedTaskPayload(icsContent = icsContent)
+        } else {
+            val description = text.ifBlank {
+                getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString().orEmpty()
+            }
+            if (description.isBlank()) return null
+            AndroidSharedTaskPayload(
+                description = description,
+                url = description.firstUrl().orEmpty(),
+            )
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun Intent.streamUris(): List<Uri> = when (action) {
+        Intent.ACTION_SEND_MULTIPLE -> getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+        Intent.ACTION_SEND -> listOfNotNull(getParcelableExtra(Intent.EXTRA_STREAM))
+        else -> emptyList()
+    }
+
+    private fun readTextFromUri(uri: Uri): String? = runCatching {
+        contentResolver.openInputStream(uri)?.use { input ->
+            BufferedReader(InputStreamReader(input)).use { it.readText() }
+        }
+    }.getOrNull()
 
     private fun handleDeepLinkIntent(intent: Intent?) {
         val eventId = intent?.getStringExtra(NotificationScheduler.EXTRA_TASK_ID).orEmpty()
@@ -93,6 +141,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private data class AndroidSharedTaskPayload(
+    val description: String = "",
+    val url: String = "",
+    val icsContent: String = "",
+)
+
+private fun String.isCalendarMimeType(): Boolean =
+    equals("text/calendar", ignoreCase = true) ||
+            equals("text/x-vcalendar", ignoreCase = true)
+
+private fun String.isIcsContent(): Boolean =
+    contains("BEGIN:VCALENDAR", ignoreCase = true) &&
+            contains("BEGIN:VEVENT", ignoreCase = true)
+
+private fun String.firstUrl(): String? =
+    Regex("""https?://\S+""").find(this)?.value?.trimEnd('.', ',', ')', ']')
 
 @Preview
 @Composable

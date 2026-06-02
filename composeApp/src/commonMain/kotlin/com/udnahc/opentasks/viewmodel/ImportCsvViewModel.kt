@@ -32,10 +32,20 @@ class ImportCsvViewModel(
     private val _uiState = MutableStateFlow(ImportCsvUiState())
     val uiState: StateFlow<ImportCsvUiState> = _uiState.asStateFlow()
 
-    fun importFromCsvContent(fileName: String, content: String) {
+    fun importFromCsvContent(
+        fileName: String,
+        content: String
+    ) {
         log.d { "Importing CSV tasks" }
         viewModelScope.launch(ioDispatcher) {
-            _uiState.update { it.copy(isLoading = true, error = null, importedCount = null, fileName = fileName) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    error = null,
+                    importedCount = null,
+                    fileName = fileName
+                )
+            }
             try {
                 val tasks = parseCsv(content)
                 if (tasks.isEmpty()) {

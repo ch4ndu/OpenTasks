@@ -59,7 +59,8 @@ internal fun parsePocketBaseEndpoint(url: String): PocketBaseEndpoint {
         .substringBefore('/')
     val separator = withoutProtocol.lastIndexOf(':')
     val host = if (separator > 0) withoutProtocol.substring(0, separator) else withoutProtocol
-    val explicitPort = if (separator > 0) withoutProtocol.substring(separator + 1).toIntOrNull() else null
+    val explicitPort =
+        if (separator > 0) withoutProtocol.substring(separator + 1).toIntOrNull() else null
     val port = explicitPort ?: when {
         useHttps -> 443
         useHttp -> 80

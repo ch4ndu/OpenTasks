@@ -19,7 +19,10 @@ class AppSettingsRepositoryImpl(
     override fun observeValue(key: String): Flow<String?> =
         appSettingsDao.observeValue(key)
 
-    override suspend fun setValue(key: String, value: String) =
+    override suspend fun setValue(
+        key: String,
+        value: String
+    ) =
         withContext(ioDispatcher) { appSettingsDao.setValue(AppSettings(key, value)) }
 
     override suspend fun removeValue(key: String) =

@@ -6,11 +6,11 @@ import androidx.room.RoomDatabase
 import androidx.room.RoomDatabaseConstructor
 import androidx.room.TypeConverters
 import com.udnahc.opentasks.data.dao.AppSettingsDao
+import com.udnahc.opentasks.data.dao.CategoryDao
 import com.udnahc.opentasks.data.dao.CountdownDao
 import com.udnahc.opentasks.data.dao.NoteDao
 import com.udnahc.opentasks.data.dao.TagDao
 import com.udnahc.opentasks.data.dao.TaskDao
-import com.udnahc.opentasks.data.dao.CategoryDao
 import com.udnahc.opentasks.data.model.AppSettings
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.Countdown
@@ -19,7 +19,10 @@ import com.udnahc.opentasks.data.model.Tag
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskTag
 
-@Database(entities = [Task::class, Category::class, Note::class, Tag::class, TaskTag::class, AppSettings::class, Countdown::class], version = 10)
+@Database(
+    entities = [Task::class, Category::class, Note::class, Tag::class, TaskTag::class, AppSettings::class, Countdown::class],
+    version = 10
+)
 @TypeConverters(Converters::class)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {

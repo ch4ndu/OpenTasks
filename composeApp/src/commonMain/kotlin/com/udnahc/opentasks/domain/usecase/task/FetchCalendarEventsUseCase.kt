@@ -8,6 +8,9 @@ class FetchCalendarEventsUseCase(
 ) {
     fun isAvailable(): Boolean = calendarProvider.isAvailable()
 
-    suspend operator fun invoke(startUtcMillis: Long, endUtcMillis: Long): List<CalendarEvent> =
+    suspend operator fun invoke(
+        startUtcMillis: Long,
+        endUtcMillis: Long
+    ): List<CalendarEvent> =
         calendarProvider.fetchEvents(startUtcMillis, endUtcMillis)
 }

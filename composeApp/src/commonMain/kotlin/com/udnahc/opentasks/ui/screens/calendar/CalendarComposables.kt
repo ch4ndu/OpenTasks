@@ -116,7 +116,11 @@ internal fun CalendarDayCircle(
             .then(
                 when {
                     isSelected -> Modifier.background(PrimaryBlue, CircleShape)
-                    isToday -> Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                    isToday -> Modifier.background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        CircleShape
+                    )
+
                     else -> Modifier
                 }
             ),
@@ -234,7 +238,10 @@ private fun MiniCalendarAspectRatioGrid(
                         .weight(1f)
                         .aspectRatio(1f)
                         .then(
-                            if (isToday) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            if (isToday) Modifier.background(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                CircleShape
+                            )
                             else Modifier
                         ),
                     contentAlignment = Alignment.Center,
@@ -281,7 +288,8 @@ private fun MiniCalendarFillGrid(
     }
 
     // Animate the highlight band position
-    val animatedRowIndex = remember { Animatable(highlightedWeekRowIndex.coerceAtLeast(0).toFloat()) }
+    val animatedRowIndex =
+        remember { Animatable(highlightedWeekRowIndex.coerceAtLeast(0).toFloat()) }
     LaunchedEffect(highlightedWeekRowIndex) {
         if (highlightedWeekRowIndex >= 0) {
             animatedRowIndex.animateTo(
@@ -335,7 +343,11 @@ private fun MiniCalendarFillGrid(
                                 .weight(1f)
                                 .fillMaxHeight()
                                 .then(
-                                    if (onDayClick != null) Modifier.clickable { onDayClick(dayMillis) }
+                                    if (onDayClick != null) Modifier.clickable {
+                                        onDayClick(
+                                            dayMillis
+                                        )
+                                    }
                                     else Modifier
                                 ),
                             contentAlignment = Alignment.Center,
@@ -344,7 +356,10 @@ private fun MiniCalendarFillGrid(
                                 modifier = Modifier
                                     .size(dimens.miniCalTodayCircle)
                                     .then(
-                                        if (isToday) Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                                        if (isToday) Modifier.background(
+                                            MaterialTheme.colorScheme.surfaceVariant,
+                                            CircleShape
+                                        )
                                         else Modifier
                                     ),
                                 contentAlignment = Alignment.Center,

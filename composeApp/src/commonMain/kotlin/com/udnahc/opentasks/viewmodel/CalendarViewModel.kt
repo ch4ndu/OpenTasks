@@ -2,10 +2,10 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.udnahc.opentasks.data.model.CalendarListDisplayModePreference
-import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
+import com.udnahc.opentasks.data.model.CalendarListDisplayModePreference
+import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.data.model.toCalendarTask
@@ -19,8 +19,8 @@ import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarListDisplayMo
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarViewPreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
-import com.udnahc.opentasks.domain.usecase.task.splitCalendarDayTasks
 import com.udnahc.opentasks.domain.usecase.task.sortCalendarTasksForDay
+import com.udnahc.opentasks.domain.usecase.task.splitCalendarDayTasks
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -81,7 +81,7 @@ class CalendarViewModel(
         for (countdown in countdowns) {
             val dk = dayKey(countdown.targetDate)
             val existing = merged[dk].orEmpty()
-            merged[dk] = sortCalendarTasksForDay(existing + countdown.toCalendarTask())
+            merged[dk] = existing + countdown.toCalendarTask()
         }
         merged.mapValues { (_, tasks) -> sortCalendarTasksForDay(tasks) }
     }
@@ -127,7 +127,11 @@ class CalendarViewModel(
         }
     }
 
-    fun selectMonthDay(year: Int, month: Int, day: Int) {
+    fun selectMonthDay(
+        year: Int,
+        month: Int,
+        day: Int
+    ) {
         _monthSelectedDayKey.value = dayKeyFromDate(year, month, day)
     }
 

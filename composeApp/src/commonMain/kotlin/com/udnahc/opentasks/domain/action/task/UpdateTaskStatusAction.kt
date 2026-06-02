@@ -9,7 +9,10 @@ class UpdateTaskStatusAction(
     private val repository: TaskRepository,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
 ) {
-    suspend operator fun invoke(task: Task, newStatus: TaskStatus) {
+    suspend operator fun invoke(
+        task: Task,
+        newStatus: TaskStatus
+    ) {
         val updated = task.copy(status = newStatus, updatedAt = localNow())
         repository.update(updated)
         scheduleTaskRemindersAction(updated.id)

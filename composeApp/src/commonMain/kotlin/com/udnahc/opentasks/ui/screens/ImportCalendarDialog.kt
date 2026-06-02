@@ -102,24 +102,35 @@ internal fun ImportCalendarDialogContent(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+
                     uiState.permissionStatus == CalendarPermissionStatus.DENIED -> {
                         ImportErrorText(stringResource(Res.string.calendar_permission_denied))
                     }
+
                     uiState.permissionStatus != CalendarPermissionStatus.GRANTED -> {
                         Text(
                             text = stringResource(Res.string.grant_calendar_permission),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+
                     uiState.isLoading -> {
                         ImportLoadingRow()
                     }
+
                     uiState.importedCount != null -> {
-                        ImportSuccessText(stringResource(Res.string.import_success, uiState.importedCount))
+                        ImportSuccessText(
+                            stringResource(
+                                Res.string.import_success,
+                                uiState.importedCount
+                            )
+                        )
                     }
+
                     uiState.error != null -> {
                         ImportErrorText(importErrorText(uiState.error))
                     }
+
                     else -> {
                         // Range picker
                         Text(
@@ -157,16 +168,21 @@ internal fun ImportCalendarDialogContent(
                 !isAvailable -> {
                     ImportDoneButton(onDismiss)
                 }
+
                 uiState.importedCount != null -> {
                     ImportDoneButton(onDismiss)
                 }
+
                 uiState.permissionStatus != CalendarPermissionStatus.GRANTED -> {
                     PrimaryDialogTextButton(
                         text = stringResource(Res.string.grant_calendar_permission),
                         onClick = onRequestPermission,
                     )
                 }
-                uiState.isLoading -> { /* No button while loading */ }
+
+                uiState.isLoading -> { /* No button while loading */
+                }
+
                 else -> {
                     PrimaryDialogTextButton(
                         text = stringResource(Res.string.import_button),

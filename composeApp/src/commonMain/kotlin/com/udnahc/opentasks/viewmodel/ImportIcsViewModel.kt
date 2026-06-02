@@ -32,10 +32,20 @@ class ImportIcsViewModel(
     private val _uiState = MutableStateFlow(ImportIcsUiState())
     val uiState: StateFlow<ImportIcsUiState> = _uiState.asStateFlow()
 
-    fun importFromIcsContent(fileName: String, content: String) {
+    fun importFromIcsContent(
+        fileName: String,
+        content: String
+    ) {
         log.d { "Importing ICS events" }
         viewModelScope.launch(ioDispatcher) {
-            _uiState.update { it.copy(isLoading = true, error = null, importedCount = null, fileName = fileName) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    error = null,
+                    importedCount = null,
+                    fileName = fileName
+                )
+            }
             try {
                 val events = parseIcs(content)
                 if (events.isEmpty()) {

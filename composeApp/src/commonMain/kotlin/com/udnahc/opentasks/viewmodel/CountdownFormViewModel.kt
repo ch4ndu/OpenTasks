@@ -38,21 +38,30 @@ class CountdownFormViewModel(
         _countdownId.value = id
     }
 
-    fun addCountdown(countdown: Countdown, onComplete: () -> Unit = {}) {
+    fun addCountdown(
+        countdown: Countdown,
+        onComplete: () -> Unit = {}
+    ) {
         viewModelScope.launch(ioDispatcher) {
             addCountdownAction(countdown)
             onComplete()
         }
     }
 
-    fun updateCountdown(countdown: Countdown, onComplete: () -> Unit = {}) {
+    fun updateCountdown(
+        countdown: Countdown,
+        onComplete: () -> Unit = {}
+    ) {
         viewModelScope.launch(ioDispatcher) {
             updateCountdownAction(countdown)
             onComplete()
         }
     }
 
-    fun deleteCountdown(countdown: Countdown, onComplete: () -> Unit = {}) {
+    fun deleteCountdown(
+        countdown: Countdown,
+        onComplete: () -> Unit = {}
+    ) {
         viewModelScope.launch(ioDispatcher) {
             deleteCountdownAction(countdown)
             onComplete()

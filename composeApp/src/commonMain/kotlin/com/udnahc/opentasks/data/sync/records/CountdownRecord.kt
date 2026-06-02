@@ -31,13 +31,17 @@ fun CountdownRecord.toCountdown(): Countdown = Countdown(
     id = localId,
     title = title,
     targetDate = targetDate,
-    countdownType = CountdownType.entries.firstOrNull { it.name == countdownType } ?: CountdownType.COUNTDOWN,
-    countingMode = CountingMode.entries.firstOrNull { it.name == countingMode } ?: CountingMode.COUNTDOWN,
+    countdownType = CountdownType.entries.firstOrNull { it.name == countdownType }
+        ?: CountdownType.COUNTDOWN,
+    countingMode = CountingMode.entries.firstOrNull { it.name == countingMode }
+        ?: CountingMode.COUNTDOWN,
     reminders = reminders,
-    recurrenceType = RecurrenceType.entries.firstOrNull { it.name == recurrenceType } ?: RecurrenceType.NONE,
+    recurrenceType = RecurrenceType.entries.firstOrNull { it.name == recurrenceType }
+        ?: RecurrenceType.NONE,
     recurrenceInterval = recurrenceInterval,
     recurrenceDaysOfWeek = recurrenceDaysOfWeek,
-    smartListVisibility = SmartListVisibility.entries.firstOrNull { it.name == smartListVisibility } ?: SmartListVisibility.ON_THE_DAY,
+    smartListVisibility = SmartListVisibility.entries.firstOrNull { it.name == smartListVisibility }
+        ?: SmartListVisibility.ON_THE_DAY,
     isCompleted = isCompleted,
     pbId = id,
     isSynced = true,

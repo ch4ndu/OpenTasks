@@ -4,10 +4,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -18,7 +16,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -28,7 +25,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -68,8 +64,6 @@ import opentasks.composeapp.generated.resources.calendar_view_year
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_schedule
-import opentasks.composeapp.generated.resources.import_from_calendar
-import opentasks.composeapp.generated.resources.import_from_ics
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -401,141 +395,141 @@ private fun CalendarContent(
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize(),
         ) {
-        when (currentView) {
-            CalendarViewType.LIST -> {
-                val selectedListDayTasks by selectedListDayTasksFlow.collectAsState()
-                val categoryNames by categoryNamesFlow.collectAsState()
-                ListViewContent(
-                    dayTasks = selectedListDayTasks,
-                    todayMillis = todayMillis,
-                    todayYear = todayYear,
-                    todayMonth = todayMonth,
-                    todayDay = todayDay,
-                    selectedDayMillis = listSelectedDayMillis,
-                    onDaySelected = { listSelectedDayMillis = it },
-                    weekPagerState = weekPagerState,
-                    weekPagerCentre = WEEK_PAGER_CENTRE,
-                    tasksByDay = tasksByDay,
-                    categoryNames = categoryNames,
-                    topBarHeight = topBarHeight,
-                    navBarHeight = navBarHeight,
-                    displayMode = listDisplayMode,
-                    onTaskClick = onTaskClick,
-                    onToggleComplete = onToggleComplete,
-                )
-            }
+            when (currentView) {
+                CalendarViewType.LIST -> {
+                    val selectedListDayTasks by selectedListDayTasksFlow.collectAsState()
+                    val categoryNames by categoryNamesFlow.collectAsState()
+                    ListViewContent(
+                        dayTasks = selectedListDayTasks,
+                        todayMillis = todayMillis,
+                        todayYear = todayYear,
+                        todayMonth = todayMonth,
+                        todayDay = todayDay,
+                        selectedDayMillis = listSelectedDayMillis,
+                        onDaySelected = { listSelectedDayMillis = it },
+                        weekPagerState = weekPagerState,
+                        weekPagerCentre = WEEK_PAGER_CENTRE,
+                        tasksByDay = tasksByDay,
+                        categoryNames = categoryNames,
+                        topBarHeight = topBarHeight,
+                        navBarHeight = navBarHeight,
+                        displayMode = listDisplayMode,
+                        onTaskClick = onTaskClick,
+                        onToggleComplete = onToggleComplete,
+                    )
+                }
 
-            CalendarViewType.YEAR -> {
-                YearViewContent(
-                    pagerState = yearPagerState,
-                    centreIndex = YEAR_PAGER_CENTRE,
-                    todayYear = todayYear,
-                    todayMonth = todayMonth,
-                    todayDay = todayDay,
-                    tasksByDay = tasksByDay,
-                    topBarHeight = topBarHeight,
-                    navBarHeight = navBarHeight,
-                    onMonthClick = { year, month -> navigateToMonth(year, month) },
-                )
-            }
+                CalendarViewType.YEAR -> {
+                    YearViewContent(
+                        pagerState = yearPagerState,
+                        centreIndex = YEAR_PAGER_CENTRE,
+                        todayYear = todayYear,
+                        todayMonth = todayMonth,
+                        todayDay = todayDay,
+                        tasksByDay = tasksByDay,
+                        topBarHeight = topBarHeight,
+                        navBarHeight = navBarHeight,
+                        onMonthClick = { year, month -> navigateToMonth(year, month) },
+                    )
+                }
 
-            CalendarViewType.MONTH -> {
-                val selectedMonthDayTasks by selectedMonthDayTasksFlow.collectAsState()
-                val categoryNames by categoryNamesFlow.collectAsState()
-                MonthViewContent(
-                    selectedTasks = selectedMonthDayTasks,
-                    todayYear = todayYear,
-                    todayMonth = todayMonth,
-                    todayDay = todayDay,
-                    selectedDay = selectedDay,
-                    collapseProgress = collapseProgress,
-                    pagerState = pagerState,
-                    centreIndex = centreIndex,
-                    tasksByDay = tasksByDay,
-                    categoryNames = categoryNames,
-                    topBarHeight = topBarHeight,
-                    navBarHeight = navBarHeight,
-                    onDayClick = { day ->
-                        if (!day.isCurrentMonth) return@MonthViewContent
-                        scope.launch {
-                            selectedDay = if (selectedDay == day) {
-                                onMonthDayCleared()
-                                null
-                            } else {
-                                onMonthDaySelected(day.year, day.month, day.day)
-                                day
+                CalendarViewType.MONTH -> {
+                    val selectedMonthDayTasks by selectedMonthDayTasksFlow.collectAsState()
+                    val categoryNames by categoryNamesFlow.collectAsState()
+                    MonthViewContent(
+                        selectedTasks = selectedMonthDayTasks,
+                        todayYear = todayYear,
+                        todayMonth = todayMonth,
+                        todayDay = todayDay,
+                        selectedDay = selectedDay,
+                        collapseProgress = collapseProgress,
+                        pagerState = pagerState,
+                        centreIndex = centreIndex,
+                        tasksByDay = tasksByDay,
+                        categoryNames = categoryNames,
+                        topBarHeight = topBarHeight,
+                        navBarHeight = navBarHeight,
+                        onDayClick = { day ->
+                            if (!day.isCurrentMonth) return@MonthViewContent
+                            scope.launch {
+                                selectedDay = if (selectedDay == day) {
+                                    onMonthDayCleared()
+                                    null
+                                } else {
+                                    onMonthDaySelected(day.year, day.month, day.day)
+                                    day
+                                }
                             }
-                        }
-                    },
-                    onTaskClick = onTaskClick,
-                    onToggleComplete = onToggleComplete,
-                )
-            }
+                        },
+                        onTaskClick = onTaskClick,
+                        onToggleComplete = onToggleComplete,
+                    )
+                }
 
-            CalendarViewType.WEEK -> {
-                WeekViewContent(
-                    todayMillis = todayMillis,
-                    todayYear = todayYear,
-                    todayMonth = todayMonth,
-                    todayDay = todayDay,
-                    weekPagerState = weekViewPagerState,
-                    weekPagerCentre = WEEK_PAGER_CENTRE,
-                    weekSundayMillis = weekViewSundayMillis,
-                    calendarYear = extractYear(weekViewSundayMillis),
-                    calendarMonth = weekViewCalendarMonth,
-                    tasksByDay = tasksByDay,
-                    topBarHeight = topBarHeight,
-                    navBarHeight = navBarHeight,
-                    onTaskClick = onTaskClick,
-                    onWeekSelected = { sundayMillis ->
-                        val thisWeekSunMillis = startOfWeekLocalMillis(todayMillis)
-                        val offset =
-                            ((sundayMillis - thisWeekSunMillis) / (7 * MILLIS_PER_DAY)).toInt()
-                        scope.launch {
-                            weekViewPagerState.animateScrollToPage(WEEK_PAGER_CENTRE + offset)
-                        }
-                    },
-                    selectedDayMillis = weekViewSelectedDayMillis,
-                    onDaySelected = { weekViewSelectedDayMillis = it },
-                )
-            }
+                CalendarViewType.WEEK -> {
+                    WeekViewContent(
+                        todayMillis = todayMillis,
+                        todayYear = todayYear,
+                        todayMonth = todayMonth,
+                        todayDay = todayDay,
+                        weekPagerState = weekViewPagerState,
+                        weekPagerCentre = WEEK_PAGER_CENTRE,
+                        weekSundayMillis = weekViewSundayMillis,
+                        calendarYear = extractYear(weekViewSundayMillis),
+                        calendarMonth = weekViewCalendarMonth,
+                        tasksByDay = tasksByDay,
+                        topBarHeight = topBarHeight,
+                        navBarHeight = navBarHeight,
+                        onTaskClick = onTaskClick,
+                        onWeekSelected = { sundayMillis ->
+                            val thisWeekSunMillis = startOfWeekLocalMillis(todayMillis)
+                            val offset =
+                                ((sundayMillis - thisWeekSunMillis) / (7 * MILLIS_PER_DAY)).toInt()
+                            scope.launch {
+                                weekViewPagerState.animateScrollToPage(WEEK_PAGER_CENTRE + offset)
+                            }
+                        },
+                        selectedDayMillis = weekViewSelectedDayMillis,
+                        onDaySelected = { weekViewSelectedDayMillis = it },
+                    )
+                }
 
-            CalendarViewType.THREE_DAY -> {
-                val timelineTasksByDay by timelineTasksByDayFlow.collectAsState()
-                ThreeDayViewContent(
-                    todayMillis = todayMillis,
-                    todayYear = todayYear,
-                    todayMonth = todayMonth,
-                    todayDay = todayDay,
-                    pagerState = threeDayPagerState,
-                    pagerCentre = DAY_PAGER_CENTRE,
-                    tasksByDay = tasksByDay,
-                    timelineTasksByDay = timelineTasksByDay,
-                    topBarHeight = topBarHeight,
-                    navBarHeight = navBarHeight,
-                    onTaskClick = onTaskClick,
-                    onToggleComplete = onToggleComplete,
-                )
-            }
+                CalendarViewType.THREE_DAY -> {
+                    val timelineTasksByDay by timelineTasksByDayFlow.collectAsState()
+                    ThreeDayViewContent(
+                        todayMillis = todayMillis,
+                        todayYear = todayYear,
+                        todayMonth = todayMonth,
+                        todayDay = todayDay,
+                        pagerState = threeDayPagerState,
+                        pagerCentre = DAY_PAGER_CENTRE,
+                        tasksByDay = tasksByDay,
+                        timelineTasksByDay = timelineTasksByDay,
+                        topBarHeight = topBarHeight,
+                        navBarHeight = navBarHeight,
+                        onTaskClick = onTaskClick,
+                        onToggleComplete = onToggleComplete,
+                    )
+                }
 
-            CalendarViewType.DAY -> {
-                val timelineTasksByDay by timelineTasksByDayFlow.collectAsState()
-                DayViewContent(
-                    todayMillis = todayMillis,
-                    todayYear = todayYear,
-                    todayMonth = todayMonth,
-                    todayDay = todayDay,
-                    pagerState = dayViewPagerState,
-                    pagerCentre = DAY_PAGER_CENTRE,
-                    tasksByDay = tasksByDay,
-                    timelineTasksByDay = timelineTasksByDay,
-                    topBarHeight = topBarHeight,
-                    navBarHeight = navBarHeight,
-                    onTaskClick = onTaskClick,
-                    onToggleComplete = onToggleComplete,
-                )
+                CalendarViewType.DAY -> {
+                    val timelineTasksByDay by timelineTasksByDayFlow.collectAsState()
+                    DayViewContent(
+                        todayMillis = todayMillis,
+                        todayYear = todayYear,
+                        todayMonth = todayMonth,
+                        todayDay = todayDay,
+                        pagerState = dayViewPagerState,
+                        pagerCentre = DAY_PAGER_CENTRE,
+                        tasksByDay = tasksByDay,
+                        timelineTasksByDay = timelineTasksByDay,
+                        topBarHeight = topBarHeight,
+                        navBarHeight = navBarHeight,
+                        onTaskClick = onTaskClick,
+                        onToggleComplete = onToggleComplete,
+                    )
+                }
             }
-        }
         }
 
         // ── Top bar overlay ──────────────────────────────────────────
@@ -556,10 +550,12 @@ private fun CalendarContent(
             },
             listDisplayMode = listDisplayMode,
             onToggleDisplayMode = {
-                onListDisplayModeChanged(when (listDisplayMode) {
-                    ListDisplayMode.TIMELINE -> ListDisplayMode.CARD
-                    ListDisplayMode.CARD -> ListDisplayMode.TIMELINE
-                })
+                onListDisplayModeChanged(
+                    when (listDisplayMode) {
+                        ListDisplayMode.TIMELINE -> ListDisplayMode.CARD
+                        ListDisplayMode.CARD -> ListDisplayMode.TIMELINE
+                    }
+                )
             },
             showViewPicker = showViewPicker,
             onViewPickerToggle = { showViewPicker = true },

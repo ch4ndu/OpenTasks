@@ -45,11 +45,11 @@ import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.extractMonth
-import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
-import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.formatTime12Hr
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
+import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import kotlinx.coroutines.launch
@@ -242,7 +242,11 @@ internal fun DayViewStripItem(
                 .then(
                     when {
                         isSelected -> Modifier.background(PrimaryBlue, CircleShape)
-                        isToday -> Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                        isToday -> Modifier.background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            CircleShape
+                        )
+
                         else -> Modifier
                     }
                 ),

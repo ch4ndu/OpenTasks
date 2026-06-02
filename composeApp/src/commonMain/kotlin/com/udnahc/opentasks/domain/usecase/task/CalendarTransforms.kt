@@ -15,7 +15,10 @@ data class CalendarDayTasks(
  * Returns tasks for a specific day, sorted by deadline.
  * Filters from the full task list by matching dayKey.
  */
-fun tasksForDay(tasks: List<Task>, targetDayKey: Long): List<Task> =
+fun tasksForDay(
+    tasks: List<Task>,
+    targetDayKey: Long
+): List<Task> =
     tasks.filter { task -> task.deadline?.let { dayKey(it) == targetDayKey } ?: false }
         .sortedBy { it.deadline }
 
@@ -34,16 +37,16 @@ fun splitCalendarDayTasks(tasks: List<Task>): CalendarDayTasks {
     )
 }
 
+private val calendarDayComparator: Comparator<Task> = compareBy(
+    { if (it.isCalendarAllDay()) 0 else 1 },
+    { it.deadline ?: Long.MAX_VALUE },
+    { if (it.isCountdownItem) 1 else 0 },
+    { it.title.lowercase() },
+    { it.id },
+)
+
 fun sortCalendarTasksForDay(tasks: List<Task>): List<Task> =
-    tasks.sortedWith(
-        compareBy<Task>(
-            { if (it.isCalendarAllDay()) 0 else 1 },
-            { it.deadline ?: Long.MAX_VALUE },
-            { if (it.isCountdownItem) 1 else 0 },
-            { it.title.lowercase() },
-            { it.id },
-        )
-    )
+    tasks.sortedWith(calendarDayComparator)
 
 private fun Task.isCalendarAllDay(): Boolean =
     isAllDay || (deadline != null && extractHour(deadline) == 0 && extractMinute(deadline) == 0)
@@ -53,7 +56,10 @@ private fun Task.isCalendarAllDay(): Boolean =
  * If the list has at most maxVisible+1 items, shows all (avoids "+1" overflow).
  * Returns (visibleTasks, overflowCount).
  */
-fun truncateWithOverflow(tasks: List<Task>, maxVisible: Int): Pair<List<Task>, Int> {
+fun truncateWithOverflow(
+    tasks: List<Task>,
+    maxVisible: Int
+): Pair<List<Task>, Int> {
     val visible = if (tasks.size <= maxVisible + 1) tasks else tasks.take(maxVisible)
     return visible to (tasks.size - visible.size)
 }

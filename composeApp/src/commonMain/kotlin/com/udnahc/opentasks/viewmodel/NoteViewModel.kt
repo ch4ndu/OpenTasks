@@ -9,8 +9,8 @@ import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveNoteByIdUseCase
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,7 +43,10 @@ class NoteViewModel(
         _selectedNoteId.value = noteId
     }
 
-    fun addNote(title: String, content: String) {
+    fun addNote(
+        title: String,
+        content: String
+    ) {
         viewModelScope.launch(Dispatchers.IO) { addNoteAction(title, content) }
     }
 

@@ -13,5 +13,8 @@ interface CalendarProvider {
     fun isAvailable(): Boolean
     suspend fun checkPermission(): CalendarPermissionStatus
     suspend fun requestPermission(): CalendarPermissionStatus
-    suspend fun fetchEvents(startUtcMillis: Long, endUtcMillis: Long): List<CalendarEvent>
+    suspend fun fetchEvents(
+        startUtcMillis: Long,
+        endUtcMillis: Long
+    ): List<CalendarEvent>
 }

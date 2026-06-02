@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -26,6 +27,7 @@ class TaskRepositoryImpl(
     override fun getAllTasks(): Flow<List<Task>> =
         taskDao.getAllTasks()
             .map { tasks -> tasks.map { it.withLocalTimestamps() } }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
     override suspend fun getTaskById(id: String): Task? =
@@ -34,6 +36,7 @@ class TaskRepositoryImpl(
     override fun observeTaskById(id: String): Flow<Task?> =
         taskDao.observeTaskById(id)
             .map { it?.withLocalTimestamps() }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
     override suspend fun getTaskByExternalId(externalId: String): Task? =

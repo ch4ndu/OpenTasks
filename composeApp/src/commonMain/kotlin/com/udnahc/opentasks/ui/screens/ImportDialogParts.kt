@@ -45,12 +45,15 @@ internal fun FileImportDialogContent(
                     isLoading -> {
                         ImportLoadingRow()
                     }
+
                     importedCount != null -> {
                         ImportSuccessText(stringResource(Res.string.import_success, importedCount))
                     }
+
                     errorText != null -> {
                         ImportErrorText(errorText)
                     }
+
                     else -> {
                         Text(
                             text = description,
@@ -66,6 +69,7 @@ internal fun FileImportDialogContent(
                 importedCount != null || errorText != null -> {
                     ImportDoneButton(onDismiss)
                 }
+
                 isLoading -> {}
                 else -> {
                     PrimaryDialogTextButton(

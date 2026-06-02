@@ -296,7 +296,10 @@ private fun SectionDivider(label: String) {
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingMedium),
+        modifier = Modifier.padding(
+            horizontal = dimens.paddingXLarge,
+            vertical = dimens.paddingMedium
+        ),
     )
 }
 

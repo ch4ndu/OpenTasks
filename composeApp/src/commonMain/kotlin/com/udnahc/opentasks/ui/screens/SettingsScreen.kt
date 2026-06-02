@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -31,9 +30,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.LifecycleResumeEffect
-import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
 import com.udnahc.opentasks.data.model.TextSizePreference
 import com.udnahc.opentasks.data.model.ThemeMode
+import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
@@ -41,47 +40,39 @@ import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
 import com.udnahc.opentasks.viewmodel.ExportResult
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.SyncStatus
-import org.jetbrains.compose.resources.getString
-import org.jetbrains.compose.resources.stringResource
-import org.koin.compose.viewmodel.koinViewModel
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.account
+import opentasks.composeapp.generated.resources.appearance
 import opentasks.composeapp.generated.resources.back
-import opentasks.composeapp.generated.resources.clear
-import opentasks.composeapp.generated.resources.connected
-import opentasks.composeapp.generated.resources.configured
-import opentasks.composeapp.generated.resources.connection_failed
+import opentasks.composeapp.generated.resources.calendar_access
+import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.checking_connection
+import opentasks.composeapp.generated.resources.clear
+import opentasks.composeapp.generated.resources.configured
+import opentasks.composeapp.generated.resources.connected
+import opentasks.composeapp.generated.resources.connection_failed
+import opentasks.composeapp.generated.resources.exact_reminder_available
+import opentasks.composeapp.generated.resources.exact_reminder_not_required
+import opentasks.composeapp.generated.resources.exact_reminder_permission_needed
+import opentasks.composeapp.generated.resources.exact_reminder_timing
 import opentasks.composeapp.generated.resources.export_csv
 import opentasks.composeapp.generated.resources.export_error
 import opentasks.composeapp.generated.resources.export_header
 import opentasks.composeapp.generated.resources.export_ics
 import opentasks.composeapp.generated.resources.export_success
-import opentasks.composeapp.generated.resources.cancel
-import opentasks.composeapp.generated.resources.import_header
-import opentasks.composeapp.generated.resources.appearance
-import opentasks.composeapp.generated.resources.account
 import opentasks.composeapp.generated.resources.import_csv_ticktick
+import opentasks.composeapp.generated.resources.import_from_calendar
+import opentasks.composeapp.generated.resources.import_from_ics
+import opentasks.composeapp.generated.resources.import_header
 import opentasks.composeapp.generated.resources.logout
 import opentasks.composeapp.generated.resources.logout_confirm_message
 import opentasks.composeapp.generated.resources.logout_confirm_title
 import opentasks.composeapp.generated.resources.logout_description
+import opentasks.composeapp.generated.resources.not_configured
 import opentasks.composeapp.generated.resources.notifications
-import opentasks.composeapp.generated.resources.exact_reminder_timing
-import opentasks.composeapp.generated.resources.exact_reminder_available
-import opentasks.composeapp.generated.resources.exact_reminder_permission_needed
-import opentasks.composeapp.generated.resources.exact_reminder_not_required
-import opentasks.composeapp.generated.resources.calendar_access
 import opentasks.composeapp.generated.resources.permission_granted
 import opentasks.composeapp.generated.resources.permission_not_granted
-import opentasks.composeapp.generated.resources.permission_not_required
 import opentasks.composeapp.generated.resources.permissions
-import opentasks.composeapp.generated.resources.theme
-import opentasks.composeapp.generated.resources.theme_dark
-import opentasks.composeapp.generated.resources.theme_light
-import opentasks.composeapp.generated.resources.theme_system
-import opentasks.composeapp.generated.resources.import_from_calendar
-import opentasks.composeapp.generated.resources.import_from_ics
-import opentasks.composeapp.generated.resources.not_configured
 import opentasks.composeapp.generated.resources.pocketbase_url
 import opentasks.composeapp.generated.resources.pocketbase_url_hint
 import opentasks.composeapp.generated.resources.save
@@ -92,6 +83,13 @@ import opentasks.composeapp.generated.resources.text_size
 import opentasks.composeapp.generated.resources.text_size_large
 import opentasks.composeapp.generated.resources.text_size_medium
 import opentasks.composeapp.generated.resources.text_size_small
+import opentasks.composeapp.generated.resources.theme
+import opentasks.composeapp.generated.resources.theme_dark
+import opentasks.composeapp.generated.resources.theme_light
+import opentasks.composeapp.generated.resources.theme_system
+import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
+import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
 fun SettingsScreen(
@@ -196,12 +194,15 @@ internal fun SettingsContent(
                 snackbarHostState.showSnackbar(msg)
                 onClearExportResult()
             }
+
             is ExportResult.Error -> {
                 val msg = getString(Res.string.export_error)
                 snackbarHostState.showSnackbar(msg)
                 onClearExportResult()
             }
-            ExportResult.Idle -> { /* no-op */ }
+
+            ExportResult.Idle -> { /* no-op */
+            }
         }
     }
 

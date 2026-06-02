@@ -49,7 +49,10 @@ interface TagDao {
     suspend fun upsertTaskTag(taskTag: TaskTag)
 
     @Query("SELECT * FROM task_tags WHERE taskId = :taskId AND tagId = :tagId")
-    suspend fun findTaskTagByIdAnyState(taskId: String, tagId: String): TaskTag?
+    suspend fun findTaskTagByIdAnyState(
+        taskId: String,
+        tagId: String
+    ): TaskTag?
 
     @Query("SELECT * FROM task_tags WHERE isSynced = 0")
     suspend fun getUnsyncedTaskTags(): List<TaskTag>
@@ -58,16 +61,31 @@ interface TagDao {
     suspend fun getAllTaskTagsOnce(): List<TaskTag>
 
     @Query("UPDATE task_tags SET isSynced = 1 WHERE taskId = :taskId AND tagId = :tagId")
-    suspend fun markTaskTagSynced(taskId: String, tagId: String)
+    suspend fun markTaskTagSynced(
+        taskId: String,
+        tagId: String
+    )
 
     @Query("UPDATE task_tags SET isSynced = 1 WHERE taskId = :taskId AND tagId = :tagId AND updatedAt = :updatedAt AND isDeleted = :isDeleted")
-    suspend fun markTaskTagSyncedIfUnchanged(taskId: String, tagId: String, updatedAt: Long, isDeleted: Boolean): Int
+    suspend fun markTaskTagSyncedIfUnchanged(
+        taskId: String,
+        tagId: String,
+        updatedAt: Long,
+        isDeleted: Boolean
+    ): Int
 
     @Query("UPDATE task_tags SET isSynced = 0 WHERE taskId = :taskId AND tagId = :tagId")
-    suspend fun markTaskTagUnsynced(taskId: String, tagId: String)
+    suspend fun markTaskTagUnsynced(
+        taskId: String,
+        tagId: String
+    )
 
     @Query("UPDATE task_tags SET pbId = :pbId WHERE taskId = :taskId AND tagId = :tagId")
-    suspend fun updateTaskTagPbId(taskId: String, tagId: String, pbId: String)
+    suspend fun updateTaskTagPbId(
+        taskId: String,
+        tagId: String,
+        pbId: String
+    )
 
     @Query("DELETE FROM task_tags")
     suspend fun deleteAllTaskTags()
@@ -88,13 +106,20 @@ interface TagDao {
     suspend fun markSynced(id: String)
 
     @Query("UPDATE tags SET isSynced = 1 WHERE id = :id AND updatedAt = :updatedAt AND isDeleted = :isDeleted")
-    suspend fun markSyncedIfUnchanged(id: String, updatedAt: Long, isDeleted: Boolean): Int
+    suspend fun markSyncedIfUnchanged(
+        id: String,
+        updatedAt: Long,
+        isDeleted: Boolean
+    ): Int
 
     @Query("UPDATE tags SET isSynced = 0 WHERE id = :id")
     suspend fun markUnsynced(id: String)
 
     @Query("UPDATE tags SET pbId = :pbId WHERE id = :id")
-    suspend fun updatePbId(id: String, pbId: String)
+    suspend fun updatePbId(
+        id: String,
+        pbId: String
+    )
 
     @Query("SELECT * FROM tags")
     suspend fun getAllTagsOnce(): List<Tag>

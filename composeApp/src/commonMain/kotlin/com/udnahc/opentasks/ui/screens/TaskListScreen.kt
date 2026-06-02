@@ -35,41 +35,40 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import com.udnahc.opentasks.data.extensions.formatDateShort
+import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskListViewMode
-import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskSortOption
-import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
+import com.udnahc.opentasks.viewmodel.TaskListViewModel.ActiveTaskListSection
 import com.udnahc.opentasks.viewmodel.TaskListViewModel.SectionGroup
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.completed
-import opentasks.composeapp.generated.resources.ic_check
+import opentasks.composeapp.generated.resources.due_this_week
+import opentasks.composeapp.generated.resources.high_priority
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_unfold
 import opentasks.composeapp.generated.resources.inbox
+import opentasks.composeapp.generated.resources.no_date
 import opentasks.composeapp.generated.resources.no_tasks
+import opentasks.composeapp.generated.resources.overdue
 import opentasks.composeapp.generated.resources.select
 import opentasks.composeapp.generated.resources.sort_by
 import opentasks.composeapp.generated.resources.sort_by_deadline
 import opentasks.composeapp.generated.resources.sort_by_priority
 import opentasks.composeapp.generated.resources.sort_by_title
 import opentasks.composeapp.generated.resources.sort_recently_updated
-import opentasks.composeapp.generated.resources.due_this_week
-import opentasks.composeapp.generated.resources.high_priority
-import opentasks.composeapp.generated.resources.no_date
-import opentasks.composeapp.generated.resources.overdue
 import opentasks.composeapp.generated.resources.starred
 import opentasks.composeapp.generated.resources.today
 import opentasks.composeapp.generated.resources.toggle_view_mode
+import opentasks.composeapp.generated.resources.upcoming
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -94,8 +93,6 @@ fun TaskListScreen(
     var showCategoryPicker by remember { mutableStateOf(false) }
 
     val categories by viewModel.categories.collectAsState()
-    val filteredCategories by viewModel.filteredCategories.collectAsState()
-    val categorySearchQuery by viewModel.categorySearchQuery.collectAsState()
     val defaultListName = stringResource(Res.string.inbox)
     val starredName = stringResource(Res.string.starred)
     val todayName = stringResource(Res.string.today)
@@ -103,7 +100,17 @@ fun TaskListScreen(
     val noDateStr = stringResource(Res.string.no_date)
     val highPriorityStr = stringResource(Res.string.high_priority)
     val dueThisWeekStr = stringResource(Res.string.due_this_week)
-    val selectedListName = remember(categories, currentFilter, defaultListName, starredName, todayName, overdueStr, noDateStr, highPriorityStr, dueThisWeekStr) {
+    val selectedListName = remember(
+        categories,
+        currentFilter,
+        defaultListName,
+        starredName,
+        todayName,
+        overdueStr,
+        noDateStr,
+        highPriorityStr,
+        dueThisWeekStr
+    ) {
         when (currentFilter) {
             is TaskListFilter.Starred -> starredName
             is TaskListFilter.Today -> todayName
@@ -130,14 +137,11 @@ fun TaskListScreen(
 
     when (viewMode) {
         TaskListViewMode.LIST -> {
-            val activeTasks by viewModel.activeTasksForSelectedCategory.collectAsState()
-            val completedTasks by viewModel.completedTasksForSelectedCategory.collectAsState()
-            val groupedTasks by viewModel.groupedActiveTasks.collectAsState()
+            val listProjection by viewModel.listProjection.collectAsState()
             TaskListContent(
                 listName = selectedListName,
-                activeTasks = activeTasks,
-                completedTasks = completedTasks,
-                groupedActiveTasks = groupedTasks,
+                completedTasks = listProjection.completedTasks,
+                groupedActiveTasks = listProjection.groupedActiveTasks,
                 onTaskClick = onTaskClick,
                 onToggleComplete = { viewModel.toggleComplete(it) },
                 onToggleStar = { viewModel.toggleStar(it) },
@@ -151,9 +155,12 @@ fun TaskListScreen(
                 onRefresh = onRefresh,
             )
         }
+
         TaskListViewMode.BOARD -> {
             val tasksByStatus by viewModel.tasksByStatus.collectAsState()
-            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+            ) {
                 SyncPullToRefresh(
                     isRefreshing = isRefreshing,
                     onRefresh = onRefresh,
@@ -162,7 +169,12 @@ fun TaskListScreen(
                     KanbanBoardContent(
                         tasksByStatus = tasksByStatus,
                         onTaskClick = onTaskClick,
-                        onStatusChange = { task, newStatus -> viewModel.moveTaskToStatus(task, newStatus) },
+                        onStatusChange = { task, newStatus ->
+                            viewModel.moveTaskToStatus(
+                                task,
+                                newStatus
+                            )
+                        },
                         onToggleStar = { viewModel.toggleStar(it) },
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
@@ -192,6 +204,8 @@ fun TaskListScreen(
     }
 
     if (showCategoryPicker) {
+        val filteredCategories by viewModel.filteredCategories.collectAsState()
+        val categorySearchQuery by viewModel.categorySearchQuery.collectAsState()
         val listPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         CategoryPickerBottomSheet(
             sheetState = listPickerState,
@@ -230,7 +244,6 @@ fun TaskListScreen(
 @Composable
 internal fun TaskListContent(
     listName: String,
-    activeTasks: List<Task> = emptyList(),
     completedTasks: List<Task> = emptyList(),
     groupedActiveTasks: List<SectionGroup> = emptyList(),
     onTaskClick: (Task) -> Unit,
@@ -256,6 +269,8 @@ internal fun TaskListContent(
     // TopAppBar default height + status bar
     val topBarHeight = dimens.topBarHeight + statusBarHeight
 
+    var overdueCollapsed by remember { mutableStateOf(false) }
+    var upcomingCollapsed by remember { mutableStateOf(false) }
     var completedCollapsed by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -264,101 +279,97 @@ internal fun TaskListContent(
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize(),
         ) {
-        // Task list — fills entire screen, scrolls behind top bar and bottom nav
-        if (activeTasks.isEmpty() && completedTasks.isEmpty()) {
-            EmptyPlaceholder(
-                text = stringResource(Res.string.no_tasks),
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    top = topBarHeight,
-                    bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge, // nav bar + FAB + spacing
-                ),
-            ) {
-                // Active tasks — grouped by section when sections exist
-                val useGrouped = groupedActiveTasks.size > 1 ||
-                    groupedActiveTasks.any { it.name != null }
-                if (useGrouped) {
+            // Task list — fills entire screen, scrolls behind top bar and bottom nav
+            if (groupedActiveTasks.isEmpty() && completedTasks.isEmpty()) {
+                EmptyPlaceholder(
+                    text = stringResource(Res.string.no_tasks),
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        top = topBarHeight,
+                        bottom = navBarHeight + dimens.fabAreaBottom + dimens.fabBottomPadding,
+                    ),
+                ) {
                     groupedActiveTasks.forEach { group ->
-                        if (group.name != null) {
-                            item(key = "section_${group.name}") {
-                                SectionHeader(
-                                    name = group.name,
-                                    count = group.tasks.size,
+                        val isCollapsed = when (group.category) {
+                            ActiveTaskListSection.OVERDUE -> overdueCollapsed
+                            ActiveTaskListSection.UPCOMING -> upcomingCollapsed
+                        }
+                        item(key = "section_${group.category}") {
+                            CollapsibleSection(
+                                label = activeSectionLabel(group.category),
+                                count = group.tasks.size,
+                                isCollapsed = isCollapsed,
+                                onToggle = {
+                                    when (group.category) {
+                                        ActiveTaskListSection.OVERDUE -> overdueCollapsed = !overdueCollapsed
+                                        ActiveTaskListSection.UPCOMING -> upcomingCollapsed = !upcomingCollapsed
+                                    }
+                                },
+                                headerCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                                contentCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                            ) {}
+                        }
+                        if (!isCollapsed) {
+                            items(group.tasks, key = { it.id }) { task ->
+                                TaskRow(
+                                    task = task,
+                                    isOverdue = group.category == ActiveTaskListSection.OVERDUE,
+                                    onToggleComplete = { onToggleComplete(task) },
+                                    onClick = { onTaskClick(task) },
+                                    onToggleStar = { onToggleStar(task) },
                                 )
-                            }
-                        }
-                        items(group.tasks, key = { it.id }) { task ->
-                            TaskRow(
-                                task = task,
-                                onToggleComplete = { onToggleComplete(task) },
-                                onClick = { onTaskClick(task) },
-                                onToggleStar = { onToggleStar(task) },
-                            )
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                thickness = dimens.dividerThin,
-                            )
-                        }
-                    }
-                } else {
-                    items(activeTasks, key = { it.id }) { task ->
-                        TaskRow(
-                            task = task,
-                            onToggleComplete = { onToggleComplete(task) },
-                            onClick = { onTaskClick(task) },
-                            onToggleStar = { onToggleStar(task) },
-                        )
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            thickness = dimens.dividerThin,
-                        )
-                    }
-                }
-
-                // Completed section
-                if (completedTasks.isNotEmpty()) {
-                    item(key = "completed_spacer") {
-                        Spacer(Modifier.size(dimens.spacerXLarge))
-                    }
-
-                    item(key = "completed_section_header") {
-                        CollapsibleSection(
-                            label = stringResource(Res.string.completed).uppercase(),
-                            count = completedTasks.size,
-                            isCollapsed = completedCollapsed,
-                            onToggle = { completedCollapsed = !completedCollapsed },
-                            headerCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
-                            contentCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
-                        ) {}
-                    }
-
-                    if (!completedCollapsed) {
-                        items(
-                            items = completedTasks,
-                            key = { "completed_${it.id}" },
-                        ) { task ->
-                            CompletedTaskRow(
-                                task = task,
-                                onToggleComplete = { onToggleComplete(task) },
-                                onClick = { onTaskClick(task) },
-                                onToggleStar = { onToggleStar(task) },
-                            )
-                            if (task.id != completedTasks.last().id) {
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.surfaceVariant,
                                     thickness = dimens.dividerThin,
-                                    modifier = Modifier.padding(horizontal = dimens.paddingLarge),
                                 )
+                            }
+                        }
+                    }
+
+                    // Completed section
+                    if (completedTasks.isNotEmpty()) {
+                        item(key = "completed_spacer") {
+                            Spacer(Modifier.size(dimens.spacerXLarge))
+                        }
+
+                        item(key = "completed_section_header") {
+                            CollapsibleSection(
+                                label = stringResource(Res.string.completed).uppercase(),
+                                count = completedTasks.size,
+                                isCollapsed = completedCollapsed,
+                                onToggle = { completedCollapsed = !completedCollapsed },
+                                headerCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                                contentCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                            ) {}
+                        }
+
+                        if (!completedCollapsed) {
+                            items(
+                                items = completedTasks,
+                                key = { "completed_${it.id}" },
+                            ) { task ->
+                                CompletedTaskRow(
+                                    task = task,
+                                    onToggleComplete = { onToggleComplete(task) },
+                                    onClick = { onTaskClick(task) },
+                                    onToggleStar = { onToggleStar(task) },
+                                )
+                                if (task.id != completedTasks.last().id) {
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        thickness = dimens.dividerThin,
+                                        modifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
-        }
         }
 
         // Translucent Top bar overlay — content scrolls behind this
@@ -484,6 +495,7 @@ private fun sortOptionLabel(option: TaskSortOption): String = when (option) {
 @Composable
 internal fun TaskRow(
     task: Task,
+    isOverdue: Boolean = false,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
     onToggleStar: () -> Unit = {},
@@ -509,6 +521,11 @@ internal fun TaskRow(
                 title = task.title,
                 isCompleted = false,
             )
+            TaskDueDateText(
+                deadline = task.deadline,
+                isCompleted = false,
+                isOverdue = isOverdue,
+            )
             TaskContentPreviewText(task.content)
         }
 
@@ -531,7 +548,10 @@ internal fun CompletedTaskRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = dimens.paddingLarge, vertical = dimens.listRowCompletedVerticalPadding),
+            .padding(
+                horizontal = dimens.paddingLarge,
+                vertical = dimens.listRowCompletedVerticalPadding
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TaskCheckboxButton(
@@ -547,6 +567,11 @@ internal fun CompletedTaskRow(
                 title = task.title,
                 isCompleted = true,
             )
+            TaskDueDateText(
+                deadline = task.deadline,
+                isCompleted = true,
+                isOverdue = false,
+            )
             TaskContentPreviewText(task.content)
         }
 
@@ -558,28 +583,25 @@ internal fun CompletedTaskRow(
 }
 
 @Composable
-private fun SectionHeader(
-    name: String,
-    count: Int,
+private fun activeSectionLabel(category: ActiveTaskListSection): String = when (category) {
+    ActiveTaskListSection.OVERDUE -> stringResource(Res.string.overdue)
+    ActiveTaskListSection.UPCOMING -> stringResource(Res.string.upcoming)
+}
+
+@Composable
+private fun TaskDueDateText(
+    deadline: Long?,
+    isCompleted: Boolean,
+    isOverdue: Boolean,
 ) {
-    val dimens = OpenTasksTheme.dimens
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingMedium),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = name,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    val dueDate = deadline ?: return
+    Text(
+        text = "${formatDateShort(dueDate)}, ${formatTimeFromLocalMillis(dueDate)}",
+        style = MaterialTheme.typography.labelMedium,
+        color = when {
+            isCompleted -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            isOverdue -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+    )
 }

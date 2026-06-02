@@ -7,15 +7,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,22 +37,18 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
-import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.custom
 import opentasks.composeapp.generated.resources.daily
 import opentasks.composeapp.generated.resources.end
 import opentasks.composeapp.generated.resources.every_weekday
-import opentasks.composeapp.generated.resources.ic_check
 import opentasks.composeapp.generated.resources.monthly_with_day
 import opentasks.composeapp.generated.resources.none
-import opentasks.composeapp.generated.resources.ok
 import opentasks.composeapp.generated.resources.reminder
 import opentasks.composeapp.generated.resources.repeat
 import opentasks.composeapp.generated.resources.start
 import opentasks.composeapp.generated.resources.time
 import opentasks.composeapp.generated.resources.weekly_with_day
 import opentasks.composeapp.generated.resources.yearly_with_date
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,15 +104,15 @@ internal fun ReminderDialog(
                         label = stringResource(option.labelRes),
                         isSelected = isSelected,
                         onClick = {
-                                localSelected = if (option == ReminderOption.NONE) {
-                                    emptySet()
+                            localSelected = if (option == ReminderOption.NONE) {
+                                emptySet()
+                            } else {
+                                if (option in localSelected) {
+                                    localSelected - option
                                 } else {
-                                    if (option in localSelected) {
-                                        localSelected - option
-                                    } else {
-                                        localSelected + option
-                                    }
+                                    localSelected + option
                                 }
+                            }
                         },
                     )
                 }
@@ -185,14 +178,14 @@ internal fun DurationDateDialog(
             MonthPagerHeader(
                 title = "${monthName(displayMonth)} $displayYear",
                 onPreviousMonth = {
-                        coroutineScope.launch {
-                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                        }
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                    }
                 },
                 onNextMonth = {
-                        coroutineScope.launch {
-                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                        }
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    }
                 },
             )
         },

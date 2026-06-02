@@ -1,6 +1,5 @@
 package com.udnahc.opentasks.ui.screens
 
-import org.lighthousegames.logging.logging
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +50,7 @@ import opentasks.composeapp.generated.resources.note_title_hint
 import opentasks.composeapp.generated.resources.save
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import org.lighthousegames.logging.logging
 
 private val log = logging("CreateNoteBottomSheet")
 

@@ -8,10 +8,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -50,15 +51,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.Task
-import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -90,8 +90,9 @@ fun KanbanBoardContent(
     val density = LocalDensity.current
 
     // Drag state
-    var draggedTask by remember { mutableStateOf<Task?>(null) }
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    val draggedTaskState = remember { mutableStateOf<Task?>(null) }
+    var draggedTask by draggedTaskState
+    val dragOffsetState = remember { mutableStateOf(Offset.Zero) }
     var cardStartPosition by remember { mutableStateOf(Offset.Zero) }
     var draggedCardWidth by remember { mutableStateOf(0) }
     var highlightedColumn by remember { mutableStateOf<TaskStatus?>(null) }
@@ -116,14 +117,14 @@ fun KanbanBoardContent(
             columnBounds.entries.firstOrNull { (_, rect) -> rect.contains(pointerPosition) }?.key
 
         fun updatePointerTarget() {
-            pointerRootPosition = cardStartPosition + initialTouchLocalOffset + dragOffset
+            pointerRootPosition = cardStartPosition + initialTouchLocalOffset + dragOffsetState.value
             highlightedColumn = findTargetColumn(pointerRootPosition)
         }
 
         fun resetDragState() {
             isDragging = false
             draggedTask = null
-            dragOffset = Offset.Zero
+            dragOffsetState.value = Offset.Zero
             highlightedColumn = null
             pointerRootPosition = Offset.Zero
         }
@@ -153,12 +154,12 @@ fun KanbanBoardContent(
                             cardStartPosition = offset
                             draggedCardWidth = width
                             initialTouchLocalOffset = localOffset
-                            dragOffset = Offset.Zero
+                            dragOffsetState.value = Offset.Zero
                             isDragging = true
                             updatePointerTarget()
                         },
                         onDrag = { delta ->
-                            dragOffset += delta
+                            dragOffsetState.value += delta
                             updatePointerTarget()
                         },
                         onDragEnd = {
@@ -202,13 +203,13 @@ fun KanbanBoardContent(
                             draggedTask = task
                             cardStartPosition = offset
                             draggedCardWidth = width
-                            dragOffset = Offset.Zero
+                            dragOffsetState.value = Offset.Zero
                             initialTouchLocalOffset = localOffset
                             isDragging = true
                             updatePointerTarget()
                         },
                         onDrag = { delta ->
-                            dragOffset += delta
+                            dragOffsetState.value += delta
                             updatePointerTarget()
                         },
                         onDragEnd = {
@@ -243,13 +244,17 @@ fun KanbanBoardContent(
                     val fingerScreenX = pointerRootPosition.x - containerPosition.x
                     val scrollDelta = when {
                         fingerScreenX < edgeZonePx -> {
-                            val proximity = ((edgeZonePx - fingerScreenX) / edgeZonePx).coerceIn(0f, 1f)
+                            val proximity =
+                                ((edgeZonePx - fingerScreenX) / edgeZonePx).coerceIn(0f, 1f)
                             -maxScrollPerFramePx * proximity
                         }
+
                         fingerScreenX > rightEdgeStartPx -> {
-                            val proximity = ((fingerScreenX - rightEdgeStartPx) / edgeZonePx).coerceIn(0f, 1f)
+                            val proximity =
+                                ((fingerScreenX - rightEdgeStartPx) / edgeZonePx).coerceIn(0f, 1f)
                             maxScrollPerFramePx * proximity
                         }
+
                         else -> 0f
                     }
 
@@ -261,25 +266,42 @@ fun KanbanBoardContent(
             }
         }
 
-        // Drag overlay
-        val currentDraggedTask = draggedTask
-        if (currentDraggedTask != null) {
-            val overlayX = (cardStartPosition.x + dragOffset.x - containerPosition.x).roundToInt()
-            val overlayY = (cardStartPosition.y + dragOffset.y - containerPosition.y).roundToInt()
-            val overlayWidthDp = with(density) { draggedCardWidth.toDp() }
-            Box(
-                modifier = Modifier
-                    .offset { IntOffset(overlayX, overlayY) }
-                    .width(overlayWidthDp)
-                    .shadow(dimens.paddingMedium, RoundedCornerShape(dimens.cornerLarge)),
-            ) {
-                KanbanTaskCard(
-                    task = currentDraggedTask,
-                    onClick = {},
-                    onToggleStar = {},
-                )
-            }
-        }
+        KanbanDragOverlay(
+            draggedTask = draggedTaskState,
+            dragOffset = dragOffsetState,
+            cardStartPosition = cardStartPosition,
+            containerPosition = containerPosition,
+            draggedCardWidth = draggedCardWidth,
+        )
+    }
+}
+
+@Composable
+private fun KanbanDragOverlay(
+    draggedTask: State<Task?>,
+    dragOffset: State<Offset>,
+    cardStartPosition: Offset,
+    containerPosition: Offset,
+    draggedCardWidth: Int,
+) {
+    val dimens = OpenTasksTheme.dimens
+    val density = LocalDensity.current
+    val currentDraggedTask = draggedTask.value ?: return
+    val currentDragOffset = dragOffset.value
+    val overlayX = (cardStartPosition.x + currentDragOffset.x - containerPosition.x).roundToInt()
+    val overlayY = (cardStartPosition.y + currentDragOffset.y - containerPosition.y).roundToInt()
+    val overlayWidthDp = with(density) { draggedCardWidth.toDp() }
+    Box(
+        modifier = Modifier
+            .offset { IntOffset(overlayX, overlayY) }
+            .width(overlayWidthDp)
+            .shadow(dimens.paddingMedium, RoundedCornerShape(dimens.cornerLarge)),
+    ) {
+        KanbanTaskCard(
+            task = currentDraggedTask,
+            onClick = {},
+            onToggleStar = {},
+        )
     }
 }
 
@@ -387,7 +409,14 @@ private fun KanbanColumn(
                             }
                             .pointerInput(task.id) {
                                 detectDragGesturesAfterLongPress(
-                                    onDragStart = { localOffset -> onDragStart(task, cardPosition, cardWidth, localOffset) },
+                                    onDragStart = { localOffset ->
+                                        onDragStart(
+                                            task,
+                                            cardPosition,
+                                            cardWidth,
+                                            localOffset
+                                        )
+                                    },
                                     onDrag = { change, dragAmount ->
                                         change.consume()
                                         onDrag(dragAmount)
