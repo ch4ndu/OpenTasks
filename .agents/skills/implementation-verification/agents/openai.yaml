@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implementation Verification"
+  short_description: "Verify implementation behavior before finish"
+  default_prompt: "Use $implementation-verification to check the delivered changes against the request and relevant builds before finishing."

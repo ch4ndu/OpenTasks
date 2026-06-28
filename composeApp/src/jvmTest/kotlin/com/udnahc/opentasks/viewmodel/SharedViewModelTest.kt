@@ -29,6 +29,7 @@ import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
 import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
+import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveNoteByIdUseCase
@@ -41,6 +42,7 @@ import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
 import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
+import com.udnahc.opentasks.testutil.FakeAttachmentRepository
 import com.udnahc.opentasks.testutil.FakeCategoryRepository
 import com.udnahc.opentasks.testutil.FakeCountdownRepository
 import com.udnahc.opentasks.testutil.FakeNoteRepository
@@ -147,6 +149,7 @@ class SharedViewModelTest : MainDispatcherRule() {
             )
         )
         val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
+        val attachmentRepository = FakeAttachmentRepository()
         val viewModel = TaskListViewModel(
             observeTasksForCategory = ObserveTasksForCategoryUseCase(taskRepository),
             observeAllTasks = ObserveAllTasksUseCase(taskRepository),
@@ -161,6 +164,7 @@ class SharedViewModelTest : MainDispatcherRule() {
             observeTaskListViewMode = ObserveTaskListViewModeUseCase(settingsRepository),
             saveTaskListViewModeAction = SaveTaskListViewModeAction(settingsRepository),
             updateTaskStatusAction = UpdateTaskStatusAction(taskRepository, scheduler),
+            observeTaskImageSummaries = ObserveTaskImageSummariesUseCase(attachmentRepository),
         )
 
         viewModel.selectCategory("inbox")

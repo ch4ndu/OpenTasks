@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fresh Context Review"
+  short_description: "Re-review code from disk with file evidence"
+  default_prompt: "Use $fresh-context-review to re-review the current changes from disk and report findings with file references."

@@ -4,6 +4,7 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
+import com.udnahc.opentasks.data.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.database.MIGRATION_2_3
 import com.udnahc.opentasks.data.database.MIGRATION_3_4
@@ -13,11 +14,14 @@ import com.udnahc.opentasks.data.database.MIGRATION_6_7
 import com.udnahc.opentasks.data.database.MIGRATION_7_8
 import com.udnahc.opentasks.data.database.MIGRATION_8_9
 import com.udnahc.opentasks.data.database.MIGRATION_9_10
+import com.udnahc.opentasks.data.database.MIGRATION_10_11
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.repository.AppSettingsRepository
 import com.udnahc.opentasks.data.repository.AppSettingsRepositoryImpl
+import com.udnahc.opentasks.data.repository.AttachmentRepository
+import com.udnahc.opentasks.data.repository.AttachmentRepositoryImpl
 import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
 import com.udnahc.opentasks.data.repository.CountdownRepository
@@ -33,12 +37,15 @@ import com.udnahc.opentasks.data.sync.PocketBaseConnectionVerifier
 import com.udnahc.opentasks.data.sync.SyncService
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import com.udnahc.opentasks.data.sync.adapters.CategorySyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.AttachmentSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.CountdownSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.NoteSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.TagSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.TaskSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.TaskTagSyncAdapter
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
+import com.udnahc.opentasks.domain.action.attachment.AddTaskImageAction
+import com.udnahc.opentasks.domain.action.attachment.RemoveTaskImageAction
 import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemindersAction
@@ -75,6 +82,8 @@ import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
+import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
+import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImagesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveCountdownByIdUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
@@ -128,7 +137,8 @@ val sharedModule = module {
                 MIGRATION_6_7,
                 MIGRATION_7_8,
                 MIGRATION_8_9,
-                MIGRATION_9_10
+                MIGRATION_9_10,
+                MIGRATION_10_11
             )
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
@@ -151,9 +161,12 @@ val sharedModule = module {
     single { get<AppDatabase>().tagDao() }
     single { get<AppDatabase>().appSettingsDao() }
     single { get<AppDatabase>().countdownDao() }
+    single { get<AppDatabase>().attachmentDao() }
+    single { PendingTaskImageHandoff() }
     single<CountdownRepository> { CountdownRepositoryImpl(get(), get()) }
     single<TagRepository> { TagRepositoryImpl(get(), get()) }
     single<AppSettingsRepository> { AppSettingsRepositoryImpl(get()) }
+    single<AttachmentRepository> { AttachmentRepositoryImpl(get(), get()) }
     single { AllDayNotificationDismissalStore(get()) }
 
     // UseCases
@@ -163,6 +176,8 @@ val sharedModule = module {
     factory { ObserveTasksForCategoryUseCase(get()) }
     factory { ObserveTasksForPriorityUseCase(get()) }
     single { ObserveAllCategoriesUseCase(get()) }
+    factory { ObserveTaskImagesUseCase(get()) }
+    single { ObserveTaskImageSummariesUseCase(get()) }
     single { ObserveAllNotesUseCase(get()) }
     factory { ObserveNoteByIdUseCase(get()) }
     single { ObserveAllCountdownsUseCase(get()) }
@@ -188,7 +203,9 @@ val sharedModule = module {
     // Actions
     single { AddTaskAction(get(), get()) }
     single { UpdateTaskAction(get(), get()) }
-    single { DeleteTaskAction(get(), get()) }
+    single { DeleteTaskAction(get(), get(), get(), get()) }
+    single { AddTaskImageAction(get(), get()) }
+    single { RemoveTaskImageAction(get(), get()) }
     single { ToggleTaskCompleteAction(get(), get()) }
     single { ToggleTaskStarredAction(get()) }
     single { UpdateSectionAction(get()) }
@@ -220,11 +237,12 @@ val sharedModule = module {
     single { SaveTextSizePreferenceAction(get()) }
     single { SaveCalendarViewPreferenceAction(get()) }
     single { SaveCalendarListDisplayModePreferenceAction(get()) }
-    single { ClearLocalDataAction(get(), get(), get(), get(), get()) }
+    single { ClearLocalDataAction(get(), get(), get(), get(), get(), get(), get()) }
 
     // Sync
     single { PocketBaseClientProvider() }
     single { TaskSyncAdapter(get()) }
+    single { AttachmentSyncAdapter(get(), get(), get()) }
     single { CategorySyncAdapter(get()) }
     single { TagSyncAdapter(get()) }
     single { TaskTagSyncAdapter(get(), get()) }
@@ -237,6 +255,7 @@ val sharedModule = module {
                 get<CategorySyncAdapter>(),
                 get<TagSyncAdapter>(),
                 get<TaskSyncAdapter>(),
+                get<AttachmentSyncAdapter>(),
                 get<TaskTagSyncAdapter>(),
                 get<NoteSyncAdapter>(),
                 get<CountdownSyncAdapter>(),
@@ -250,6 +269,7 @@ val sharedModule = module {
                 get<CategorySyncAdapter>(),
                 get<TagSyncAdapter>(),
                 get<TaskSyncAdapter>(),
+                get<AttachmentSyncAdapter>(),
                 get<TaskTagSyncAdapter>(),
                 get<NoteSyncAdapter>(),
                 get<CountdownSyncAdapter>(),
@@ -258,10 +278,11 @@ val sharedModule = module {
     }
 
     // ViewModels
-    viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get()) }
-    viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get()) }
+    viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel {
         TaskListViewModel(
+            get(),
             get(),
             get(),
             get(),

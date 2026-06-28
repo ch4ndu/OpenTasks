@@ -52,6 +52,10 @@ This project is built collaboratively with AI assistance (Claude Code). The code
 |---------|-----|----------------|
 | API 24+ (Android 7.0) | arm64 + Simulator | Linux, macOS, Windows |
 
+## Documentation
+
+See [docs/README.md](docs/README.md) for feature behavior and technical design notes.
+
 ## Features
 
 ### Task Management
@@ -242,9 +246,11 @@ The included migrations (`pocketbase/pb_migrations/`) create the following colle
 
 **`task_tags`** — localId, taskId, tagId, isDeleted, localCreatedAt, localUpdatedAt
 
+**`attachments`** — localId, ownerType, ownerId, kind, file, mimeType, fileName, fileSizeBytes, width, height, sortOrder, isDeleted, localCreatedAt, localUpdatedAt. Task images use `ownerType = "task"` and `kind = "image"`. Files are public-by-randomized URL, matching the app's public sync model.
+
 Each collection has a unique index on `localId` for fast sync lookups. All API rules are left empty (public access) since the app doesn't use authentication.
 
-Sync runs one collection at a time in this order: categories, tags, tasks, task_tags, notes, countdowns. Each collection pulls before pushing. Conflicts use last-write-wins by the app-managed `localUpdatedAt` timestamp; if a remote row is newer it overwrites local state, and if an unsynced local row is newer or equal it is pushed. Deletes are durable tombstones (`isDeleted = true`) rather than PocketBase hard deletes. A physically missing server row is treated as server damage/manual deletion and the synced active local row is marked unsynced so the next push recreates it. Device clock skew can make the wrong edit win.
+Sync runs one collection at a time in this order: categories, tags, tasks, attachments, task_tags, notes, countdowns. Each collection pulls before pushing. Conflicts use last-write-wins by the app-managed `localUpdatedAt` timestamp; if a remote row is newer it overwrites local state, and if an unsynced local row is newer or equal it is pushed. Deletes are durable tombstones (`isDeleted = true`) rather than PocketBase hard deletes. A physically missing server row is treated as server damage/manual deletion and the synced active local row is marked unsynced so the next push recreates it. Device clock skew can make the wrong edit win.
 
 ### Manual Setup (without migration)
 

@@ -6,6 +6,7 @@ import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.AppConstants
+import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskListFilter
@@ -22,6 +23,7 @@ import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
 import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
+import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskListViewModeUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
@@ -55,6 +57,7 @@ class TaskListViewModel(
     observeTaskListViewMode: ObserveTaskListViewModeUseCase,
     private val saveTaskListViewModeAction: SaveTaskListViewModeAction,
     private val updateTaskStatusAction: UpdateTaskStatusAction,
+    observeTaskImageSummaries: ObserveTaskImageSummariesUseCase,
 ) : ViewModel() {
 
     data class SectionGroup(
@@ -129,6 +132,10 @@ class TaskListViewModel(
 
     val viewMode: StateFlow<TaskListViewMode> = observeTaskListViewMode()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskListViewMode.LIST)
+
+    val taskImageSummaries: StateFlow<Map<String, AttachmentSummary>> = observeTaskImageSummaries()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val activeTasksForSelectedCategory: StateFlow<List<Task>> =
         combine(tasksForSelectedCategory, sortOption) { tasks, sort ->

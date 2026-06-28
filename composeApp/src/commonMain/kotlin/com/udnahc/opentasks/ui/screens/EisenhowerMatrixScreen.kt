@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import com.udnahc.opentasks.data.extensions.formatDateShort
+import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
@@ -71,10 +72,12 @@ fun EisenhowerMatrixScreen(
     onRefresh: () -> Unit = {},
 ) {
     val tasksByPriority by viewModel.tasksByPriority.collectAsState()
+    val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
 
     EisenhowerMatrixContent(
         tasksByPriority = tasksByPriority,
+        taskImageSummaries = taskImageSummaries,
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onQuadrantClick = onQuadrantClick,
@@ -95,6 +98,7 @@ fun EisenhowerMatrixScreen(
 @Composable
 internal fun EisenhowerMatrixContent(
     tasksByPriority: Map<TaskPriority, List<Task>>,
+    taskImageSummaries: Map<String, AttachmentSummary> = emptyMap(),
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onQuadrantClick: (TaskPriority) -> Unit = {},
@@ -121,6 +125,7 @@ internal fun EisenhowerMatrixContent(
                 lowTasks = lowTasks,
                 mediumTasks = mediumTasks,
                 noneTasks = noneTasks,
+                taskImageSummaries = taskImageSummaries,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
                 onQuadrantClick = onQuadrantClick,
@@ -163,6 +168,7 @@ private fun QuadrantGrid(
     lowTasks: List<Task>,
     mediumTasks: List<Task>,
     noneTasks: List<Task>,
+    taskImageSummaries: Map<String, AttachmentSummary>,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onQuadrantClick: (TaskPriority) -> Unit,
@@ -187,6 +193,7 @@ private fun QuadrantGrid(
                 badge = "I",
                 color = PriorityHigh,
                 tasks = highTasks,
+                taskImageSummaries = taskImageSummaries,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
                 onCardClick = { onQuadrantClick(TaskPriority.HIGH) },
@@ -197,6 +204,7 @@ private fun QuadrantGrid(
                 badge = "III",
                 color = PriorityLow,
                 tasks = lowTasks,
+                taskImageSummaries = taskImageSummaries,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
                 onCardClick = { onQuadrantClick(TaskPriority.LOW) },
@@ -214,6 +222,7 @@ private fun QuadrantGrid(
                 badge = "II",
                 color = PriorityMedium,
                 tasks = mediumTasks,
+                taskImageSummaries = taskImageSummaries,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
                 onCardClick = { onQuadrantClick(TaskPriority.MEDIUM) },
@@ -224,6 +233,7 @@ private fun QuadrantGrid(
                 badge = "IV",
                 color = PriorityNone,
                 tasks = noneTasks,
+                taskImageSummaries = taskImageSummaries,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
                 onCardClick = { onQuadrantClick(TaskPriority.NONE) },
@@ -240,6 +250,7 @@ internal fun QuadrantCard(
     badge: String,
     color: Color,
     tasks: List<Task>,
+    taskImageSummaries: Map<String, AttachmentSummary> = emptyMap(),
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onCardClick: () -> Unit,
@@ -267,6 +278,7 @@ internal fun QuadrantCard(
                 items(tasks.take(QUADRANT_MAX_VISIBLE), key = { it.id }) { task ->
                     QuadrantTaskRow(
                         task = task,
+                        imageSummary = taskImageSummaries[task.id],
                         color = color,
                         onToggleComplete = { onToggleComplete(task) },
                         onClick = { onTaskClick(task) },
@@ -336,6 +348,7 @@ private fun ViewMoreLabel() {
 @Composable
 internal fun QuadrantTaskRow(
     task: Task,
+    imageSummary: AttachmentSummary? = null,
     color: Color,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
@@ -399,6 +412,10 @@ internal fun QuadrantTaskRow(
                     style = MaterialTheme.typography.labelSmall,
                     color = DateOrange,
                 )
+            }
+            if (imageSummary != null && imageSummary.imageCount > 0) {
+                Spacer(Modifier.height(dimens.spacerTiny))
+                AttachmentSyncBadge(imageSummary.worstSyncState)
             }
         }
     }

@@ -1,6 +1,9 @@
 package com.udnahc.opentasks.testutil
 
 import com.udnahc.opentasks.data.model.AppSettings
+import com.udnahc.opentasks.data.model.Attachment
+import com.udnahc.opentasks.data.model.AttachmentSummary
+import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.Note
@@ -8,6 +11,7 @@ import com.udnahc.opentasks.data.model.Tag
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskTag
 import com.udnahc.opentasks.data.repository.AppSettingsRepository
+import com.udnahc.opentasks.data.repository.AttachmentRepository
 import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.CountdownRepository
 import com.udnahc.opentasks.data.repository.NoteRepository
@@ -68,6 +72,93 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
 
     override suspend fun getAllTasksOnceUtc(): List<Task> =
         tasksFlow.value.filterNot { it.isDeleted }
+}
+
+class FakeAttachmentRepository(initialAttachments: List<Attachment> = emptyList()) : AttachmentRepository {
+    private val attachmentsFlow = MutableStateFlow(initialAttachments)
+    val inserted = mutableListOf<Attachment>()
+    val updated = mutableListOf<Attachment>()
+    val hardDeleted = mutableListOf<Attachment>()
+    var insertError: Throwable? = null
+
+    override fun observeForOwner(ownerType: String, ownerId: String, kind: String): Flow<List<Attachment>> =
+        attachmentsFlow.map { attachments ->
+            attachments.filter {
+                it.ownerType == ownerType && it.ownerId == ownerId && it.kind == kind && !it.isDeleted
+            }
+        }
+
+    override fun observeImageSummaries(): Flow<List<AttachmentSummary>> =
+        attachmentsFlow.map { attachments ->
+            attachments.filter { !it.isDeleted }
+                .groupBy { it.ownerType to it.ownerId }
+                .map { (key, values) ->
+                    val ordered = values.sortedWith(compareBy<Attachment> { it.sortOrder }.thenBy { it.createdAt })
+                    AttachmentSummary(
+                        ownerType = key.first,
+                        ownerId = key.second,
+                        imageCount = values.size,
+                        firstThumbnailPath = ordered.firstOrNull()?.thumbnailPath,
+                        worstSyncState = values.worstSyncState(),
+                    )
+                }
+        }
+
+    override suspend fun getByIdAnyState(id: String): Attachment? =
+        attachmentsFlow.value.firstOrNull { it.id == id }
+
+    override suspend fun getActiveForOwnerAnyState(ownerType: String, ownerId: String): List<Attachment> =
+        attachmentsFlow.value.filter { it.ownerType == ownerType && it.ownerId == ownerId && !it.isDeleted }
+
+    override suspend fun nextSortOrder(ownerType: String, ownerId: String, kind: String): Int =
+        attachmentsFlow.value.count { it.ownerType == ownerType && it.ownerId == ownerId && it.kind == kind }
+
+    override suspend fun insert(attachment: Attachment): Long {
+        insertError?.let { throw it }
+        inserted.add(attachment)
+        attachmentsFlow.update { attachments -> attachments.filterNot { it.id == attachment.id } + attachment }
+        return inserted.size.toLong()
+    }
+
+    override suspend fun update(attachment: Attachment) {
+        updated.add(attachment)
+        attachmentsFlow.update { attachments -> attachments.filterNot { it.id == attachment.id } + attachment }
+    }
+
+    override suspend fun delete(attachment: Attachment) {
+        update(attachment.copy(isDeleted = true))
+    }
+
+    override suspend fun hardDelete(attachment: Attachment) {
+        hardDeleted.add(attachment)
+        attachmentsFlow.update { attachments -> attachments.filterNot { it.id == attachment.id } }
+    }
+
+    override suspend fun tombstoneActiveForOwner(ownerType: String, ownerId: String) {
+        attachmentsFlow.update { attachments ->
+            attachments.map {
+                if (it.ownerType == ownerType && it.ownerId == ownerId && !it.isDeleted) {
+                    val deleted = it.copy(isDeleted = true)
+                    updated.add(deleted)
+                    deleted
+                } else {
+                    it
+                }
+            }
+        }
+    }
+
+    private fun List<Attachment>.worstSyncState(): AttachmentSyncState? {
+        val states = map { it.syncState }.toSet()
+        return when {
+            AttachmentSyncState.BLOCKED in states -> AttachmentSyncState.BLOCKED
+            AttachmentSyncState.FAILED in states -> AttachmentSyncState.FAILED
+            AttachmentSyncState.NEEDS_DOWNLOAD in states -> AttachmentSyncState.NEEDS_DOWNLOAD
+            AttachmentSyncState.LOCAL_ONLY in states -> AttachmentSyncState.LOCAL_ONLY
+            AttachmentSyncState.SYNCED in states -> AttachmentSyncState.SYNCED
+            else -> null
+        }
+    }
 }
 
 class FakeCategoryRepository(initialCategories: List<Category> = emptyList()) : CategoryRepository {

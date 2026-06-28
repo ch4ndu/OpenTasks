@@ -18,20 +18,24 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +45,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
@@ -50,6 +56,8 @@ import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
+import com.udnahc.opentasks.data.attachment.PickedImage
+import com.udnahc.opentasks.data.model.Attachment
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
@@ -60,12 +68,17 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.PriorityHigh
 import com.udnahc.opentasks.ui.theme.priorityColor
+import com.udnahc.opentasks.ui.util.PlatformBackHandler
+import com.udnahc.opentasks.ui.util.rememberTaskImagePickerActions
 import com.udnahc.opentasks.ui.util.rememberOpenInMapsAction
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.all_day
 import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.date_and_reminder
 import opentasks.composeapp.generated.resources.delete
+import opentasks.composeapp.generated.resources.discard_pending_images_message
+import opentasks.composeapp.generated.resources.discard_pending_images_title
+import opentasks.composeapp.generated.resources.discard
 import opentasks.composeapp.generated.resources.delete_task_message
 import opentasks.composeapp.generated.resources.delete_task_title
 import opentasks.composeapp.generated.resources.done
@@ -76,8 +89,11 @@ import opentasks.composeapp.generated.resources.ic_flag
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_repeat
 import opentasks.composeapp.generated.resources.ic_unfold
+import opentasks.composeapp.generated.resources.image_add_failed
 import opentasks.composeapp.generated.resources.inbox
+import opentasks.composeapp.generated.resources.loading
 import opentasks.composeapp.generated.resources.priority
+import opentasks.composeapp.generated.resources.ok
 import opentasks.composeapp.generated.resources.select
 import opentasks.composeapp.generated.resources.subtasks
 import opentasks.composeapp.generated.resources.task_completed
@@ -103,6 +119,15 @@ fun CreateTaskScreen(
     onCategorySearchQueryChange: (String) -> Unit = {},
     onAddCategory: (String) -> Unit = {},
     onSave: (TaskFormData) -> Unit = {},
+    isSaving: Boolean = false,
+    existingImages: List<Attachment> = emptyList(),
+    pendingImages: List<PickedImage> = emptyList(),
+    onAddPendingImage: (PickedImage) -> Unit = {},
+    onRemovePendingImage: (PickedImage) -> Unit = {},
+    onDiscardPendingImages: () -> Unit = {},
+    confirmDiscardPendingImagesOnBack: Boolean = false,
+    onBackRequestChanged: ((() -> Unit)?) -> Unit = {},
+    onRemoveTaskImage: (Attachment) -> Unit = {},
     onDelete: (() -> Unit)? = null,
 ) {
     CreateTaskContent(
@@ -122,6 +147,15 @@ fun CreateTaskScreen(
         onCategorySearchQueryChange = onCategorySearchQueryChange,
         onAddCategory = onAddCategory,
         onSave = onSave,
+        isSaving = isSaving,
+        existingImages = existingImages,
+        pendingImages = pendingImages,
+        onAddPendingImage = onAddPendingImage,
+        onRemovePendingImage = onRemovePendingImage,
+        onDiscardPendingImages = onDiscardPendingImages,
+        confirmDiscardPendingImagesOnBack = confirmDiscardPendingImagesOnBack,
+        onBackRequestChanged = onBackRequestChanged,
+        onRemoveTaskImage = onRemoveTaskImage,
         onDelete = onDelete,
     )
 }
@@ -145,6 +179,15 @@ private fun CreateTaskContent(
     onCategorySearchQueryChange: (String) -> Unit = {},
     onAddCategory: (String) -> Unit = {},
     onSave: (TaskFormData) -> Unit = {},
+    isSaving: Boolean = false,
+    existingImages: List<Attachment> = emptyList(),
+    pendingImages: List<PickedImage> = emptyList(),
+    onAddPendingImage: (PickedImage) -> Unit = {},
+    onRemovePendingImage: (PickedImage) -> Unit = {},
+    onDiscardPendingImages: () -> Unit = {},
+    confirmDiscardPendingImagesOnBack: Boolean = false,
+    onBackRequestChanged: ((() -> Unit)?) -> Unit = {},
+    onRemoveTaskImage: (Attachment) -> Unit = {},
     onDelete: (() -> Unit)? = null,
 ) {
     val stateKey = editTask?.id ?: listOf(
@@ -177,10 +220,39 @@ private fun CreateTaskContent(
     var organizer by remember(stateKey) { mutableStateOf(editTask?.organizer ?: "") }
     var eventStatus by remember(stateKey) { mutableStateOf(editTask?.eventStatus ?: "") }
     var attendees by remember(stateKey) { mutableStateOf(editTask?.attendees ?: "") }
+    var showDiscardPendingImagesConfirm by remember { mutableStateOf(false) }
     val descriptionFocusRequester = remember { FocusRequester() }
     val subtaskFocusRequester = remember { FocusRequester() }
     val richTextState = rememberRichTextState()
     val inboxName = stringResource(Res.string.inbox)
+    var imageError by remember { mutableStateOf(false) }
+    val imagePickerActions = rememberTaskImagePickerActions(
+        onImagePicked = onAddPendingImage,
+        onError = { code ->
+            if (!code.endsWith("_unavailable")) imageError = true
+        },
+    )
+    fun requestBack() {
+        if (confirmDiscardPendingImagesOnBack && pendingImages.isNotEmpty()) {
+            showDiscardPendingImagesConfirm = true
+        } else {
+            onBack()
+        }
+    }
+    val currentBackRequest by rememberUpdatedState { requestBack() }
+    DisposableEffect(confirmDiscardPendingImagesOnBack, onBackRequestChanged) {
+        if (confirmDiscardPendingImagesOnBack) {
+            onBackRequestChanged { currentBackRequest() }
+        }
+        onDispose {
+            onBackRequestChanged(null)
+        }
+    }
+
+    PlatformBackHandler(
+        enabled = confirmDiscardPendingImagesOnBack && pendingImages.isNotEmpty(),
+        onBack = { requestBack() },
+    )
 
     LaunchedEffect(stateKey) {
         val initialContent = editTask?.content ?: initialDescription
@@ -290,7 +362,7 @@ private fun CreateTaskContent(
                 priority = it
                 showPriorityMenu = false
             },
-            onBack = onBack,
+            onBack = { requestBack() },
             onListClick = { showCategoryPicker = true },
             onDelete = onDelete,
         )
@@ -328,6 +400,17 @@ private fun CreateTaskContent(
             )
 
             Spacer(Modifier.height(dimens.spacerXLarge))
+
+            TaskImageEditorStrip(
+                existingImages = existingImages,
+                pendingImages = pendingImages,
+                onAddFromGallery = imagePickerActions.pickFromGallery,
+                onAddFromCamera = imagePickerActions.captureFromCamera,
+                onRemoveExisting = onRemoveTaskImage,
+                onRemovePending = onRemovePendingImage,
+            )
+
+            Spacer(Modifier.height(dimens.spacerLarge))
 
             if (isSubtaskMode) {
                 Box(modifier = Modifier.defaultMinSize(minHeight = dimens.minPagerHeight)) {
@@ -427,7 +510,7 @@ private fun CreateTaskContent(
                 subtaskToggleCount++
             },
             onDone = {
-                if (title.isNotBlank()) {
+                if (!isSaving && title.isNotBlank()) {
                     val deadlineMs: Long? =
                         if (selectedYear > 0 && selectedMonth > 0 && selectedDay > 0) {
                             computeDeadlineMillis(
@@ -467,12 +550,41 @@ private fun CreateTaskContent(
                             attendees = attendees,
                             durationReminders = durationReminders,
                             dateReminders = if (durationReminders.isBlank()) selectedReminders.toRemindersString() else "",
+                            pendingImages = pendingImages,
                         )
                     )
                 }
-                onBack()
             },
+            isSaving = isSaving,
         )
+    }
+
+    if (isSaving) {
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+            ),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(OpenTasksTheme.dimens.cornerMedium),
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(OpenTasksTheme.dimens.paddingLarge),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(OpenTasksTheme.dimens.iconDefault))
+                    Spacer(Modifier.width(OpenTasksTheme.dimens.spacerLarge))
+                    Text(
+                        text = stringResource(Res.string.loading),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+        }
     }
 
     if (showDateSheet) {
@@ -529,6 +641,40 @@ private fun CreateTaskContent(
             },
             searchQuery = categorySearchQuery,
             onSearchQueryChange = onCategorySearchQueryChange,
+        )
+    }
+
+    if (imageError) {
+        AlertDialog(
+            onDismissRequest = { imageError = false },
+            title = { Text(stringResource(Res.string.image_add_failed)) },
+            confirmButton = {
+                TextButton(onClick = { imageError = false }) {
+                    Text(stringResource(Res.string.ok))
+                }
+            },
+        )
+    }
+
+    if (showDiscardPendingImagesConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDiscardPendingImagesConfirm = false },
+            title = { Text(stringResource(Res.string.discard_pending_images_title)) },
+            text = { Text(stringResource(Res.string.discard_pending_images_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardPendingImagesConfirm = false
+                    onDiscardPendingImages()
+                    onBack()
+                }) {
+                    Text(stringResource(Res.string.discard), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardPendingImagesConfirm = false }) {
+                    Text(stringResource(Res.string.cancel))
+                }
+            },
         )
     }
 }
@@ -833,6 +979,7 @@ internal fun CreateTaskBottomBar(
     isSubtaskMode: Boolean,
     onToggleSubtaskMode: () -> Unit,
     onDone: () -> Unit,
+    isSaving: Boolean = false,
 ) {
     val dimens = OpenTasksTheme.dimens
     Row(
@@ -853,7 +1000,7 @@ internal fun CreateTaskBottomBar(
 
         Spacer(Modifier.weight(1f))
 
-        IconButton(onClick = onDone) {
+        IconButton(onClick = onDone, enabled = !isSaving) {
             Icon(
                 painter = painterResource(Res.drawable.ic_check),
                 contentDescription = stringResource(Res.string.done),

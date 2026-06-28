@@ -63,6 +63,20 @@
     <string name="undo">Undo</string>
     <string name="redo">Redo</string>
     <string name="add_task">Add task</string>
+    <string name="add_from_gallery">Add from gallery</string>
+    <string name="add_from_camera">Add from camera</string>
+    <string name="image_attachment">Image attachment</string>
+    <string name="image_pending">Pending</string>
+    <string name="image_failed">Failed</string>
+    <string name="image_blocked">Blocked</string>
+    <string name="delete_image_title">Delete image?</string>
+    <string name="delete_image_message">This image will be removed from the task.</string>
+    <string name="image_add_failed">Could not add image</string>
+    <string name="image_save_partial_failed">Task saved, but some images were not added</string>
+    <string name="task_save_failed">Could not save task</string>
+    <string name="discard_pending_images_title">Discard pending images?</string>
+    <string name="discard_pending_images_message">The task is already saved. Leaving now will discard image retries that have not been added.</string>
+    <string name="discard">Discard</string>
 
     <!-- Date & Duration -->
     <string name="date">Date</string>

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan Critique"
+  short_description: "Pressure-test and revise engineering plans"
+  default_prompt: "Use $plan-critique to evaluate this plan against the repo and revise it with explicit decisions."

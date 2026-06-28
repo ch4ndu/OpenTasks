@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.TaskCategory
 import com.udnahc.opentasks.data.model.TaskListViewMode
 import com.udnahc.opentasks.data.model.TaskPriority
@@ -14,6 +15,7 @@ import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
+import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +40,7 @@ class MatrixViewModel(
     toggleTaskCompleteAction: ToggleTaskCompleteAction,
     private val toggleTaskStarredAction: ToggleTaskStarredAction,
     private val updateTaskStatusAction: UpdateTaskStatusAction,
+    observeTaskImageSummaries: ObserveTaskImageSummariesUseCase,
 ) : ViewModel() {
 
     data class TaskCategoryGroup(
@@ -50,6 +53,10 @@ class MatrixViewModel(
     private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
     val taskPendingSeriesChoice: StateFlow<Task?> = completionHandler.taskPendingSeriesChoice
     val viewMode: StateFlow<TaskListViewMode> = _viewMode
+
+    val taskImageSummaries: StateFlow<Map<String, AttachmentSummary>> = observeTaskImageSummaries()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val categoryNames: StateFlow<Map<String, String>> = observeAllCategories()
         .map { cats -> cats.associate { it.id to it.name } }

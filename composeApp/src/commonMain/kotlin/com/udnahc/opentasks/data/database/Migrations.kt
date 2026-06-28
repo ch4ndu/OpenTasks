@@ -159,3 +159,38 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
         connection.execSQL("CREATE INDEX IF NOT EXISTS index_countdowns_pbId ON countdowns(pbId)")
     }
 }
+
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `attachments` (
+                `id` TEXT NOT NULL PRIMARY KEY,
+                `ownerType` TEXT NOT NULL,
+                `ownerId` TEXT NOT NULL,
+                `kind` TEXT NOT NULL,
+                `localPath` TEXT NOT NULL DEFAULT '',
+                `thumbnailPath` TEXT NOT NULL DEFAULT '',
+                `remoteFileName` TEXT,
+                `mimeType` TEXT NOT NULL DEFAULT '',
+                `fileName` TEXT NOT NULL DEFAULT '',
+                `fileSizeBytes` INTEGER NOT NULL DEFAULT 0,
+                `width` INTEGER NOT NULL DEFAULT 0,
+                `height` INTEGER NOT NULL DEFAULT 0,
+                `sortOrder` INTEGER NOT NULL DEFAULT 0,
+                `syncState` TEXT NOT NULL DEFAULT 'LOCAL_ONLY',
+                `lastSyncError` TEXT,
+                `pbId` TEXT,
+                `isSynced` INTEGER NOT NULL DEFAULT 0,
+                `isDeleted` INTEGER NOT NULL DEFAULT 0,
+                `createdAt` INTEGER NOT NULL DEFAULT 0,
+                `updatedAt` INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent()
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_ownerType_ownerId_kind_isDeleted_sortOrder ON attachments(ownerType, ownerId, kind, isDeleted, sortOrder)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_isSynced ON attachments(isSynced)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_syncState ON attachments(syncState)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_pbId ON attachments(pbId)")
+    }
+}

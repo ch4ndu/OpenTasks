@@ -44,6 +44,11 @@ For a new persisted entity or schema change:
 
 ## Verification
 
+- Before calling a coding change complete, run a focused audit pass:
+  - Load `docs/ai/audit.md` and apply it to the changed files and affected call paths.
+  - If UI or Compose changed, also load `docs/ai/ui.md`.
+  - If Room, repositories, sync, timestamps, date/time, or migrations changed, also load `docs/ai/data-sync-time.md`.
+  - Treat unresolved audit findings as incomplete work unless the user explicitly accepts the gap.
 - Run `./gradlew :composeApp:compileKotlinJvm` for normal changes.
 - For shared domain, ViewModel, parser/import/export, sync, or settings changes, run `./gradlew :composeApp:jvmTest`.
 - For broad shared-core changes, prefer `./gradlew :composeApp:allTests` when the local Kotlin/Native/iOS toolchain is available.

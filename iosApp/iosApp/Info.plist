@@ -24,6 +24,10 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>OpenTasks uses the camera to attach photos to tasks.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>OpenTasks uses your photo library to attach images to tasks.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

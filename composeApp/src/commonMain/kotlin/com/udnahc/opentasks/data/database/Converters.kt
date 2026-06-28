@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.database
 
 import androidx.room.TypeConverter
+import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
@@ -59,4 +60,11 @@ class Converters {
     @TypeConverter
     fun toTaskStatus(value: String): TaskStatus =
         TaskStatus.entries.firstOrNull { it.name == value } ?: TaskStatus.TODO
+
+    @TypeConverter
+    fun fromAttachmentSyncState(value: AttachmentSyncState): String = value.name
+
+    @TypeConverter
+    fun toAttachmentSyncState(value: String): AttachmentSyncState =
+        AttachmentSyncState.entries.firstOrNull { it.name == value } ?: AttachmentSyncState.LOCAL_ONLY
 }

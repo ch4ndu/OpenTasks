@@ -111,9 +111,11 @@ import opentasks.composeapp.generated.resources.ic_note
 import opentasks.composeapp.generated.resources.ic_schedule
 import opentasks.composeapp.generated.resources.import_failed_generic
 import opentasks.composeapp.generated.resources.import_success
+import opentasks.composeapp.generated.resources.image_save_partial_failed
 import opentasks.composeapp.generated.resources.not_urgent_important
 import opentasks.composeapp.generated.resources.not_urgent_unimportant
 import opentasks.composeapp.generated.resources.open_settings
+import opentasks.composeapp.generated.resources.task_save_failed
 import opentasks.composeapp.generated.resources.urgent_important
 import opentasks.composeapp.generated.resources.urgent_unimportant
 import org.jetbrains.compose.resources.DrawableResource
@@ -240,11 +242,31 @@ private fun MainScreen(
     var showImportCalendar by remember { mutableStateOf(false) }
     var showImportIcs by remember { mutableStateOf(false) }
     var showImportCsv by remember { mutableStateOf(false) }
+    var taskFormBackHandler by remember { mutableStateOf<(() -> Unit)?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val checkNotificationPermissionUseCase = koinInject<CheckNotificationPermissionUseCase>()
     val parseIcsUseCase = koinInject<ParseIcsUseCase>()
     val importCalendarEventsAction = koinInject<ImportCalendarEventsAction>()
     val snackbarScope = rememberCoroutineScope()
+    var pendingGlobalPostSaveReminderCheck by remember { mutableStateOf<TaskFormData?>(null) }
+    val requestGlobalNotificationPermission = rememberNotificationPermissionLauncher {
+        val formData = pendingGlobalPostSaveReminderCheck
+        pendingGlobalPostSaveReminderCheck = null
+        if (formData != null) {
+            maybeShowExactReminderSnackbar(
+                formData = formData,
+                checkNotificationPermissionUseCase = checkNotificationPermissionUseCase,
+                snackbarHostState = snackbarHostState,
+                scope = snackbarScope,
+            )
+        }
+    }
+
+    fun requestPostSaveReminderCheck(formData: TaskFormData) {
+        if (!formData.hasFutureReminder()) return
+        pendingGlobalPostSaveReminderCheck = formData
+        requestGlobalNotificationPermission()
+    }
 
     val tabs = remember {
         listOf(
@@ -317,9 +339,13 @@ private fun MainScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
     ) {
+        fun handleBack() {
+            taskFormBackHandler?.invoke() ?: navController.popBackStack()
+        }
+
         NavDisplay(
             backStack = backStack,
-            onBack = { navController.popBackStack() },
+            onBack = { handleBack() },
             modifier = Modifier.fillMaxSize(),
             entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
 //            transitionSpec = {
@@ -462,6 +488,8 @@ private fun MainScreen(
                     val categories by taskFormViewModel.categories.collectAsState()
                     val filteredCategories by taskFormViewModel.filteredCategories.collectAsState()
                     val categorySearchQuery by taskFormViewModel.categorySearchQuery.collectAsState()
+                    val pendingImages by taskFormViewModel.pendingImages.collectAsState()
+                    val isSaving by taskFormViewModel.isSaving.collectAsState()
                     var pendingPostSaveReminderCheck by remember {
                         mutableStateOf<TaskFormData?>(
                             null
@@ -486,13 +514,28 @@ private fun MainScreen(
                         taskFormViewModel.saveEvents.collect { event ->
                             when (event) {
                                 is TaskFormSaveEvent.Saved -> {
+                                    navController.popBackStack()
                                     if (event.formData.hasFutureReminder()) {
                                         pendingPostSaveReminderCheck = event.formData
                                         requestNotificationPermission()
                                     }
                                 }
 
-                                is TaskFormSaveEvent.Error -> Unit
+                                is TaskFormSaveEvent.TaskCreatedWithImageError -> {
+                                    navController.replaceTop(Screen.EditTask(event.taskId))
+                                    snackbarScope.launch {
+                                        snackbarHostState.showSnackbar(getString(Res.string.image_save_partial_failed))
+                                        requestPostSaveReminderCheck(event.formData)
+                                    }
+                                }
+
+                                is TaskFormSaveEvent.ImagesFailed -> Unit
+
+                                is TaskFormSaveEvent.Error -> {
+                                    snackbarScope.launch {
+                                        snackbarHostState.showSnackbar(getString(Res.string.task_save_failed))
+                                    }
+                                }
                             }
                         }
                     }
@@ -514,6 +557,13 @@ private fun MainScreen(
                         },
                         onAddCategory = { name -> taskFormViewModel.addCategory(name) },
                         onSave = { formData -> taskFormViewModel.saveNewTask(formData) },
+                        isSaving = isSaving,
+                        pendingImages = pendingImages,
+                        onAddPendingImage = { taskFormViewModel.addPendingImage(it) },
+                        onRemovePendingImage = { taskFormViewModel.removePendingImage(it) },
+                        onDiscardPendingImages = { taskFormViewModel.discardPendingImages() },
+                        confirmDiscardPendingImagesOnBack = true,
+                        onBackRequestChanged = { taskFormBackHandler = it },
                     )
                 }
 
@@ -543,21 +593,41 @@ private fun MainScreen(
                         taskFormViewModel.saveEvents.collect { event ->
                             when (event) {
                                 is TaskFormSaveEvent.Saved -> {
+                                    navController.popBackStack()
                                     if (event.formData.hasFutureReminder()) {
                                         pendingPostSaveReminderCheck = event.formData
                                         requestNotificationPermission()
                                     }
                                 }
 
-                                is TaskFormSaveEvent.Error -> Unit
+                                is TaskFormSaveEvent.TaskCreatedWithImageError -> Unit
+
+                                is TaskFormSaveEvent.ImagesFailed -> {
+                                    snackbarScope.launch {
+                                        snackbarHostState.showSnackbar(getString(Res.string.image_save_partial_failed))
+                                        if (event.formData.hasFutureReminder()) {
+                                            pendingPostSaveReminderCheck = event.formData
+                                            requestNotificationPermission()
+                                        }
+                                    }
+                                }
+
+                                is TaskFormSaveEvent.Error -> {
+                                    snackbarScope.launch {
+                                        snackbarHostState.showSnackbar(getString(Res.string.task_save_failed))
+                                    }
+                                }
                             }
                         }
                     }
                     LaunchedEffect(screen.taskId) { taskFormViewModel.setTaskId(screen.taskId) }
                     val editTask by taskFormViewModel.editTask.collectAsState()
+                    val editTaskImages by taskFormViewModel.editTaskImages.collectAsState()
+                    val pendingImages by taskFormViewModel.pendingImages.collectAsState()
                     val categories by taskFormViewModel.categories.collectAsState()
                     val filteredCategories by taskFormViewModel.filteredCategories.collectAsState()
                     val categorySearchQuery by taskFormViewModel.categorySearchQuery.collectAsState()
+                    val isSaving by taskFormViewModel.isSaving.collectAsState()
                     val currentEditTask = editTask
                     if (currentEditTask != null) {
                         CreateTaskScreen(
@@ -573,6 +643,15 @@ private fun MainScreen(
                             onSave = { formData ->
                                 taskFormViewModel.saveExistingTask(currentEditTask, formData)
                             },
+                            isSaving = isSaving,
+                            existingImages = editTaskImages,
+                            pendingImages = pendingImages,
+                            onAddPendingImage = { taskFormViewModel.addPendingImage(it) },
+                            onRemovePendingImage = { taskFormViewModel.removePendingImage(it) },
+                            onDiscardPendingImages = { taskFormViewModel.discardPendingImages() },
+                            confirmDiscardPendingImagesOnBack = true,
+                            onBackRequestChanged = { taskFormBackHandler = it },
+                            onRemoveTaskImage = { taskFormViewModel.removeTaskImage(it) },
                             onDelete = {
                                 taskFormViewModel.deleteTask(currentEditTask)
                                 navController.popBackStack()

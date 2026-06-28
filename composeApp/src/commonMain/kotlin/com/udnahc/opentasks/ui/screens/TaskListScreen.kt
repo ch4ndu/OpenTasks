@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
+import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskListViewMode
@@ -53,9 +54,11 @@ import opentasks.composeapp.generated.resources.completed
 import opentasks.composeapp.generated.resources.due_this_week
 import opentasks.composeapp.generated.resources.high_priority
 import opentasks.composeapp.generated.resources.ic_grid_view
+import opentasks.composeapp.generated.resources.ic_attach
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_unfold
 import opentasks.composeapp.generated.resources.inbox
+import opentasks.composeapp.generated.resources.image_attachment
 import opentasks.composeapp.generated.resources.no_date
 import opentasks.composeapp.generated.resources.no_tasks
 import opentasks.composeapp.generated.resources.overdue
@@ -138,10 +141,12 @@ fun TaskListScreen(
     when (viewMode) {
         TaskListViewMode.LIST -> {
             val listProjection by viewModel.listProjection.collectAsState()
+            val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
             TaskListContent(
                 listName = selectedListName,
                 completedTasks = listProjection.completedTasks,
                 groupedActiveTasks = listProjection.groupedActiveTasks,
+                taskImageSummaries = taskImageSummaries,
                 onTaskClick = onTaskClick,
                 onToggleComplete = { viewModel.toggleComplete(it) },
                 onToggleStar = { viewModel.toggleStar(it) },
@@ -246,6 +251,7 @@ internal fun TaskListContent(
     listName: String,
     completedTasks: List<Task> = emptyList(),
     groupedActiveTasks: List<SectionGroup> = emptyList(),
+    taskImageSummaries: Map<String, AttachmentSummary> = emptyMap(),
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onToggleStar: (Task) -> Unit = {},
@@ -317,6 +323,7 @@ internal fun TaskListContent(
                             items(group.tasks, key = { it.id }) { task ->
                                 TaskRow(
                                     task = task,
+                                    imageSummary = taskImageSummaries[task.id],
                                     isOverdue = group.category == ActiveTaskListSection.OVERDUE,
                                     onToggleComplete = { onToggleComplete(task) },
                                     onClick = { onTaskClick(task) },
@@ -354,6 +361,7 @@ internal fun TaskListContent(
                             ) { task ->
                                 CompletedTaskRow(
                                     task = task,
+                                    imageSummary = taskImageSummaries[task.id],
                                     onToggleComplete = { onToggleComplete(task) },
                                     onClick = { onTaskClick(task) },
                                     onToggleStar = { onToggleStar(task) },
@@ -495,6 +503,7 @@ private fun sortOptionLabel(option: TaskSortOption): String = when (option) {
 @Composable
 internal fun TaskRow(
     task: Task,
+    imageSummary: AttachmentSummary? = null,
     isOverdue: Boolean = false,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
@@ -529,6 +538,8 @@ internal fun TaskRow(
             TaskContentPreviewText(task.content)
         }
 
+        TaskImageSummaryAffordance(imageSummary)
+
         TaskStarButton(
             isStarred = task.isStarred,
             onClick = onToggleStar,
@@ -539,6 +550,7 @@ internal fun TaskRow(
 @Composable
 internal fun CompletedTaskRow(
     task: Task,
+    imageSummary: AttachmentSummary? = null,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
     onToggleStar: () -> Unit = {},
@@ -575,10 +587,28 @@ internal fun CompletedTaskRow(
             TaskContentPreviewText(task.content)
         }
 
+        TaskImageSummaryAffordance(imageSummary)
+
         TaskStarButton(
             isStarred = task.isStarred,
             onClick = onToggleStar,
         )
+    }
+}
+
+@Composable
+private fun TaskImageSummaryAffordance(imageSummary: AttachmentSummary?) {
+    if (imageSummary == null || imageSummary.imageCount <= 0) return
+    val dimens = OpenTasksTheme.dimens
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            painter = painterResource(Res.drawable.ic_attach),
+            contentDescription = stringResource(Res.string.image_attachment),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(dimens.iconSmall),
+        )
+        AttachmentSyncBadge(imageSummary.worstSyncState)
+        Spacer(Modifier.width(dimens.spacerSmall))
     }
 }
 

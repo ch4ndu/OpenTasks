@@ -24,6 +24,11 @@ Read this file first. Do not eagerly load every AI instruction document. Load on
 - Never use Kotlin `!!`; use safe calls, early returns, defaults, or smart-cast locals.
 - Reuse existing UseCases, Actions, composables, utilities, strings, icons, and theme dimensions before creating new ones.
 - Keep changes scoped. Do not refactor unrelated code while implementing a feature or fix.
+- For every coding change, run a focused audit pass before the final response:
+  - Load `docs/ai/audit.md` and apply it to the changed files and affected call paths.
+  - If UI or Compose changed, also load `docs/ai/ui.md`.
+  - If Room, repositories, sync, timestamps, date/time, or migrations changed, also load `docs/ai/data-sync-time.md`.
+  - Treat unresolved audit findings as incomplete work unless the user explicitly accepts the gap.
 - When durable architecture, workflow, or verification rules change, update the relevant `docs/ai/*` file. Do not duplicate those rules in tool-specific shims.
 - After running Gradle, stop Gradle daemons with `./gradlew --stop` before finishing the task to avoid orphaned processes.
 

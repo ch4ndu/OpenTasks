@@ -55,7 +55,7 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 
 - Sync is designed for a few trusted app instances against one self-hosted PocketBase server with public collection rules.
 - Repositories soft-delete durable rows and trigger sync; `SyncService` and adapters use DAOs directly to avoid sync loops during pull.
-- Collections sync in dependency order: categories, tags, tasks, task_tags, notes, countdowns.
+- Collections sync in dependency order: categories, tags, tasks, attachments, task_tags, notes, countdowns.
 - Each collection pulls before pushing and uses last-write-wins by local database `updatedAt` / server `localUpdatedAt`.
 - Remote rows with newer timestamps overwrite local rows, including older unsynced local edits; unsynced local rows with newer or equal timestamps push.
 - App deletes are server tombstones (`isDeleted = true`) retained indefinitely, not PocketBase hard deletes. Never-synced local tombstones without `pbId` may be hard-deleted locally.

@@ -1,6 +1,8 @@
 package com.udnahc.opentasks.domain.action.settings
 
+import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.dao.CategoryDao
+import com.udnahc.opentasks.data.dao.AttachmentDao
 import com.udnahc.opentasks.data.dao.NoteDao
 import com.udnahc.opentasks.data.dao.TagDao
 import com.udnahc.opentasks.data.dao.TaskDao
@@ -15,6 +17,8 @@ class ClearLocalDataAction(
     private val categoryDao: CategoryDao,
     private val noteDao: NoteDao,
     private val tagDao: TagDao,
+    private val attachmentDao: AttachmentDao,
+    private val attachmentFileStorage: AttachmentFileStorage,
     private val appSettingsRepository: AppSettingsRepository,
 ) {
     suspend operator fun invoke() {
@@ -22,6 +26,8 @@ class ClearLocalDataAction(
         // Delete in FK dependency order
         // Uses DAOs directly to avoid triggering sync on bulk delete
         tagDao.deleteAllTaskTags()
+        attachmentFileStorage.clearAll()
+        attachmentDao.deleteAll()
         tagDao.deleteAllTags()
         taskDao.deleteAll()
         noteDao.deleteAll()

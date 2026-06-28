@@ -84,7 +84,8 @@ class SyncService(
         collectionName: String,
         failedPulls: Set<String>
     ): Boolean =
-        collectionName == COLLECTION_TASK_TAGS &&
+        (collectionName == COLLECTION_ATTACHMENTS && COLLECTION_TASKS in failedPulls) ||
+                collectionName == COLLECTION_TASK_TAGS &&
                 (COLLECTION_TASKS in failedPulls || COLLECTION_TAGS in failedPulls)
 
     private fun shouldSkipPush(
@@ -93,6 +94,7 @@ class SyncService(
     ): Boolean =
         collectionName in failedPulls ||
                 (collectionName == COLLECTION_TASKS && COLLECTION_CATEGORIES in failedPulls) ||
+                (collectionName == COLLECTION_ATTACHMENTS && COLLECTION_TASKS in failedPulls) ||
                 (collectionName == COLLECTION_TASK_TAGS &&
                         (COLLECTION_TASKS in failedPulls || COLLECTION_TAGS in failedPulls))
 
@@ -100,6 +102,7 @@ class SyncService(
         const val COLLECTION_CATEGORIES = "categories"
         const val COLLECTION_TAGS = "tags"
         const val COLLECTION_TASKS = "tasks"
+        const val COLLECTION_ATTACHMENTS = "attachments"
         const val COLLECTION_TASK_TAGS = "task_tags"
     }
 }

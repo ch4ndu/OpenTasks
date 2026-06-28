@@ -1,7 +1,11 @@
 package com.udnahc.opentasks.testutil
 
 import com.udnahc.opentasks.data.model.AppConstants
+import com.udnahc.opentasks.data.model.ATTACHMENT_KIND_IMAGE
+import com.udnahc.opentasks.data.model.ATTACHMENT_OWNER_TASK
 import com.udnahc.opentasks.data.model.CalendarEvent
+import com.udnahc.opentasks.data.model.Attachment
+import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.CountdownType
@@ -135,6 +139,50 @@ fun testTaskTag(
     isDeleted = isDeleted,
     isSynced = isSynced,
     pbId = pbId,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+)
+
+fun testAttachment(
+    id: String = "attachment-1",
+    ownerType: String = ATTACHMENT_OWNER_TASK,
+    ownerId: String = "task-1",
+    kind: String = ATTACHMENT_KIND_IMAGE,
+    localPath: String = "/tmp/$id.jpg",
+    thumbnailPath: String = "/tmp/${id}_thumb.jpg",
+    remoteFileName: String? = null,
+    mimeType: String = "image/jpeg",
+    fileName: String = "$id.jpg",
+    fileSizeBytes: Long = 100L,
+    width: Int = 100,
+    height: Int = 100,
+    sortOrder: Int = 0,
+    syncState: AttachmentSyncState = AttachmentSyncState.LOCAL_ONLY,
+    lastSyncError: String? = null,
+    pbId: String? = null,
+    isSynced: Boolean = syncState == AttachmentSyncState.SYNCED,
+    isDeleted: Boolean = false,
+    createdAt: Long = 100L,
+    updatedAt: Long = 100L,
+): Attachment = Attachment(
+    id = id,
+    ownerType = ownerType,
+    ownerId = ownerId,
+    kind = kind,
+    localPath = localPath,
+    thumbnailPath = thumbnailPath,
+    remoteFileName = remoteFileName,
+    mimeType = mimeType,
+    fileName = fileName,
+    fileSizeBytes = fileSizeBytes,
+    width = width,
+    height = height,
+    sortOrder = sortOrder,
+    syncState = syncState,
+    lastSyncError = lastSyncError,
+    pbId = pbId,
+    isSynced = isSynced,
+    isDeleted = isDeleted,
     createdAt = createdAt,
     updatedAt = updatedAt,
 )

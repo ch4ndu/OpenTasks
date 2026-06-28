@@ -42,7 +42,7 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - ViewModels and ordinary Actions should not call `TriggerSyncAction`.
 - Approved direct sync triggers are Settings “Sync Now”, app resume sync, widget refresh callbacks, and `AppViewModel.triggerSync()` for pull-to-refresh.
 - `SyncService` uses DAOs directly to avoid sync loops during pull.
-- Sync runs collection-by-collection in dependency order: categories, tags, tasks, task_tags, notes, countdowns.
+- Sync runs collection-by-collection in dependency order: categories, tags, tasks, attachments, task_tags, notes, countdowns.
 - Each collection pulls before pushing.
 - Conflict resolution uses last-write-wins by app-managed UTC `updatedAt` / PocketBase `localUpdatedAt`.
 - Remote rows overwrite local rows, including unsynced local edits, only when remote `localUpdatedAt` is newer.

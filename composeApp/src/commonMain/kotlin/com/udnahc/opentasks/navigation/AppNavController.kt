@@ -24,6 +24,14 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
         backStack.add(key)
     }
 
+    fun replaceTop(key: NavKey) {
+        log.i { "[Navigation replace] $key" }
+        if (backStack.isNotEmpty()) {
+            backStack.removeAt(backStack.lastIndex)
+        }
+        navigate(key)
+    }
+
     fun navigateWithBackStack(
         screen: NavKey,
         vararg backStackScreens: NavKey

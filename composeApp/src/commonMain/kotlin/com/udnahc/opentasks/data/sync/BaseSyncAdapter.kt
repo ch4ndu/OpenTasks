@@ -84,7 +84,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     abstract fun toJsonBody(entity: Entity): String
 
     /** Push all unsynced entities to server. */
-    suspend fun pushAll(client: PocketbaseClient) {
+    open suspend fun pushAll(client: PocketbaseClient) {
         val unsynced = getUnsynced()
         val failures = mutableListOf<Throwable>()
         log.d { "Pushing ${unsynced.size} $collectionName" }
@@ -151,7 +151,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     }
 
     /** Pull all records from server and merge locally. */
-    suspend fun pullAll(client: PocketbaseClient) {
+    open suspend fun pullAll(client: PocketbaseClient) {
         try {
             val remoteRecords = fetchAllRecords(client)
             log.d { "Pulled ${remoteRecords.size} $collectionName" }

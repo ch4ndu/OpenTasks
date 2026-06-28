@@ -114,6 +114,8 @@ kotlin {
             implementation(libs.compose.uiTooling)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.core.ktx)
+            implementation(libs.androidx.exifinterface)
             implementation(libs.koin.android)
             implementation(libs.androidx.work.runtime)
             implementation(libs.androidx.glance.appwidget)

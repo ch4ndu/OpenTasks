@@ -1,5 +1,7 @@
 package com.udnahc.opentasks.data.model
 
+import com.udnahc.opentasks.data.attachment.PickedImage
+
 data class TaskFormData(
     val title: String,
     val content: String,
@@ -20,4 +22,5 @@ data class TaskFormData(
     val attendees: String = "",
     val durationReminders: String = "",
     val dateReminders: String = "",
+    val pendingImages: List<PickedImage> = emptyList(),
 )
