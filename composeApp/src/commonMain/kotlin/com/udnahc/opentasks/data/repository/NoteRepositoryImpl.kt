@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -26,6 +27,7 @@ class NoteRepositoryImpl(
     override fun getAllNotes(): Flow<List<Note>> =
         noteDao.getAllNotes()
             .map { notes -> notes.map { it.withLocalTimestamps() } }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
     override suspend fun getNoteById(id: String): Note? =
@@ -34,6 +36,7 @@ class NoteRepositoryImpl(
     override fun observeNoteById(id: String): Flow<Note?> =
         noteDao.observeNoteById(id)
             .map { it?.withLocalTimestamps() }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
     override suspend fun insert(note: Note) {

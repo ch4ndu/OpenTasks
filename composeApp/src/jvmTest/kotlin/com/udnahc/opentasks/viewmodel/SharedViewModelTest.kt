@@ -215,8 +215,8 @@ class SharedViewModelTest : MainDispatcherRule() {
             deleteNoteAction = DeleteNoteAction(noteRepository),
         )
 
-        viewModel.notes.test {
-            assertEquals(listOf("one"), awaitMatching { it.isNotEmpty() }.map { it.id })
+        viewModel.noteListItems.test {
+            assertEquals(listOf("one"), awaitMatching { it.isNotEmpty() }.map { it.note.id })
             cancelAndIgnoreRemainingEvents()
         }
 
@@ -227,8 +227,8 @@ class SharedViewModelTest : MainDispatcherRule() {
         }
 
         viewModel.addNote("Two", "Body")
-        viewModel.notes.test {
-            assertEquals(listOf("One", "Two"), awaitMatching { it.size == 2 }.map { it.title })
+        viewModel.noteListItems.test {
+            assertEquals(listOf("One", "Two"), awaitMatching { it.size == 2 }.map { it.note.title })
             cancelAndIgnoreRemainingEvents()
         }
     }

@@ -2,6 +2,8 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.extensions.extractYear
+import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.domain.action.note.AddNoteAction
 import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
@@ -17,8 +19,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+data class NoteListItem(
+    val note: Note,
+    val previewText: String,
+    val updatedAtText: String,
+)
 
 class NoteViewModel(
     observeAllNotes: ObserveAllNotesUseCase,
@@ -30,7 +39,9 @@ class NoteViewModel(
 
     private val _selectedNoteId = MutableStateFlow<String?>(null)
 
-    val notes: StateFlow<List<Note>> = observeAllNotes()
+    val noteListItems: StateFlow<List<NoteListItem>> = observeAllNotes()
+        .map { notes -> notes.map { it.toListItem() } }
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -57,4 +68,52 @@ class NoteViewModel(
     fun deleteNote(note: Note) {
         viewModelScope.launch(Dispatchers.IO) { deleteNoteAction(note) }
     }
+}
+
+private fun Note.toListItem(): NoteListItem =
+    NoteListItem(
+        note = this,
+        previewText = noteContentPreview(content),
+        updatedAtText = formatNoteDate(updatedAt),
+    )
+
+/** Converts saved rich-text HTML into a compact Markdown-style preview. */
+private fun noteContentPreview(content: String): String =
+    content.toMarkdownPreview().take(160)
+
+private fun String.toMarkdownPreview(): String =
+    this
+        .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("</p\\s*>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("<li\\b[^>]*>", RegexOption.IGNORE_CASE), "- ")
+        .replace(Regex("</li\\s*>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("<strong\\b[^>]*>|<b\\b[^>]*>", RegexOption.IGNORE_CASE), "**")
+        .replace(Regex("</strong\\s*>|</b\\s*>", RegexOption.IGNORE_CASE), "**")
+        .replace(Regex("<em\\b[^>]*>|<i\\b[^>]*>", RegexOption.IGNORE_CASE), "_")
+        .replace(Regex("</em\\s*>|</i\\s*>", RegexOption.IGNORE_CASE), "_")
+        .replace(Regex("<code\\b[^>]*>", RegexOption.IGNORE_CASE), "`")
+        .replace(Regex("</code\\s*>", RegexOption.IGNORE_CASE), "`")
+        .replace(Regex("<s\\b[^>]*>|<strike\\b[^>]*>|<del\\b[^>]*>", RegexOption.IGNORE_CASE), "~~")
+        .replace(Regex("</s\\s*>|</strike\\s*>|</del\\s*>", RegexOption.IGNORE_CASE), "~~")
+        .replace(Regex("<u\\b[^>]*>", RegexOption.IGNORE_CASE), "__")
+        .replace(Regex("</u\\s*>", RegexOption.IGNORE_CASE), "__")
+        .replace(Regex("<[^>]*>"), "")
+        .decodeHtmlEntities()
+        .lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString("\n")
+
+private fun String.decodeHtmlEntities(): String =
+    replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+
+private fun formatNoteDate(localMillis: Long): String {
+    if (localMillis == 0L) return ""
+    val y = extractYear(localMillis)
+    return "${formatDateShort(localMillis)} $y"
 }

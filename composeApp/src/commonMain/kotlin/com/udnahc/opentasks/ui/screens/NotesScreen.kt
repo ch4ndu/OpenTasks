@@ -23,62 +23,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import com.udnahc.opentasks.data.extensions.extractYear
-import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.viewmodel.NoteListItem
 import com.udnahc.opentasks.viewmodel.NoteViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.empty_notes
 import opentasks.composeapp.generated.resources.notes
 import org.jetbrains.compose.resources.stringResource
-
-/** Converts saved rich-text HTML into a compact Markdown-style preview. */
-internal fun noteContentPreview(content: String): String =
-    content.toMarkdownPreview().take(160)
-
-private fun String.toMarkdownPreview(): String =
-    this
-        .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
-        .replace(Regex("</p\\s*>", RegexOption.IGNORE_CASE), "\n")
-        .replace(Regex("<li\\b[^>]*>", RegexOption.IGNORE_CASE), "- ")
-        .replace(Regex("</li\\s*>", RegexOption.IGNORE_CASE), "\n")
-        .replace(Regex("<strong\\b[^>]*>|<b\\b[^>]*>", RegexOption.IGNORE_CASE), "**")
-        .replace(Regex("</strong\\s*>|</b\\s*>", RegexOption.IGNORE_CASE), "**")
-        .replace(Regex("<em\\b[^>]*>|<i\\b[^>]*>", RegexOption.IGNORE_CASE), "_")
-        .replace(Regex("</em\\s*>|</i\\s*>", RegexOption.IGNORE_CASE), "_")
-        .replace(Regex("<code\\b[^>]*>", RegexOption.IGNORE_CASE), "`")
-        .replace(Regex("</code\\s*>", RegexOption.IGNORE_CASE), "`")
-        .replace(Regex("<s\\b[^>]*>|<strike\\b[^>]*>|<del\\b[^>]*>", RegexOption.IGNORE_CASE), "~~")
-        .replace(Regex("</s\\s*>|</strike\\s*>|</del\\s*>", RegexOption.IGNORE_CASE), "~~")
-        .replace(Regex("<u\\b[^>]*>", RegexOption.IGNORE_CASE), "__")
-        .replace(Regex("</u\\s*>", RegexOption.IGNORE_CASE), "__")
-        .replace(Regex("<[^>]*>"), "")
-        .decodeHtmlEntities()
-        .lineSequence()
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .joinToString("\n")
-
-private fun String.decodeHtmlEntities(): String =
-    replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-
-private fun formatNoteDate(localMillis: Long): String {
-    if (localMillis == 0L) return ""
-    val y = extractYear(localMillis)
-    return "${formatDateShort(localMillis)} $y"
-}
 
 @Composable
 fun NotesScreen(
@@ -88,7 +45,7 @@ fun NotesScreen(
     isRefreshing: Boolean = false,
     onRefresh: () -> Unit = {},
 ) {
-    val notes by viewModel.notes.collectAsState()
+    val notes by viewModel.noteListItems.collectAsState()
     NotesContent(
         notes = notes,
         onNoteClick = onNoteClick,
@@ -101,7 +58,7 @@ fun NotesScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun NotesContent(
-    notes: List<Note>,
+    notes: List<NoteListItem>,
     onNoteClick: (Note) -> Unit,
     onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
@@ -142,8 +99,8 @@ internal fun NotesContent(
                         bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge,
                     ),
                 ) {
-                    items(notes, key = { it.id }) { note ->
-                        NoteCard(note = note, onClick = { onNoteClick(note) })
+                    items(notes, key = { it.note.id }) { note ->
+                        NoteCard(note = note, onClick = { onNoteClick(note.note) })
                     }
                 }
             }
@@ -162,9 +119,10 @@ internal fun NotesContent(
 
 @Composable
 internal fun NoteCard(
-    note: Note,
+    note: NoteListItem,
     onClick: () -> Unit,
 ) {
+    val noteData = note.note
     val dimens = OpenTasksTheme.dimens
     Card(
         modifier = Modifier
@@ -177,9 +135,9 @@ internal fun NoteCard(
         ),
     ) {
         Column(modifier = Modifier.padding(dimens.paddingLarge)) {
-            if (note.title.isNotBlank()) {
+            if (noteData.title.isNotBlank()) {
                 Text(
-                    text = note.title,
+                    text = noteData.title,
                     modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -188,10 +146,9 @@ internal fun NoteCard(
                 )
                 Spacer(Modifier.height(dimens.spacerSmall))
             }
-            if (note.content.isNotBlank()) {
-                val preview = remember(note.content) { noteContentPreview(note.content) }
+            if (note.previewText.isNotBlank()) {
                 Text(
-                    text = preview,
+                    text = note.previewText,
                     modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -201,7 +158,7 @@ internal fun NoteCard(
                 Spacer(Modifier.height(dimens.spacerSmall))
             }
             Text(
-                text = formatNoteDate(note.updatedAt),
+                text = note.updatedAtText,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -212,25 +169,37 @@ internal fun NoteCard(
 // -- Previews ------------------------------------------------------------------
 
 internal val previewNotes = listOf(
-    Note(
-        id = "preview-note-1",
-        title = "Meeting Notes",
-        content = "Discussed roadmap priorities for Q2 and assigned owners",
-        createdAt = 1773619200000L,
-        updatedAt = 1773619200000L,
+    NoteListItem(
+        note = Note(
+            id = "preview-note-1",
+            title = "Meeting Notes",
+            content = "Discussed roadmap priorities for Q2 and assigned owners",
+            createdAt = 1773619200000L,
+            updatedAt = 1773619200000L,
+        ),
+        previewText = "Discussed roadmap priorities for Q2 and assigned owners",
+        updatedAtText = "Mar 15 2026",
     ),
-    Note(
-        id = "preview-note-2",
-        title = "Shopping List",
-        content = "Milk, eggs, bread, coffee beans",
-        createdAt = 1773532800000L,
-        updatedAt = 1773532800000L,
+    NoteListItem(
+        note = Note(
+            id = "preview-note-2",
+            title = "Shopping List",
+            content = "Milk, eggs, bread, coffee beans",
+            createdAt = 1773532800000L,
+            updatedAt = 1773532800000L,
+        ),
+        previewText = "Milk, eggs, bread, coffee beans",
+        updatedAtText = "Mar 14 2026",
     ),
-    Note(
-        id = "preview-note-3",
-        title = "",
-        content = "Quick thought: look into Kotlin Notebooks for data exploration",
-        createdAt = 1773446400000L,
-        updatedAt = 1773446400000L,
+    NoteListItem(
+        note = Note(
+            id = "preview-note-3",
+            title = "",
+            content = "Quick thought: look into Kotlin Notebooks for data exploration",
+            createdAt = 1773446400000L,
+            updatedAt = 1773446400000L,
+        ),
+        previewText = "Quick thought: look into Kotlin Notebooks for data exploration",
+        updatedAtText = "Mar 13 2026",
     ),
 )

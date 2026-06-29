@@ -20,4 +20,4 @@ Load this for Android widget changes under `androidMain`.
 - Do not capture stale closures from `provideGlance`; it runs once per session.
 - Use `updateAppWidgetState` to bump a refresh trigger, then call `update()` to trigger a fresh fetch.
 - Use `TaskWidget.refreshWidget()` or `refreshAllWidgets()`.
-- Do not call `instance.update()` directly.
+- Do not call `instance.update()` directly outside widget-owned refresh helpers. The helpers may call `instance.update()` after `updateAppWidgetState`.

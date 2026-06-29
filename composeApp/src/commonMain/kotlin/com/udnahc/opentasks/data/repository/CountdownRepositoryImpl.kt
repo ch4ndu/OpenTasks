@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -26,11 +27,13 @@ class CountdownRepositoryImpl(
     override fun getAllCountdowns(): Flow<List<Countdown>> =
         countdownDao.getAllCountdowns()
             .map { countdowns -> countdowns.map { it.withLocalTimestamps() } }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
     override fun observeCountdownById(id: String): Flow<Countdown?> =
         countdownDao.observeCountdownById(id)
             .map { it?.withLocalTimestamps() }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
     override suspend fun getCountdownById(id: String): Countdown? =

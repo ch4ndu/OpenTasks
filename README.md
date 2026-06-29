@@ -85,7 +85,7 @@ See [docs/README.md](docs/README.md) for feature behavior and technical design n
 - **Recurring Countdowns** — Repeat countdowns on daily, weekly, monthly, or yearly schedules
 
 ### Sync & Data
-- **PocketBase Sync** — Optional self-hosted sync via [PocketBase](https://pocketbase.io) for backup and multi-device access (tasks, categories, notes, countdowns, tags, task-tag assignments)
+- **PocketBase Sync** — Optional self-hosted sync via [PocketBase](https://pocketbase.io) for backup and multi-device access (tasks, attachments, categories, notes, countdowns, tags, task-tag assignments)
 - **Automatic Sync** — Syncs on app resume and after every write; manual sync available in Settings
 - **Clear Local Data** — Reset option available in Settings
 
@@ -167,7 +167,7 @@ Platform-specific code uses Kotlin's `expect`/`actual` pattern and is kept to a 
 
 ## PocketBase Sync (Optional)
 
-The app supports syncing tasks, categories, notes, countdowns, tags, and task-tag assignments to a self-hosted [PocketBase](https://pocketbase.io) server for backup and multi-device access. No authentication is required — collections use public API rules.
+The app supports syncing tasks, attachments, categories, notes, countdowns, tags, and task-tag assignments to a self-hosted [PocketBase](https://pocketbase.io) server for backup and multi-device access. No authentication is required — collections use public API rules.
 
 ### Quick Start (Ubuntu)
 
