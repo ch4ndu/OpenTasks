@@ -35,6 +35,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
         val body = intent.getStringExtra(NotificationScheduler.EXTRA_BODY) ?: ""
         val notificationId = intent.getIntExtra(NotificationScheduler.EXTRA_NOTIFICATION_ID, 0)
         val occurrenceDeadlineUtcMillis = intent.occurrenceDeadlineUtcMillis()
+        val notificationAtUtcMillis = intent.notificationAtUtcMillis()
         val allowMarkDone = intent.getBooleanExtra(NotificationScheduler.EXTRA_ALLOW_MARK_DONE, false)
         val rescheduleAfterFire = intent.getBooleanExtra(NotificationScheduler.EXTRA_RESCHEDULE_AFTER_FIRE, false)
 
@@ -88,6 +89,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
                         body = body,
                         notificationId = notificationId,
                         occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
+                        notificationAtUtcMillis = notificationAtUtcMillis,
                         allowMarkDone = allowMarkDone,
                     )
                 } catch (e: Exception) {
@@ -100,6 +102,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
                         body = body,
                         notificationId = notificationId,
                         occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
+                        notificationAtUtcMillis = notificationAtUtcMillis,
                         allowMarkDone = allowMarkDone,
                     )
                 } finally {
@@ -114,6 +117,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
                 body = body,
                 notificationId = notificationId,
                 occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
+                notificationAtUtcMillis = notificationAtUtcMillis,
                 allowMarkDone = allowMarkDone,
             )
         }
@@ -126,11 +130,16 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
         body: String,
         notificationId: Int,
         occurrenceDeadlineUtcMillis: Long?,
+        notificationAtUtcMillis: Long,
         allowMarkDone: Boolean,
     ) {
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             eventId?.let { putExtra(NotificationScheduler.EXTRA_TASK_ID, it) }
+            occurrenceDeadlineUtcMillis?.let {
+                putExtra(NotificationScheduler.EXTRA_OCCURRENCE_DEADLINE_UTC, it)
+            }
+            putExtra(NotificationScheduler.EXTRA_NOTIFICATION_AT_UTC, notificationAtUtcMillis)
         }
         val tapPendingIntent = PendingIntent.getActivity(
             context,
@@ -176,5 +185,12 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
             getLongExtra(NotificationScheduler.EXTRA_OCCURRENCE_DEADLINE_UTC, 0L)
         } else {
             null
+        }
+
+    private fun Intent.notificationAtUtcMillis(): Long =
+        if (hasExtra(NotificationScheduler.EXTRA_NOTIFICATION_AT_UTC)) {
+            getLongExtra(NotificationScheduler.EXTRA_NOTIFICATION_AT_UTC, 0L)
+        } else {
+            System.currentTimeMillis()
         }
 }

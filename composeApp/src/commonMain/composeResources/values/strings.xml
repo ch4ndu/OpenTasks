@@ -99,6 +99,12 @@
     <string name="task_reminder_starting_in_hours">Starting in %1$d hours</string>
     <string name="task_reminder_ending_now">Task ending now</string>
     <string name="task_reminder_overdue">Overdue</string>
+    <string name="task_notification_title">Task reminder</string>
+    <string name="task_notification_notified">Notified</string>
+    <string name="task_notification_due">Due</string>
+    <string name="task_notification_mark_done">Mark Done</string>
+    <string name="task_notification_got_it">Got It</string>
+    <string name="task_notification_missing">Task not found</string>
 
     <!-- Reminder Options (Date tab) -->
     <string name="reminder">Reminder</string>

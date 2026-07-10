@@ -4,7 +4,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskPriority
-import com.udnahc.opentasks.ui.screens.CreateTaskBottomBar
 import com.udnahc.opentasks.ui.screens.CreateTaskTopBar
 import com.udnahc.opentasks.ui.screens.DateReminderRow
 import com.udnahc.opentasks.ui.screens.PriorityDropdown
@@ -25,6 +24,9 @@ private fun CreateTaskTopBarPreview() {
             onPrioritySelected = {},
             onBack = {},
             onListClick = {},
+            isSubtaskMode = false,
+            onToggleSubtaskMode = {},
+            onDone = {},
         )
     }
 }
@@ -42,6 +44,9 @@ private fun CreateTaskTopBarMediumPriorityPreview() {
             onPrioritySelected = {},
             onBack = {},
             onListClick = {},
+            isSubtaskMode = true,
+            onToggleSubtaskMode = {},
+            onDone = {},
         )
     }
 }
@@ -160,30 +165,6 @@ private fun TaskDetailFieldsExpandedPreview() {
             onStatusChange = {},
             attendees = "alice@example.com, bob@example.com",
             onAttendeesChange = {},
-        )
-    }
-}
-
-@Composable
-@LightDarkPreview
-private fun CreateTaskBottomBarPreview() {
-    OpenTasksTheme {
-        CreateTaskBottomBar(
-            isSubtaskMode = false,
-            onToggleSubtaskMode = {},
-            onDone = {},
-        )
-    }
-}
-
-@Composable
-@LightDarkPreview
-private fun CreateTaskBottomBarSubtaskModePreview() {
-    OpenTasksTheme {
-        CreateTaskBottomBar(
-            isSubtaskMode = true,
-            onToggleSubtaskMode = {},
-            onDone = {},
         )
     }
 }

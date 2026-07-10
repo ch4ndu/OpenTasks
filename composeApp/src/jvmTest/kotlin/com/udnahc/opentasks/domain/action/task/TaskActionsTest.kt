@@ -1,11 +1,15 @@
 package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
+import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
+import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
+import com.udnahc.opentasks.data.notification.ReminderScheduler
+import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
 import com.udnahc.opentasks.testutil.FakeAttachmentFileStorage
 import com.udnahc.opentasks.testutil.FakeAttachmentRepository
 import com.udnahc.opentasks.testutil.FakeTaskRepository
@@ -190,6 +194,61 @@ class TaskActionsTest {
     }
 
     @Test
+    fun notificationMarkDoneUsesOccurrenceDeadlineFromNotificationPayload() = runTest {
+        val storedDeadline = startOfDayLocalMillis(2026, 5, 4)
+        val notificationOccurrence = startOfDayLocalMillis(2026, 5, 10)
+        val task = testTask(
+            id = "recurring-notification",
+            deadline = storedDeadline,
+            endDeadline = storedDeadline + MILLIS_PER_DAY,
+            recurrenceType = RecurrenceType.DAILY,
+            recurrenceInterval = 2,
+            status = TaskStatus.TODO,
+        )
+        val repository = FakeTaskRepository(listOf(task))
+        val action = MarkTaskNotificationDoneAction(
+            taskRepository = repository,
+            toggleTaskCompleteAction = ToggleTaskCompleteAction(
+                repository,
+                ScheduleTaskRemindersAction(NotificationScheduler(), repository),
+            ),
+        )
+
+        action(
+            taskId = task.id,
+            occurrenceDeadlineUtcMillis = localToUtc(notificationOccurrence),
+        )
+
+        val updated = repository.updated.single()
+        assertEquals(notificationOccurrence + (2 * MILLIS_PER_DAY), updated.deadline)
+        assertEquals(notificationOccurrence + (3 * MILLIS_PER_DAY), updated.endDeadline)
+        assertEquals(TaskStatus.TODO, updated.status)
+    }
+
+    @Test
+    fun notificationGotItDismissesOnlyAllDayOngoingNotificationState() = runTest {
+        val allDayTask = testTask(id = "all-day", isAllDay = true)
+        val timedTask = testTask(id = "timed", isAllDay = false)
+        val repository = FakeTaskRepository(listOf(allDayTask, timedTask))
+        val settingsRepository = FakeAppSettingsRepository()
+        val dismissalStore = AllDayNotificationDismissalStore(settingsRepository)
+        val scheduler = RecordingReminderScheduler()
+        val action = DismissTaskNotificationAction(
+            taskRepository = repository,
+            allDayNotificationDismissalStore = dismissalStore,
+            reminderScheduler = scheduler,
+        )
+
+        action(allDayTask.id)
+        action(timedTask.id)
+
+        assertEquals(listOf("all-day", "timed"), scheduler.stoppedOngoing)
+        assertTrue(dismissalStore.isDismissedToday("all-day"))
+        assertFalse(dismissalStore.isDismissedToday("timed"))
+        assertTrue(repository.updated.isEmpty())
+    }
+
+    @Test
     fun toggleCompleteRestoresDoneTaskToTodo() = runTest {
         val task = testTask(id = "done", status = TaskStatus.DONE)
         val repository = FakeTaskRepository(listOf(task))
@@ -197,5 +256,33 @@ class TaskActionsTest {
         ToggleTaskCompleteAction(repository, ScheduleTaskRemindersAction(NotificationScheduler(), repository))(task)
 
         assertEquals(TaskStatus.TODO, repository.updated.single().status)
+    }
+}
+
+private class RecordingReminderScheduler : ReminderScheduler {
+    val stoppedOngoing = mutableListOf<String>()
+
+    override fun schedule(
+        taskId: String,
+        title: String,
+        body: String,
+        triggerAtMillis: Long,
+        reminderId: Int,
+        occurrenceDeadlineUtcMillis: Long?,
+        allowMarkDone: Boolean,
+        rescheduleAfterFire: Boolean,
+    ) = Unit
+
+    override fun cancel(taskId: String, reminderId: Int) = Unit
+    override fun cancelReminders(taskId: String) = Unit
+    override fun cancelAll(taskId: String) = Unit
+    override fun startOngoing(
+        taskId: String,
+        title: String,
+        occurrenceDeadlineUtcMillis: Long?,
+    ) = Unit
+
+    override fun stopOngoing(taskId: String) {
+        stoppedOngoing.add(taskId)
     }
 }

@@ -30,6 +30,7 @@ Important task workflows:
 - Add more details such as section, location, URL, organizer, event status, and attendees.
 - Open a task location in the platform maps app when a location is present.
 - Add task images from gallery or camera where the platform supports it.
+- Open task reminder notifications into a home-screen bottom sheet with Mark Done, Got It, and Edit Task actions.
 - Delete tasks through soft deletion so sync can propagate tombstones.
 
 ## Technical Design
@@ -45,6 +46,8 @@ Screen state lives in feature ViewModels:
 - `TaskFormViewModel` owns create/edit save flow, including the duplicate-save guard and pending task image handoff.
 
 Task detail fields live in the create/edit task flow. Location, URL, organizer, event status, and attendees are stored on the task so imported calendar metadata and manually entered details survive local persistence and sync.
+
+Task reminder notification taps route through a shared notification event payload. Task notifications open the matrix home tab and show a task notification bottom sheet. Mark Done reuses `ToggleTaskCompleteAction` with the notification occurrence timestamp so recurring tasks advance the notified occurrence. Got It mirrors Android's notification action semantics by dismissing the all-day ongoing notification state without completing the task or cancelling future reminders. Countdown notification taps continue to open countdown detail.
 
 Task sync uses `TaskSyncAdapter` and `TaskRecord`. Task-tag assignments are separate `task_tags` records. Task images are separate `attachments` records with `ownerType = "task"`.
 

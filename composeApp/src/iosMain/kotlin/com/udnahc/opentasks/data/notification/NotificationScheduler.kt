@@ -1,6 +1,8 @@
 package com.udnahc.opentasks.data.notification
 
 import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_EVENT_ID_KEY
+import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_NOTIFICATION_AT_UTC_KEY
+import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_OCCURRENCE_DEADLINE_UTC_KEY
 import platform.UserNotifications.UNCalendarNotificationTrigger
 import platform.UserNotifications.UNMutableNotificationContent
 import platform.UserNotifications.UNNotificationRequest
@@ -28,12 +30,20 @@ actual class NotificationScheduler : ReminderScheduler {
         center.removePendingNotificationRequestsWithIdentifiers(listOf(identifier))
         center.removeDeliveredNotificationsWithIdentifiers(listOf(identifier))
 
+        val userInfo = mutableMapOf<Any?, String>(
+            NOTIFICATION_DEEP_LINK_EVENT_ID_KEY to taskId,
+            NOTIFICATION_DEEP_LINK_NOTIFICATION_AT_UTC_KEY to triggerAtMillis.toString(),
+        )
+        occurrenceDeadlineUtcMillis?.let {
+            userInfo[NOTIFICATION_DEEP_LINK_OCCURRENCE_DEADLINE_UTC_KEY] = it.toString()
+        }
+
         val content = UNMutableNotificationContent().apply {
             setTitle(title)
             setBody(body)
             setSound(UNNotificationSound.defaultSound)
             setThreadIdentifier("opentasks_reminder_$taskId")
-            setUserInfo(mapOf(NOTIFICATION_DEEP_LINK_EVENT_ID_KEY to taskId))
+            setUserInfo(userInfo)
         }
 
         val triggerDate = NSDate.dateWithTimeIntervalSince1970(triggerAtMillis / 1000.0)

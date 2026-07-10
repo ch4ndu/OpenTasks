@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
 import app.cash.turbine.test
 import com.udnahc.opentasks.data.attachment.AttachmentImageDecodeException
 import com.udnahc.opentasks.data.extensions.localToUtc
@@ -58,6 +59,53 @@ class PersistenceTest {
     fun closeDatabase() {
         database.close()
         databaseFile.delete()
+    }
+
+    @Test
+    fun migrationOneToTwoAddsMissingSyncColumns() {
+        val migrationFile = File.createTempFile("opentasks-migration-1-2", ".db")
+        val connection = BundledSQLiteDriver().open(migrationFile.absolutePath)
+        try {
+            connection.execSQL("CREATE TABLE IF NOT EXISTS tasks (id TEXT NOT NULL PRIMARY KEY)")
+            connection.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS categories (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    icon TEXT NOT NULL,
+                    sortOrder INTEGER NOT NULL,
+                    isSynced INTEGER NOT NULL,
+                    isDeleted INTEGER NOT NULL,
+                    createdAt INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            connection.execSQL("CREATE TABLE IF NOT EXISTS notes (id TEXT NOT NULL PRIMARY KEY)")
+            connection.execSQL(
+                """
+                INSERT INTO categories (
+                    id, name, icon, sortOrder, isSynced, isDeleted, createdAt
+                ) VALUES ('cat', 'Inbox', 'inbox', 0, 0, 0, 1234)
+                """.trimIndent()
+            )
+
+            MIGRATION_1_2.migrate(connection)
+
+            connection.prepare("SELECT pbId FROM tasks").use { statement ->
+                assertFalse(statement.step())
+            }
+            connection.prepare("SELECT pbId, updatedAt FROM categories WHERE id = 'cat'").use { statement ->
+                assertTrue(statement.step())
+                assertTrue(statement.isNull(0))
+                assertEquals(1234L, statement.getLong(1))
+            }
+            connection.prepare("SELECT pbId FROM notes").use { statement ->
+                assertFalse(statement.step())
+            }
+        } finally {
+            connection.close()
+            migrationFile.delete()
+        }
     }
 
     @Test

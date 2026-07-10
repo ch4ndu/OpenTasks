@@ -45,6 +45,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mohamedrejeb.richeditor.model.RichTextState
@@ -81,6 +82,7 @@ import opentasks.composeapp.generated.resources.discard_pending_images_title
 import opentasks.composeapp.generated.resources.discard
 import opentasks.composeapp.generated.resources.delete_task_message
 import opentasks.composeapp.generated.resources.delete_task_title
+import opentasks.composeapp.generated.resources.description_hint
 import opentasks.composeapp.generated.resources.done
 import opentasks.composeapp.generated.resources.ic_alarm
 import opentasks.composeapp.generated.resources.ic_check
@@ -347,6 +349,67 @@ private fun CreateTaskContent(
         mutableStateOf(editTask?.isAllDay ?: false)
     }
 
+    fun toggleSubtaskMode() {
+        if (isSubtaskMode) {
+            // Switching from subtask mode to rich text mode
+            syncSubtasksToDescription()
+            richTextState.setHtml(description)
+        } else {
+            // Switching from rich text mode to subtask mode
+            description = richTextState.annotatedString.text
+            syncDescriptionToSubtasks()
+        }
+        isSubtaskMode = !isSubtaskMode
+        subtaskToggleCount++
+    }
+
+    fun saveTask() {
+        if (!isSaving && title.isNotBlank()) {
+            val deadlineMs: Long? =
+                if (selectedYear > 0 && selectedMonth > 0 && selectedDay > 0) {
+                    computeDeadlineMillis(
+                        selectedYear,
+                        selectedMonth,
+                        selectedDay,
+                        selectedHour,
+                        selectedMinute
+                    )
+                } else null
+            if (isSubtaskMode) syncSubtasksToDescription()
+            val contentToSave = if (isSubtaskMode) description else richTextState.toHtml()
+            val subtasksToSave = if (isSubtaskMode) subtasks.toSubtasksJson() else ""
+            onSave(
+                TaskFormData(
+                    title = title,
+                    content = contentToSave,
+                    subtasks = subtasksToSave,
+                    priority = priority,
+                    deadline = deadlineMs,
+                    endDeadline = if (endHour >= 0 && selectedDay > 0) computeDeadlineMillis(
+                        selectedYear,
+                        selectedMonth,
+                        selectedDay,
+                        endHour,
+                        endMinute
+                    ) else null,
+                    isAllDay = isAllDay,
+                    recurrence = selectedRecurrence,
+                    categoryId = selectedCategoryId,
+                    section = section.takeIf { it.isNotBlank() },
+                    status = if (isCompleted) TaskStatus.DONE else TaskStatus.TODO,
+                    location = location,
+                    url = taskUrl,
+                    organizer = organizer,
+                    eventStatus = eventStatus,
+                    attendees = attendees,
+                    durationReminders = durationReminders,
+                    dateReminders = if (durationReminders.isBlank()) selectedReminders.toRemindersString() else "",
+                    pendingImages = pendingImages,
+                )
+            )
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -365,6 +428,10 @@ private fun CreateTaskContent(
             onBack = { requestBack() },
             onListClick = { showCategoryPicker = true },
             onDelete = onDelete,
+            isSubtaskMode = isSubtaskMode,
+            onToggleSubtaskMode = { toggleSubtaskMode() },
+            onDone = { saveTask() },
+            isSaving = isSaving,
         )
 
         val dimens = OpenTasksTheme.dimens
@@ -494,69 +561,6 @@ private fun CreateTaskContent(
             modifier = Modifier.padding(horizontal = dimens.paddingXLarge),
         )
 
-        CreateTaskBottomBar(
-            isSubtaskMode = isSubtaskMode,
-            onToggleSubtaskMode = {
-                if (isSubtaskMode) {
-                    // Switching from subtask mode to rich text mode
-                    syncSubtasksToDescription()
-                    richTextState.setHtml(description)
-                } else {
-                    // Switching from rich text mode to subtask mode
-                    description = richTextState.annotatedString.text
-                    syncDescriptionToSubtasks()
-                }
-                isSubtaskMode = !isSubtaskMode
-                subtaskToggleCount++
-            },
-            onDone = {
-                if (!isSaving && title.isNotBlank()) {
-                    val deadlineMs: Long? =
-                        if (selectedYear > 0 && selectedMonth > 0 && selectedDay > 0) {
-                            computeDeadlineMillis(
-                                selectedYear,
-                                selectedMonth,
-                                selectedDay,
-                                selectedHour,
-                                selectedMinute
-                            )
-                        } else null
-                    if (isSubtaskMode) syncSubtasksToDescription()
-                    val contentToSave = if (isSubtaskMode) description else richTextState.toHtml()
-                    val subtasksToSave = if (isSubtaskMode) subtasks.toSubtasksJson() else ""
-                    onSave(
-                        TaskFormData(
-                            title = title,
-                            content = contentToSave,
-                            subtasks = subtasksToSave,
-                            priority = priority,
-                            deadline = deadlineMs,
-                            endDeadline = if (endHour >= 0 && selectedDay > 0) computeDeadlineMillis(
-                                selectedYear,
-                                selectedMonth,
-                                selectedDay,
-                                endHour,
-                                endMinute
-                            ) else null,
-                            isAllDay = isAllDay,
-                            recurrence = selectedRecurrence,
-                            categoryId = selectedCategoryId,
-                            section = section.takeIf { it.isNotBlank() },
-                            status = if (isCompleted) TaskStatus.DONE else TaskStatus.TODO,
-                            location = location,
-                            url = taskUrl,
-                            organizer = organizer,
-                            eventStatus = eventStatus,
-                            attendees = attendees,
-                            durationReminders = durationReminders,
-                            dateReminders = if (durationReminders.isBlank()) selectedReminders.toRemindersString() else "",
-                            pendingImages = pendingImages,
-                        )
-                    )
-                }
-            },
-            isSaving = isSaving,
-        )
     }
 
     if (isSaving) {
@@ -685,6 +689,7 @@ private fun TaskTitleField(
     onTitleChange: (String) -> Unit,
     onFocused: () -> Unit,
 ) {
+    val dimens = OpenTasksTheme.dimens
     BasicTextField(
         value = title,
         onValueChange = onTitleChange,
@@ -694,7 +699,16 @@ private fun TaskTitleField(
         ),
         cursorBrush = SolidColor(PrimaryBlue),
         decorationBox = { innerTextField ->
-            Box {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(dimens.cornerMedium),
+                    )
+                    .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingMedium),
+            ) {
                 if (title.isEmpty()) {
                     Text(
                         text = stringResource(Res.string.title_hint),
@@ -721,20 +735,38 @@ private fun TaskRichDescriptionField(
     modifier: Modifier = Modifier,
 ) {
     val dimens = OpenTasksTheme.dimens
-    BasicRichTextEditor(
-        state = richTextState,
-        textStyle = MaterialTheme.typography.bodySmall.copy(
-            color = MaterialTheme.colorScheme.onBackground,
-        ),
-        cursorBrush = SolidColor(PrimaryBlue),
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = dimens.minPagerHeight)
-            .focusRequester(focusRequester)
-            .onFocusChanged { focusState ->
-                if (focusState.isFocused) onFocused()
-            },
-    )
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(dimens.cornerMedium),
+            )
+            .padding(dimens.paddingLarge),
+    ) {
+        if (richTextState.annotatedString.text.isEmpty()) {
+            Text(
+                text = stringResource(Res.string.description_hint),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        BasicRichTextEditor(
+            state = richTextState,
+            textStyle = MaterialTheme.typography.bodySmall.copy(
+                color = MaterialTheme.colorScheme.onBackground,
+            ),
+            cursorBrush = SolidColor(PrimaryBlue),
+            modifier = Modifier
+                .fillMaxSize()
+                .focusRequester(focusRequester)
+                .onFocusChanged { focusState ->
+                    if (focusState.isFocused) onFocused()
+                },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -748,6 +780,10 @@ internal fun CreateTaskTopBar(
     onBack: () -> Unit,
     onListClick: () -> Unit = {},
     onDelete: (() -> Unit)? = null,
+    isSubtaskMode: Boolean,
+    onToggleSubtaskMode: () -> Unit,
+    onDone: () -> Unit,
+    isSaving: Boolean = false,
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
     OpenTasksTopBar(
@@ -799,6 +835,21 @@ internal fun CreateTaskTopBar(
                         tint = MaterialTheme.colorScheme.error,
                     )
                 }
+            }
+            IconButton(onClick = onToggleSubtaskMode) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_list),
+                    contentDescription = stringResource(Res.string.subtasks),
+                    tint = if (isSubtaskMode) PrimaryBlue
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onDone, enabled = !isSaving) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_check),
+                    contentDescription = stringResource(Res.string.done),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
     )
@@ -970,42 +1021,6 @@ internal fun DateReminderRow(
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-internal fun CreateTaskBottomBar(
-    isSubtaskMode: Boolean,
-    onToggleSubtaskMode: () -> Unit,
-    onDone: () -> Unit,
-    isSaving: Boolean = false,
-) {
-    val dimens = OpenTasksTheme.dimens
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = dimens.paddingMedium, vertical = dimens.paddingSmall),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onToggleSubtaskMode) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_list),
-                contentDescription = stringResource(Res.string.subtasks),
-                tint = if (isSubtaskMode) PrimaryBlue
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        Spacer(Modifier.weight(1f))
-
-        IconButton(onClick = onDone, enabled = !isSaving) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_check),
-                contentDescription = stringResource(Res.string.done),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

@@ -6,6 +6,7 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import com.udnahc.opentasks.data.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.data.database.AppDatabase
+import com.udnahc.opentasks.data.database.MIGRATION_1_2
 import com.udnahc.opentasks.data.database.MIGRATION_2_3
 import com.udnahc.opentasks.data.database.MIGRATION_3_4
 import com.udnahc.opentasks.data.database.MIGRATION_4_5
@@ -74,6 +75,8 @@ import com.udnahc.opentasks.domain.action.task.GenerateCsvExportAction
 import com.udnahc.opentasks.domain.action.task.GenerateIcsExportAction
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
+import com.udnahc.opentasks.domain.action.task.DismissTaskNotificationAction
+import com.udnahc.opentasks.domain.action.task.MarkTaskNotificationDoneAction
 import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
@@ -120,6 +123,7 @@ import com.udnahc.opentasks.viewmodel.NoteViewModel
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
+import com.udnahc.opentasks.viewmodel.TaskNotificationViewModel
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -130,6 +134,7 @@ val sharedModule = module {
     single<AppDatabase> {
         get<androidx.room.RoomDatabase.Builder<AppDatabase>>()
             .addMigrations(
+                MIGRATION_1_2,
                 MIGRATION_2_3,
                 MIGRATION_3_4,
                 MIGRATION_4_5,
@@ -207,6 +212,8 @@ val sharedModule = module {
     single { AddTaskImageAction(get(), get()) }
     single { RemoveTaskImageAction(get(), get()) }
     single { ToggleTaskCompleteAction(get(), get()) }
+    single { MarkTaskNotificationDoneAction(get(), get()) }
+    single { DismissTaskNotificationAction(get(), get(), get<NotificationScheduler>()) }
     single { ToggleTaskStarredAction(get()) }
     single { UpdateSectionAction(get()) }
     single { AddCategoryAction(get()) }
@@ -279,6 +286,7 @@ val sharedModule = module {
 
     // ViewModels
     viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { TaskNotificationViewModel(get(), get(), get()) }
     viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel {
         TaskListViewModel(

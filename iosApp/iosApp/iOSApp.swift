@@ -7,6 +7,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     static let syncTaskIdentifier = "com.udnahc.opentasks.sync"
     private static let notificationEventIdKey = "notification_event_id"
+    private static let notificationOccurrenceDeadlineUtcKey = "notification_occurrence_deadline_utc"
+    private static let notificationAtUtcKey = "notification_at_utc"
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -42,7 +44,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let userInfo = response.notification.request.content.userInfo
         if let eventId = userInfo[Self.notificationEventIdKey] as? String {
             removeDeliveredReminders(for: eventId)
-            NotificationDeepLinkKt.publishNotificationDeepLinkEventId(eventId: eventId)
+            NotificationDeepLinkKt.publishNotificationDeepLinkEvent(
+                eventId: eventId,
+                occurrenceDeadlineUtcMillis: Int64(userInfo[Self.notificationOccurrenceDeadlineUtcKey] as? String ?? "") ?? 0,
+                notificationAtUtcMillis: Int64(userInfo[Self.notificationAtUtcKey] as? String ?? "") ?? 0
+            )
         }
         completionHandler()
     }

@@ -67,8 +67,8 @@ internal fun TaskDetailFields(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onToggleDetails)
-                .padding(vertical = dimens.paddingSmall),
+                .padding(vertical = dimens.paddingMedium)
+                .clickable(onClick = onToggleDetails),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(

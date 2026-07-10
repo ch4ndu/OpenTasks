@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
 
-    private var deepLinkTaskId by mutableStateOf("")
+    private var deepLinkNotificationEvent by mutableStateOf<NotificationDeepLinkEvent?>(null)
     private var deepLinkCountdownId by mutableStateOf("")
     private var widgetAction by mutableStateOf("")
 
@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             App(
-                deepLinkTaskId = deepLinkTaskId,
+                deepLinkNotificationEvent = deepLinkNotificationEvent,
                 deepLinkCountdownId = deepLinkCountdownId,
                 widgetAction = widgetAction,
             )
@@ -133,13 +133,27 @@ class MainActivity : ComponentActivity() {
     private fun handleDeepLinkIntent(intent: Intent?) {
         val eventId = intent?.getStringExtra(NotificationScheduler.EXTRA_TASK_ID).orEmpty()
         if (eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
-            deepLinkTaskId = ""
+            deepLinkNotificationEvent = null
             deepLinkCountdownId = eventId.removePrefix(COUNTDOWN_ID_PREFIX)
+        } else if (eventId.isNotBlank()) {
+            deepLinkNotificationEvent = NotificationDeepLinkEvent(
+                eventId = eventId,
+                occurrenceDeadlineUtcMillis = intent.optionalLongExtra(
+                    NotificationScheduler.EXTRA_OCCURRENCE_DEADLINE_UTC
+                ),
+                notificationAtUtcMillis = intent.optionalLongExtra(
+                    NotificationScheduler.EXTRA_NOTIFICATION_AT_UTC
+                ),
+            )
+            deepLinkCountdownId = ""
         } else {
-            deepLinkTaskId = eventId
+            deepLinkNotificationEvent = null
             deepLinkCountdownId = ""
         }
     }
+
+    private fun Intent?.optionalLongExtra(key: String): Long? =
+        if (this != null && hasExtra(key)) getLongExtra(key, 0L).takeIf { it > 0L } else null
 }
 
 private data class AndroidSharedTaskPayload(

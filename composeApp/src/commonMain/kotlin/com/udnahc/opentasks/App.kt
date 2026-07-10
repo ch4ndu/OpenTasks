@@ -74,6 +74,7 @@ import com.udnahc.opentasks.ui.screens.NotesScreen
 import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
 import com.udnahc.opentasks.ui.screens.SettingsScreen
 import com.udnahc.opentasks.ui.screens.TaskListScreen
+import com.udnahc.opentasks.ui.screens.TaskNotificationBottomSheet
 import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
 import com.udnahc.opentasks.ui.screens.countdown.CountdownDetailScreen
 import com.udnahc.opentasks.ui.screens.countdown.CountdownScreen
@@ -96,6 +97,7 @@ import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormSaveEvent
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
+import com.udnahc.opentasks.viewmodel.TaskNotificationViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
@@ -134,7 +136,7 @@ private fun isTabScreen(key: Any): Boolean =
 
 @Composable
 fun App(
-    deepLinkTaskId: String = "",
+    deepLinkNotificationEvent: NotificationDeepLinkEvent? = null,
     deepLinkCountdownId: String = "",
     widgetAction: String = "",
 ) {
@@ -147,6 +149,7 @@ fun App(
     ) {
         val backStack = remember { NavBackStack<NavKey>(Screen.Matrix) }
         val navController = remember { AppNavController(backStack) }
+        var taskNotificationEvent by remember { mutableStateOf<NotificationDeepLinkEvent?>(null) }
         val initializeSyncAction = koinInject<InitializeSyncAction>()
         val rescheduleAllRemindersAction = koinInject<RescheduleAllRemindersAction>()
         val rescheduleAllCountdownRemindersAction =
@@ -180,9 +183,17 @@ fun App(
             }
             onPauseOrDispose { }
         }
-        if (deepLinkTaskId.isNotEmpty()) {
-            LaunchedEffect(deepLinkTaskId) {
-                navController.navigateNotificationEventId(deepLinkTaskId)
+        fun handleNotificationEvent(event: NotificationDeepLinkEvent) {
+            if (event.eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
+                navController.navigate(Screen.CountdownDetail(event.eventId.removePrefix(COUNTDOWN_ID_PREFIX)))
+            } else {
+                navController.navigateToTab(Screen.Matrix)
+                taskNotificationEvent = event
+            }
+        }
+        if (deepLinkNotificationEvent != null) {
+            LaunchedEffect(deepLinkNotificationEvent) {
+                handleNotificationEvent(deepLinkNotificationEvent)
             }
         }
         if (deepLinkCountdownId.isNotEmpty()) {
@@ -191,10 +202,10 @@ fun App(
             }
         }
         LaunchedEffect(navController) {
-            notificationDeepLinkEventId.collect { eventId ->
-                if (eventId != null) {
-                    navController.navigateNotificationEventId(eventId)
-                    clearNotificationDeepLinkEventId(eventId)
+            notificationDeepLinkEvent.collect { event ->
+                if (event != null) {
+                    handleNotificationEvent(event)
+                    clearNotificationDeepLinkEvent(event)
                 }
             }
         }
@@ -206,15 +217,12 @@ fun App(
                 }
             }
         }
-        MainScreen(navController = navController, backStack = backStack)
-    }
-}
-
-private fun AppNavController.navigateNotificationEventId(eventId: String) {
-    if (eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
-        navigate(Screen.CountdownDetail(eventId.removePrefix(COUNTDOWN_ID_PREFIX)))
-    } else {
-        navigate(Screen.EditTask(eventId))
+        MainScreen(
+            navController = navController,
+            backStack = backStack,
+            taskNotificationEvent = taskNotificationEvent,
+            onTaskNotificationDismiss = { taskNotificationEvent = null },
+        )
     }
 }
 
@@ -228,9 +236,13 @@ private data class BottomNavItem(
 private fun MainScreen(
     navController: AppNavController,
     backStack: NavBackStack<NavKey>,
+    taskNotificationEvent: NotificationDeepLinkEvent?,
+    onTaskNotificationDismiss: () -> Unit,
 ) {
     val noteViewModel: NoteViewModel = koinViewModel()
+    val taskNotificationViewModel: TaskNotificationViewModel = koinViewModel()
     val appViewModel: AppViewModel = koinViewModel()
+    val taskNotificationUiState by taskNotificationViewModel.uiState.collectAsState()
     val isRefreshing by appViewModel.isRefreshing.collectAsState()
     val onPullToRefresh = remember(appViewModel) { { appViewModel.triggerSync() } }
     var selectedListId by rememberSaveable { mutableStateOf("00000000-0000-0000-0000-000000000001") }
@@ -817,6 +829,35 @@ private fun MainScreen(
                 },
             )
         }
+    }
+
+    if (taskNotificationEvent != null) {
+        LaunchedEffect(taskNotificationEvent) {
+            taskNotificationViewModel.setNotificationEvent(taskNotificationEvent)
+        }
+        val taskNotificationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        fun closeTaskNotificationSheet() {
+            taskNotificationViewModel.clearNotificationEvent()
+            onTaskNotificationDismiss()
+        }
+        TaskNotificationBottomSheet(
+            sheetState = taskNotificationSheetState,
+            uiState = taskNotificationUiState,
+            onDismiss = { closeTaskNotificationSheet() },
+            onMarkDone = {
+                taskNotificationViewModel.markDone { closeTaskNotificationSheet() }
+            },
+            onGotIt = {
+                taskNotificationViewModel.gotIt { closeTaskNotificationSheet() }
+            },
+            onEdit = {
+                val taskId = taskNotificationUiState.event?.eventId
+                if (taskId != null) {
+                    closeTaskNotificationSheet()
+                    navController.navigate(Screen.EditTask(taskId))
+                }
+            },
+        )
     }
 
     // Import calendar dialog

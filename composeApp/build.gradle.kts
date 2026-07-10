@@ -264,6 +264,11 @@ compose.desktop {
     application {
         mainClass = "com.udnahc.opentasks.MainKt"
 
+        buildTypes.release.proguard {
+            configurationFiles.from(project.file("proguard-desktop-release.pro"))
+            optimize.set(false)
+        }
+
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "com.udnahc.opentasks"

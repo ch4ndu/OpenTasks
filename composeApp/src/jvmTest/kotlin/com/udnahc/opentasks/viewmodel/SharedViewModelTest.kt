@@ -2,8 +2,10 @@ package com.udnahc.opentasks.viewmodel
 
 import app.cash.turbine.test
 import app.cash.turbine.ReceiveTurbine
+import com.udnahc.opentasks.NotificationDeepLinkEvent
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_HOUR
 import com.udnahc.opentasks.data.extensions.dayKey
+import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.model.CalendarListDisplayModePreference
 import com.udnahc.opentasks.data.model.CalendarViewPreference
@@ -12,6 +14,7 @@ import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskSortOption
 import com.udnahc.opentasks.data.model.TaskStatus
+import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
@@ -24,6 +27,8 @@ import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAct
 import com.udnahc.opentasks.domain.action.settings.SaveTaskListViewModeAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
+import com.udnahc.opentasks.domain.action.task.DismissTaskNotificationAction
+import com.udnahc.opentasks.domain.action.task.MarkTaskNotificationDoneAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
 import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
@@ -38,6 +43,7 @@ import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarViewPreferenc
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskListViewModeUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
@@ -229,6 +235,50 @@ class SharedViewModelTest : MainDispatcherRule() {
         viewModel.addNote("Two", "Body")
         viewModel.noteListItems.test {
             assertEquals(listOf("One", "Two"), awaitMatching { it.size == 2 }.map { it.note.title })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun taskNotificationViewModelProjectsNotificationAndMarksDone() = runTest(dispatcher) {
+        val deadline = startOfDayLocalMillis(2026, 5, 4) + 9 * MILLIS_PER_HOUR
+        val taskRepository = FakeTaskRepository(
+            listOf(testTask(id = "notify", title = "Notify me", deadline = deadline))
+        )
+        val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
+        val viewModel = TaskNotificationViewModel(
+            observeTaskById = ObserveTaskByIdUseCase(taskRepository),
+            markTaskNotificationDoneAction = MarkTaskNotificationDoneAction(
+                taskRepository,
+                ToggleTaskCompleteAction(taskRepository, scheduler),
+            ),
+            dismissTaskNotificationAction = DismissTaskNotificationAction(
+                taskRepository,
+                AllDayNotificationDismissalStore(FakeAppSettingsRepository()),
+                NotificationScheduler(),
+            ),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.setNotificationEvent(
+            NotificationDeepLinkEvent(
+                eventId = "notify",
+                notificationAtUtcMillis = localToUtc(deadline),
+            )
+        )
+
+        viewModel.uiState.test {
+            val ready = awaitMatching { it.task?.id == "notify" }
+            assertEquals("Notify me", ready.taskTitle)
+            assertEquals(true, ready.notificationTimeText.isNotBlank())
+            assertEquals(true, ready.dueText.isNotBlank())
+
+            var completed = false
+            viewModel.markDone { completed = true }
+            advanceUntilIdle()
+
+            assertEquals(true, completed)
+            assertEquals(TaskStatus.DONE, taskRepository.updated.single().status)
             cancelAndIgnoreRemainingEvents()
         }
     }

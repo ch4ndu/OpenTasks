@@ -69,6 +69,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             putExtra(EXTRA_TITLE, title)
             putExtra(EXTRA_BODY, body)
             putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+            putExtra(EXTRA_NOTIFICATION_AT_UTC, triggerAtMillis)
             occurrenceDeadlineUtcMillis?.let { putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, it) }
             putExtra(EXTRA_ALLOW_MARK_DONE, allowMarkDone)
             putExtra(EXTRA_RESCHEDULE_AFTER_FIRE, rescheduleAfterFire)
@@ -154,6 +155,8 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_TASK_ID, taskId)
+            putExtra(EXTRA_NOTIFICATION_AT_UTC, System.currentTimeMillis())
+            occurrenceDeadlineUtcMillis?.let { putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, it) }
         }
         val tapPendingIntent = PendingIntent.getActivity(
             context,
@@ -222,6 +225,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         const val EXTRA_BODY = "body"
         const val EXTRA_NOTIFICATION_ID = "notification_id"
         const val EXTRA_OCCURRENCE_DEADLINE_UTC = "occurrence_deadline_utc"
+        const val EXTRA_NOTIFICATION_AT_UTC = "notification_at_utc"
         const val EXTRA_ALLOW_MARK_DONE = "allow_mark_done"
         const val EXTRA_RESCHEDULE_AFTER_FIRE = "reschedule_after_fire"
         const val ACTION_MARK_DONE = "com.udnahc.opentasks.ACTION_MARK_DONE"

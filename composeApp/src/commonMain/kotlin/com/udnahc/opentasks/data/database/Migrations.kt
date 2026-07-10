@@ -4,6 +4,33 @@ import androidx.room.migration.Migration
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.execSQL
 
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.addColumnIfMissing("tasks", "pbId", "pbId TEXT DEFAULT NULL")
+        connection.addColumnIfMissing("categories", "pbId", "pbId TEXT DEFAULT NULL")
+        connection.addColumnIfMissing("categories", "updatedAt", "updatedAt INTEGER NOT NULL DEFAULT 0")
+        connection.addColumnIfMissing("notes", "pbId", "pbId TEXT DEFAULT NULL")
+        connection.execSQL("UPDATE categories SET updatedAt = createdAt WHERE updatedAt = 0")
+    }
+}
+
+private fun SQLiteConnection.addColumnIfMissing(tableName: String, columnName: String, columnDefinition: String) {
+    if (hasColumn(tableName, columnName)) return
+    execSQL("ALTER TABLE $tableName ADD COLUMN $columnDefinition")
+}
+
+private fun SQLiteConnection.hasColumn(tableName: String, columnName: String): Boolean {
+    val statement = prepare("PRAGMA table_info($tableName)")
+    try {
+        while (statement.step()) {
+            if (statement.getText(1) == columnName) return true
+        }
+        return false
+    } finally {
+        statement.close()
+    }
+}
+
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(connection: SQLiteConnection) {
         connection.execSQL(
