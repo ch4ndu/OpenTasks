@@ -6,26 +6,33 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import app.cash.turbine.test
 import com.udnahc.opentasks.data.attachment.AttachmentImageDecodeException
+import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.AttachmentSyncState
+import com.udnahc.opentasks.data.model.AppSettings
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.AttachmentRepositoryImpl
-import com.udnahc.opentasks.data.repository.AppSettingsRepositoryImpl
 import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
 import com.udnahc.opentasks.data.repository.TaskRepositoryImpl
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import com.udnahc.opentasks.data.sync.SyncDegradedException
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
+import com.udnahc.opentasks.data.sync.SyncService
 import com.udnahc.opentasks.data.sync.adapters.AttachmentFileDownloadException
 import com.udnahc.opentasks.data.sync.adapters.AttachmentSyncAdapter
 import com.udnahc.opentasks.data.sync.records.AttachmentRecord
 import com.udnahc.opentasks.data.sync.records.toAttachment
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
+import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import com.udnahc.opentasks.testutil.FakeAttachmentFileStorage
 import com.udnahc.opentasks.testutil.testAttachment
 import com.udnahc.opentasks.testutil.testCategory
+import com.udnahc.opentasks.testutil.testCountdown
+import com.udnahc.opentasks.testutil.testNote
+import com.udnahc.opentasks.testutil.testTag
 import com.udnahc.opentasks.testutil.testTask
+import com.udnahc.opentasks.testutil.testTaskTag
 import java.io.File
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -227,29 +234,82 @@ class PersistenceTest {
     }
 
     @Test
-    fun clearLocalDataDeletesAttachmentRowsAndStoredFiles() = runTest {
-        database.taskDao().insert(testTask(id = "task-clear"))
+    fun clearLocalDataDeletesEveryEntityAndStoredFileThenRecreatesInbox() = runTest {
+        database.categoryDao().insert(testCategory(id = "category-clear"))
+        database.taskDao().insert(testTask(id = "task-clear", categoryId = "category-clear"))
+        database.noteDao().insert(testNote(id = "note-clear"))
+        database.tagDao().insertTag(testTag(id = "tag-clear"))
+        database.tagDao().insertTaskTag(testTaskTag(taskId = "task-clear", tagId = "tag-clear"))
         database.attachmentDao().insert(testAttachment(id = "attachment-clear", ownerId = "task-clear"))
+        database.countdownDao().insert(testCountdown(id = "countdown-clear"))
+        database.appSettingsDao().setValue(AppSettings("pocketbase_url", "http://localhost:8090"))
         val storage = FakeAttachmentFileStorage().apply {
             addFile("/tmp/attachment-clear.jpg")
             addFile("/tmp/attachment-clear_thumb.jpg")
         }
-        val action = ClearLocalDataAction(
-            taskDao = database.taskDao(),
-            categoryDao = database.categoryDao(),
-            noteDao = database.noteDao(),
-            tagDao = database.tagDao(),
-            attachmentDao = database.attachmentDao(),
-            attachmentFileStorage = storage,
-            appSettingsRepository = AppSettingsRepositoryImpl(database.appSettingsDao()),
-        )
+        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val service = SyncService(provider, emptyList())
+        val trigger = TriggerSyncAction(provider, service)
+        val action = clearLocalDataAction(storage, service, trigger)
 
         action()
 
         assertTrue(storage.clearAllCalled)
+        assertFalse(provider.isConfigured)
         assertTrue(database.attachmentDao().getAllOnce().isEmpty())
         assertTrue(database.taskDao().getAllTasksOnce().isEmpty())
+        assertTrue(database.noteDao().getAllNotesOnce().isEmpty())
+        assertTrue(database.tagDao().getAllTagsOnce().isEmpty())
+        assertTrue(database.tagDao().getAllTaskTagsOnce().isEmpty())
+        assertTrue(database.countdownDao().getAllCountdownsOnce().isEmpty())
+        assertNull(database.appSettingsDao().getValue("pocketbase_url"))
+        val inbox = database.categoryDao().getAllCategoriesOnce().single()
+        assertEquals("00000000-0000-0000-0000-000000000001", inbox.id)
+        assertEquals("Inbox", inbox.name)
     }
+
+    @Test
+    fun clearLocalDataFailureLeavesPocketBaseDisconnected() = runTest {
+        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val service = SyncService(provider, emptyList())
+        val trigger = TriggerSyncAction(provider, service)
+        val failingStorage = object : AttachmentFileStorage by FakeAttachmentFileStorage() {
+            override suspend fun clearAll() {
+                error("storage cleanup failed")
+            }
+        }
+
+        assertFailsWith<IllegalStateException> {
+            clearLocalDataAction(failingStorage, service, trigger)()
+        }
+
+        assertFalse(provider.isConfigured)
+    }
+
+    @Test
+    fun repositoryWriteAfterResetDoesNotReconnectPocketBase() = runTest {
+        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val service = SyncService(provider, emptyList())
+        val trigger = TriggerSyncAction(provider, service)
+        clearLocalDataAction(FakeAttachmentFileStorage(), service, trigger)()
+        val repository = TaskRepositoryImpl(database.taskDao(), trigger)
+
+        repository.insert(testTask(id = "post-reset"))
+
+        assertNotNull(database.taskDao().getTaskById("post-reset"))
+        assertFalse(provider.isConfigured)
+    }
+
+    private fun clearLocalDataAction(
+        storage: AttachmentFileStorage,
+        service: SyncService,
+        trigger: TriggerSyncAction,
+    ) = ClearLocalDataAction(
+        database = database,
+        attachmentFileStorage = storage,
+        syncService = service,
+        triggerSyncAction = trigger,
+    )
 
     @Test
     fun attachmentPushHardDeletesNeverSyncedTombstoneBeforeParentGate() = runTest {

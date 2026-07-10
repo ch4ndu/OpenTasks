@@ -312,6 +312,7 @@
     <string name="logout_description">Delete all local data. Server data will not be affected.</string>
     <string name="logout_confirm_title">Logout?</string>
     <string name="logout_confirm_message">This will permanently delete all local tasks, categories, notes, and settings. Data on the server will not be touched. This action cannot be undone.</string>
+    <string name="clear_local_data_error">Could not clear local data. PocketBase remains disconnected.</string>
 
     <!-- Import -->
     <string name="import_header">Import</string>

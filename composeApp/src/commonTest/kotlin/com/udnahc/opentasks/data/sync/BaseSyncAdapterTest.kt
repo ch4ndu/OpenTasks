@@ -12,6 +12,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
@@ -300,6 +302,59 @@ class BaseSyncAdapterTest {
 
         assertEquals(2, adapter.pullCount)
         assertTrue(adapter.local.single().synced)
+    }
+
+    @Test
+    fun exclusiveResetDisconnectsImmediatelyBlocksNewSyncAndWaitsForActivePass() = runBlocking {
+        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val pullStarted = CompletableDeferred<Unit>()
+        val releasePull = CompletableDeferred<Unit>()
+        val pendingCancelled = CompletableDeferred<Unit>()
+        val adapter = FakeAdapter(
+            local = mutableListOf(),
+            remote = mutableListOf(),
+            onPull = {
+                pullStarted.complete(Unit)
+                releasePull.await()
+            },
+        )
+        val service = SyncService(provider, listOf(adapter))
+        val activeSync = launch { service.syncAll() }
+        pullStarted.await()
+        var cleared = false
+
+        val reset = launch {
+            service.runExclusiveReset(
+                cancelPendingSync = { pendingCancelled.complete(Unit) },
+            ) {
+                cleared = true
+            }
+        }
+        pendingCancelled.await()
+
+        assertFalse(provider.isConfigured)
+        assertFalse(cleared)
+        service.syncAll(client)
+        assertEquals(1, adapter.pullCount)
+
+        releasePull.complete(Unit)
+        activeSync.join()
+        reset.join()
+        assertTrue(cleared)
+    }
+
+    @Test
+    fun failedExclusiveResetKeepsPocketBaseDisconnected() = runBlocking {
+        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val service = SyncService(provider, emptyList())
+
+        assertFailsWith<IllegalStateException> {
+            service.runExclusiveReset(cancelPendingSync = {}) {
+                error("cleanup failed")
+            }
+        }
+
+        assertFalse(provider.isConfigured)
     }
 
     @Test

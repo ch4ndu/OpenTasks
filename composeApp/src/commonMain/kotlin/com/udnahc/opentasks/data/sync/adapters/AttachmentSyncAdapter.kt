@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.sync.adapters
 import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.attachment.AttachmentImageDecodeException
+import com.udnahc.opentasks.data.attachment.StoredAttachmentFile
 import com.udnahc.opentasks.data.dao.AttachmentDao
 import com.udnahc.opentasks.data.dao.TaskDao
 import com.udnahc.opentasks.data.model.ATTACHMENT_KIND_IMAGE
@@ -115,35 +116,58 @@ class AttachmentSyncAdapter(
                 }
                 val bytes = response.bodyAsBytes()
                 val stored = fileStorage.storeRemoteImage(record.file, bytes)
-                dao.upsert(
-                    incoming.copy(
-                        localPath = stored.localPath,
-                        thumbnailPath = stored.thumbnailPath,
-                        fileName = stored.fileName,
-                        mimeType = stored.mimeType,
-                        fileSizeBytes = stored.fileSizeBytes,
-                        width = stored.width,
-                        height = stored.height,
-                    ).withSyncState(AttachmentSyncState.SYNCED)
-                )
+                upsertRemoteDownloadSuccess(incoming, stored, local)
             }.onFailure {
                 log.e(it) { "Failed to download attachment ${record.localId}" }
-                upsertRemoteDownloadFailure(incoming, it)
+                upsertRemoteDownloadFailure(incoming, it, local)
             }
         }
         recoverMissingRemoteRows(remoteRecords, localSnapshot)
     }
 
-    internal suspend fun upsertRemoteDownloadFailure(incoming: Attachment, error: Throwable) {
+    internal suspend fun upsertRemoteDownloadFailure(
+        incoming: Attachment,
+        error: Throwable,
+        local: Attachment? = null,
+    ) {
         val (syncState, errorCode) = when (error) {
             is AttachmentImageDecodeException -> AttachmentSyncState.BLOCKED to "blocked_decode_failed"
             is AttachmentFileDownloadException -> AttachmentSyncState.FAILED to error.downloadErrorCode()
             else -> AttachmentSyncState.FAILED to "download_failed"
         }
+        val merged = local?.let {
+            incoming.copy(
+                localPath = it.localPath,
+                thumbnailPath = it.thumbnailPath,
+                mimeType = it.mimeType,
+                fileName = it.fileName,
+                fileSizeBytes = it.fileSizeBytes,
+                width = it.width,
+                height = it.height,
+            )
+        } ?: incoming
         dao.upsert(
-            incoming.withSyncState(syncState)
+            merged.withSyncState(syncState)
                 .copy(lastSyncError = errorCode)
         )
+    }
+
+    internal suspend fun upsertRemoteDownloadSuccess(
+        incoming: Attachment,
+        stored: StoredAttachmentFile,
+        local: Attachment?,
+    ) {
+        val replacement = incoming.copy(
+            localPath = stored.localPath,
+            thumbnailPath = stored.thumbnailPath,
+            fileName = stored.fileName,
+            mimeType = stored.mimeType,
+            fileSizeBytes = stored.fileSizeBytes,
+            width = stored.width,
+            height = stored.height,
+        ).withSyncState(AttachmentSyncState.SYNCED)
+        dao.upsert(replacement)
+        local?.let { deleteSupersededLocalFiles(it, replacement) }
     }
 
     internal suspend fun shouldSkipIncomingRecord(record: AttachmentRecord, local: Attachment?): Boolean {
@@ -152,7 +176,8 @@ class AttachmentSyncAdapter(
                 !record.isDeleted &&
                 !record.file.isNullOrBlank() &&
                 !fileStorage.exists(local.localPath)
-        return record.updatedAtUtc <= local.updatedAt && !localFileMissing
+        val retryRemoteDownload = local.isRemoteOriginDownloadFailure()
+        return record.updatedAtUtc <= local.updatedAt && !localFileMissing && !retryRemoteDownload
     }
 
     internal suspend fun upsertRemoteTombstone(incoming: Attachment, local: Attachment?) {
@@ -161,8 +186,21 @@ class AttachmentSyncAdapter(
     }
 
     private suspend fun deleteLocalFilesFor(attachment: Attachment) {
-        runCatching { fileStorage.delete(attachment.localPath) }
-        runCatching { fileStorage.delete(attachment.thumbnailPath) }
+        if (attachment.localPath.isNotBlank()) {
+            runCatching { fileStorage.delete(attachment.localPath) }
+        }
+        if (attachment.thumbnailPath.isNotBlank()) {
+            runCatching { fileStorage.delete(attachment.thumbnailPath) }
+        }
+    }
+
+    private suspend fun deleteSupersededLocalFiles(previous: Attachment, replacement: Attachment) {
+        if (previous.localPath.isNotBlank() && previous.localPath != replacement.localPath) {
+            runCatching { fileStorage.delete(previous.localPath) }
+        }
+        if (previous.thumbnailPath.isNotBlank() && previous.thumbnailPath != replacement.thumbnailPath) {
+            runCatching { fileStorage.delete(previous.thumbnailPath) }
+        }
     }
 
     override suspend fun pushAll(client: PocketbaseClient) {

@@ -41,6 +41,8 @@ sealed class ExportResult {
     data object Error : ExportResult()
 }
 
+enum class ClearLocalDataStatus { IDLE, CLEARING, ERROR }
+
 class SettingsViewModel(
     observePocketBaseUrl: ObservePocketBaseUrlUseCase,
     observeThemePreference: ObserveThemePreferenceUseCase,
@@ -82,6 +84,10 @@ class SettingsViewModel(
 
     private val _exportResult = MutableStateFlow<ExportResult>(ExportResult.Idle)
     val exportResult: StateFlow<ExportResult> = _exportResult.asStateFlow()
+
+    private val _clearLocalDataStatus = MutableStateFlow(ClearLocalDataStatus.IDLE)
+    val clearLocalDataStatus: StateFlow<ClearLocalDataStatus> =
+        _clearLocalDataStatus.asStateFlow()
 
     init {
         recheckPermissions()
@@ -194,13 +200,20 @@ class SettingsViewModel(
 
     fun clearLocalData(onComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
+            _clearLocalDataStatus.value = ClearLocalDataStatus.CLEARING
             try {
                 clearLocalDataAction()
                 _syncStatus.value = SyncStatus.IDLE
+                _clearLocalDataStatus.value = ClearLocalDataStatus.IDLE
                 withContext(Dispatchers.Main) { onComplete() }
             } catch (e: Exception) {
                 log.e(e) { "Clear local data failed" }
+                _clearLocalDataStatus.value = ClearLocalDataStatus.ERROR
             }
         }
+    }
+
+    fun clearLocalDataErrorShown() {
+        _clearLocalDataStatus.value = ClearLocalDataStatus.IDLE
     }
 }

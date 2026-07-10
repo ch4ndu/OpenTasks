@@ -244,7 +244,7 @@ val sharedModule = module {
     single { SaveTextSizePreferenceAction(get()) }
     single { SaveCalendarViewPreferenceAction(get()) }
     single { SaveCalendarListDisplayModePreferenceAction(get()) }
-    single { ClearLocalDataAction(get(), get(), get(), get(), get(), get(), get()) }
+    single { ClearLocalDataAction(get(), get(), get(), get()) }
 
     // Sync
     single { PocketBaseClientProvider() }

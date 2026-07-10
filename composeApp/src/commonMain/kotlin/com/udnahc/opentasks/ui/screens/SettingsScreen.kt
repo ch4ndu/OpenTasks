@@ -37,6 +37,7 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
 import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
+import com.udnahc.opentasks.viewmodel.ClearLocalDataStatus
 import com.udnahc.opentasks.viewmodel.ExportResult
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.SyncStatus
@@ -48,6 +49,7 @@ import opentasks.composeapp.generated.resources.calendar_access
 import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.checking_connection
 import opentasks.composeapp.generated.resources.clear
+import opentasks.composeapp.generated.resources.clear_local_data_error
 import opentasks.composeapp.generated.resources.configured
 import opentasks.composeapp.generated.resources.connected
 import opentasks.composeapp.generated.resources.connection_failed
@@ -109,6 +111,7 @@ fun SettingsScreen(
     val calendarGranted by viewModel.calendarGranted.collectAsState()
 
     val exportResult by viewModel.exportResult.collectAsState()
+    val clearLocalDataStatus by viewModel.clearLocalDataStatus.collectAsState()
 
     val requestNotification = rememberNotificationPermissionLauncher { granted ->
         viewModel.recheckPermissions()
@@ -131,6 +134,7 @@ fun SettingsScreen(
         exactReminderStatus = exactReminderStatus,
         calendarGranted = calendarGranted,
         exportResult = exportResult,
+        clearLocalDataStatus = clearLocalDataStatus,
         onBack = onBack,
         onSaveUrl = { viewModel.savePocketBaseUrl(it) },
         onClearUrl = { viewModel.clearPocketBaseUrl() },
@@ -148,6 +152,7 @@ fun SettingsScreen(
         onExportCsv = { viewModel.exportCsv() },
         onExportIcs = { viewModel.exportIcs() },
         onClearExportResult = { viewModel.clearExportResult() },
+        onClearLocalDataErrorShown = { viewModel.clearLocalDataErrorShown() },
         onLogout = { viewModel.clearLocalData(onLogout) },
     )
 }
@@ -163,6 +168,7 @@ internal fun SettingsContent(
     exactReminderStatus: ExactReminderPermissionStatus = ExactReminderPermissionStatus.NOT_REQUIRED,
     calendarGranted: Boolean = false,
     exportResult: ExportResult = ExportResult.Idle,
+    clearLocalDataStatus: ClearLocalDataStatus = ClearLocalDataStatus.IDLE,
     onBack: () -> Unit,
     onSaveUrl: (String) -> Unit,
     onClearUrl: () -> Unit,
@@ -178,6 +184,7 @@ internal fun SettingsContent(
     onExportCsv: () -> Unit = {},
     onExportIcs: () -> Unit = {},
     onClearExportResult: () -> Unit = {},
+    onClearLocalDataErrorShown: () -> Unit = {},
     onLogout: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -203,6 +210,13 @@ internal fun SettingsContent(
 
             ExportResult.Idle -> { /* no-op */
             }
+        }
+    }
+
+    LaunchedEffect(clearLocalDataStatus) {
+        if (clearLocalDataStatus == ClearLocalDataStatus.ERROR) {
+            snackbarHostState.showSnackbar(getString(Res.string.clear_local_data_error))
+            onClearLocalDataErrorShown()
         }
     }
 

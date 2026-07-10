@@ -2,6 +2,7 @@ package com.udnahc.opentasks.data.sync
 
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.lighthousegames.logging.logging
 import kotlin.concurrent.Volatile
 
@@ -12,10 +13,17 @@ class SyncService(
     private val adapters: List<BaseSyncAdapter<*, *>>,
 ) {
     private val syncMutex = Mutex()
+    private val resetMutex = Mutex()
     @Volatile
     private var pendingSyncRequested = false
+    @Volatile
+    private var resetInProgress = false
 
     suspend fun syncAll() {
+        if (resetInProgress) {
+            log.d { "Sync skipped: local data reset in progress" }
+            return
+        }
         val client = pbProvider.client ?: run {
             log.d { "Sync skipped: no PocketBase client" }
             return
@@ -24,7 +32,15 @@ class SyncService(
     }
 
     suspend fun syncAll(client: PocketbaseClient) {
+        if (resetInProgress) {
+            log.d { "Sync skipped: local data reset in progress" }
+            return
+        }
         if (!syncMutex.tryLock()) {
+            if (resetInProgress) {
+                log.d { "Sync skipped: local data reset in progress" }
+                return
+            }
             log.d { "Sync already in progress, marking pending re-sync" }
             pendingSyncRequested = true
             return
@@ -40,12 +56,38 @@ class SyncService(
                 } else {
                     log.e { "Sync completed with ${passFailures.size} failure(s)" }
                 }
-            } while (pendingSyncRequested)
+            } while (pendingSyncRequested && !resetInProgress)
             if (passFailures.isNotEmpty()) {
                 throw SyncException(passFailures)
             }
         } finally {
             syncMutex.unlock()
+        }
+    }
+
+    /**
+     * Runs local cleanup without allowing an active or queued sync to race it.
+     * The reset flag is set before cancellation or waiting so new sync requests are rejected.
+     * PocketBase is disconnected before waiting and remains disconnected if cleanup fails.
+     */
+    suspend fun <T> runExclusiveReset(
+        cancelPendingSync: suspend () -> Unit,
+        clearLocalData: suspend () -> T,
+    ): T = resetMutex.withLock {
+        resetInProgress = true
+        pendingSyncRequested = false
+        try {
+            try {
+                cancelPendingSync()
+            } finally {
+                pbProvider.disconnect()
+            }
+            syncMutex.withLock {
+                pendingSyncRequested = false
+                clearLocalData()
+            }
+        } finally {
+            resetInProgress = false
         }
     }
 

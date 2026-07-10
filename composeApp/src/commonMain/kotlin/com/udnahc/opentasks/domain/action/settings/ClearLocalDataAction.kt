@@ -1,49 +1,52 @@
 package com.udnahc.opentasks.domain.action.settings
 
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
-import com.udnahc.opentasks.data.dao.CategoryDao
-import com.udnahc.opentasks.data.dao.AttachmentDao
-import com.udnahc.opentasks.data.dao.NoteDao
-import com.udnahc.opentasks.data.dao.TagDao
-import com.udnahc.opentasks.data.dao.TaskDao
+import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.Category
-import com.udnahc.opentasks.data.repository.AppSettingsRepository
+import com.udnahc.opentasks.data.sync.SyncService
 import org.lighthousegames.logging.logging
 
 private val log = logging("ClearLocalDataAction")
 
 class ClearLocalDataAction(
-    private val taskDao: TaskDao,
-    private val categoryDao: CategoryDao,
-    private val noteDao: NoteDao,
-    private val tagDao: TagDao,
-    private val attachmentDao: AttachmentDao,
+    private val database: AppDatabase,
     private val attachmentFileStorage: AttachmentFileStorage,
-    private val appSettingsRepository: AppSettingsRepository,
+    private val syncService: SyncService,
+    private val triggerSyncAction: TriggerSyncAction,
 ) {
     suspend operator fun invoke() {
         log.d { "Clearing all local data" }
-        // Delete in FK dependency order
-        // Uses DAOs directly to avoid triggering sync on bulk delete
-        tagDao.deleteAllTaskTags()
-        attachmentFileStorage.clearAll()
-        attachmentDao.deleteAll()
-        tagDao.deleteAllTags()
-        taskDao.deleteAll()
-        noteDao.deleteAll()
-        categoryDao.deleteAll()
-        appSettingsRepository.deleteAll()
+        syncService.runExclusiveReset(
+            cancelPendingSync = triggerSyncAction::cancelPendingSync,
+        ) {
+            database.useWriterConnection { connection ->
+                connection.immediateTransaction {
+                    // Delete in FK dependency order using DAOs directly to avoid sync triggers.
+                    database.tagDao().deleteAllTaskTags()
+                    database.attachmentDao().deleteAll()
+                    database.countdownDao().deleteAll()
+                    database.tagDao().deleteAllTags()
+                    database.taskDao().deleteAll()
+                    database.noteDao().deleteAll()
+                    database.categoryDao().deleteAll()
+                    database.appSettingsDao().deleteAll()
 
-        // Re-insert stable default category name used for import/export and sync lookup.
-        categoryDao.insert(
-            Category(
-                id = INBOX_ID,
-                name = "Inbox",
-                icon = "inbox",
-                sortOrder = 0,
-                createdAt = 0L,
-            )
-        )
+                    // Re-insert the stable default used for import/export and sync lookup.
+                    database.categoryDao().insert(
+                        Category(
+                            id = INBOX_ID,
+                            name = "Inbox",
+                            icon = "inbox",
+                            sortOrder = 0,
+                            createdAt = 0L,
+                        )
+                    )
+                }
+            }
+            attachmentFileStorage.clearAll()
+        }
     }
 
     companion object {

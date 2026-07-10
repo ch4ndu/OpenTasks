@@ -39,6 +39,8 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 ## Sync
 
 - Repositories trigger sync automatically on inserts, updates, and deletes.
+- Clear Local Data must enter the exclusive sync-reset boundary before cleanup: reject new sync requests, cancel pending debounce work, disconnect PocketBase, wait for any active pass, and keep the provider disconnected if cleanup fails.
+- Clear Local Data deletes every Room entity in one writer transaction, recreates Inbox in that transaction, and clears attachment files before leaving the exclusive reset boundary.
 - ViewModels and ordinary Actions should not call `TriggerSyncAction`.
 - Approved direct sync triggers are Settings “Sync Now”, app resume sync, widget refresh callbacks, and `AppViewModel.triggerSync()` for pull-to-refresh.
 - `SyncService` uses DAOs directly to avoid sync loops during pull.
