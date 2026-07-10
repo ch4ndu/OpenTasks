@@ -30,7 +30,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,11 +37,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
-import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
+import com.udnahc.opentasks.domain.usecase.countdown.CountdownOccurrence
+import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownOccurrence
 import com.udnahc.opentasks.ui.screens.OpenTasksSettingsButton
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
@@ -52,9 +51,7 @@ import com.udnahc.opentasks.ui.theme.PriorityHigh
 import com.udnahc.opentasks.ui.theme.PriorityMedium
 import com.udnahc.opentasks.ui.theme.PriorityNone
 import com.udnahc.opentasks.viewmodel.CountdownViewModel
-import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.until
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.countdown_days_ago
 import opentasks.composeapp.generated.resources.countdown_days_left
@@ -66,6 +63,7 @@ import opentasks.composeapp.generated.resources.countdown_filter_birthday
 import opentasks.composeapp.generated.resources.countdown_filter_countdown
 import opentasks.composeapp.generated.resources.countdown_filter_holiday
 import opentasks.composeapp.generated.resources.countdown_no_items
+import opentasks.composeapp.generated.resources.countdown_no_visible_items
 import opentasks.composeapp.generated.resources.countdown_title
 import opentasks.composeapp.generated.resources.today
 import org.jetbrains.compose.resources.StringResource
@@ -100,14 +98,6 @@ internal fun countdownTypeInitial(type: CountdownType): String = when (type) {
     CountdownType.COUNTDOWN -> "C"
 }
 
-internal fun computeDaysUntil(
-    targetDateLocalMillis: Long,
-    today: LocalDate,
-): Int {
-    val targetDate = localMillisToLocalDate(targetDateLocalMillis)
-    return today.until(targetDate, DateTimeUnit.DAY).toInt()
-}
-
 @Composable
 fun CountdownScreen(
     viewModel: CountdownViewModel,
@@ -115,10 +105,12 @@ fun CountdownScreen(
     onDeleteCountdown: (Countdown) -> Unit,
     onSettingsClick: () -> Unit = {},
 ) {
-    val countdowns by viewModel.filteredCountdowns.collectAsState()
+    val countdowns by viewModel.visibleCountdownItems.collectAsState()
+    val hasStoredCountdowns by viewModel.hasStoredCountdowns.collectAsState()
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     CountdownContent(
         countdowns = countdowns,
+        hasStoredCountdowns = hasStoredCountdowns,
         selectedFilter = selectedFilter,
         onFilterSelected = viewModel::selectFilter,
         onCountdownClick = onCountdownClick,
@@ -129,14 +121,14 @@ fun CountdownScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CountdownContent(
-    countdowns: List<Countdown>,
+    countdowns: List<CountdownOccurrence>,
+    hasStoredCountdowns: Boolean = countdowns.isNotEmpty(),
     selectedFilter: CountdownType?,
     onFilterSelected: (CountdownType?) -> Unit,
     onCountdownClick: (Countdown) -> Unit,
     onSettingsClick: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
-    val today = todayLocal()
     val density = LocalDensity.current
     val statusBarHeight = with(density) {
         WindowInsets.statusBars.getTop(this).toDp()
@@ -153,7 +145,10 @@ internal fun CountdownContent(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = stringResource(Res.string.countdown_no_items),
+                    text = stringResource(
+                        if (hasStoredCountdowns) Res.string.countdown_no_visible_items
+                        else Res.string.countdown_no_items,
+                    ),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -166,11 +161,10 @@ internal fun CountdownContent(
                     bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge,
                 ),
             ) {
-                items(countdowns, key = { it.id }) { countdown ->
+                items(countdowns, key = { it.countdown.id }) { countdown ->
                     CountdownCard(
-                        countdown = countdown,
-                        today = today,
-                        onClick = { onCountdownClick(countdown) },
+                        item = countdown,
+                        onClick = { onCountdownClick(countdown.countdown) },
                     )
                 }
             }
@@ -240,14 +234,12 @@ private fun FilterChipRow(
 
 @Composable
 internal fun CountdownCard(
-    countdown: Countdown,
-    today: LocalDate,
+    item: CountdownOccurrence,
     onClick: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
-    val daysLeft = remember(countdown.targetDate, today) {
-        computeDaysUntil(countdown.targetDate, today)
-    }
+    val countdown = item.countdown
+    val daysLeft = item.daysUntil
     val isCountUp = countdown.countingMode == CountingMode.COUNT_UP
     val displayDays = if (isCountUp) abs(daysLeft) else daysLeft
     val subtitle = when {
@@ -326,6 +318,8 @@ internal fun CountdownCard(
 
 // -- Previews ------------------------------------------------------------------
 
+private val previewCountdownDate = LocalDate(2026, 1, 1)
+
 internal val previewCountdowns = listOf(
     Countdown(
         id = "preview-1",
@@ -352,4 +346,4 @@ internal val previewCountdowns = listOf(
         countdownType = CountdownType.COUNTDOWN,
         countingMode = CountingMode.COUNTDOWN,
     ),
-)
+).map { projectCountdownOccurrence(it, previewCountdownDate) }

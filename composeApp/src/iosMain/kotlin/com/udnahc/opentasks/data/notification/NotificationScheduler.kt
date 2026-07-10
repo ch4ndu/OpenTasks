@@ -5,12 +5,15 @@ import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_NOTIFICATION_AT_UTC_KEY
 import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_OCCURRENCE_DEADLINE_UTC_KEY
 import platform.UserNotifications.UNCalendarNotificationTrigger
 import platform.UserNotifications.UNMutableNotificationContent
+import platform.UserNotifications.UNNotification
 import platform.UserNotifications.UNNotificationRequest
 import platform.UserNotifications.UNNotificationSound
 import platform.UserNotifications.UNUserNotificationCenter
 import platform.Foundation.NSCalendar
 import platform.Foundation.NSDate
 import platform.Foundation.dateWithTimeIntervalSince1970
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 actual class NotificationScheduler : ReminderScheduler {
 
@@ -26,7 +29,7 @@ actual class NotificationScheduler : ReminderScheduler {
         allowMarkDone: Boolean,
         rescheduleAfterFire: Boolean,
     ) {
-        val identifier = requestId(taskId, reminderId)
+        val identifier = requestId(taskId, occurrenceDeadlineUtcMillis ?: triggerAtMillis, reminderId)
         center.removePendingNotificationRequestsWithIdentifiers(listOf(identifier))
         center.removeDeliveredNotificationsWithIdentifiers(listOf(identifier))
 
@@ -71,19 +74,26 @@ actual class NotificationScheduler : ReminderScheduler {
             trigger = trigger,
         )
 
-        center.addNotificationRequest(request, withCompletionHandler = null)
+        center.getPendingNotificationRequestsWithCompletionHandler { pending ->
+            val reminderIds = pending.orEmpty().mapNotNull { item ->
+                (item as? UNNotificationRequest)?.identifier
+            }
+                .filter(::isReminderRequestId)
+            if (identifier in reminderIds || reminderIds.size < IOS_PENDING_REMINDER_LIMIT) {
+                center.addNotificationRequest(request, withCompletionHandler = null)
+            }
+        }
     }
 
     actual override fun cancel(taskId: String, reminderId: Int) {
-        center.removePendingNotificationRequestsWithIdentifiers(
-            listOf(requestId(taskId, reminderId))
-        )
+        removeMatchingRequests(taskId) { identifier -> identifier.endsWith("_$reminderId") }
     }
 
     actual override fun cancelReminders(taskId: String) {
-        val ids = (0 until 100).map { requestId(taskId, it) } + legacyOngoingIds(taskId)
-        center.removePendingNotificationRequestsWithIdentifiers(ids)
-        center.removeDeliveredNotificationsWithIdentifiers(ids)
+        removeMatchingRequests(taskId) { true }
+        val legacyOngoing = legacyOngoingIds(taskId)
+        center.removePendingNotificationRequestsWithIdentifiers(legacyOngoing)
+        center.removeDeliveredNotificationsWithIdentifiers(legacyOngoing)
     }
 
     actual override fun cancelAll(taskId: String) {
@@ -105,9 +115,76 @@ actual class NotificationScheduler : ReminderScheduler {
         center.removeDeliveredNotificationsWithIdentifiers(ids)
     }
 
-    private fun requestId(taskId: String, reminderId: Int): String =
-        "task_${taskId}_reminder_$reminderId"
+    actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
+        val pendingIds = suspendCoroutine<List<String>> { continuation ->
+            center.getPendingNotificationRequestsWithCompletionHandler { pending ->
+                continuation.resume(
+                    pending.orEmpty().mapNotNull { request ->
+                        (request as? UNNotificationRequest)?.identifier
+                    }
+                        .filter(::isReminderRequestId)
+                )
+            }
+        }
+        if (pendingIds.isNotEmpty()) {
+            center.removePendingNotificationRequestsWithIdentifiers(pendingIds)
+            center.removeDeliveredNotificationsWithIdentifiers(pendingIds)
+        }
+        center.getDeliveredNotificationsWithCompletionHandler { delivered ->
+            val deliveredIds = delivered.orEmpty().mapNotNull { notification ->
+                (notification as? UNNotification)?.request?.identifier
+            }.filter(::isOpenTasksReminderRequestId)
+            if (deliveredIds.isNotEmpty()) {
+                center.removeDeliveredNotificationsWithIdentifiers(deliveredIds)
+            }
+        }
+        requests.take(IOS_PENDING_REMINDER_LIMIT).forEach { request ->
+            schedule(
+                taskId = request.eventId,
+                title = request.title,
+                body = request.body,
+                triggerAtMillis = request.triggerAtUtcMillis,
+                reminderId = request.reminderId,
+                occurrenceDeadlineUtcMillis = request.occurrenceUtcMillis,
+                allowMarkDone = request.allowMarkDone,
+                rescheduleAfterFire = false,
+            )
+        }
+    }
+
+    private fun requestId(taskId: String, occurrenceUtcMillis: Long, reminderId: Int): String =
+        "${REMINDER_REQUEST_PREFIX}${taskId}_${occurrenceUtcMillis}_$reminderId"
+
+    private fun removeMatchingRequests(
+        taskId: String,
+        predicate: (String) -> Boolean,
+    ) {
+        val eventPrefix = "$REMINDER_REQUEST_PREFIX${taskId}_"
+        val legacyEventPrefix = "task_${taskId}_reminder_"
+        center.getPendingNotificationRequestsWithCompletionHandler { pending ->
+            val ids = pending.orEmpty().mapNotNull { request ->
+                (request as? UNNotificationRequest)?.identifier
+            }
+                .filter {
+                    (it.startsWith(eventPrefix) || it.startsWith(legacyEventPrefix)) && predicate(it)
+                }
+            if (ids.isNotEmpty()) center.removePendingNotificationRequestsWithIdentifiers(ids)
+        }
+        center.getDeliveredNotificationsWithCompletionHandler { delivered ->
+            val ids = delivered.orEmpty().mapNotNull { notification ->
+                (notification as? UNNotification)?.request?.identifier
+            }
+                .filter {
+                    (it.startsWith(eventPrefix) || it.startsWith(legacyEventPrefix)) && predicate(it)
+                }
+            if (ids.isNotEmpty()) center.removeDeliveredNotificationsWithIdentifiers(ids)
+        }
+    }
+
+    private fun isReminderRequestId(identifier: String): Boolean =
+        isOpenTasksReminderRequestId(identifier)
 
     private fun legacyOngoingIds(taskId: String): List<String> =
         (8..22 step 2).map { "task_${taskId}_ongoing_$it" }
+
 }

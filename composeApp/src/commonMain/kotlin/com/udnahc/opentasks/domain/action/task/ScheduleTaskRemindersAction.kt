@@ -8,7 +8,10 @@ import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
+import com.udnahc.opentasks.data.notification.ReminderTextProvider
 import com.udnahc.opentasks.data.notification.ReminderScheduler
+import com.udnahc.opentasks.data.notification.PlainReminderTextProvider
+import com.udnahc.opentasks.data.notification.ReminderRequest
 import com.udnahc.opentasks.data.repository.TaskRepository
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDateTime
@@ -16,20 +19,6 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
-import opentasks.composeapp.generated.resources.Res
-import opentasks.composeapp.generated.resources.task_reminder_due_in_day
-import opentasks.composeapp.generated.resources.task_reminder_due_in_days
-import opentasks.composeapp.generated.resources.task_reminder_due_in_hour
-import opentasks.composeapp.generated.resources.task_reminder_due_in_hours
-import opentasks.composeapp.generated.resources.task_reminder_due_in_minutes
-import opentasks.composeapp.generated.resources.task_reminder_due_now
-import opentasks.composeapp.generated.resources.task_reminder_ending_now
-import opentasks.composeapp.generated.resources.task_reminder_overdue
-import opentasks.composeapp.generated.resources.task_reminder_starting_in_hour
-import opentasks.composeapp.generated.resources.task_reminder_starting_in_hours
-import opentasks.composeapp.generated.resources.task_reminder_starting_in_minutes
-import opentasks.composeapp.generated.resources.task_reminder_starting_now
-import org.jetbrains.compose.resources.getString
 import org.lighthousegames.logging.logging
 import kotlin.time.Instant
 
@@ -61,6 +50,7 @@ class ScheduleTaskRemindersAction(
     private val scheduler: ReminderScheduler,
     private val taskRepository: TaskRepository,
     private val allDayDismissalStore: AllDayNotificationDismissalStore? = null,
+    private val textProvider: ReminderTextProvider = PlainReminderTextProvider,
     private val nowUtcMillisProvider: () -> Long = ::utcNow,
 ) {
     /**
@@ -98,6 +88,99 @@ class ScheduleTaskRemindersAction(
      */
     suspend fun invokeWithUtcTask(task: Task) {
         scheduleForTask(task)
+    }
+
+    suspend fun buildFutureRequests(
+        task: Task,
+        occurrenceLimit: Int,
+    ): List<ReminderRequest> {
+        if (
+            occurrenceLimit <= 0 || task.status == TaskStatus.DONE || task.isDeleted ||
+            task.deadline == null
+        ) return emptyList()
+        val now = nowUtcMillisProvider()
+        val requests = mutableListOf<ReminderRequest>()
+        var afterOccurrence: Long? = null
+        repeat(occurrenceLimit) {
+            val occurrence = task.schedulingOccurrence(now, afterOccurrence) ?: return@repeat
+            requests += task.requestsForOccurrence(occurrence, now)
+            afterOccurrence = occurrence.deadlineUtcMillis
+            if (task.recurrenceType == RecurrenceType.NONE) return requests
+        }
+        return requests
+    }
+
+    private suspend fun Task.requestsForOccurrence(
+        occurrence: SchedulingOccurrence,
+        now: Long,
+    ): List<ReminderRequest> {
+        val taskForOccurrence = copy(
+            deadline = occurrence.deadlineUtcMillis,
+            endDeadline = occurrence.endDeadlineUtcMillis,
+        )
+        val dateTriggers = taskForOccurrence.dateReminders.parseMinuteValues()
+            .map { minutes ->
+                ReminderTrigger(
+                    minutes,
+                    occurrence.deadlineUtcMillis - minutes.toLong() * MILLIS_PER_MINUTE,
+                )
+            }
+            .ifEmpty { taskForOccurrence.legacyReminderTriggers() }
+        val durationTriggers = taskForOccurrence.durationReminders.parseMinuteValues()
+            .mapIndexedNotNull { index, minutes ->
+                val triggerAt = if (minutes == -1) {
+                    taskForOccurrence.endDeadline ?: return@mapIndexedNotNull null
+                } else {
+                    occurrence.deadlineUtcMillis - minutes * MILLIS_PER_MINUTE
+                }
+                DurationReminderTrigger(index, minutes, triggerAt)
+            }
+        val hasDueNow = dateTriggers.any { it.triggerAtUtcMillis == occurrence.deadlineUtcMillis }
+        val overdueAt = occurrence.deadlineUtcMillis.takeIf { it > now && !hasDueNow }
+        return buildList {
+            dateTriggers.filter { it.triggerAtUtcMillis > now }.forEachIndexed { index, trigger ->
+                add(
+                    ReminderRequest(
+                        eventId = id,
+                        title = title,
+                        body = textProvider.taskDue(trigger.minutesForLabel),
+                        triggerAtUtcMillis = trigger.triggerAtUtcMillis,
+                        reminderId = index,
+                        occurrenceUtcMillis = occurrence.deadlineUtcMillis,
+                        allowMarkDone = trigger.triggerAtUtcMillis == occurrence.deadlineUtcMillis,
+                    )
+                )
+            }
+            durationTriggers.filter { it.triggerAtUtcMillis > now }.forEach { trigger ->
+                add(
+                    ReminderRequest(
+                        eventId = id,
+                        title = title,
+                        body = if (trigger.minutesForLabel == -1) {
+                            textProvider.taskEndingNow()
+                        } else {
+                            textProvider.taskStarting(trigger.minutesForLabel)
+                        },
+                        triggerAtUtcMillis = trigger.triggerAtUtcMillis,
+                        reminderId = DURATION_REMINDER_OFFSET + trigger.index,
+                        occurrenceUtcMillis = occurrence.deadlineUtcMillis,
+                    )
+                )
+            }
+            overdueAt?.let { triggerAt ->
+                add(
+                    ReminderRequest(
+                        eventId = id,
+                        title = title,
+                        body = textProvider.taskOverdue(),
+                        triggerAtUtcMillis = triggerAt,
+                        reminderId = OVERDUE_REMINDER_ID,
+                        occurrenceUtcMillis = occurrence.deadlineUtcMillis,
+                        allowMarkDone = true,
+                    )
+                )
+            }
+        }
     }
 
     private suspend fun scheduleForTask(
@@ -181,7 +264,7 @@ class ScheduleTaskRemindersAction(
                     taskId = taskForOccurrence.id,
                     title = taskForOccurrence.title,
                     body = if (trigger.minutesForLabel == -1) {
-                        getString(Res.string.task_reminder_ending_now)
+                        textProvider.taskEndingNow()
                     } else {
                         startingReminderBody(trigger.minutesForLabel)
                     },
@@ -204,7 +287,7 @@ class ScheduleTaskRemindersAction(
             scheduler.schedule(
                 taskId = taskForOccurrence.id,
                 title = taskForOccurrence.title,
-                body = getString(Res.string.task_reminder_overdue),
+                body = textProvider.taskOverdue(),
                 triggerAtMillis = overdueTriggerAt,
                 reminderId = OVERDUE_REMINDER_ID,
                 occurrenceDeadlineUtcMillis = occurrence.deadlineUtcMillis,
@@ -323,49 +406,9 @@ class ScheduleTaskRemindersAction(
         return candidate
     }
 
-    private suspend fun dueReminderBody(minutes: Int): String = when {
-        minutes == 0 -> getString(Res.string.task_reminder_due_now)
-        minutes < 60 -> getString(Res.string.task_reminder_due_in_minutes, minutes)
-        minutes < 1440 -> {
-            val hours = minutes / 60
-            getString(
-                if (hours == 1) {
-                    Res.string.task_reminder_due_in_hour
-                } else {
-                    Res.string.task_reminder_due_in_hours
-                },
-                hours,
-            )
-        }
+    private suspend fun dueReminderBody(minutes: Int): String = textProvider.taskDue(minutes)
 
-        else -> {
-            val days = minutes / 1440
-            getString(
-                if (days == 1) {
-                    Res.string.task_reminder_due_in_day
-                } else {
-                    Res.string.task_reminder_due_in_days
-                },
-                days,
-            )
-        }
-    }
-
-    private suspend fun startingReminderBody(minutes: Int): String = when {
-        minutes == 0 -> getString(Res.string.task_reminder_starting_now)
-        minutes < 60 -> getString(Res.string.task_reminder_starting_in_minutes, minutes)
-        else -> {
-            val hours = minutes / 60
-            getString(
-                if (hours == 1) {
-                    Res.string.task_reminder_starting_in_hour
-                } else {
-                    Res.string.task_reminder_starting_in_hours
-                },
-                hours,
-            )
-        }
-    }
+    private suspend fun startingReminderBody(minutes: Int): String = textProvider.taskStarting(minutes)
 
     internal fun Task.legacyReminderTriggers(): List<ReminderTrigger> {
         if (dateReminders.isNotBlank() || durationReminders.isNotBlank()) return emptyList()

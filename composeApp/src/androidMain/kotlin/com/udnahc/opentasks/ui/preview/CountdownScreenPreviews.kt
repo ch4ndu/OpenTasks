@@ -5,7 +5,6 @@ import com.udnahc.opentasks.ui.screens.countdown.CountdownCard
 import com.udnahc.opentasks.ui.screens.countdown.CountdownContent
 import com.udnahc.opentasks.ui.screens.countdown.previewCountdowns
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import kotlinx.datetime.LocalDate
 
 @Composable
 @LightDarkPreview
@@ -40,8 +39,7 @@ private fun CountdownContentEmptyPreview() {
 private fun CountdownCardPreview() {
     OpenTasksTheme {
         CountdownCard(
-            countdown = previewCountdowns.first(),
-            today = LocalDate(2026, 1, 1),
+            item = previewCountdowns.first(),
             onClick = {},
         )
     }

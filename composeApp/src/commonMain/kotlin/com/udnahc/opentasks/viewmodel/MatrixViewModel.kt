@@ -3,7 +3,6 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
-import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.TaskCategory
@@ -18,12 +17,14 @@ import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
+import com.udnahc.opentasks.domain.time.LocalDaySignal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
 
 class MatrixViewModel(
@@ -41,6 +43,7 @@ class MatrixViewModel(
     private val toggleTaskStarredAction: ToggleTaskStarredAction,
     private val updateTaskStatusAction: UpdateTaskStatusAction,
     observeTaskImageSummaries: ObserveTaskImageSummariesUseCase,
+    localDaySignal: LocalDaySignal,
 ) : ViewModel() {
 
     data class TaskCategoryGroup(
@@ -73,7 +76,9 @@ class MatrixViewModel(
     val categorizedTasks: StateFlow<List<TaskCategoryGroup>> = _viewMode
         .flatMapLatest { mode ->
             if (mode == TaskListViewMode.LIST) {
-                tasksForSelectedPriority.map { tasks -> categorize(tasks) }
+                combine(tasksForSelectedPriority, localDaySignal.dates) { tasks, today ->
+                    categorize(tasks, today)
+                }
             } else {
                 flowOf(emptyList())
             }
@@ -126,8 +131,10 @@ class MatrixViewModel(
         viewModelScope.launch(Dispatchers.IO) { toggleTaskStarredAction(task) }
     }
 
-    private fun categorize(tasks: List<Task>): List<TaskCategoryGroup> {
-        val today = todayLocal()
+    private fun categorize(
+        tasks: List<Task>,
+        today: LocalDate,
+    ): List<TaskCategoryGroup> {
         val tomorrow = today.plus(1, DateTimeUnit.DAY)
         val next7 = today.plus(7, DateTimeUnit.DAY)
         val startOfToday = startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)

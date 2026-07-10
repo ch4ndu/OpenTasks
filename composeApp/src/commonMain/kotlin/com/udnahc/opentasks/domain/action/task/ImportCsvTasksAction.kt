@@ -9,6 +9,7 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import org.lighthousegames.logging.logging
 
 private val log = logging("ImportCsvTasksAction")
@@ -17,6 +18,7 @@ class ImportCsvTasksAction(
     private val taskRepository: TaskRepository,
     private val categoryRepository: CategoryRepository,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
+    private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
 ) {
     suspend operator fun invoke(tasks: List<CsvTask>): Int {
         log.d { "Importing ${tasks.size} CSV tasks" }
@@ -25,6 +27,7 @@ class ImportCsvTasksAction(
         val categoryCache = mutableMapOf<String, String>()
         val now = localNow()
         var importedCount = 0
+        val importedTaskIds = mutableListOf<String>()
 
         for (csvTask in tasks) {
             val externalId = "csv_${csvTask.title.hashCode()}_${csvTask.createdAt}"
@@ -49,10 +52,13 @@ class ImportCsvTasksAction(
                 updatedAt = now,
             )
             taskRepository.insert(task)
-            scheduleTaskRemindersAction(task.id)
+            importedTaskIds += task.id
             importedCount++
         }
 
+        rebuildReminderQueueAction?.afterRecordChange {
+            importedTaskIds.forEach { scheduleTaskRemindersAction(it) }
+        } ?: importedTaskIds.forEach { scheduleTaskRemindersAction(it) }
         log.d { "Imported $importedCount CSV tasks" }
         return importedCount
     }

@@ -8,13 +8,14 @@ import com.udnahc.opentasks.data.model.CalendarListDisplayModePreference
 import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.isCountdownItem
-import com.udnahc.opentasks.data.model.toCalendarTask
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarListDisplayModePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAction
 import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
+import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
+import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownCalendarTasks
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarListDisplayModePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarViewPreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
@@ -42,6 +43,7 @@ class CalendarViewModel(
     saveCalendarViewPreference: SaveCalendarViewPreferenceAction,
     observeCalendarListDisplayModePreference: ObserveCalendarListDisplayModePreferenceUseCase,
     saveCalendarListDisplayModePreference: SaveCalendarListDisplayModePreferenceAction,
+    localDaySignal: LocalDaySignal = LocalDaySignal(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
@@ -76,12 +78,14 @@ class CalendarViewModel(
     val tasksByDay: StateFlow<Map<Long, List<Task>>> = combine(
         observeTasksByDay(),
         observeAllCountdowns(),
-    ) { tasksMap, countdowns ->
+        localDaySignal.dates,
+    ) { tasksMap, countdowns, today ->
         val merged = tasksMap.toMutableMap()
-        for (countdown in countdowns) {
-            val dk = dayKey(countdown.targetDate)
+        for (countdownTask in projectCountdownCalendarTasks(countdowns, today)) {
+            val deadline = countdownTask.deadline ?: continue
+            val dk = dayKey(deadline)
             val existing = merged[dk].orEmpty()
-            merged[dk] = existing + countdown.toCalendarTask()
+            merged[dk] = existing + countdownTask
         }
         merged.mapValues { (_, tasks) -> sortCalendarTasksForDay(tasks) }
     }

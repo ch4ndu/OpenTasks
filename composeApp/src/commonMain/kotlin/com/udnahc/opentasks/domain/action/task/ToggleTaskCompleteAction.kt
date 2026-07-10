@@ -6,6 +6,7 @@ import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import org.lighthousegames.logging.logging
 
 private val log = logging("ToggleTaskCompleteAction")
@@ -13,6 +14,7 @@ private val log = logging("ToggleTaskCompleteAction")
 class ToggleTaskCompleteAction(
     private val repository: TaskRepository,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
+    private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
 ) {
     suspend operator fun invoke(
         task: Task,
@@ -56,7 +58,8 @@ class ToggleTaskCompleteAction(
         }
 
         repository.update(updated)
-        scheduleTaskRemindersAction(updated.id)
+        rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(updated.id) }
+            ?: scheduleTaskRemindersAction(updated.id)
     }
 
     private fun advanceRecurrence(

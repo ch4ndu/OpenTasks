@@ -26,9 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
-import com.udnahc.opentasks.data.extensions.todayLocal
-import com.udnahc.opentasks.data.model.Countdown
+import com.udnahc.opentasks.domain.usecase.countdown.CountdownOccurrence
+import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownOccurrence
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
 import com.udnahc.opentasks.ui.screens.OpenTasksBackButton
@@ -37,33 +36,22 @@ import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.util.formatLocalizedDateWithWeekday
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.countdown_days_since
 import opentasks.composeapp.generated.resources.countdown_days_until
+import opentasks.composeapp.generated.resources.countdown_detail_subtitle
 import opentasks.composeapp.generated.resources.countdown_today_is
 import opentasks.composeapp.generated.resources.delete
 import opentasks.composeapp.generated.resources.edit
 import opentasks.composeapp.generated.resources.loading
+import kotlinx.datetime.LocalDate
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 
-private val DAY_NAMES = arrayOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-private val MONTH_NAMES_SHORT = arrayOf(
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-)
-
-private fun formatTargetDateLabel(localMillis: Long): String {
-    val date = localMillisToLocalDate(localMillis)
-    val dayName = DAY_NAMES[date.dayOfWeek.ordinal]
-    return "$dayName, ${date.year}.${
-        date.monthNumber.toString().padStart(2, '0')
-    }.${date.dayOfMonth.toString().padStart(2, '0')}"
-}
-
 @Composable
 fun CountdownDetailScreen(
-    countdown: Countdown?,
+    countdown: CountdownOccurrence?,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -79,7 +67,7 @@ fun CountdownDetailScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CountdownDetailContent(
-    countdown: Countdown?,
+    countdown: CountdownOccurrence?,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -132,11 +120,9 @@ internal fun CountdownDetailContent(
             )
 
             if (countdown != null) {
-                val today = todayLocal()
-                val daysLeft = remember(countdown.targetDate, today) {
-                    computeDaysUntil(countdown.targetDate, today)
-                }
-                val isCountUp = countdown.countingMode == CountingMode.COUNT_UP
+                val source = countdown.countdown
+                val daysLeft = countdown.daysUntil
+                val isCountUp = source.countingMode == CountingMode.COUNT_UP
                 val displayDays = abs(daysLeft)
                 val subtitlePrefix = when {
                     isCountUp && daysLeft < 0 -> stringResource(Res.string.countdown_days_since)
@@ -145,8 +131,10 @@ internal fun CountdownDetailContent(
                     daysLeft == 0 -> stringResource(Res.string.countdown_today_is)
                     else -> stringResource(Res.string.countdown_days_until)
                 }
-                val dateLabel = formatTargetDateLabel(countdown.targetDate)
-                val typeColor = countdownTypeColor(countdown.countdownType)
+                val dateLabel = remember(countdown.effectiveDate) {
+                    formatLocalizedDateWithWeekday(countdown.effectiveDate)
+                }
+                val typeColor = countdownTypeColor(source.countdownType)
 
                 Spacer(Modifier.height(dimens.paddingXXLarge))
 
@@ -170,9 +158,13 @@ internal fun CountdownDetailContent(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        // Subtitle: "Days until Thu, 2026.04.02"
+                        // Subtitle combines the localized relative prefix and platform date label.
                         Text(
-                            text = "$subtitlePrefix $dateLabel",
+                            text = stringResource(
+                                Res.string.countdown_detail_subtitle,
+                                subtitlePrefix,
+                                dateLabel,
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -193,7 +185,7 @@ internal fun CountdownDetailContent(
 
                         // Countdown name
                         Text(
-                            text = countdown.title,
+                            text = source.title,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = typeColor,
@@ -219,10 +211,15 @@ internal fun CountdownDetailContent(
 
 // -- Previews ------------------------------------------------------------------
 
-internal val previewCountdown = Countdown(
+private val previewCountdownSource = com.udnahc.opentasks.data.model.Countdown(
     id = "preview-detail",
     title = "Project Launch",
     targetDate = 1775088000000L,
     countdownType = CountdownType.COUNTDOWN,
     countingMode = CountingMode.COUNTDOWN,
+)
+
+internal val previewCountdown = projectCountdownOccurrence(
+    previewCountdownSource,
+    LocalDate(2026, 1, 1),
 )

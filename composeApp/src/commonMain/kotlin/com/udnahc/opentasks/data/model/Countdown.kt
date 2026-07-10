@@ -14,7 +14,7 @@ val Task.isCountdownItem: Boolean
  * Converts a Countdown to a Task representation for display in calendar views.
  * The countdown appears as an all-day event with a priority color mapped from its type.
  */
-fun Countdown.toCalendarTask(): Task = Task(
+fun Countdown.toCalendarTask(effectiveTargetDate: Long = targetDate): Task = Task(
     id = "${COUNTDOWN_ID_PREFIX}$id",
     title = title,
     content = "",
@@ -24,7 +24,7 @@ fun Countdown.toCalendarTask(): Task = Task(
         CountdownType.ANNIVERSARY -> TaskPriority.LOW    // blue
         CountdownType.COUNTDOWN -> TaskPriority.MEDIUM   // amber
     },
-    deadline = targetDate,
+    deadline = effectiveTargetDate,
     isAllDay = true,
     status = if (isCompleted) TaskStatus.DONE else TaskStatus.TODO,
 )

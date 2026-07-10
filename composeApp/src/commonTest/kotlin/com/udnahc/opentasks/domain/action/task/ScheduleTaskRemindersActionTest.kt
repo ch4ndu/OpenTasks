@@ -6,6 +6,7 @@ import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.ReminderScheduler
+import com.udnahc.opentasks.data.notification.ReminderTextProvider
 import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
 import com.udnahc.opentasks.testutil.FakeTaskRepository
 import com.udnahc.opentasks.testutil.testTask
@@ -124,6 +125,26 @@ class ScheduleTaskRemindersActionTest {
 
         assertEquals(listOf(deadline), scheduler.scheduledAt)
         assertTrue(scheduler.startedOngoing.isEmpty())
+    }
+
+    @Test
+    fun reminderBodyComesFromInjectedResourceFreeProvider() = runTest {
+        val timeZone = TimeZone.currentSystemDefault()
+        val now = LocalDateTime(2026, 5, 8, 12, 0).toInstant(timeZone).toEpochMilliseconds()
+        val deadline = LocalDateTime(2026, 5, 8, 13, 0).toInstant(timeZone).toEpochMilliseconds()
+        val scheduler = FakeReminderScheduler()
+        val action = ScheduleTaskRemindersAction(
+            scheduler = scheduler,
+            taskRepository = FakeTaskRepository(
+                listOf(testTask(id = "text", deadline = deadline, dateReminders = "0"))
+            ),
+            textProvider = FakeReminderTextProvider,
+            nowUtcMillisProvider = { now },
+        )
+
+        action("text")
+
+        assertTrue(scheduler.scheduled.any { it.body == "task-due-0" })
     }
 
     @Test
@@ -301,6 +322,7 @@ class ScheduleTaskRemindersActionTest {
 
 private class FakeReminderScheduler : ReminderScheduler {
     data class ScheduledReminder(
+        val body: String,
         val triggerAtMillis: Long,
         val occurrenceDeadlineUtcMillis: Long?,
         val allowMarkDone: Boolean,
@@ -326,6 +348,7 @@ private class FakeReminderScheduler : ReminderScheduler {
         scheduledAt.add(triggerAtMillis)
         scheduled.add(
             ScheduledReminder(
+                body = body,
                 triggerAtMillis = triggerAtMillis,
                 occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
                 allowMarkDone = allowMarkDone,
@@ -352,4 +375,12 @@ private class FakeReminderScheduler : ReminderScheduler {
     }
 
     override fun stopOngoing(taskId: String) = Unit
+}
+
+private object FakeReminderTextProvider : ReminderTextProvider {
+    override suspend fun taskDue(minutes: Int): String = "task-due-$minutes"
+    override suspend fun taskStarting(minutes: Int): String = "task-starting-$minutes"
+    override suspend fun taskEndingNow(): String = "task-ending"
+    override suspend fun taskOverdue(): String = "task-overdue"
+    override suspend fun countdownDue(minutes: Int): String = "countdown-due-$minutes"
 }

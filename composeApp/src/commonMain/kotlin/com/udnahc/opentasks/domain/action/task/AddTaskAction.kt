@@ -7,6 +7,7 @@ import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import org.lighthousegames.logging.logging
 
 private val log = logging("AddTaskAction")
@@ -14,6 +15,7 @@ private val log = logging("AddTaskAction")
 class AddTaskAction(
     private val repository: TaskRepository,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
+    private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
 ) {
     suspend operator fun invoke(
         title: String,
@@ -69,7 +71,8 @@ class AddTaskAction(
         )
         repository.insert(task)
         log.v { "Task created: id=${task.id}" }
-        scheduleTaskRemindersAction(task.id)
+        rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(task.id) }
+            ?: scheduleTaskRemindersAction(task.id)
         return task
     }
 }

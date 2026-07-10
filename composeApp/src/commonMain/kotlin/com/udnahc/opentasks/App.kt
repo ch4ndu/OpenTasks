@@ -55,11 +55,11 @@ import com.udnahc.opentasks.data.model.TaskFormData
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
-import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemindersAction
+import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
-import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
+import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import com.udnahc.opentasks.navigation.AppNavController
@@ -151,10 +151,9 @@ fun App(
         val navController = remember { AppNavController(backStack) }
         var taskNotificationEvent by remember { mutableStateOf<NotificationDeepLinkEvent?>(null) }
         val initializeSyncAction = koinInject<InitializeSyncAction>()
-        val rescheduleAllRemindersAction = koinInject<RescheduleAllRemindersAction>()
-        val rescheduleAllCountdownRemindersAction =
-            koinInject<RescheduleAllCountdownRemindersAction>()
+        val rebuildReminderQueueAction = koinInject<RebuildReminderQueueAction>()
         val triggerSyncAction = koinInject<TriggerSyncAction>()
+        val localDaySignal = koinInject<LocalDaySignal>()
         val isSyncInitialized = remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) {
@@ -164,22 +163,29 @@ fun App(
                     log.e(e) { "Initial sync failed" }
                 }
                 try {
-                    rescheduleAllRemindersAction()
+                    rebuildReminderQueueAction()
                 } catch (e: Exception) {
-                    log.e(e) { "Initial task reminder reschedule failed" }
-                }
-                try {
-                    rescheduleAllCountdownRemindersAction()
-                } catch (e: Exception) {
-                    log.e(e) { "Initial countdown reminder reschedule failed" }
+                    log.e(e) { "Initial reminder queue rebuild failed" }
                 }
             }
             isSyncInitialized.value = true
         }
         val syncScope = rememberCoroutineScope()
         LifecycleResumeEffect(isSyncInitialized.value) {
+            localDaySignal.refresh()
             if (isSyncInitialized.value) {
-                syncScope.launch(Dispatchers.IO) { triggerSyncAction() }
+                syncScope.launch(Dispatchers.IO) {
+                    try {
+                        triggerSyncAction.syncNow()
+                    } catch (e: Exception) {
+                        log.e(e) { "Resume sync failed" }
+                    }
+                    try {
+                        rebuildReminderQueueAction()
+                    } catch (e: Exception) {
+                        log.e(e) { "Resume reminder queue rebuild failed" }
+                    }
+                }
             }
             onPauseOrDispose { }
         }
@@ -700,8 +706,9 @@ private fun MainScreen(
                     val viewModel: CountdownFormViewModel = koinViewModel()
                     LaunchedEffect(screen.countdownId) { viewModel.setCountdownId(screen.countdownId) }
                     val countdown by viewModel.editCountdown.collectAsState()
+                    val detailCountdown by viewModel.detailCountdown.collectAsState()
                     CountdownDetailScreen(
-                        countdown = countdown,
+                        countdown = detailCountdown,
                         onBack = { navController.popBackStack() },
                         onEdit = {
                             navController.navigate(Screen.EditCountdown(screen.countdownId))

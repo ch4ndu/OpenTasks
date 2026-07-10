@@ -26,6 +26,21 @@ interface ReminderScheduler {
     )
 
     fun stopOngoing(taskId: String)
+
+    suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
+        requests.forEach { request ->
+            schedule(
+                taskId = request.eventId,
+                title = request.title,
+                body = request.body,
+                triggerAtMillis = request.triggerAtUtcMillis,
+                reminderId = request.reminderId,
+                occurrenceDeadlineUtcMillis = request.occurrenceUtcMillis,
+                allowMarkDone = request.allowMarkDone,
+                rescheduleAfterFire = request.rescheduleAfterFire,
+            )
+        }
+    }
 }
 
 expect class NotificationScheduler : ReminderScheduler {
@@ -54,4 +69,5 @@ expect class NotificationScheduler : ReminderScheduler {
     )
 
     override fun stopOngoing(taskId: String)
+    override suspend fun replacePendingReminders(requests: List<ReminderRequest>)
 }

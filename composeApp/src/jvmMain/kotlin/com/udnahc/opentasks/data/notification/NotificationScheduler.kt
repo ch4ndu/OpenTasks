@@ -20,4 +20,18 @@ actual class NotificationScheduler : ReminderScheduler {
         occurrenceDeadlineUtcMillis: Long?,
     ) {}
     actual override fun stopOngoing(taskId: String) {}
+    actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
+        requests.forEach { request ->
+            schedule(
+                request.eventId,
+                request.title,
+                request.body,
+                request.triggerAtUtcMillis,
+                request.reminderId,
+                request.occurrenceUtcMillis,
+                request.allowMarkDone,
+                request.rescheduleAfterFire,
+            )
+        }
+    }
 }

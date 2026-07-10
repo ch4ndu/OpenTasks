@@ -12,6 +12,7 @@ import com.udnahc.opentasks.data.repository.CategoryRepository
 import com.udnahc.opentasks.data.repository.TagRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.domain.action.tag.AddTagAction
+import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.calendar_import_all_day_event
 import opentasks.composeapp.generated.resources.calendar_import_calendar_name
@@ -26,6 +27,7 @@ class ImportCalendarEventsAction(
     private val tagRepository: TagRepository,
     private val addTagAction: AddTagAction,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
+    private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
 ) {
     suspend operator fun invoke(events: List<CalendarEvent>): Int {
         log.d { "Importing ${events.size} calendar events" }
@@ -49,6 +51,7 @@ class ImportCalendarEventsAction(
 
         val now = localNow()
         var importedCount = 0
+        val importedTaskIds = mutableListOf<String>()
 
         for (event in events) {
             // Skip duplicates
@@ -78,13 +81,16 @@ class ImportCalendarEventsAction(
                 updatedAt = now,
             )
             taskRepository.insert(task)
-            scheduleTaskRemindersAction(task.id)
+            importedTaskIds += task.id
 
             // Tag the task
             tagRepository.insertTaskTag(TaskTag(taskId = task.id, tagId = tag.id))
             importedCount++
         }
 
+        rebuildReminderQueueAction?.afterRecordChange {
+            importedTaskIds.forEach { scheduleTaskRemindersAction(it) }
+        } ?: importedTaskIds.forEach { scheduleTaskRemindersAction(it) }
         log.d { "Imported $importedCount calendar events" }
         return importedCount
     }

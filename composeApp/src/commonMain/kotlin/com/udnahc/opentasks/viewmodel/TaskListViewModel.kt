@@ -2,9 +2,7 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
-import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.Category
@@ -29,6 +27,7 @@ import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
+import com.udnahc.opentasks.domain.time.LocalDaySignal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
@@ -42,6 +41,9 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
 
 class TaskListViewModel(
     observeTasksForCategory: ObserveTasksForCategoryUseCase,
@@ -58,6 +60,7 @@ class TaskListViewModel(
     private val saveTaskListViewModeAction: SaveTaskListViewModeAction,
     private val updateTaskStatusAction: UpdateTaskStatusAction,
     observeTaskImageSummaries: ObserveTaskImageSummariesUseCase,
+    localDaySignal: LocalDaySignal,
 ) : ViewModel() {
 
     data class SectionGroup(
@@ -96,8 +99,7 @@ class TaskListViewModel(
                     todayTasks.overdue + todayTasks.today + todayTasks.completedToday
                 }
 
-                is TaskListFilter.Overdue -> observeAllTasks().map { tasks ->
-                    val today = todayLocal()
+                is TaskListFilter.Overdue -> combine(observeAllTasks(), localDaySignal.dates) { tasks, today ->
                     val startOfToday =
                         startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)
                     tasks.filter { it.status != TaskStatus.DONE && it.deadline != null && it.deadline < startOfToday }
@@ -111,11 +113,12 @@ class TaskListViewModel(
                     tasks.filter { it.status != TaskStatus.DONE && it.priority == TaskPriority.HIGH }
                 }
 
-                is TaskListFilter.DueThisWeek -> observeAllTasks().map { tasks ->
-                    val today = todayLocal()
+                is TaskListFilter.DueThisWeek -> combine(observeAllTasks(), localDaySignal.dates) { tasks, today ->
                     val startOfToday =
                         startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)
-                    val endOfWeek = startOfToday + 7 * MILLIS_PER_DAY
+                    val endDate = today.plus(7, DateTimeUnit.DAY)
+                    val endOfWeek =
+                        startOfDayLocalMillis(endDate.year, endDate.monthNumber, endDate.dayOfMonth)
                     tasks.filter { it.status != TaskStatus.DONE && it.deadline != null && it.deadline >= startOfToday && it.deadline < endOfWeek }
                 }
             }
@@ -151,7 +154,9 @@ class TaskListViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val groupedActiveTasks: StateFlow<List<SectionGroup>> =
-        activeTasksForSelectedCategory.map { tasks -> groupActiveTasks(tasks) }
+        combine(activeTasksForSelectedCategory, localDaySignal.dates) { tasks, today ->
+            groupActiveTasks(tasks, today)
+        }
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -159,11 +164,11 @@ class TaskListViewModel(
     val listProjection: StateFlow<ListProjection> = viewMode
         .flatMapLatest { mode ->
             if (mode == TaskListViewMode.LIST) {
-                combine(tasksForSelectedCategory, sortOption) { tasks, sort ->
+                combine(tasksForSelectedCategory, sortOption, localDaySignal.dates) { tasks, sort, today ->
                     val active = tasks.filter { it.status != TaskStatus.DONE }
                     ListProjection(
                         completedTasks = tasks.filter { it.status == TaskStatus.DONE },
-                        groupedActiveTasks = groupActiveTasks(sortTasks(active, sort)),
+                        groupedActiveTasks = groupActiveTasks(sortTasks(active, sort), today),
                     )
                 }
             } else {
@@ -266,8 +271,10 @@ class TaskListViewModel(
         TaskSortOption.BY_TITLE -> tasks.sortedBy { it.title.lowercase() }
     }
 
-    private fun groupActiveTasks(tasks: List<Task>): List<SectionGroup> {
-        val today = todayLocal()
+    private fun groupActiveTasks(
+        tasks: List<Task>,
+        today: LocalDate,
+    ): List<SectionGroup> {
         val startOfToday =
             startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)
         val overdueTasks = tasks.filter { it.deadline != null && it.deadline < startOfToday }
@@ -282,4 +289,5 @@ class TaskListViewModel(
             }
         }
     }
+
 }

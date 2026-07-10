@@ -27,14 +27,24 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - UI date pickers use `computeLocalMillis()`.
 - Use `kotlinx-datetime` and `data/extensions/DateTimeUtils.kt` for date math.
 - Do not use raw day millis literals such as `86400000L`; use utilities or named constants.
+- Date-relative ViewModel projections consume the shared `LocalDaySignal`; it checks for local-day rollover while collected and is refreshed on app resume.
+- Countdown recurrence is derived from the immutable stored target. Countdown mode projects the next occurrence, count-up mode projects the latest reached occurrence, and calendar projection emits one effective occurrence.
 
 ## Approved Boundary Exceptions
 
 - Notification scheduling uses raw UTC through `getTaskByIdUtc()` and `getTasksWithDeadlines()`.
 - `ScheduleTaskRemindersAction` may use UTC-specific reads.
+- `ScheduleCountdownRemindersAction` may use UTC-specific reads and converts to local calendar recurrence before returning to the UTC scheduling boundary.
 - `RescheduleAllRemindersAction` uses UTC task access for deadlines.
 - `WidgetDataProvider` and `SyncService` may read DAOs directly.
 - Import Actions convert external UTC inputs to local at the system boundary.
+
+## Reminder Queue
+
+- Reminder-domain text is supplied through `ReminderTextProvider`; production uses localized resources and tests use a resource-free provider.
+- Android schedules one recurring occurrence at a time. The final alarm in an occurrence bundle chains the next task or countdown occurrence after validating that the record and occurrence are still active.
+- iOS rebuilds a unified task-and-countdown queue capped at 60 pending requests. Queue selection reserves complete nearest-occurrence bundles per event before filling remaining capacity by trigger time, and request IDs include the occurrence timestamp.
+- `RebuildReminderQueueAction` owns launch, resume, boot/background, post-sync, and iOS record-change queue rebuilding. Do not create a separate iOS per-feature queue.
 
 ## Sync
 

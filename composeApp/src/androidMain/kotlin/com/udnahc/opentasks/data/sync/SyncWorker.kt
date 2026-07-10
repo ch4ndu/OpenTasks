@@ -3,9 +3,8 @@ package com.udnahc.opentasks.data.sync
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemindersAction
+import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import com.udnahc.opentasks.domain.action.settings.ConfigurePocketBaseUrlAction
-import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import com.udnahc.opentasks.widget.CalendarWidget
 import com.udnahc.opentasks.widget.TaskWidget
 import com.udnahc.opentasks.widget.WeekWidget
@@ -22,8 +21,7 @@ class SyncWorker(
 
     private val syncService: SyncService by inject()
     private val configurePocketBaseUrlAction: ConfigurePocketBaseUrlAction by inject()
-    private val rescheduleAllRemindersAction: RescheduleAllRemindersAction by inject()
-    private val rescheduleAllCountdownRemindersAction: RescheduleAllCountdownRemindersAction by inject()
+    private val rebuildReminderQueueAction: RebuildReminderQueueAction by inject()
 
     override suspend fun doWork(): Result {
         log.d { "SyncWorker starting" }
@@ -33,8 +31,7 @@ class SyncWorker(
                 return Result.success()
             }
             syncService.syncAll()
-            rescheduleAllRemindersAction()
-            rescheduleAllCountdownRemindersAction()
+            rebuildReminderQueueAction()
             TaskWidget.refreshAllWidgets(applicationContext)
             CalendarWidget.refreshAllWidgets(applicationContext)
             WeekWidget.refreshAllWidgets(applicationContext)

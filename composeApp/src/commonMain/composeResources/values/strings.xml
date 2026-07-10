@@ -83,6 +83,7 @@
     <string name="duration">Duration</string>
     <string name="time">Time</string>
     <string name="today">Today</string>
+    <string name="countdown_detail_subtitle">%1$s %2$s</string>
     <string name="all_day">All day</string>
     <string name="previous_month">Previous month</string>
     <string name="next_month">Next month</string>
@@ -376,6 +377,7 @@
     <string name="countdown_filter_anniversary">Anniversary</string>
     <string name="countdown_filter_countdown">Countdown</string>
     <string name="countdown_no_items">No countdowns yet</string>
+    <string name="countdown_no_visible_items">No countdowns are visible for this filter today</string>
     <string name="countdown_days_left">Days Left</string>
     <string name="countdown_days_ago">Days Ago</string>
     <string name="countdown_days_since">Days Since</string>

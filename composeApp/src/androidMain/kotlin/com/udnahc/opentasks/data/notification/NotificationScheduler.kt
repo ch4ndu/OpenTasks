@@ -217,6 +217,21 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         NotificationManagerCompat.from(context).cancel(notificationId)
     }
 
+    actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
+        requests.forEach { request ->
+            schedule(
+                taskId = request.eventId,
+                title = request.title,
+                body = request.body,
+                triggerAtMillis = request.triggerAtUtcMillis,
+                reminderId = request.reminderId,
+                occurrenceDeadlineUtcMillis = request.occurrenceUtcMillis,
+                allowMarkDone = request.allowMarkDone,
+                rescheduleAfterFire = request.rescheduleAfterFire,
+            )
+        }
+    }
+
     companion object {
         const val CHANNEL_ID = "task_reminders"
         const val ONGOING_CHANNEL_ID = "all_day_tasks"

@@ -4,10 +4,12 @@ import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 
 class UpdateTaskStatusAction(
     private val repository: TaskRepository,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
+    private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
 ) {
     suspend operator fun invoke(
         task: Task,
@@ -15,6 +17,7 @@ class UpdateTaskStatusAction(
     ) {
         val updated = task.copy(status = newStatus, updatedAt = localNow())
         repository.update(updated)
-        scheduleTaskRemindersAction(updated.id)
+        rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(updated.id) }
+            ?: scheduleTaskRemindersAction(updated.id)
     }
 }

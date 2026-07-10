@@ -19,6 +19,8 @@ import com.udnahc.opentasks.data.database.MIGRATION_10_11
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
+import com.udnahc.opentasks.data.notification.LocalizedReminderTextProvider
+import com.udnahc.opentasks.data.notification.ReminderTextProvider
 import com.udnahc.opentasks.data.repository.AppSettingsRepository
 import com.udnahc.opentasks.data.repository.AppSettingsRepositoryImpl
 import com.udnahc.opentasks.data.repository.AttachmentRepository
@@ -55,6 +57,7 @@ import com.udnahc.opentasks.domain.action.countdown.UpdateCountdownAction
 import com.udnahc.opentasks.domain.action.note.AddNoteAction
 import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
 import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
+import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.ConfigurePocketBaseUrlAction
@@ -84,6 +87,7 @@ import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
 import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
+import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImagesUseCase
@@ -131,6 +135,7 @@ import org.koin.dsl.module
 expect val platformModule: Module
 
 val sharedModule = module {
+    single<ReminderTextProvider> { LocalizedReminderTextProvider() }
     single<AppDatabase> {
         get<androidx.room.RoomDatabase.Builder<AppDatabase>>()
             .addMigrations(
@@ -190,7 +195,8 @@ val sharedModule = module {
     factory { ObserveTagsForTaskUseCase(get()) }
     factory { ObserveTaskByIdUseCase(get()) }
     single { ObservePocketBaseUrlUseCase(get()) }
-    single { ObserveTodayTasksUseCase(get()) }
+    single { LocalDaySignal() }
+    single { ObserveTodayTasksUseCase(get(), get()) }
     single { ObserveTaskSortOptionUseCase(get()) }
     single { ObserveTaskListViewModeUseCase(get()) }
     single { ObserveThemePreferenceUseCase(get()) }
@@ -206,31 +212,32 @@ val sharedModule = module {
     single { GenerateIcsExportAction(get()) }
 
     // Actions
-    single { AddTaskAction(get(), get()) }
-    single { UpdateTaskAction(get(), get()) }
-    single { DeleteTaskAction(get(), get(), get(), get()) }
+    single { AddTaskAction(get(), get(), get()) }
+    single { UpdateTaskAction(get(), get(), get()) }
+    single { DeleteTaskAction(get(), get(), get(), get(), get()) }
     single { AddTaskImageAction(get(), get()) }
     single { RemoveTaskImageAction(get(), get()) }
-    single { ToggleTaskCompleteAction(get(), get()) }
+    single { ToggleTaskCompleteAction(get(), get(), get()) }
     single { MarkTaskNotificationDoneAction(get(), get()) }
     single { DismissTaskNotificationAction(get(), get(), get<NotificationScheduler>()) }
     single { ToggleTaskStarredAction(get()) }
     single { UpdateSectionAction(get()) }
     single { AddCategoryAction(get()) }
     single { AddNoteAction(get()) }
-    single { AddCountdownAction(get(), get()) }
-    single { UpdateCountdownAction(get(), get()) }
-    single { DeleteCountdownAction(get(), get()) }
+    single { AddCountdownAction(get(), get(), get()) }
+    single { UpdateCountdownAction(get(), get(), get()) }
+    single { DeleteCountdownAction(get(), get(), get()) }
     single { UpdateNoteAction(get()) }
     single { DeleteNoteAction(get()) }
     single { AddTagAction(get()) }
     single { TagTaskAction(get()) }
-    single { ImportCalendarEventsAction(get(), get(), get(), get(), get()) }
-    single { ImportCsvTasksAction(get(), get(), get()) }
-    single { ScheduleTaskRemindersAction(get<NotificationScheduler>(), get(), get()) }
+    single { ImportCalendarEventsAction(get(), get(), get(), get(), get(), get()) }
+    single { ImportCsvTasksAction(get(), get(), get(), get()) }
+    single { ScheduleTaskRemindersAction(get<NotificationScheduler>(), get(), get(), get()) }
     single { RescheduleAllRemindersAction(get(), get()) }
-    single { ScheduleCountdownRemindersAction(get(), get()) }
+    single { ScheduleCountdownRemindersAction(get(), get(), get()) }
     single { RescheduleAllCountdownRemindersAction(get(), get()) }
+    single { RebuildReminderQueueAction(get(), get(), get(), get(), get()) }
     single { SavePocketBaseUrlAction(get(), get(), get(), get()) }
     single { ClearPocketBaseUrlAction(get(), get()) }
     single { TriggerSyncAction(get(), get()) }
@@ -239,7 +246,7 @@ val sharedModule = module {
     single { InitializeSyncAction(get(), get()) }
     single { SaveTaskSortOptionAction(get()) }
     single { SaveTaskListViewModeAction(get()) }
-    single { UpdateTaskStatusAction(get(), get()) }
+    single { UpdateTaskStatusAction(get(), get(), get()) }
     single { SaveThemePreferenceAction(get()) }
     single { SaveTextSizePreferenceAction(get()) }
     single { SaveCalendarViewPreferenceAction(get()) }
@@ -287,9 +294,10 @@ val sharedModule = module {
     // ViewModels
     viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { TaskNotificationViewModel(get(), get(), get()) }
-    viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel {
         TaskListViewModel(
+            get(),
             get(),
             get(),
             get(),
@@ -306,13 +314,13 @@ val sharedModule = module {
             get()
         )
     }
-    viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { NoteViewModel(get(), get(), get(), get(), get()) }
     viewModel { ImportCalendarViewModel(get(), get(), get()) }
     viewModel { ImportIcsViewModel(get(), get()) }
     viewModel { ImportCsvViewModel(get(), get()) }
-    viewModel { CountdownViewModel(get(), get()) }
-    viewModel { CountdownFormViewModel(get(), get(), get(), get()) }
+    viewModel { CountdownViewModel(get(), get(), get()) }
+    viewModel { CountdownFormViewModel(get(), get(), get(), get(), get()) }
     viewModel {
         SettingsViewModel(
             get(),

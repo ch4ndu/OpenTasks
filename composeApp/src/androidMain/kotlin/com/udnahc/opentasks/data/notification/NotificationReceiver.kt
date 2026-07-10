@@ -13,6 +13,8 @@ import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.data.repository.CountdownRepository
+import com.udnahc.opentasks.domain.action.countdown.ScheduleCountdownRemindersAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,7 +28,9 @@ private val log = logging("NotificationReceiver")
 class NotificationReceiver : BroadcastReceiver(), KoinComponent {
 
     private val taskRepository: TaskRepository by inject()
+    private val countdownRepository: CountdownRepository by inject()
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction by inject()
+    private val scheduleCountdownRemindersAction: ScheduleCountdownRemindersAction by inject()
     private val notificationScheduler: NotificationScheduler by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -47,10 +51,23 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
             )
         }
 
-        if (taskId != null && !taskId.startsWith(COUNTDOWN_ID_PREFIX)) {
+        if (taskId != null) {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
                 try {
+                    if (taskId.startsWith(COUNTDOWN_ID_PREFIX)) {
+                        handleCountdownNotification(
+                            context = context,
+                            eventId = taskId,
+                            title = title,
+                            body = body,
+                            notificationId = notificationId,
+                            occurrenceTargetUtcMillis = occurrenceDeadlineUtcMillis,
+                            notificationAtUtcMillis = notificationAtUtcMillis,
+                            rescheduleAfterFire = rescheduleAfterFire,
+                        )
+                        return@launch
+                    }
                     val task = taskRepository.getTaskById(taskId)
                     if (task == null || task.status == TaskStatus.DONE || task.isDeleted) {
                         NotificationScheduler.cancelDisplayedReminders(context, taskId)
@@ -121,6 +138,50 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
                 allowMarkDone = allowMarkDone,
             )
         }
+    }
+
+    private suspend fun handleCountdownNotification(
+        context: Context,
+        eventId: String,
+        title: String,
+        body: String,
+        notificationId: Int,
+        occurrenceTargetUtcMillis: Long?,
+        notificationAtUtcMillis: Long,
+        rescheduleAfterFire: Boolean,
+    ) {
+        val countdownId = eventId.removePrefix(COUNTDOWN_ID_PREFIX)
+        val countdown = countdownRepository.getCountdownByIdUtc(countdownId)
+        if (countdown == null || countdown.isCompleted || countdown.isDeleted) {
+            NotificationScheduler.cancelDisplayedReminders(context, eventId)
+            notificationScheduler.cancelReminders(eventId)
+            log.d { "Skipping notification for inactive countdown $countdownId" }
+            return
+        }
+        if (
+            occurrenceTargetUtcMillis != null &&
+            !scheduleCountdownRemindersAction.isValidOccurrence(countdown, occurrenceTargetUtcMillis)
+        ) {
+            NotificationScheduler.cancelDisplayedReminders(context, eventId)
+            log.d { "Skipping stale notification for countdown $countdownId" }
+            return
+        }
+        if (rescheduleAfterFire && occurrenceTargetUtcMillis != null) {
+            scheduleCountdownRemindersAction.invokeAfterOccurrence(
+                countdownId,
+                occurrenceTargetUtcMillis,
+            )
+        }
+        showNotification(
+            context = context,
+            eventId = eventId,
+            title = title,
+            body = body,
+            notificationId = notificationId,
+            occurrenceDeadlineUtcMillis = occurrenceTargetUtcMillis,
+            notificationAtUtcMillis = notificationAtUtcMillis,
+            allowMarkDone = false,
+        )
     }
 
     private fun showNotification(
