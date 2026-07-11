@@ -335,7 +335,6 @@ val sharedModule = module {
             get(),
             get(),
             get(),
-            get(),
             get()
         )
     }

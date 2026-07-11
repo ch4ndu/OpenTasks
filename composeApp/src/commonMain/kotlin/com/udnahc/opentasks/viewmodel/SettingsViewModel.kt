@@ -19,7 +19,8 @@ import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionU
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTextSizePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
-import com.udnahc.opentasks.ui.util.FileSaver
+import com.udnahc.opentasks.ui.util.FileExportRequest
+import com.udnahc.opentasks.ui.util.FileExportResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,7 +58,6 @@ class SettingsViewModel(
     private val checkCalendarPermission: CheckCalendarPermissionUseCase,
     private val generateCsvExport: GenerateCsvExportAction,
     private val generateIcsExport: GenerateIcsExportAction,
-    private val fileSaver: FileSaver,
 ) : ViewModel() {
 
     val pocketBaseUrl: StateFlow<String?> = observePocketBaseUrl()
@@ -84,6 +84,9 @@ class SettingsViewModel(
 
     private val _exportResult = MutableStateFlow<ExportResult>(ExportResult.Idle)
     val exportResult: StateFlow<ExportResult> = _exportResult.asStateFlow()
+    private val _exportInProgress = MutableStateFlow(false)
+    val exportInProgress: StateFlow<Boolean> = _exportInProgress.asStateFlow()
+    private var pendingExportCount = 0
 
     private val _clearLocalDataStatus = MutableStateFlow(ClearLocalDataStatus.IDLE)
     val clearLocalDataStatus: StateFlow<ClearLocalDataStatus> =
@@ -166,32 +169,44 @@ class SettingsViewModel(
         _calendarGranted.value = granted
     }
 
-    fun exportCsv() {
+    fun prepareCsvExport(onReady: (FileExportRequest) -> Unit) {
+        if (!_exportInProgress.compareAndSet(expect = false, update = true)) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val (content, count) = generateCsvExport()
-                val fileName = "opentasks_export.csv"
-                val saved = fileSaver.save(fileName, content, "text/csv")
-                _exportResult.value = if (saved) ExportResult.Success(count) else ExportResult.Error
+                pendingExportCount = count
+                withContext(Dispatchers.Main) {
+                    onReady(FileExportRequest("opentasks_export.csv", content, "text/csv"))
+                }
             } catch (e: Exception) {
                 log.e(e) { "CSV export failed" }
                 _exportResult.value = ExportResult.Error
+                _exportInProgress.value = false
             }
         }
     }
 
-    fun exportIcs() {
+    fun prepareIcsExport(onReady: (FileExportRequest) -> Unit) {
+        if (!_exportInProgress.compareAndSet(expect = false, update = true)) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val (content, count) = generateIcsExport()
-                val fileName = "opentasks_export.ics"
-                val saved = fileSaver.save(fileName, content, "text/calendar")
-                _exportResult.value = if (saved) ExportResult.Success(count) else ExportResult.Error
+                pendingExportCount = count
+                withContext(Dispatchers.Main) {
+                    onReady(FileExportRequest("opentasks_export.ics", content, "text/calendar"))
+                }
             } catch (e: Exception) {
                 log.e(e) { "ICS export failed" }
                 _exportResult.value = ExportResult.Error
+                _exportInProgress.value = false
             }
         }
+    }
+
+    fun onExportResult(result: FileExportResult) {
+        _exportResult.value = result.toUiResult(pendingExportCount)
+        pendingExportCount = 0
+        _exportInProgress.value = false
     }
 
     fun clearExportResult() {
@@ -216,4 +231,10 @@ class SettingsViewModel(
     fun clearLocalDataErrorShown() {
         _clearLocalDataStatus.value = ClearLocalDataStatus.IDLE
     }
+}
+
+internal fun FileExportResult.toUiResult(count: Int): ExportResult = when (this) {
+    FileExportResult.Completed -> ExportResult.Success(count)
+    FileExportResult.Cancelled -> ExportResult.Idle
+    is FileExportResult.Error -> ExportResult.Error
 }

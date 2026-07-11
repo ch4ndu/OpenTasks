@@ -36,6 +36,7 @@ import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
+import com.udnahc.opentasks.ui.util.rememberFileExportLauncher
 import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
 import com.udnahc.opentasks.viewmodel.ClearLocalDataStatus
 import com.udnahc.opentasks.viewmodel.ExportResult
@@ -111,6 +112,7 @@ fun SettingsScreen(
     val calendarGranted by viewModel.calendarGranted.collectAsState()
 
     val exportResult by viewModel.exportResult.collectAsState()
+    val exportInProgress by viewModel.exportInProgress.collectAsState()
     val clearLocalDataStatus by viewModel.clearLocalDataStatus.collectAsState()
 
     val requestNotification = rememberNotificationPermissionLauncher { granted ->
@@ -118,6 +120,9 @@ fun SettingsScreen(
     }
     val requestCalendar = rememberCalendarPermissionLauncher { granted ->
         viewModel.onCalendarPermissionResult(granted)
+    }
+    val exportFile = rememberFileExportLauncher { result ->
+        viewModel.onExportResult(result)
     }
 
     LifecycleResumeEffect(Unit) {
@@ -134,6 +139,7 @@ fun SettingsScreen(
         exactReminderStatus = exactReminderStatus,
         calendarGranted = calendarGranted,
         exportResult = exportResult,
+        exportInProgress = exportInProgress,
         clearLocalDataStatus = clearLocalDataStatus,
         onBack = onBack,
         onSaveUrl = { viewModel.savePocketBaseUrl(it) },
@@ -149,8 +155,12 @@ fun SettingsScreen(
         onImportCalendar = onImportCalendar,
         onImportIcs = onImportIcs,
         onImportCsv = onImportCsv,
-        onExportCsv = { viewModel.exportCsv() },
-        onExportIcs = { viewModel.exportIcs() },
+        onExportCsv = {
+            viewModel.prepareCsvExport(exportFile)
+        },
+        onExportIcs = {
+            viewModel.prepareIcsExport(exportFile)
+        },
         onClearExportResult = { viewModel.clearExportResult() },
         onClearLocalDataErrorShown = { viewModel.clearLocalDataErrorShown() },
         onLogout = { viewModel.clearLocalData(onLogout) },
@@ -168,6 +178,7 @@ internal fun SettingsContent(
     exactReminderStatus: ExactReminderPermissionStatus = ExactReminderPermissionStatus.NOT_REQUIRED,
     calendarGranted: Boolean = false,
     exportResult: ExportResult = ExportResult.Idle,
+    exportInProgress: Boolean = false,
     clearLocalDataStatus: ClearLocalDataStatus = ClearLocalDataStatus.IDLE,
     onBack: () -> Unit,
     onSaveUrl: (String) -> Unit,
@@ -357,12 +368,14 @@ internal fun SettingsContent(
                 SettingsRow(
                     title = stringResource(Res.string.export_csv),
                     onClick = onExportCsv,
+                    enabled = !exportInProgress,
                 )
             }
             item(key = "export_ics") {
                 SettingsRow(
                     title = stringResource(Res.string.export_ics),
                     onClick = onExportIcs,
+                    enabled = !exportInProgress,
                 )
             }
 
@@ -469,25 +482,26 @@ internal fun SettingsRow(
     title: String,
     summary: String? = null,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     val dimens = OpenTasksTheme.dimens
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
     ) {
         Text(
             text = title,
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = if (enabled) 1f else 0.38f),
         )
         if (summary != null) {
             Spacer(Modifier.height(dimens.spacerTiny))
             Text(
                 text = summary,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.38f),
             )
         }
     }

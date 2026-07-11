@@ -12,8 +12,9 @@ import platform.UserNotifications.UNUserNotificationCenter
 import platform.Foundation.NSCalendar
 import platform.Foundation.NSDate
 import platform.Foundation.dateWithTimeIntervalSince1970
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
+import kotlin.coroutines.resumeWithException
 
 actual class NotificationScheduler : ReminderScheduler {
 
@@ -32,46 +33,13 @@ actual class NotificationScheduler : ReminderScheduler {
         val identifier = requestId(taskId, occurrenceDeadlineUtcMillis ?: triggerAtMillis, reminderId)
         center.removePendingNotificationRequestsWithIdentifiers(listOf(identifier))
         center.removeDeliveredNotificationsWithIdentifiers(listOf(identifier))
-
-        val userInfo = mutableMapOf<Any?, String>(
-            NOTIFICATION_DEEP_LINK_EVENT_ID_KEY to taskId,
-            NOTIFICATION_DEEP_LINK_NOTIFICATION_AT_UTC_KEY to triggerAtMillis.toString(),
-        )
-        occurrenceDeadlineUtcMillis?.let {
-            userInfo[NOTIFICATION_DEEP_LINK_OCCURRENCE_DEADLINE_UTC_KEY] = it.toString()
-        }
-
-        val content = UNMutableNotificationContent().apply {
-            setTitle(title)
-            setBody(body)
-            setSound(UNNotificationSound.defaultSound)
-            setThreadIdentifier("opentasks_reminder_$taskId")
-            setUserInfo(userInfo)
-        }
-
-        val triggerDate = NSDate.dateWithTimeIntervalSince1970(triggerAtMillis / 1000.0)
-        val calendar = NSCalendar.currentCalendar
-        val components = calendar.components(
-            NSCalendar.currentCalendar.let {
-                platform.Foundation.NSCalendarUnitYear or
-                    platform.Foundation.NSCalendarUnitMonth or
-                    platform.Foundation.NSCalendarUnitDay or
-                    platform.Foundation.NSCalendarUnitHour or
-                    platform.Foundation.NSCalendarUnitMinute or
-                    platform.Foundation.NSCalendarUnitSecond
-            },
-            fromDate = triggerDate,
-        )
-
-        val trigger = UNCalendarNotificationTrigger.triggerWithDateMatchingComponents(
-            dateComponents = components,
-            repeats = false,
-        )
-
-        val request = UNNotificationRequest.requestWithIdentifier(
+        val request = notificationRequest(
             identifier = identifier,
-            content = content,
-            trigger = trigger,
+            taskId = taskId,
+            title = title,
+            body = body,
+            triggerAtMillis = triggerAtMillis,
+            occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
         )
 
         center.getPendingNotificationRequestsWithCompletionHandler { pending ->
@@ -116,40 +84,131 @@ actual class NotificationScheduler : ReminderScheduler {
     }
 
     actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
-        val pendingIds = suspendCoroutine<List<String>> { continuation ->
-            center.getPendingNotificationRequestsWithCompletionHandler { pending ->
-                continuation.resume(
-                    pending.orEmpty().mapNotNull { request ->
-                        (request as? UNNotificationRequest)?.identifier
-                    }
-                        .filter(::isReminderRequestId)
-                )
-            }
-        }
+        val pendingIds = pendingReminderIds()
         if (pendingIds.isNotEmpty()) {
             center.removePendingNotificationRequestsWithIdentifiers(pendingIds)
             center.removeDeliveredNotificationsWithIdentifiers(pendingIds)
         }
-        center.getDeliveredNotificationsWithCompletionHandler { delivered ->
-            val deliveredIds = delivered.orEmpty().mapNotNull { notification ->
-                (notification as? UNNotification)?.request?.identifier
-            }.filter(::isOpenTasksReminderRequestId)
-            if (deliveredIds.isNotEmpty()) {
-                center.removeDeliveredNotificationsWithIdentifiers(deliveredIds)
+        val deliveredIds = deliveredReminderIds()
+        if (deliveredIds.isNotEmpty()) {
+            center.removeDeliveredNotificationsWithIdentifiers(deliveredIds)
+        }
+
+        // This callback is also a barrier for the preceding removal request.
+        pendingReminderIds()
+        val selected = requests.take(IOS_PENDING_REMINDER_LIMIT)
+        val selectedIds = selected.map { request ->
+            requestId(request.eventId, request.occurrenceUtcMillis, request.reminderId)
+        }
+        try {
+            selected.forEachIndexed { index, request ->
+                val identifier = selectedIds[index]
+                addNotificationRequestAwait(
+                    notificationRequest(
+                        identifier = identifier,
+                        taskId = request.eventId,
+                        title = request.title,
+                        body = request.body,
+                        triggerAtMillis = request.triggerAtUtcMillis,
+                        occurrenceDeadlineUtcMillis = request.occurrenceUtcMillis,
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            center.removePendingNotificationRequestsWithIdentifiers(selectedIds)
+            throw e
+        }
+    }
+
+    private suspend fun pendingReminderIds(): List<String> =
+        suspendCancellableCoroutine { continuation ->
+            center.getPendingNotificationRequestsWithCompletionHandler { pending ->
+                if (continuation.isActive) {
+                    continuation.resume(
+                        pending.orEmpty().mapNotNull { request ->
+                            (request as? UNNotificationRequest)?.identifier
+                        }.filter(::isReminderRequestId)
+                    )
+                }
             }
         }
-        requests.take(IOS_PENDING_REMINDER_LIMIT).forEach { request ->
-            schedule(
-                taskId = request.eventId,
-                title = request.title,
-                body = request.body,
-                triggerAtMillis = request.triggerAtUtcMillis,
-                reminderId = request.reminderId,
-                occurrenceDeadlineUtcMillis = request.occurrenceUtcMillis,
-                allowMarkDone = request.allowMarkDone,
-                rescheduleAfterFire = false,
-            )
+
+    private suspend fun deliveredReminderIds(): List<String> =
+        suspendCancellableCoroutine { continuation ->
+            center.getDeliveredNotificationsWithCompletionHandler { delivered ->
+                if (continuation.isActive) {
+                    continuation.resume(
+                        delivered.orEmpty().mapNotNull { notification ->
+                            (notification as? UNNotification)?.request?.identifier
+                        }.filter(::isOpenTasksReminderRequestId)
+                    )
+                }
+            }
         }
+
+    private suspend fun addNotificationRequestAwait(request: UNNotificationRequest) {
+        suspendCancellableCoroutine<Unit> { continuation ->
+            val identifier = request.identifier
+            continuation.invokeOnCancellation {
+                center.removePendingNotificationRequestsWithIdentifiers(listOf(identifier))
+            }
+            center.addNotificationRequest(request) { error ->
+                if (!continuation.isActive) return@addNotificationRequest
+                if (error == null) {
+                    continuation.resume(Unit)
+                } else {
+                    continuation.resumeWithException(
+                        IllegalStateException(error.localizedDescription)
+                    )
+                }
+            }
+        }
+    }
+
+    private fun notificationRequest(
+        identifier: String,
+        taskId: String,
+        title: String,
+        body: String,
+        triggerAtMillis: Long,
+        occurrenceDeadlineUtcMillis: Long?,
+    ): UNNotificationRequest {
+        val userInfo = mutableMapOf<Any?, String>(
+            NOTIFICATION_DEEP_LINK_EVENT_ID_KEY to taskId,
+            NOTIFICATION_DEEP_LINK_NOTIFICATION_AT_UTC_KEY to triggerAtMillis.toString(),
+        )
+        occurrenceDeadlineUtcMillis?.let {
+            userInfo[NOTIFICATION_DEEP_LINK_OCCURRENCE_DEADLINE_UTC_KEY] = it.toString()
+        }
+        val content = UNMutableNotificationContent().apply {
+            setTitle(title)
+            setBody(body)
+            setSound(UNNotificationSound.defaultSound)
+            setThreadIdentifier("opentasks_reminder_$taskId")
+            setUserInfo(userInfo)
+        }
+        val triggerDate = NSDate.dateWithTimeIntervalSince1970(triggerAtMillis / 1000.0)
+        val calendar = NSCalendar.currentCalendar
+        val components = calendar.components(
+            NSCalendar.currentCalendar.let {
+                platform.Foundation.NSCalendarUnitYear or
+                    platform.Foundation.NSCalendarUnitMonth or
+                    platform.Foundation.NSCalendarUnitDay or
+                    platform.Foundation.NSCalendarUnitHour or
+                    platform.Foundation.NSCalendarUnitMinute or
+                    platform.Foundation.NSCalendarUnitSecond
+            },
+            fromDate = triggerDate,
+        )
+        val trigger = UNCalendarNotificationTrigger.triggerWithDateMatchingComponents(
+            dateComponents = components,
+            repeats = false,
+        )
+        return UNNotificationRequest.requestWithIdentifier(
+            identifier = identifier,
+            content = content,
+            trigger = trigger,
+        )
     }
 
     private fun requestId(taskId: String, occurrenceUtcMillis: Long, reminderId: Int): String =

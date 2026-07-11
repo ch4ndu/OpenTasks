@@ -9,8 +9,6 @@ import com.udnahc.opentasks.data.calendar.AndroidCalendarProvider
 import com.udnahc.opentasks.data.calendar.CalendarProvider
 import com.udnahc.opentasks.data.notification.NotificationPermissionChecker
 import com.udnahc.opentasks.data.notification.NotificationScheduler
-import com.udnahc.opentasks.ui.util.AndroidFileSaver
-import com.udnahc.opentasks.ui.util.FileSaver
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
@@ -21,6 +19,5 @@ actual val platformModule = module {
     single<CalendarProvider> { AndroidCalendarProvider(androidContext()) }
     single { NotificationScheduler(androidContext()) }
     single { NotificationPermissionChecker(androidContext()) }
-    single<FileSaver> { AndroidFileSaver(androidContext()) }
     single<AttachmentFileStorage> { PlatformAttachmentFileStorage(androidContext()) }
 }

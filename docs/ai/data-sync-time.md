@@ -45,6 +45,7 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - Android schedules one recurring occurrence at a time. The final alarm in an occurrence bundle chains the next task or countdown occurrence after validating that the record and occurrence are still active.
 - iOS rebuilds a unified task-and-countdown queue capped at 60 pending requests. Queue selection reserves complete nearest-occurrence bundles per event before filling remaining capacity by trigger time, and request IDs include the occurrence timestamp.
 - `RebuildReminderQueueAction` owns launch, resume, boot/background, post-sync, and iOS record-change queue rebuilding. Do not create a separate iOS per-feature queue.
+- iOS background work reports completion only after sync and every notification-queue add callback completes. Expiration cancels the Kotlin job; completion arbitration must call `setTaskCompleted` exactly once.
 
 ## Sync
 

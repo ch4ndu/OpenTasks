@@ -77,4 +77,13 @@ class ImportIcsViewModel(
     fun resetState() {
         _uiState.value = ImportIcsUiState()
     }
+
+    fun fileSelectionFailed(detail: String?) {
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                error = ImportErrorState(ImportErrorType.GENERIC, detail),
+            )
+        }
+    }
 }

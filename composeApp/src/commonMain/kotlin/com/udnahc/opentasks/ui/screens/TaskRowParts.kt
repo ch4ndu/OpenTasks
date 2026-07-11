@@ -2,11 +2,10 @@ package com.udnahc.opentasks.ui.screens
 
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextDecoration
@@ -17,7 +16,12 @@ import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.ic_check_box
 import opentasks.composeapp.generated.resources.ic_check_box_outline
 import opentasks.composeapp.generated.resources.ic_star
+import opentasks.composeapp.generated.resources.task_add_star
+import opentasks.composeapp.generated.resources.task_mark_complete
+import opentasks.composeapp.generated.resources.task_mark_incomplete
+import opentasks.composeapp.generated.resources.task_remove_star
 import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 
 @Composable
 internal fun TaskCheckboxButton(
@@ -27,15 +31,19 @@ internal fun TaskCheckboxButton(
     modifier: Modifier = Modifier,
 ) {
     val dimens = OpenTasksTheme.dimens
-    IconButton(
-        onClick = onClick,
+    val actionDescription = stringResource(
+        if (isChecked) Res.string.task_mark_incomplete else Res.string.task_mark_complete
+    )
+    IconToggleButton(
+        checked = isChecked,
+        onCheckedChange = { onClick() },
         modifier = modifier.size(dimens.touchTargetMedium),
     ) {
         Icon(
             painter = painterResource(
                 if (isChecked) Res.drawable.ic_check_box else Res.drawable.ic_check_box_outline
             ),
-            contentDescription = null,
+            contentDescription = actionDescription,
             tint = tint,
             modifier = Modifier.size(dimens.iconLarge),
         )
@@ -49,13 +57,17 @@ internal fun TaskStarButton(
     modifier: Modifier = Modifier,
 ) {
     val dimens = OpenTasksTheme.dimens
-    IconButton(
-        onClick = onClick,
+    val actionDescription = stringResource(
+        if (isStarred) Res.string.task_remove_star else Res.string.task_add_star
+    )
+    IconToggleButton(
+        checked = isStarred,
+        onCheckedChange = { onClick() },
         modifier = modifier.size(dimens.touchTargetMedium),
     ) {
         Icon(
             painter = painterResource(Res.drawable.ic_star),
-            contentDescription = null,
+            contentDescription = actionDescription,
             tint = if (isStarred) StarGold
             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
             modifier = Modifier.size(dimens.iconDefault),
@@ -85,11 +97,10 @@ internal fun TaskTitleText(
 
 @Composable
 internal fun TaskContentPreviewText(
-    content: String,
+    previewText: String,
     modifier: Modifier = Modifier,
 ) {
-    if (content.isNotBlank()) {
-        val previewText = remember(content) { stripHtmlTags(content) }
+    if (previewText.isNotBlank()) {
         Text(
             text = previewText,
             style = MaterialTheme.typography.bodySmall,

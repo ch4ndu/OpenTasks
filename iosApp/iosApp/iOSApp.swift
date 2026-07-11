@@ -1,7 +1,65 @@
+import Foundation
 import SwiftUI
 import UserNotifications
 import BackgroundTasks
 import ComposeApp
+
+private final class BackgroundSyncExecution {
+    private let task: BGAppRefreshTask
+    private let lock = NSLock()
+    private var handle: BackgroundSyncHandle?
+    private var isFinished = false
+    private var isExpired = false
+
+    init(task: BGAppRefreshTask) {
+        self.task = task
+    }
+
+    func start() {
+        let newHandle = BackgroundSyncHelper.shared.performSync { [self] success in
+            finish(success: success.boolValue)
+        }
+
+        lock.lock()
+        let shouldCancel = isExpired || isFinished
+        if !isFinished {
+            handle = newHandle
+        }
+        lock.unlock()
+
+        if shouldCancel {
+            newHandle.cancel()
+        }
+    }
+
+    func expire() {
+        lock.lock()
+        guard !isFinished else {
+            lock.unlock()
+            return
+        }
+        isExpired = true
+        let runningHandle = handle
+        lock.unlock()
+
+        runningHandle?.cancel()
+        finish(success: false)
+    }
+
+    private func finish(success: Bool) {
+        lock.lock()
+        guard !isFinished else {
+            lock.unlock()
+            return
+        }
+        isFinished = true
+        handle = nil
+        lock.unlock()
+
+        task.expirationHandler = nil
+        task.setTaskCompleted(success: success)
+    }
+}
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
@@ -56,22 +114,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     private func handleSyncTask(_ task: BGAppRefreshTask) {
         scheduleNextSync()
 
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 1
-
-        let operation = BlockOperation {
-            BackgroundSyncHelper.shared.performSync()
-        }
-
+        let execution = BackgroundSyncExecution(task: task)
         task.expirationHandler = {
-            queue.cancelAllOperations()
+            execution.expire()
         }
-
-        operation.completionBlock = {
-            task.setTaskCompleted(success: !operation.isCancelled)
-        }
-
-        queue.addOperation(operation)
+        execution.start()
     }
 
     private func scheduleNextSync() {

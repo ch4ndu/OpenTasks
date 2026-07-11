@@ -142,11 +142,13 @@ fun TaskListScreen(
         TaskListViewMode.LIST -> {
             val listProjection by viewModel.listProjection.collectAsState()
             val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
+            val taskContentPreviews by viewModel.taskContentPreviews.collectAsState()
             TaskListContent(
                 listName = selectedListName,
                 completedTasks = listProjection.completedTasks,
                 groupedActiveTasks = listProjection.groupedActiveTasks,
                 taskImageSummaries = taskImageSummaries,
+                taskContentPreviews = taskContentPreviews,
                 onTaskClick = onTaskClick,
                 onToggleComplete = { viewModel.toggleComplete(it) },
                 onToggleStar = { viewModel.toggleStar(it) },
@@ -252,6 +254,7 @@ internal fun TaskListContent(
     completedTasks: List<Task> = emptyList(),
     groupedActiveTasks: List<SectionGroup> = emptyList(),
     taskImageSummaries: Map<String, AttachmentSummary> = emptyMap(),
+    taskContentPreviews: Map<String, String> = emptyMap(),
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onToggleStar: (Task) -> Unit = {},
@@ -323,6 +326,7 @@ internal fun TaskListContent(
                             items(group.tasks, key = { it.id }) { task ->
                                 TaskRow(
                                     task = task,
+                                    contentPreview = taskContentPreviews[task.id].orEmpty(),
                                     imageSummary = taskImageSummaries[task.id],
                                     isOverdue = group.category == ActiveTaskListSection.OVERDUE,
                                     onToggleComplete = { onToggleComplete(task) },
@@ -361,6 +365,7 @@ internal fun TaskListContent(
                             ) { task ->
                                 CompletedTaskRow(
                                     task = task,
+                                    contentPreview = taskContentPreviews[task.id].orEmpty(),
                                     imageSummary = taskImageSummaries[task.id],
                                     onToggleComplete = { onToggleComplete(task) },
                                     onClick = { onTaskClick(task) },
@@ -503,6 +508,7 @@ private fun sortOptionLabel(option: TaskSortOption): String = when (option) {
 @Composable
 internal fun TaskRow(
     task: Task,
+    contentPreview: String = "",
     imageSummary: AttachmentSummary? = null,
     isOverdue: Boolean = false,
     onToggleComplete: () -> Unit,
@@ -535,7 +541,7 @@ internal fun TaskRow(
                 isCompleted = false,
                 isOverdue = isOverdue,
             )
-            TaskContentPreviewText(task.content)
+            TaskContentPreviewText(contentPreview)
         }
 
         TaskImageSummaryAffordance(imageSummary)
@@ -550,6 +556,7 @@ internal fun TaskRow(
 @Composable
 internal fun CompletedTaskRow(
     task: Task,
+    contentPreview: String = "",
     imageSummary: AttachmentSummary? = null,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
@@ -584,7 +591,7 @@ internal fun CompletedTaskRow(
                 isCompleted = true,
                 isOverdue = false,
             )
-            TaskContentPreviewText(task.content)
+            TaskContentPreviewText(contentPreview)
         }
 
         TaskImageSummaryAffordance(imageSummary)

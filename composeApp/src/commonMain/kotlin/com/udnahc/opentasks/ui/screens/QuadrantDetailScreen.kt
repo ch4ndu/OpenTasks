@@ -94,12 +94,14 @@ fun QuadrantDetailScreen(
         TaskListViewMode.LIST -> {
             val categorizedTasks by viewModel.categorizedTasks.collectAsState()
             val categoryNames by viewModel.categoryNames.collectAsState()
+            val taskContentPreviews by viewModel.taskContentPreviews.collectAsState()
             val defaultCategoryName = stringResource(Res.string.inbox)
             QuadrantDetailContent(
                 title = title,
                 priority = priority,
                 categorizedTasks = categorizedTasks,
                 categoryNames = categoryNames,
+                taskContentPreviews = taskContentPreviews,
                 defaultCategoryName = defaultCategoryName,
                 onBack = onBack,
                 onTaskClick = onTaskClick,
@@ -183,6 +185,7 @@ internal fun QuadrantDetailContent(
     priority: TaskPriority,
     categorizedTasks: List<MatrixViewModel.TaskCategoryGroup>,
     categoryNames: Map<String, String> = emptyMap(),
+    taskContentPreviews: Map<String, String> = emptyMap(),
     defaultCategoryName: String,
     onBack: () -> Unit,
     onTaskClick: (Task) -> Unit,
@@ -264,6 +267,7 @@ internal fun QuadrantDetailContent(
                     items(categoryTasks, key = { it.id }) { task ->
                         DetailTaskRow(
                             task = task,
+                            contentPreview = taskContentPreviews[task.id].orEmpty(),
                             priority = priority,
                             isOverdue = category == TaskCategory.OVERDUE,
                             categoryName = categoryNames[task.categoryId] ?: defaultCategoryName,
@@ -337,6 +341,7 @@ private fun QuadrantSectionHeader(
 @Composable
 internal fun DetailTaskRow(
     task: Task,
+    contentPreview: String = "",
     priority: TaskPriority,
     isOverdue: Boolean,
     categoryName: String,
@@ -393,7 +398,7 @@ internal fun DetailTaskRow(
             }
 
             // Show content preview if present
-            TaskContentPreviewText(task.content)
+            TaskContentPreviewText(contentPreview)
         }
 
         // List label

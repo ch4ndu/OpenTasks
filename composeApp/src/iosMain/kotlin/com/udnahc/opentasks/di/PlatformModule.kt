@@ -9,8 +9,6 @@ import com.udnahc.opentasks.data.calendar.CalendarProvider
 import com.udnahc.opentasks.data.calendar.IosCalendarProvider
 import com.udnahc.opentasks.data.notification.NotificationPermissionChecker
 import com.udnahc.opentasks.data.notification.NotificationScheduler
-import com.udnahc.opentasks.ui.util.FileSaver
-import com.udnahc.opentasks.ui.util.IosFileSaver
 import org.koin.dsl.module
 
 actual val platformModule = module {
@@ -20,6 +18,5 @@ actual val platformModule = module {
     single<CalendarProvider> { IosCalendarProvider() }
     single { NotificationScheduler() }
     single { NotificationPermissionChecker() }
-    single<FileSaver> { IosFileSaver() }
     single<AttachmentFileStorage> { PlatformAttachmentFileStorage() }
 }

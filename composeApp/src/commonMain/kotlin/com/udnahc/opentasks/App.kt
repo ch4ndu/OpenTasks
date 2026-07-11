@@ -81,8 +81,9 @@ import com.udnahc.opentasks.ui.screens.countdown.CountdownScreen
 import com.udnahc.opentasks.ui.screens.countdown.CreateCountdownScreen
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
-import com.udnahc.opentasks.ui.util.pickCsvFileContent
-import com.udnahc.opentasks.ui.util.pickIcsFileContent
+import com.udnahc.opentasks.ui.util.FileImportResult
+import com.udnahc.opentasks.ui.util.ImportFileType
+import com.udnahc.opentasks.ui.util.rememberFileImportLauncher
 import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
 import com.udnahc.opentasks.viewmodel.AppViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
@@ -879,17 +880,19 @@ private fun MainScreen(
     // Import ICS file dialog
     if (showImportIcs) {
         val importIcsViewModel: ImportIcsViewModel = koinViewModel()
-        val icsScope = rememberCoroutineScope()
+        val pickIcsFile = rememberFileImportLauncher { result ->
+            when (result) {
+                is FileImportResult.Selected -> importIcsViewModel.importFromIcsContent(
+                    result.file.name,
+                    result.file.content,
+                )
+                FileImportResult.Cancelled -> Unit
+                is FileImportResult.Error -> importIcsViewModel.fileSelectionFailed(result.detail)
+            }
+        }
         ImportIcsDialog(
             viewModel = importIcsViewModel,
-            onPickFile = {
-                icsScope.launch {
-                    val result = pickIcsFileContent()
-                    if (result != null) {
-                        importIcsViewModel.importFromIcsContent(result.first, result.second)
-                    }
-                }
-            },
+            onPickFile = { pickIcsFile(ImportFileType.ICS) },
             onDismiss = { showImportIcs = false },
         )
     }
@@ -897,17 +900,19 @@ private fun MainScreen(
     // Import CSV (TickTick) dialog
     if (showImportCsv) {
         val importCsvViewModel: ImportCsvViewModel = koinViewModel()
-        val csvScope = rememberCoroutineScope()
+        val pickCsvFile = rememberFileImportLauncher { result ->
+            when (result) {
+                is FileImportResult.Selected -> importCsvViewModel.importFromCsvContent(
+                    result.file.name,
+                    result.file.content,
+                )
+                FileImportResult.Cancelled -> Unit
+                is FileImportResult.Error -> importCsvViewModel.fileSelectionFailed(result.detail)
+            }
+        }
         ImportCsvDialog(
             viewModel = importCsvViewModel,
-            onPickFile = {
-                csvScope.launch {
-                    val result = pickCsvFileContent()
-                    if (result != null) {
-                        importCsvViewModel.importFromCsvContent(result.first, result.second)
-                    }
-                }
-            },
+            onPickFile = { pickCsvFile(ImportFileType.CSV) },
             onDismiss = { showImportCsv = false },
         )
     }

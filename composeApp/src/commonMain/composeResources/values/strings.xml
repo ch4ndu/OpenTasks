@@ -83,6 +83,10 @@
     <string name="duration">Duration</string>
     <string name="time">Time</string>
     <string name="today">Today</string>
+    <string name="task_mark_complete">Mark task complete</string>
+    <string name="task_mark_incomplete">Mark task incomplete</string>
+    <string name="task_add_star">Star task</string>
+    <string name="task_remove_star">Remove task star</string>
     <string name="countdown_detail_subtitle">%1$s %2$s</string>
     <string name="all_day">All day</string>
     <string name="previous_month">Previous month</string>

@@ -42,6 +42,13 @@ For a new persisted entity or schema change:
 - Wire new tabs or destinations in `App.kt`.
 - Follow `docs/ai/ui.md` for theme, strings, dimensions, previews, and recomposition rules.
 
+## Platform Document Flows
+
+- CSV/ICS import and export use the shared Compose launcher contracts in `ui/util`: platform pickers own selection/presentation, while parsing and export generation remain in common ViewModels/Actions.
+- Cancellation is a neutral result. Report success only after the selected source was read or the destination write/export callback completed.
+- Keep blocking file reads and writes off Android, UIKit, and AWT UI threads. iOS security-scoped access and temporary export files must be released or removed on every terminal path.
+- Allow only one export preparation/picker flow at a time so result metadata and platform delegates cannot be overwritten.
+
 ## Verification
 
 - Before calling a coding change complete, run a focused audit pass:

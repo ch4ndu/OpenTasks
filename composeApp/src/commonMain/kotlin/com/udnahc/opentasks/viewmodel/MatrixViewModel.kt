@@ -17,6 +17,7 @@ import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
+import com.udnahc.opentasks.domain.usecase.task.taskPreviewTextById
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -71,6 +72,11 @@ class MatrixViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private val tasksForSelectedPriority = observeTasksForPriority(_selectedPriority)
+
+    val taskContentPreviews: StateFlow<Map<String, String>> = tasksForSelectedPriority
+        .map(::taskPreviewTextById)
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val categorizedTasks: StateFlow<List<TaskCategoryGroup>> = _viewMode
