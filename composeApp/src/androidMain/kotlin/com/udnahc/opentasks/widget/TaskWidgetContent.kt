@@ -27,7 +27,6 @@ import androidx.glance.layout.padding
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 import com.udnahc.opentasks.R
 
 private const val PKG = "com.udnahc.opentasks"
@@ -64,10 +63,10 @@ fun TaskWidgetContent(
     emptyMessage: String?,
 ) {
     val isDark = prefs.theme != WidgetTheme.LIGHT
-    val bgColor = ColorProvider(if (isDark) R.color.widget_bg_dark else R.color.widget_bg_light)
-    val textColor = ColorProvider(if (isDark) R.color.widget_text_white else R.color.widget_text_black)
-    val dateColor = ColorProvider(R.color.widget_date_red)
-    val grayColor = ColorProvider(R.color.widget_text_gray)
+    val bgColor = widgetResourceColor(if (isDark) R.color.widget_bg_dark else R.color.widget_bg_light)
+    val textColor = widgetResourceColor(if (isDark) R.color.widget_text_white else R.color.widget_text_black)
+    val dateColor = widgetResourceColor(R.color.widget_date_red)
+    val grayColor = widgetResourceColor(R.color.widget_text_gray)
 
     val fontSize = when (prefs.fontSize) {
         WidgetFontSize.SMALL -> 12.sp

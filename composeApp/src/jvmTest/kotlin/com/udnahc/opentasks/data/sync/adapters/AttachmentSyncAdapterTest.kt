@@ -94,6 +94,53 @@ class AttachmentSyncAdapterTest {
     }
 
     @Test
+    fun policyBlockPreservesUsableLocalFileMetadata() = runTest {
+        val local = testAttachment(
+            id = "attachment",
+            localPath = "/tmp/local.jpg",
+            thumbnailPath = "/tmp/local-thumb.jpg",
+            mimeType = "image/local",
+            fileName = "local.jpg",
+            fileSizeBytes = 321L,
+            width = 640,
+            height = 480,
+            syncState = AttachmentSyncState.SYNCED,
+            pbId = "old-pb-id",
+            updatedAt = 100L,
+        )
+        database.attachmentDao().insert(local)
+        val incoming = testAttachment(
+            id = local.id,
+            ownerType = local.ownerType,
+            ownerId = local.ownerId,
+            kind = local.kind,
+            remoteFileName = "oversized.jpg",
+            fileSizeBytes = Long.MAX_VALUE,
+            syncState = AttachmentSyncState.NEEDS_DOWNLOAD,
+            pbId = "new-pb-id",
+            createdAt = local.createdAt,
+            updatedAt = 200L,
+        )
+
+        createAdapter(FakeAttachmentFileStorage()).upsertRemotePolicyBlock(incoming, local)
+
+        val stored = assertNotNull(database.attachmentDao().findByIdAnyState(local.id))
+        assertEquals(local.localPath, stored.localPath)
+        assertEquals(local.thumbnailPath, stored.thumbnailPath)
+        assertEquals(local.mimeType, stored.mimeType)
+        assertEquals(local.fileName, stored.fileName)
+        assertEquals(local.fileSizeBytes, stored.fileSizeBytes)
+        assertEquals(local.width, stored.width)
+        assertEquals(local.height, stored.height)
+        assertEquals("oversized.jpg", stored.remoteFileName)
+        assertEquals("new-pb-id", stored.pbId)
+        assertEquals(200L, stored.updatedAt)
+        assertEquals(AttachmentSyncState.BLOCKED, stored.syncState)
+        assertEquals("blocked_policy", stored.lastSyncError)
+        assertFalse(stored.isSynced)
+    }
+
+    @Test
     fun failedRemoteDownloadRetriesAtEqualTimestampEvenWhenLocalFileExists() = runTest {
         val local = testAttachment(
             id = "attachment",

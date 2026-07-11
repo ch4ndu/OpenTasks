@@ -50,7 +50,7 @@ This project is built collaboratively with AI assistance (Claude Code). The code
 
 | Android | iOS | Desktop (JVM) |
 |---------|-----|----------------|
-| API 24+ (Android 7.0) | arm64 + Simulator | Linux, macOS, Windows |
+| API 26+ (Android 8.0) | arm64 + Simulator | Linux, macOS, Windows |
 
 ## Documentation
 
@@ -69,8 +69,8 @@ See [docs/README.md](docs/README.md) for feature behavior and technical design n
 ### Calendar
 - **6 Calendar Views** — Year, month, week, 3-day, day, and list views
 - **Calendar Import** — Import events directly from your device calendar with configurable date range
-- **ICS Import** — Import tasks from standard `.ics` calendar files
-- **CSV Import** — Import tasks from TickTick-format CSV exports
+- **ICS Import** — Choose and import standard `.ics` calendar files on Android, iOS, and Desktop
+- **CSV Import** — Choose and import TickTick-format CSV files on Android, iOS, and Desktop
 - **All-Day Events** — Full support for all-day and multi-day events
 
 ### Notes
@@ -80,14 +80,15 @@ See [docs/README.md](docs/README.md) for feature behavior and technical design n
 - **Event Countdowns** — Track days until (or since) important dates
 - **Countdown Types** — Holiday, Birthday, Anniversary, and general Countdown
 - **Count Up Mode** — Switch between counting down to a date or counting up from a past date
-- **Smart List Visibility** — Configure when countdowns appear (on the day, 3/7 days early, always, or hidden)
-- **Countdown Reminders** — Schedule reminders at specific times, configurable days before the event
-- **Recurring Countdowns** — Repeat countdowns on daily, weekly, monthly, or yearly schedules
+- **Smart List Visibility** — Configure when countdowns appear in the Countdowns tab (on the day, 3/7 days early, always, or hidden)
+- **Countdown Reminders** — Schedule notifications at 9:00 AM local time on the effective date or configurable days before it
+- **Recurring Countdowns** — Project the effective occurrence and continue reminders on daily, weekly, monthly, yearly, or weekday schedules
 
 ### Sync & Data
 - **PocketBase Sync** — Optional self-hosted sync via [PocketBase](https://pocketbase.io) for backup and multi-device access (tasks, attachments, categories, notes, countdowns, tags, task-tag assignments)
 - **Automatic Sync** — Syncs on app resume and after every write; manual sync available in Settings
 - **Clear Local Data** — Reset option available in Settings
+- **CSV / ICS Export** — Export all tasks to a user-chosen file on Android, iOS, and Desktop
 
 ### Platform & UI
 - **Cross-Platform** — Android, iOS, and Desktop (JVM) from a single codebase

@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.widget
 
+import android.annotation.SuppressLint
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
@@ -37,6 +38,9 @@ private const val WEEKS_TO_DISPLAY = 6
 private const val DAYS_PER_WEEK = 7
 
 private val DAY_HEADERS = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+
+@SuppressLint("RestrictedApi")
+internal fun widgetResourceColor(colorRes: Int): ColorProvider = ColorProvider(colorRes)
 
 private fun calendarDayIntent(
     year: Int,
@@ -83,13 +87,13 @@ fun CalendarWidgetContent(
     appWidgetId: Int,
 ) {
     val isDark = prefs.theme != WidgetTheme.LIGHT
-    val bgColor = ColorProvider(if (isDark) R.color.widget_bg_dark else R.color.widget_bg_light)
+    val bgColor = widgetResourceColor(if (isDark) R.color.widget_bg_dark else R.color.widget_bg_light)
     val textColor =
-        ColorProvider(if (isDark) R.color.widget_text_white else R.color.widget_text_black)
-    val headerColor = ColorProvider(R.color.widget_text_gray)
-    val todayBgColor = ColorProvider(R.color.calendar_widget_today_bg)
-    val todayTextColor = ColorProvider(R.color.calendar_widget_today_text)
-    val dimmedColor = ColorProvider(
+        widgetResourceColor(if (isDark) R.color.widget_text_white else R.color.widget_text_black)
+    val headerColor = widgetResourceColor(R.color.widget_text_gray)
+    val todayBgColor = widgetResourceColor(R.color.calendar_widget_today_bg)
+    val todayTextColor = widgetResourceColor(R.color.calendar_widget_today_text)
+    val dimmedColor = widgetResourceColor(
         if (isDark) R.color.calendar_widget_day_dimmed else R.color.calendar_widget_day_dimmed_light
     )
 
@@ -261,13 +265,13 @@ fun CalendarWidgetContent(
                                 Text(
                                     text = task.title,
                                     style = TextStyle(
-                                        color = ColorProvider(priorityTextColorRes(task.priority)),
+                                        color = widgetResourceColor(priorityTextColorRes(task.priority)),
                                         fontSize = taskFontSize,
                                     ),
                                     maxLines = 1,
                                     modifier = GlanceModifier
                                         .fillMaxWidth()
-                                        .background(ColorProvider(priorityBgColorRes(task.priority)))
+                                        .background(widgetResourceColor(priorityBgColorRes(task.priority)))
                                         .cornerRadius(2.dp)
                                         .padding(horizontal = 2.dp),
                                 )

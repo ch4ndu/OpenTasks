@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.ui.util
 
+import android.annotation.SuppressLint
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
+@SuppressLint("RememberReturnType")
 actual fun rememberTaskImagePickerActions(
     onImagePicked: (PickedImage) -> Unit,
     onError: (String) -> Unit,
@@ -79,7 +81,7 @@ actual fun rememberTaskImagePickerActions(
             }
         }
     }
-    return remember(context, galleryLauncher, cameraLauncher) {
+    val actions: TaskImagePickerActions = remember(context, galleryLauncher, cameraLauncher) {
         TaskImagePickerActions(
             pickFromGallery = { galleryLauncher.launch("image/*") },
             captureFromCamera = {
@@ -99,6 +101,7 @@ actual fun rememberTaskImagePickerActions(
             },
         )
     }
+    return actions
 }
 
 @Composable

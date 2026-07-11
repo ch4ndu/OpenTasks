@@ -35,7 +35,6 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 import com.udnahc.opentasks.R
 import android.content.Context as AndroidContext
 
@@ -96,12 +95,12 @@ fun WeekWidgetContent(
     appWidgetId: Int,
 ) {
     val isDark = prefs.theme != WidgetTheme.LIGHT
-    val bgColor = ColorProvider(if (isDark) R.color.widget_bg_dark else R.color.widget_bg_light)
+    val bgColor = widgetResourceColor(if (isDark) R.color.widget_bg_dark else R.color.widget_bg_light)
     val textColor =
-        ColorProvider(if (isDark) R.color.widget_text_white else R.color.widget_text_black)
-    val headerColor = ColorProvider(R.color.widget_text_gray)
-    val todayBgColor = ColorProvider(R.color.calendar_widget_today_bg)
-    val todayTextColor = ColorProvider(R.color.calendar_widget_today_text)
+        widgetResourceColor(if (isDark) R.color.widget_text_white else R.color.widget_text_black)
+    val headerColor = widgetResourceColor(R.color.widget_text_gray)
+    val todayBgColor = widgetResourceColor(R.color.calendar_widget_today_bg)
+    val todayTextColor = widgetResourceColor(R.color.calendar_widget_today_text)
 
     val titleFontSize = when (prefs.fontSize) {
         WidgetFontSize.SMALL -> 12.sp
@@ -259,12 +258,12 @@ fun WeekWidgetContent(
                         Text(
                             text = task.title,
                             style = TextStyle(
-                                color = ColorProvider(priorityTextColorRes(task.priority)),
+                                color = widgetResourceColor(priorityTextColorRes(task.priority)),
                                 fontSize = taskFontSize,
                             ),
                             maxLines = 1,
                             modifier = GlanceModifier
-                                .background(ColorProvider(priorityBgColorRes(task.priority)))
+                                .background(widgetResourceColor(priorityBgColorRes(task.priority)))
                                 .cornerRadius(2.dp)
                                 .padding(horizontal = 1.dp),
                         )

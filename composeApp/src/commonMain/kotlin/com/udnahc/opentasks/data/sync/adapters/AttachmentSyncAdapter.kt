@@ -103,7 +103,7 @@ class AttachmentSyncAdapter(
                 continue
             }
             if (record.fileSizeBytes > AttachmentFilePolicy.MAX_UPLOAD_BYTES || record.kind != ATTACHMENT_KIND_IMAGE) {
-                dao.upsert(incoming.withSyncState(AttachmentSyncState.BLOCKED).copy(lastSyncError = "blocked_policy"))
+                upsertRemotePolicyBlock(incoming, local)
                 continue
             }
             runCatching {
@@ -135,20 +135,21 @@ class AttachmentSyncAdapter(
             is AttachmentFileDownloadException -> AttachmentSyncState.FAILED to error.downloadErrorCode()
             else -> AttachmentSyncState.FAILED to "download_failed"
         }
-        val merged = local?.let {
-            incoming.copy(
-                localPath = it.localPath,
-                thumbnailPath = it.thumbnailPath,
-                mimeType = it.mimeType,
-                fileName = it.fileName,
-                fileSizeBytes = it.fileSizeBytes,
-                width = it.width,
-                height = it.height,
-            )
-        } ?: incoming
+        val merged = incoming.retainingLocalFileMetadata(local)
         dao.upsert(
             merged.withSyncState(syncState)
                 .copy(lastSyncError = errorCode)
+        )
+    }
+
+    internal suspend fun upsertRemotePolicyBlock(
+        incoming: Attachment,
+        local: Attachment? = null,
+    ) {
+        dao.upsert(
+            incoming.retainingLocalFileMetadata(local)
+                .withSyncState(AttachmentSyncState.BLOCKED)
+                .copy(lastSyncError = "blocked_policy")
         )
     }
 
@@ -202,6 +203,19 @@ class AttachmentSyncAdapter(
             runCatching { fileStorage.delete(previous.thumbnailPath) }
         }
     }
+
+    private fun Attachment.retainingLocalFileMetadata(local: Attachment?): Attachment =
+        local?.let {
+            copy(
+                localPath = it.localPath,
+                thumbnailPath = it.thumbnailPath,
+                mimeType = it.mimeType,
+                fileName = it.fileName,
+                fileSizeBytes = it.fileSizeBytes,
+                width = it.width,
+                height = it.height,
+            )
+        } ?: this
 
     override suspend fun pushAll(client: PocketbaseClient) {
         val failures = mutableListOf<Throwable>()
