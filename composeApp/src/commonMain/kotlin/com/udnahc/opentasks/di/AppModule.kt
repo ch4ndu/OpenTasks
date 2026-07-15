@@ -235,7 +235,7 @@ val sharedModule = module {
     single { ImportCsvTasksAction(get(), get(), get(), get()) }
     single { ScheduleTaskRemindersAction(get<NotificationScheduler>(), get(), get(), get()) }
     single { RescheduleAllRemindersAction(get(), get()) }
-    single { ScheduleCountdownRemindersAction(get(), get(), get()) }
+    single { ScheduleCountdownRemindersAction(get<NotificationScheduler>(), get(), get()) }
     single { RescheduleAllCountdownRemindersAction(get(), get()) }
     single { RebuildReminderQueueAction(get(), get(), get(), get(), get()) }
     single { SavePocketBaseUrlAction(get(), get(), get(), get()) }
