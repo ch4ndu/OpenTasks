@@ -1,5 +1,4 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import org.jetbrains.kotlin.compose.compiler.gradle.ComposeFeatureFlag
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
@@ -77,7 +76,7 @@ val generateLocalSyncDefaults by tasks.registering(GenerateLocalSyncDefaultsTask
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.androidApplication)
+    alias(libs.plugins.androidMultiplatformLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.composeHotReload)
@@ -88,9 +87,15 @@ plugins {
 }
 
 kotlin {
-    androidTarget {
+    android {
+        namespace = "com.udnahc.opentasks.shared"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
+        }
+        androidResources {
+            enable = true
         }
     }
     
@@ -111,15 +116,11 @@ kotlin {
             kotlin.srcDir(generateLocalSyncDefaults)
         }
         androidMain.dependencies {
-            implementation(libs.compose.uiTooling)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.exifinterface)
             implementation(libs.koin.android)
-            implementation(libs.androidx.work.runtime)
-            implementation(libs.androidx.glance.appwidget)
-            implementation(libs.androidx.glance.material3)
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
@@ -165,9 +166,6 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.turbine)
         }
-        androidMain.dependencies {
-            implementation(libs.slf4j.simple)
-        }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
@@ -176,44 +174,8 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.udnahc.opentasks"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-
-    defaultConfig {
-        applicationId = "com.udnahc.opentasks"
-        minSdk = libs.versions.android.minSdk.get().toInt()
-        targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
-    }
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            excludes += "/META-INF/INDEX.LIST"
-        }
-    }
-    buildTypes {
-        getByName("release") {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
-        }
-    }
-    buildFeatures {
-        buildConfig = true
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    testOptions {
-        unitTests {
-            isReturnDefaultValues = true
-        }
-    }
-}
-
 dependencies {
+    add("androidRuntimeClasspath", libs.compose.uiTooling)
     add("kspAndroid", libs.androidx.room.compiler)
     add("kspIosArm64", libs.androidx.room.compiler)
     add("kspIosSimulatorArm64", libs.androidx.room.compiler)
@@ -224,8 +186,8 @@ room {
     schemaDirectory("$projectDir/schemas")
 }
 
-composeCompiler {
-    featureFlags.add(ComposeFeatureFlag.StrongSkipping)
+compose.resources {
+    publicResClass = true
 }
 
 kover {

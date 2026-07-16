@@ -9,11 +9,14 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import com.udnahc.opentasks.MainActivity
-import com.udnahc.opentasks.R
 import org.lighthousegames.logging.logging
 
 private val log = logging("NotificationScheduler")
+
+private const val MAIN_ACTIVITY_CLASS = "com.udnahc.opentasks.MainActivity"
+private const val NOTIFICATION_RECEIVER_CLASS = "com.udnahc.opentasks.data.notification.NotificationReceiver"
+private const val NOTIFICATION_ACTION_RECEIVER_CLASS =
+    "com.udnahc.opentasks.data.notification.NotificationActionReceiver"
 
 actual class NotificationScheduler(private val context: Context) : ReminderScheduler {
 
@@ -24,10 +27,10 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            context.getString(R.string.notification_channel_task_reminders),
+            context.appString("notification_channel_task_reminders"),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = context.getString(R.string.notification_channel_task_reminders_description)
+            description = context.appString("notification_channel_task_reminders_description")
         }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(channel)
@@ -35,10 +38,10 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         // Ongoing channel (lower importance, no sound)
         val ongoingChannel = NotificationChannel(
             ONGOING_CHANNEL_ID,
-            context.getString(R.string.notification_channel_all_day_tasks),
+            context.appString("notification_channel_all_day_tasks"),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = context.getString(R.string.notification_channel_all_day_tasks_description)
+            description = context.appString("notification_channel_all_day_tasks_description")
         }
         manager.createNotificationChannel(ongoingChannel)
     }
@@ -64,7 +67,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .cancel(notificationId)
 
-        val intent = Intent(context, NotificationReceiver::class.java).apply {
+        val intent = context.appComponentIntent(NOTIFICATION_RECEIVER_CLASS).apply {
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_TITLE, title)
             putExtra(EXTRA_BODY, body)
@@ -97,7 +100,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
 
     actual override fun cancel(taskId: String, reminderId: Int) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val intent = Intent(context, NotificationReceiver::class.java)
+        val intent = context.appComponentIntent(NOTIFICATION_RECEIVER_CLASS)
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             notificationId(taskId, reminderId),
@@ -152,7 +155,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         notificationId: Int,
         occurrenceDeadlineUtcMillis: Long?,
     ): android.app.Notification {
-        val tapIntent = Intent(context, MainActivity::class.java).apply {
+        val tapIntent = context.appComponentIntent(MAIN_ACTIVITY_CLASS).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_NOTIFICATION_AT_UTC, System.currentTimeMillis())
@@ -165,7 +168,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val gotItIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+        val gotItIntent = context.appComponentIntent(NOTIFICATION_ACTION_RECEIVER_CLASS).apply {
             action = ACTION_GOT_IT
             putExtra(EXTRA_TASK_ID, taskId)
         }
@@ -177,18 +180,18 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         )
 
         return NotificationCompat.Builder(context, ONGOING_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(context.appDrawable("ic_notification"))
             .setContentTitle(title)
-            .setContentText(context.getString(R.string.notification_all_day_task_in_progress))
+            .setContentText(context.appString("notification_all_day_task_in_progress"))
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(tapPendingIntent)
             .addAction(
                 0,
-                context.getString(R.string.notification_action_mark_done),
+                context.appString("notification_action_mark_done"),
                 markDonePendingIntent(context, taskId, notificationId, occurrenceDeadlineUtcMillis),
             )
-            .addAction(0, context.getString(R.string.notification_action_got_it), gotItPendingIntent)
+            .addAction(0, context.appString("notification_action_got_it"), gotItPendingIntent)
             .build()
     }
 
@@ -257,7 +260,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             notificationId: Int,
             occurrenceDeadlineUtcMillis: Long?,
         ): PendingIntent {
-            val intent = Intent(context, NotificationActionReceiver::class.java).apply {
+            val intent = context.appComponentIntent(NOTIFICATION_ACTION_RECEIVER_CLASS).apply {
                 action = ACTION_MARK_DONE
                 putExtra(EXTRA_TASK_ID, taskId)
                 putExtra(EXTRA_NOTIFICATION_ID, notificationId)
@@ -287,3 +290,13 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             "mark_done:$notificationId".hashCode().and(0x7FFFFFFF)
     }
 }
+
+private fun Context.appComponentIntent(className: String): Intent =
+    Intent().setClassName(packageName, className)
+
+private fun Context.appString(name: String): String = getString(appResourceId("string", name))
+
+private fun Context.appDrawable(name: String): Int = appResourceId("drawable", name)
+
+private fun Context.appResourceId(type: String, name: String): Int =
+    resources.getIdentifier(name, type, packageName)

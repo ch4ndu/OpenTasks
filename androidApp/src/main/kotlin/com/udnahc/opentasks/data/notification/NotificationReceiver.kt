@@ -75,10 +75,11 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
                         return@launch
                     }
                     val occurrenceDeadlineLocalMillis = occurrenceDeadlineUtcMillis?.let { utcToLocal(it) }
+                    val taskDeadline = task.deadline
                     if (
                         occurrenceDeadlineLocalMillis != null &&
-                        task.deadline != null &&
-                        task.deadline > occurrenceDeadlineLocalMillis
+                        taskDeadline != null &&
+                        taskDeadline > occurrenceDeadlineLocalMillis
                     ) {
                         NotificationScheduler.cancelDisplayedReminders(context, taskId)
                         log.d { "Skipping stale notification for task $taskId" }

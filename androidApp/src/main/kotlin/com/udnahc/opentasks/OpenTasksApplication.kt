@@ -6,6 +6,7 @@ import com.udnahc.opentasks.di.initKoin
 import com.udnahc.opentasks.widget.CalendarWidget
 import com.udnahc.opentasks.widget.TaskWidget
 import com.udnahc.opentasks.widget.WeekWidget
+import com.udnahc.opentasks.util.initializeAndroidDebugBuild
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -15,6 +16,7 @@ import org.koin.java.KoinJavaComponent.get
 class OpenTasksApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        initializeAndroidDebugBuild(BuildConfig.DEBUG)
         initKoin {
             androidContext(this@OpenTasksApplication)
         }

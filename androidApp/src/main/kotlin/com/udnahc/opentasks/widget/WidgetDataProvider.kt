@@ -175,7 +175,8 @@ class WidgetDataProvider : KoinComponent {
 
     private fun Task.toWidgetTask(todayLabel: String, tomorrowLabel: String): WidgetTask {
         val today = todayLocal()
-        val deadlineLocal = deadline?.let { utcMillisToLocalMillis(it) }
+        val deadlineUtcMillis = deadline
+        val deadlineLocal = deadlineUtcMillis?.let { utcMillisToLocalMillis(it) }
         val dateLabel = if (deadlineLocal != null) {
             val deadlineDate = localMillisToLocalDate(deadlineLocal)
             when {
@@ -186,7 +187,7 @@ class WidgetDataProvider : KoinComponent {
         } else {
             null
         }
-        val isOverdue = deadline != null && deadline < nowUtcMillis()
+        val isOverdue = deadlineUtcMillis != null && deadlineUtcMillis < nowUtcMillis()
         return WidgetTask(id = id, title = title, dateLabel = dateLabel, isOverdue = isOverdue)
     }
 }

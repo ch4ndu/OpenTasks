@@ -38,6 +38,13 @@ composeApp/src/commonMain/kotlin/.../
 
 Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect`/`actual` only when shared common code cannot reasonably handle the behavior.
 
+## Android App Boundary
+
+- `composeApp` is the KMP shared library. It owns common code, Android `actual` implementations, and Room/KSP generation; its Android library namespace is `com.udnahc.opentasks.shared`.
+- `androidApp` is the Android application shell. It owns the application ID/version/build types, manifest, `OpenTasksApplication`, `MainActivity`, notification receivers, sync worker, widget components, and Android resources.
+- Android component packages remain `com.udnahc.opentasks...` so the manifest names, Room database location, widget bindings, notifications, and WorkManager class names stay stable.
+- Build the Android APK with `./gradlew :androidApp:assembleDebug`.
+
 ## Key Files
 
 | Purpose | Path |

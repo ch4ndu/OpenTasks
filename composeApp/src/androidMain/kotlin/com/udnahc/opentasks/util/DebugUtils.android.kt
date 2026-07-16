@@ -1,5 +1,9 @@
 package com.udnahc.opentasks.util
 
-import com.udnahc.opentasks.BuildConfig
+private var isAndroidDebugBuild = true
 
-actual fun isDebugBuild(): Boolean = BuildConfig.DEBUG
+actual fun isDebugBuild(): Boolean = isAndroidDebugBuild
+
+fun initializeAndroidDebugBuild(isDebugBuild: Boolean) {
+    isAndroidDebugBuild = isDebugBuild
+}

@@ -117,7 +117,7 @@ See [docs/README.md](docs/README.md) for feature behavior and technical design n
 ./gradlew :composeApp:compileKotlinJvm
 
 # Android
-./gradlew :composeApp:assembleDebug
+./gradlew :androidApp:assembleDebug
 
 # Desktop
 ./gradlew :composeApp:run
@@ -128,6 +128,11 @@ For **iOS**, open `iosApp/iosApp.xcodeproj` in Xcode and build the `iosApp` sche
 ## Project Structure
 
 ```
+androidApp/src/main/
+├── AndroidManifest.xml     # Application identity and Android components
+├── kotlin/.../             # Launcher, receivers, sync worker, widgets
+└── res/                    # App icons, strings, styles, and widget resources
+
 composeApp/src/
 ├── commonMain/          # Shared UI, data, domain, DI
 │   ├── kotlin/.../
@@ -149,7 +154,7 @@ composeApp/src/
 │   │       │   └── calendar/   # Calendar view variants
 │   │       └── theme/          # Colors, typography, dimensions
 │   └── composeResources/       # Drawables, strings
-├── androidMain/         # Android DB builder, Activity, widgets
+├── androidMain/         # Android actual implementations and DB builder
 ├── iosMain/             # iOS DB builder, MainViewController
 └── jvmMain/             # Desktop DB builder, main entry point
 ```

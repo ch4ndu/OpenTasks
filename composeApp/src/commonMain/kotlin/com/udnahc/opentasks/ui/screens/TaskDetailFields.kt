@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -62,13 +63,17 @@ internal fun TaskDetailFields(
 ) {
     val dimens = OpenTasksTheme.dimens
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding(),
+    ) {
         // Toggle button
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = dimens.paddingMedium)
-                .clickable(onClick = onToggleDetails),
+                .clickable(onClick = onToggleDetails)
+                .padding(vertical = dimens.paddingXLarge),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(

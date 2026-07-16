@@ -51,6 +51,7 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
                             return@launch
                         }
                         val occurrenceDeadlineLocalMillis = intent.occurrenceDeadlineUtcMillis()?.let { utcToLocal(it) }
+                        val taskDeadline = task.deadline
                         if (task.status == TaskStatus.DONE) {
                             NotificationScheduler.cancelDisplayedReminders(context, taskId)
                             notificationScheduler.stopOngoing(taskId)
@@ -58,8 +59,8 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
                         }
                         if (
                             occurrenceDeadlineLocalMillis != null &&
-                            task.deadline != null &&
-                            task.deadline > occurrenceDeadlineLocalMillis
+                            taskDeadline != null &&
+                            taskDeadline > occurrenceDeadlineLocalMillis
                         ) {
                             log.d { "Ignoring stale Mark Done action for task $taskId" }
                             NotificationScheduler.cancelDisplayedReminders(context, taskId)
