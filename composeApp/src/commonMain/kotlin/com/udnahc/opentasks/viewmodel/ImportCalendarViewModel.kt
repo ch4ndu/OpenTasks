@@ -7,6 +7,7 @@ import com.udnahc.opentasks.data.extensions.nowUtcMillis
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.task.FetchCalendarEventsUseCase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -48,6 +49,7 @@ class ImportCalendarViewModel(
 
     private val _uiState = MutableStateFlow(ImportCalendarUiState())
     val uiState: StateFlow<ImportCalendarUiState> = _uiState.asStateFlow()
+    private val importInProgress = MutableStateFlow(false)
 
     val isAvailable: Boolean = fetchCalendarEvents.isAvailable()
 
@@ -76,6 +78,7 @@ class ImportCalendarViewModel(
     }
 
     fun importEvents() {
+        if (!importInProgress.compareAndSet(expect = false, update = true)) return
         val selectedEvents = _uiState.value
         log.d { "Importing ${selectedEvents.rangeValue} ${selectedEvents.rangeUnit} of calendar events" }
         viewModelScope.launch(ioDispatcher) {
@@ -90,6 +93,8 @@ class ImportCalendarViewModel(
                 val events = fetchCalendarEvents(startUtcMillis, endUtcMillis)
                 val count = importAction(events)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.e(e) { "Calendar import failed" }
                 _uiState.update {
@@ -101,6 +106,8 @@ class ImportCalendarViewModel(
                         ),
                     )
                 }
+            } finally {
+                importInProgress.value = false
             }
         }
     }

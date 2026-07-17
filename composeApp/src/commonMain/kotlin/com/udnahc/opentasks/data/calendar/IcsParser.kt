@@ -177,7 +177,7 @@ object IcsParser {
                     monthNumber = value.substring(4, 6).toInt(),
                     dayOfMonth = value.substring(6, 8).toInt(),
                 )
-                val millis = date.atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds()
+                val millis = date.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
                 millis to true
             } else if (value.endsWith("Z")) {
                 // UTC format

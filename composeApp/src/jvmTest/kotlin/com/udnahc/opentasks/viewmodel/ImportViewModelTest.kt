@@ -80,6 +80,53 @@ class ImportViewModelTest : MainDispatcherRule() {
     }
 
     @Test
+    fun csvImportDoubleTapStartsOneImport() = runTest(dispatcher) {
+        val taskRepository = FakeTaskRepository()
+        val viewModel = ImportCsvViewModel(
+            parseCsv = ParseCsvUseCase(),
+            importAction = ImportCsvTasksAction(
+                taskRepository = taskRepository,
+                categoryRepository = FakeCategoryRepository(),
+                scheduleTaskRemindersAction = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository),
+            ),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.importFromCsvContent("tasks.csv", csvWithSingleTask())
+        viewModel.importFromCsvContent("tasks.csv", csvWithSingleTask())
+        advanceUntilIdle()
+
+        assertEquals(1, taskRepository.inserted.size)
+        assertEquals(1, viewModel.uiState.value.importedCount)
+    }
+
+    @Test
+    fun csvImportUsesDueDateAsTheDeadlineWhenStartDateIsBlank() = runTest(dispatcher) {
+        val taskRepository = FakeTaskRepository()
+        val viewModel = ImportCsvViewModel(
+            parseCsv = ParseCsvUseCase(),
+            importAction = ImportCsvTasksAction(
+                taskRepository = taskRepository,
+                categoryRepository = FakeCategoryRepository(),
+                scheduleTaskRemindersAction = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository),
+            ),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.importFromCsvContent(
+            "due-only.csv",
+            """
+            Title,Content,List Name,Start Date,Due Date,Is All Day,Priority,Status,Reminder,Repeat,Created Time
+            "Due only","","Inbox","","2026-05-04T11:00:00+0000","false","0","0","","","2026-05-01T09:00:00+0000"
+            """.trimIndent(),
+        )
+        advanceUntilIdle()
+
+        assertTrue(taskRepository.inserted.single().deadline != null)
+        assertNull(taskRepository.inserted.single().endDeadline)
+    }
+
+    @Test
     fun icsImportViewModelReportsEmptyFile() = runTest(dispatcher) {
         val taskRepository = FakeTaskRepository()
         val viewModel = ImportIcsViewModel(

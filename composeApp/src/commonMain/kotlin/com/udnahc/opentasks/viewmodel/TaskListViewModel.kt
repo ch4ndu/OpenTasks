@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.AttachmentSummary
-import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskListViewMode
@@ -18,7 +17,6 @@ import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
 import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
-import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
@@ -27,6 +25,8 @@ import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
+import com.udnahc.opentasks.domain.usecase.task.PlainTaskDueTextProvider
+import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.taskPreviewTextById
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import kotlinx.coroutines.Dispatchers
@@ -52,16 +52,16 @@ class TaskListViewModel(
     observeAllCategories: ObserveAllCategoriesUseCase,
     toggleTaskCompleteAction: ToggleTaskCompleteAction,
     private val toggleTaskStarredAction: ToggleTaskStarredAction,
-    private val addCategoryAction: AddCategoryAction,
+    addCategoryAction: AddCategoryAction,
     observeTaskSortOption: ObserveTaskSortOptionUseCase,
     private val saveTaskSortOptionAction: SaveTaskSortOptionAction,
     observeTodayTasks: ObserveTodayTasksUseCase,
-    private val updateSectionAction: UpdateSectionAction,
     observeTaskListViewMode: ObserveTaskListViewModeUseCase,
     private val saveTaskListViewModeAction: SaveTaskListViewModeAction,
     private val updateTaskStatusAction: UpdateTaskStatusAction,
     observeTaskImageSummaries: ObserveTaskImageSummariesUseCase,
     localDaySignal: LocalDaySignal,
+    private val taskDueTextProvider: TaskDueTextProvider = PlainTaskDueTextProvider,
 ) : ViewModel() {
 
     data class SectionGroup(
@@ -84,8 +84,14 @@ class TaskListViewModel(
     )
     val currentFilter: StateFlow<TaskListFilter> = _filter
 
+    private val categoryPicker = CategoryPickerDelegate(
+        observeAllCategories,
+        addCategoryAction,
+        viewModelScope,
+    )
+
     private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
-    val taskPendingSeriesChoice: StateFlow<Task?> = completionHandler.taskPendingSeriesChoice
+    val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val tasksForSelectedCategory: StateFlow<List<Task>> = _filter
@@ -146,6 +152,16 @@ class TaskListViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    val taskDueTextById: StateFlow<Map<String, String>> = tasksForSelectedCategory
+        .map { tasks -> tasks.associate { task -> task.id to taskDueTextProvider.listDueText(task) } }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val boardTaskDueTextById: StateFlow<Map<String, String>> = tasksForSelectedCategory
+        .map { tasks -> tasks.associate { task -> task.id to taskDueTextProvider.matrixDueText(task) } }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     val activeTasksForSelectedCategory: StateFlow<List<Task>> =
         combine(tasksForSelectedCategory, sortOption) { tasks, sort ->
             val active = tasks.filter { it.status != TaskStatus.DONE }
@@ -184,22 +200,12 @@ class TaskListViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ListProjection())
 
-    val categories: StateFlow<List<Category>> = observeAllCategories()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _categorySearchQuery = MutableStateFlow("")
-    val categorySearchQuery: StateFlow<String> = _categorySearchQuery
-
-    val filteredCategories: StateFlow<List<Category>> =
-        combine(categories, _categorySearchQuery) { categories, query ->
-            if (query.isBlank()) categories
-            else categories.filter { it.name.contains(query, ignoreCase = true) }
-        }
-            .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val categories = categoryPicker.categories
+    val categorySearchQuery = categoryPicker.categorySearchQuery
+    val filteredCategories = categoryPicker.filteredCategories
 
     fun setCategorySearchQuery(query: String) {
-        _categorySearchQuery.value = query
+        categoryPicker.setCategorySearchQuery(query)
     }
 
     fun selectFilter(filter: TaskListFilter) {
@@ -210,36 +216,26 @@ class TaskListViewModel(
         selectFilter(TaskListFilter.Category(categoryId))
     }
 
-    fun toggleComplete(task: Task) = completionHandler.toggleComplete(task)
+    fun toggleComplete(task: Task) = completionHandler.toggleComplete(
+        task.id,
+        task.status,
+        task.recurrenceType,
+        task.deadline,
+    )
     fun completeOccurrence() = completionHandler.completeOccurrence()
     fun completeSeries() = completionHandler.completeSeries()
     fun dismissSeriesChoice() = completionHandler.dismissSeriesChoice()
 
     fun toggleStar(task: Task) {
-        viewModelScope.launch(Dispatchers.IO) { toggleTaskStarredAction(task) }
+        viewModelScope.launch(Dispatchers.IO) { toggleTaskStarredAction(task.id) }
     }
 
     fun addCategory(name: String) {
-        viewModelScope.launch(Dispatchers.IO) { addCategoryAction(name) }
+        categoryPicker.addCategory(name)
     }
 
     fun setSortOption(option: TaskSortOption) {
         viewModelScope.launch(Dispatchers.IO) { saveTaskSortOptionAction(option) }
-    }
-
-    fun renameSection(
-        oldName: String,
-        newName: String
-    ) {
-        val tasks = activeTasksForSelectedCategory.value.filter { it.section == oldName }
-        if (tasks.isEmpty()) return
-        viewModelScope.launch(Dispatchers.IO) { updateSectionAction.renameSection(tasks, newName) }
-    }
-
-    fun deleteSection(sectionName: String) {
-        val tasks = activeTasksForSelectedCategory.value.filter { it.section == sectionName }
-        if (tasks.isEmpty()) return
-        viewModelScope.launch(Dispatchers.IO) { updateSectionAction.clearSection(tasks) }
     }
 
     val tasksByStatus: StateFlow<Map<TaskStatus, List<Task>>> =
@@ -261,9 +257,9 @@ class TaskListViewModel(
     ) {
         if (targetStatus == task.status) return
         if (targetStatus == TaskStatus.DONE && task.status != TaskStatus.DONE) {
-            completionHandler.toggleComplete(task)
+            toggleComplete(task)
         } else {
-            viewModelScope.launch(Dispatchers.IO) { updateTaskStatusAction(task, targetStatus) }
+            viewModelScope.launch(Dispatchers.IO) { updateTaskStatusAction(task.id, targetStatus) }
         }
     }
 
@@ -274,7 +270,9 @@ class TaskListViewModel(
         TaskSortOption.RECENTLY_UPDATED -> tasks.sortedByDescending { it.updatedAt }
         TaskSortOption.BY_DEADLINE -> tasks.sortedWith(compareBy(nullsLast()) { it.deadline })
         TaskSortOption.BY_PRIORITY -> tasks.sortedBy { it.priority.ordinal }
-        TaskSortOption.BY_TITLE -> tasks.sortedBy { it.title.lowercase() }
+        TaskSortOption.BY_TITLE -> tasks.sortedWith { first, second ->
+            first.title.compareTo(second.title, ignoreCase = true)
+        }
     }
 
     private fun groupActiveTasks(

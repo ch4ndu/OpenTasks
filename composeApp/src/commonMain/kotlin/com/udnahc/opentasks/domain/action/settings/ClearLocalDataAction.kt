@@ -5,6 +5,7 @@ import androidx.room.useWriterConnection
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.Category
+import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.sync.SyncService
 import org.lighthousegames.logging.logging
 
@@ -36,7 +37,7 @@ class ClearLocalDataAction(
                     // Re-insert the stable default used for import/export and sync lookup.
                     database.categoryDao().insert(
                         Category(
-                            id = INBOX_ID,
+                            id = AppConstants.DEFAULT_INBOX_ID,
                             name = "Inbox",
                             icon = "inbox",
                             sortOrder = 0,
@@ -49,7 +50,4 @@ class ClearLocalDataAction(
         }
     }
 
-    companion object {
-        private const val INBOX_ID = "00000000-0000-0000-0000-000000000001"
-    }
 }

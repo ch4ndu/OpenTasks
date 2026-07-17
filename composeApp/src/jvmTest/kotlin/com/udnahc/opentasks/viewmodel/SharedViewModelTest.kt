@@ -32,12 +32,13 @@ import com.udnahc.opentasks.domain.action.settings.SaveCalendarListDisplayModePr
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskListViewModeAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
+import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.action.task.DismissTaskNotificationAction
 import com.udnahc.opentasks.domain.action.task.MarkTaskNotificationDoneAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
+import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
-import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
@@ -55,7 +56,9 @@ import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
+import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
+import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
+import com.udnahc.opentasks.data.sync.SyncService
 import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
 import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
 import com.udnahc.opentasks.testutil.FakeAttachmentRepository
@@ -69,17 +72,21 @@ import com.udnahc.opentasks.testutil.testNote
 import com.udnahc.opentasks.testutil.testTask
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDate
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 open class MainDispatcherRule(
@@ -99,6 +106,30 @@ open class MainDispatcherRule(
 @OptIn(ExperimentalCoroutinesApi::class)
 class SharedViewModelTest : MainDispatcherRule() {
     private val dayStart = startOfDayLocalMillis(2026, 5, 4)
+
+    @Test
+    fun completedTodayUsesCompletionTimestampRatherThanDeadlineOrUpdatedTime() = runTest(dispatcher) {
+        val yesterday = startOfDayLocalMillis(2026, 5, 3)
+        val repository = FakeTaskRepository(
+            listOf(
+                testTask(id = "completed-now", deadline = yesterday, status = TaskStatus.DONE)
+                    .copy(completedAt = dayStart + MILLIS_PER_HOUR, updatedAt = yesterday),
+                testTask(id = "completed-before", deadline = dayStart, status = TaskStatus.DONE)
+                    .copy(completedAt = yesterday + MILLIS_PER_HOUR, updatedAt = dayStart),
+                testTask(id = "legacy-null", deadline = dayStart, status = TaskStatus.DONE)
+                    .copy(completedAt = null, updatedAt = dayStart),
+            ),
+        )
+        val useCase = ObserveTodayTasksUseCase(
+            repository,
+            LocalDaySignal(currentDate = { LocalDate(2026, 5, 4) }),
+        )
+
+        useCase().test {
+            assertEquals(listOf("completed-now"), awaitItem().completedToday.map { it.id })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
 
     @Test
     fun calendarViewModelMergesCountdownsAndPersistsCalendarPreferences() = runTest(dispatcher) {
@@ -148,6 +179,44 @@ class SharedViewModelTest : MainDispatcherRule() {
     }
 
     @Test
+    fun calendarViewModelRetainsTheIdentityOfUnchangedDayLists() = runTest(dispatcher) {
+        val unchanged = testTask(id = "unchanged", deadline = dayStart)
+        val changed = testTask(id = "changed", deadline = dayStart + 24 * MILLIS_PER_HOUR)
+        val taskRepository = FakeTaskRepository(listOf(unchanged, changed))
+        val countdownRepository = FakeCountdownRepository()
+        val settingsRepository = FakeAppSettingsRepository()
+        val viewModel = CalendarViewModel(
+            observeTasksByDay = ObserveTasksByDayUseCase(taskRepository),
+            observeAllCountdowns = ObserveAllCountdownsUseCase(countdownRepository),
+            observeAllCategories = ObserveAllCategoriesUseCase(FakeCategoryRepository()),
+            toggleTaskCompleteAction = ToggleTaskCompleteAction(
+                taskRepository,
+                ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository),
+            ),
+            observeCalendarViewPreference = ObserveCalendarViewPreferenceUseCase(settingsRepository),
+            saveCalendarViewPreference = SaveCalendarViewPreferenceAction(settingsRepository),
+            observeCalendarListDisplayModePreference =
+                ObserveCalendarListDisplayModePreferenceUseCase(settingsRepository),
+            saveCalendarListDisplayModePreference =
+                SaveCalendarListDisplayModePreferenceAction(settingsRepository),
+            ioDispatcher = dispatcher,
+        )
+        val unchangedKey = dayKey(unchanged.deadline ?: dayStart)
+        val changedKey = dayKey(changed.deadline ?: dayStart)
+
+        viewModel.tasksByDay.test {
+            val initial = awaitMatching { it.containsKey(unchangedKey) && it.containsKey(changedKey) }
+            val unchangedList = initial.getValue(unchangedKey)
+
+            taskRepository.replaceTasks(listOf(unchanged, changed.copy(title = "Updated")))
+
+            val updated = awaitMatching { it[changedKey]?.singleOrNull()?.title == "Updated" }
+            assertTrue(unchangedList === updated.getValue(unchangedKey))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun taskListViewModelProjectsSelectedFilterActiveCompletedAndBoardStatus() = runTest(dispatcher) {
         val taskRepository = FakeTaskRepository(
             listOf(
@@ -178,7 +247,6 @@ class SharedViewModelTest : MainDispatcherRule() {
             observeTaskSortOption = ObserveTaskSortOptionUseCase(settingsRepository),
             saveTaskSortOptionAction = SaveTaskSortOptionAction(settingsRepository),
             observeTodayTasks = ObserveTodayTasksUseCase(taskRepository, localDaySignal),
-            updateSectionAction = UpdateSectionAction(taskRepository),
             observeTaskListViewMode = ObserveTaskListViewModeUseCase(settingsRepository),
             saveTaskListViewModeAction = SaveTaskListViewModeAction(settingsRepository),
             updateTaskStatusAction = UpdateTaskStatusAction(taskRepository, scheduler),
@@ -194,7 +262,10 @@ class SharedViewModelTest : MainDispatcherRule() {
         }
 
         viewModel.activeTasksForSelectedCategory.test {
-            assertEquals(listOf("todo", "starred"), awaitMatching { it.size == 2 }.map { it.id })
+            assertEquals(
+                listOf("todo", "starred"),
+                awaitMatching { tasks -> tasks.map { it.id } == listOf("todo", "starred") }.map { it.id },
+            )
             cancelAndIgnoreRemainingEvents()
         }
 
@@ -245,7 +316,6 @@ class SharedViewModelTest : MainDispatcherRule() {
             observeTaskSortOption = ObserveTaskSortOptionUseCase(settingsRepository),
             saveTaskSortOptionAction = SaveTaskSortOptionAction(settingsRepository),
             observeTodayTasks = ObserveTodayTasksUseCase(taskRepository, localDaySignal),
-            updateSectionAction = UpdateSectionAction(taskRepository),
             observeTaskListViewMode = ObserveTaskListViewModeUseCase(settingsRepository),
             saveTaskListViewModeAction = SaveTaskListViewModeAction(settingsRepository),
             updateTaskStatusAction = UpdateTaskStatusAction(taskRepository, scheduler),
@@ -281,7 +351,6 @@ class SharedViewModelTest : MainDispatcherRule() {
         val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
         val viewModel = MatrixViewModel(
             observeTasksByPriority = ObserveTasksByPriorityUseCase(taskRepository),
-            observeTasksForPriority = ObserveTasksForPriorityUseCase(taskRepository),
             observeAllCategories = ObserveAllCategoriesUseCase(FakeCategoryRepository()),
             toggleTaskCompleteAction = ToggleTaskCompleteAction(taskRepository, scheduler),
             toggleTaskStarredAction = ToggleTaskStarredAction(taskRepository),
@@ -313,6 +382,127 @@ class SharedViewModelTest : MainDispatcherRule() {
             )
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun matrixUsesOneTaskSourceAndProjectsVisibleTasksDueText() = runTest(dispatcher) {
+        val taskRepository = FakeTaskRepository(
+            List(7) { index ->
+                testTask(
+                    id = "task-$index",
+                    priority = TaskPriority.HIGH,
+                    deadline = dayStart + index * MILLIS_PER_HOUR,
+                )
+            }
+        )
+        val dueTextProvider = object : TaskDueTextProvider {
+            override suspend fun listDueText(task: com.udnahc.opentasks.data.model.Task): String = "list:${task.id}"
+
+            override suspend fun matrixDueText(task: com.udnahc.opentasks.data.model.Task): String = "matrix:${task.id}"
+        }
+        val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
+        val viewModel = MatrixViewModel(
+            observeTasksByPriority = ObserveTasksByPriorityUseCase(taskRepository),
+            observeAllCategories = ObserveAllCategoriesUseCase(FakeCategoryRepository()),
+            toggleTaskCompleteAction = ToggleTaskCompleteAction(taskRepository, scheduler),
+            toggleTaskStarredAction = ToggleTaskStarredAction(taskRepository),
+            updateTaskStatusAction = UpdateTaskStatusAction(taskRepository, scheduler),
+            observeTaskImageSummaries = ObserveTaskImageSummariesUseCase(FakeAttachmentRepository()),
+            localDaySignal = LocalDaySignal(),
+            taskDueTextProvider = dueTextProvider,
+        )
+
+        viewModel.priorityProjections.test {
+            val projection = awaitMatching { it[TaskPriority.HIGH]?.tasks?.size == 7 }
+            assertEquals(6, projection.getValue(TaskPriority.HIGH).visibleTasks.size)
+            assertTrue(projection.getValue(TaskPriority.HIGH).hasMore)
+            cancelAndIgnoreRemainingEvents()
+        }
+        viewModel.taskDueTextById.test {
+            assertEquals("matrix:task-0", awaitMatching { it["task-0"] != null }["task-0"])
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(1, taskRepository.allTasksSubscriptionCount)
+    }
+
+    @Test
+    fun taskListProjectsLocalizedDueTextForListAndBoardConsumers() = runTest(dispatcher) {
+        val task = testTask(id = "dated", categoryId = "inbox", deadline = dayStart)
+        val taskRepository = FakeTaskRepository(listOf(task))
+        val categoryRepository = FakeCategoryRepository()
+        val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
+        val dueTextProvider = object : TaskDueTextProvider {
+            override suspend fun listDueText(task: com.udnahc.opentasks.data.model.Task): String =
+                "localized-list:${task.deadline}"
+
+            override suspend fun matrixDueText(task: com.udnahc.opentasks.data.model.Task): String =
+                "localized-matrix:${task.deadline}"
+        }
+        val viewModel = TaskListViewModel(
+            observeTasksForCategory = ObserveTasksForCategoryUseCase(taskRepository),
+            observeAllTasks = ObserveAllTasksUseCase(taskRepository),
+            observeAllCategories = ObserveAllCategoriesUseCase(categoryRepository),
+            toggleTaskCompleteAction = ToggleTaskCompleteAction(taskRepository, scheduler),
+            toggleTaskStarredAction = ToggleTaskStarredAction(taskRepository),
+            addCategoryAction = AddCategoryAction(categoryRepository),
+            observeTaskSortOption = ObserveTaskSortOptionUseCase(FakeAppSettingsRepository()),
+            saveTaskSortOptionAction = SaveTaskSortOptionAction(FakeAppSettingsRepository()),
+            observeTodayTasks = ObserveTodayTasksUseCase(taskRepository, LocalDaySignal()),
+            observeTaskListViewMode = ObserveTaskListViewModeUseCase(FakeAppSettingsRepository()),
+            saveTaskListViewModeAction = SaveTaskListViewModeAction(FakeAppSettingsRepository()),
+            updateTaskStatusAction = UpdateTaskStatusAction(taskRepository, scheduler),
+            observeTaskImageSummaries = ObserveTaskImageSummariesUseCase(FakeAttachmentRepository()),
+            localDaySignal = LocalDaySignal(),
+            taskDueTextProvider = dueTextProvider,
+        )
+
+        viewModel.selectCategory("inbox")
+        viewModel.taskDueTextById.test {
+            assertEquals(
+                "localized-list:$dayStart",
+                awaitMatching { it["dated"] != null }["dated"],
+            )
+            taskRepository.replaceTasks(listOf(task.copy(deadline = dayStart + MILLIS_PER_HOUR)))
+            assertEquals(
+                "localized-list:${dayStart + MILLIS_PER_HOUR}",
+                awaitMatching { it["dated"] == "localized-list:${dayStart + MILLIS_PER_HOUR}" }["dated"],
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+        viewModel.boardTaskDueTextById.test {
+            assertEquals(
+                "localized-matrix:${dayStart + MILLIS_PER_HOUR}",
+                awaitMatching { it["dated"] != null }["dated"],
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun appRefreshUsesOneConcurrentSyncPass() = runTest(dispatcher) {
+        val provider = PocketBaseClientProvider()
+        val trigger = TriggerSyncAction(provider, SyncService(provider, emptyList()))
+        val gate = CompletableDeferred<Unit>()
+        var syncCount = 0
+        val viewModel = AppViewModel(
+            triggerSyncAction = trigger,
+            syncNow = {
+                syncCount += 1
+                gate.await()
+            },
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.triggerSync()
+        viewModel.triggerSync()
+        runCurrent()
+
+        assertEquals(1, syncCount)
+        assertTrue(viewModel.isRefreshing.value)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(viewModel.isRefreshing.value)
     }
 
     @Test
@@ -354,8 +544,7 @@ class SharedViewModelTest : MainDispatcherRule() {
         val viewModel = TaskNotificationViewModel(
             observeTaskById = ObserveTaskByIdUseCase(taskRepository),
             markTaskNotificationDoneAction = MarkTaskNotificationDoneAction(
-                taskRepository,
-                ToggleTaskCompleteAction(taskRepository, scheduler),
+                UpdateTaskAction(taskRepository, scheduler),
             ),
             dismissTaskNotificationAction = DismissTaskNotificationAction(
                 taskRepository,

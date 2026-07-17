@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
+import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.CalendarListDisplayModePreference
 import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.Task
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -48,7 +50,7 @@ class CalendarViewModel(
 ) : ViewModel() {
 
     private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
-    val taskPendingSeriesChoice: StateFlow<Task?> = completionHandler.taskPendingSeriesChoice
+    val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
     private val _listSelectedDayKey = MutableStateFlow<Long?>(null)
     private val _monthSelectedDayKey = MutableStateFlow<Long?>(null)
     private val saveCalendarViewPreferenceAction = saveCalendarViewPreference
@@ -70,6 +72,10 @@ class CalendarViewModel(
                 CalendarListDisplayModePreference.TIMELINE,
             )
 
+    /** The sole calendar-facing source of the local civil day. */
+    val today = localDaySignal.dates
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), todayLocal())
+
     val categoryNames: StateFlow<Map<String, String>> = observeAllCategories()
         .map { cats -> cats.associate { it.id to it.name } }
         .flowOn(Dispatchers.Default)
@@ -78,7 +84,7 @@ class CalendarViewModel(
     val tasksByDay: StateFlow<Map<Long, List<Task>>> = combine(
         observeTasksByDay(),
         observeAllCountdowns(),
-        localDaySignal.dates,
+        today,
     ) { tasksMap, countdowns, today ->
         val merged = tasksMap.toMutableMap()
         for (countdownTask in projectCountdownCalendarTasks(countdowns, today)) {
@@ -89,11 +95,21 @@ class CalendarViewModel(
         }
         merged.mapValues { (_, tasks) -> sortCalendarTasksForDay(tasks) }
     }
+        .scan(emptyMap<Long, List<Task>>()) { previous, next ->
+            next.mapValues { (day, tasks) ->
+                previous[day]?.takeIf { it == tasks } ?: tasks
+            }
+        }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val timelineTasksByDay: StateFlow<Map<Long, CalendarDayTasks>> = tasksByDay
         .map { byDay -> byDay.mapValues { (_, tasks) -> splitCalendarDayTasks(tasks) } }
+        .scan(emptyMap<Long, CalendarDayTasks>()) { previous, next ->
+            next.mapValues { (day, tasks) ->
+                previous[day]?.takeIf { it == tasks } ?: tasks
+            }
+        }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
@@ -141,7 +157,12 @@ class CalendarViewModel(
 
     fun toggleComplete(task: Task) {
         if (task.isCountdownItem) return
-        completionHandler.toggleComplete(task)
+        completionHandler.toggleComplete(
+            task.id,
+            task.status,
+            task.recurrenceType,
+            task.deadline,
+        )
     }
 
     fun completeOccurrence() = completionHandler.completeOccurrence()

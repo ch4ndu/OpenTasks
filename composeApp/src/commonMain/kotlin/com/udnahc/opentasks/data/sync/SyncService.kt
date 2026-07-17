@@ -1,26 +1,24 @@
 package com.udnahc.opentasks.data.sync
 
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.lighthousegames.logging.logging
-import kotlin.concurrent.Volatile
 
 private val log = logging("SyncService")
 
 class SyncService(
     private val pbProvider: PocketBaseClientProvider,
     private val adapters: List<BaseSyncAdapter<*, *>>,
+    private val seedExecutor: ServerSeedExecutor? = null,
 ) {
     private val syncMutex = Mutex()
     private val resetMutex = Mutex()
-    @Volatile
-    private var pendingSyncRequested = false
-    @Volatile
-    private var resetInProgress = false
+    private val resetInProgress = MutableStateFlow(false)
 
     suspend fun syncAll() {
-        if (resetInProgress) {
+        if (resetInProgress.value) {
             log.d { "Sync skipped: local data reset in progress" }
             return
         }
@@ -32,36 +30,29 @@ class SyncService(
     }
 
     suspend fun syncAll(client: PocketbaseClient) {
-        if (resetInProgress) {
+        if (resetInProgress.value) {
             log.d { "Sync skipped: local data reset in progress" }
             return
         }
-        if (!syncMutex.tryLock()) {
-            if (resetInProgress) {
+        syncMutex.withLock {
+            if (resetInProgress.value) {
                 log.d { "Sync skipped: local data reset in progress" }
                 return
             }
-            log.d { "Sync already in progress, marking pending re-sync" }
-            pendingSyncRequested = true
-            return
-        }
-        try {
-            var passFailures: List<SyncCollectionFailure>
-            do {
-                pendingSyncRequested = false
-                log.d { "Sync started" }
-                passFailures = syncPass(client)
-                if (passFailures.isEmpty()) {
-                    log.d { "Sync completed" }
-                } else {
-                    log.e { "Sync completed with ${passFailures.size} failure(s)" }
-                }
-            } while (pendingSyncRequested && !resetInProgress)
+            if (seedExecutor?.isPending() == true) {
+                seedExecutor.resume(client)
+                return
+            }
+            log.d { "Sync started" }
+            val passFailures = syncPass(client)
+            if (passFailures.isEmpty()) {
+                log.d { "Sync completed" }
+            } else {
+                log.e { "Sync completed with ${passFailures.size} failure(s)" }
+            }
             if (passFailures.isNotEmpty()) {
                 throw SyncException(passFailures)
             }
-        } finally {
-            syncMutex.unlock()
         }
     }
 
@@ -74,8 +65,7 @@ class SyncService(
         cancelPendingSync: suspend () -> Unit,
         clearLocalData: suspend () -> T,
     ): T = resetMutex.withLock {
-        resetInProgress = true
-        pendingSyncRequested = false
+        resetInProgress.value = true
         try {
             try {
                 cancelPendingSync()
@@ -83,11 +73,10 @@ class SyncService(
                 pbProvider.disconnect()
             }
             syncMutex.withLock {
-                pendingSyncRequested = false
                 clearLocalData()
             }
         } finally {
-            resetInProgress = false
+            resetInProgress.value = false
         }
     }
 

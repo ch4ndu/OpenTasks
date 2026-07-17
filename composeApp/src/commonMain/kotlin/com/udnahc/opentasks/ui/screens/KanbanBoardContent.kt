@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -57,12 +58,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.StarGold
+import com.udnahc.opentasks.ui.theme.WindowSizeCategory
+import com.udnahc.opentasks.ui.theme.kanbanStatusColor
 import com.udnahc.opentasks.ui.theme.priorityColor
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.ic_star
@@ -73,13 +74,10 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
-private val KanbanTodoColor = PrimaryBlue
-private val KanbanInProgressColor = Color(0xFFFF9800)
-private val KanbanDoneColor = Color(0xFF4CAF50)
-
 @Composable
 fun KanbanBoardContent(
     tasksByStatus: Map<TaskStatus, List<Task>>,
+    taskDueTextById: Map<String, String> = emptyMap(),
     onTaskClick: (Task) -> Unit,
     onStatusChange: (Task, TaskStatus) -> Unit,
     onToggleStar: (Task) -> Unit,
@@ -112,7 +110,7 @@ fun KanbanBoardContent(
                 containerPosition = coords.positionInRoot()
             },
     ) {
-        val isWideLayout = maxWidth >= 600.dp
+        val isWideLayout = OpenTasksTheme.windowSizeCategory != WindowSizeCategory.COMPACT
         fun findTargetColumn(pointerPosition: Offset): TaskStatus? =
             columnBounds.entries.firstOrNull { (_, rect) -> rect.contains(pointerPosition) }?.key
 
@@ -145,7 +143,8 @@ fun KanbanBoardContent(
                     KanbanColumn(
                         status = status,
                         tasks = tasksByStatus[status].orEmpty(),
-                        color = statusColor(status),
+                        taskDueTextById = taskDueTextById,
+                        color = kanbanStatusColor(status),
                         isDropTarget = highlightedColumn == status,
                         draggedTaskId = draggedTask?.id,
                         onTaskClick = onTaskClick,
@@ -195,7 +194,8 @@ fun KanbanBoardContent(
                     KanbanColumn(
                         status = status,
                         tasks = tasksByStatus[status].orEmpty(),
-                        color = statusColor(status),
+                        taskDueTextById = taskDueTextById,
+                        color = kanbanStatusColor(status),
                         isDropTarget = highlightedColumn == status,
                         draggedTaskId = draggedTask?.id,
                         onTaskClick = onTaskClick,
@@ -268,6 +268,7 @@ fun KanbanBoardContent(
 
         KanbanDragOverlay(
             draggedTask = draggedTaskState,
+            taskDueTextById = taskDueTextById,
             dragOffset = dragOffsetState,
             cardStartPosition = cardStartPosition,
             containerPosition = containerPosition,
@@ -279,6 +280,7 @@ fun KanbanBoardContent(
 @Composable
 private fun KanbanDragOverlay(
     draggedTask: State<Task?>,
+    taskDueTextById: Map<String, String>,
     dragOffset: State<Offset>,
     cardStartPosition: Offset,
     containerPosition: Offset,
@@ -299,6 +301,7 @@ private fun KanbanDragOverlay(
     ) {
         KanbanTaskCard(
             task = currentDraggedTask,
+            dueText = taskDueTextById[currentDraggedTask.id].orEmpty(),
             onClick = {},
             onToggleStar = {},
         )
@@ -309,6 +312,7 @@ private fun KanbanDragOverlay(
 private fun KanbanColumn(
     status: TaskStatus,
     tasks: List<Task>,
+    taskDueTextById: Map<String, String>,
     color: Color,
     isDropTarget: Boolean,
     draggedTaskId: String?,
@@ -396,6 +400,7 @@ private fun KanbanColumn(
                 verticalArrangement = Arrangement.spacedBy(dimens.spacerMedium),
             ) {
                 items(tasks, key = { it.id }) { task ->
+                    val currentTask by rememberUpdatedState(task)
                     val isDragged = task.id == draggedTaskId
                     var cardPosition by remember { mutableStateOf(Offset.Zero) }
                     var cardWidth by remember { mutableStateOf(0) }
@@ -411,7 +416,7 @@ private fun KanbanColumn(
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { localOffset ->
                                         onDragStart(
-                                            task,
+                                            currentTask,
                                             cardPosition,
                                             cardWidth,
                                             localOffset
@@ -428,6 +433,7 @@ private fun KanbanColumn(
                     ) {
                         KanbanTaskCard(
                             task = task,
+                            dueText = taskDueTextById[task.id].orEmpty(),
                             onClick = { onTaskClick(task) },
                             onToggleStar = { onToggleStar(task) },
                         )
@@ -441,6 +447,7 @@ private fun KanbanColumn(
 @Composable
 private fun KanbanTaskCard(
     task: Task,
+    dueText: String,
     onClick: () -> Unit,
     onToggleStar: () -> Unit,
     modifier: Modifier = Modifier,
@@ -484,10 +491,10 @@ private fun KanbanTaskCard(
                     overflow = TextOverflow.Ellipsis,
                 )
 
-                if (task.deadline != null) {
+                if (dueText.isNotBlank()) {
                     Spacer(Modifier.height(dimens.spacerSmall))
                     Text(
-                        text = formatDateShort(task.deadline),
+                        text = dueText,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -518,10 +525,4 @@ private fun statusLabel(status: TaskStatus): String = when (status) {
     TaskStatus.TODO -> stringResource(Res.string.status_todo)
     TaskStatus.IN_PROGRESS -> stringResource(Res.string.status_in_progress)
     TaskStatus.DONE -> stringResource(Res.string.status_done)
-}
-
-private fun statusColor(status: TaskStatus): Color = when (status) {
-    TaskStatus.TODO -> KanbanTodoColor
-    TaskStatus.IN_PROGRESS -> KanbanInProgressColor
-    TaskStatus.DONE -> KanbanDoneColor
 }

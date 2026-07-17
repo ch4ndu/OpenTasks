@@ -57,7 +57,11 @@ class CategoryRepositoryImpl(
         log.v { "Soft-deleting category: ${category.id}" }
         withContext(ioDispatcher) {
             categoryDao.update(
-                category.withUtcTimestamps().copy(isDeleted = true, isSynced = false)
+                category.withUtcTimestamps().copy(
+                    isDeleted = true,
+                    isSynced = false,
+                    updatedAt = localToUtc(localNow()),
+                )
             )
         }
         syncTrigger.triggerSync()

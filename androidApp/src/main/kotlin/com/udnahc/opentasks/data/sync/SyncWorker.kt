@@ -26,19 +26,36 @@ class SyncWorker(
     override suspend fun doWork(): Result {
         log.d { "SyncWorker starting" }
         return try {
-            if (!configurePocketBaseUrlAction()) {
-                log.d { "SyncWorker skipped: no saved PocketBase URL" }
-                return Result.success()
-            }
-            syncService.syncAll()
-            rebuildReminderQueueAction()
-            TaskWidget.refreshAllWidgets(applicationContext)
-            CalendarWidget.refreshAllWidgets(applicationContext)
-            WeekWidget.refreshAllWidgets(applicationContext)
+            runScheduledSyncMaintenance(
+                configureNetwork = { configurePocketBaseUrlAction() },
+                syncNetwork = syncService::syncAll,
+                rebuildReminders = { rebuildReminderQueueAction() },
+                refreshWidgets = {
+                    TaskWidget.refreshAllWidgets(applicationContext)
+                    CalendarWidget.refreshAllWidgets(applicationContext)
+                    WeekWidget.refreshAllWidgets(applicationContext)
+                },
+            )
             Result.success()
         } catch (e: Exception) {
             log.e(e) { "SyncWorker failed, retrying" }
             Result.retry()
         }
     }
+}
+
+/** Network configuration gates only the network pass; local reminder/widget maintenance always runs. */
+internal suspend fun runScheduledSyncMaintenance(
+    configureNetwork: suspend () -> Boolean,
+    syncNetwork: suspend () -> Unit,
+    rebuildReminders: suspend () -> Unit,
+    refreshWidgets: suspend () -> Unit,
+) {
+    if (configureNetwork()) {
+        syncNetwork()
+    } else {
+        log.d { "SyncWorker skipped network sync: no saved PocketBase URL" }
+    }
+    rebuildReminders()
+    refreshWidgets()
 }

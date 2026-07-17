@@ -5,16 +5,30 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.AttachmentSyncState
+import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
+import com.udnahc.opentasks.data.sync.PocketBaseRecordGateway
+import com.udnahc.opentasks.data.sync.SyncAdapterException
 import com.udnahc.opentasks.data.sync.records.AttachmentRecord
 import com.udnahc.opentasks.testutil.FakeAttachmentFileStorage
 import com.udnahc.opentasks.testutil.testAttachment
+import com.udnahc.opentasks.testutil.testTask
 import java.io.File
+import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -211,6 +225,42 @@ class AttachmentSyncAdapterTest {
     }
 
     @Test
+    fun downloadedArtifactIsRemovedWhenConcurrentNewerLocalEditWins() = runTest {
+        val local = testAttachment(
+            id = "attachment",
+            localPath = "/tmp/local.jpg",
+            thumbnailPath = "/tmp/local-thumb.jpg",
+            updatedAt = 300L,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+        )
+        database.attachmentDao().insert(local)
+        val storage = FakeAttachmentFileStorage().apply {
+            addFile(local.localPath)
+            addFile(local.thumbnailPath)
+        }
+        val downloaded = storage.storeRemoteImage("losing-remote.jpg", byteArrayOf(1, 2, 3))
+        val remote = testAttachment(
+            id = local.id,
+            ownerType = local.ownerType,
+            ownerId = local.ownerId,
+            kind = local.kind,
+            remoteFileName = "losing-remote.jpg",
+            pbId = "remote-id",
+            updatedAt = 200L,
+            syncState = AttachmentSyncState.NEEDS_DOWNLOAD,
+        )
+
+        createAdapter(storage).upsertRemoteDownloadSuccess(remote, downloaded, local)
+
+        val stored = assertNotNull(database.attachmentDao().findByIdAnyState(local.id))
+        assertEquals(local.updatedAt, stored.updatedAt)
+        assertEquals(local.localPath, stored.localPath)
+        assertTrue(storage.exists(local.localPath))
+        assertFalse(storage.exists(downloaded.localPath))
+        assertFalse(storage.exists(downloaded.thumbnailPath))
+    }
+
+    @Test
     fun remoteTombstoneStillDeletesExistingLocalFiles() = runTest {
         val local = testAttachment(
             id = "attachment",
@@ -241,9 +291,207 @@ class AttachmentSyncAdapterTest {
         assertFalse(storage.exists(local.thumbnailPath))
     }
 
+    @Test
+    fun downloadFailureDoesNotOverwriteAConcurrentNewerLocalTombstone() = runTest {
+        val snapshot = testAttachment(
+            id = "attachment",
+            localPath = "/tmp/old.jpg",
+            remoteFileName = "old-remote.jpg",
+            updatedAt = 100L,
+            syncState = AttachmentSyncState.SYNCED,
+            isSynced = true,
+        )
+        val newerTombstone = snapshot.copy(
+            isDeleted = true,
+            isSynced = false,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+            remoteFileName = "local-tombstone.jpg",
+            updatedAt = 300L,
+        )
+        database.attachmentDao().insert(newerTombstone)
+        val incoming = snapshot.copy(
+            remoteFileName = "remote.jpg",
+            pbId = "remote-id",
+            updatedAt = 200L,
+        )
+
+        createAdapter(FakeAttachmentFileStorage()).upsertRemoteDownloadFailure(
+            incoming,
+            AttachmentFileDownloadException(503),
+            snapshot,
+        )
+
+        assertEquals(newerTombstone, database.attachmentDao().findByIdAnyState(newerTombstone.id))
+    }
+
+    @Test
+    fun policyBlockDoesNotOverwriteAConcurrentNewerLocalEdit() = runTest {
+        val snapshot = testAttachment(
+            id = "attachment",
+            localPath = "/tmp/old.jpg",
+            remoteFileName = "old-remote.jpg",
+            updatedAt = 100L,
+            syncState = AttachmentSyncState.SYNCED,
+            isSynced = true,
+        )
+        val newerLocal = snapshot.copy(
+            localPath = "/tmp/newer-local.jpg",
+            remoteFileName = "newer-local.jpg",
+            sortOrder = 9,
+            isSynced = false,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+            updatedAt = 300L,
+        )
+        database.attachmentDao().insert(newerLocal)
+        val incoming = snapshot.copy(
+            remoteFileName = "blocked.jpg",
+            fileSizeBytes = Long.MAX_VALUE,
+            pbId = "remote-id",
+            updatedAt = 200L,
+        )
+
+        createAdapter(FakeAttachmentFileStorage()).upsertRemotePolicyBlock(incoming, snapshot)
+
+        assertEquals(newerLocal, database.attachmentDao().findByIdAnyState(newerLocal.id))
+    }
+
+    @Test
+    fun sameFileOutcomeDoesNotOverwriteAConcurrentNewerLocalTombstone() = runTest {
+        val snapshot = testAttachment(
+            id = "attachment",
+            localPath = "/tmp/same.jpg",
+            remoteFileName = "same.jpg",
+            updatedAt = 100L,
+            syncState = AttachmentSyncState.SYNCED,
+            isSynced = true,
+        )
+        val newerTombstone = snapshot.copy(
+            isDeleted = true,
+            isSynced = false,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+            updatedAt = 300L,
+        )
+        database.attachmentDao().insert(newerTombstone)
+        val incoming = snapshot.copy(pbId = "remote-id", updatedAt = 200L)
+
+        createAdapter(FakeAttachmentFileStorage()).upsertRemoteSameFile(incoming)
+
+        assertEquals(newerTombstone, database.attachmentDao().findByIdAnyState(newerTombstone.id))
+    }
+
+    @Test
+    fun equalTimestampDivergentMultipartPayloadFailsClosedBeforeUpload() = runTest {
+        val parent = testTask(id = "task", pbId = "task-remote", isSynced = true)
+        val attachment = testAttachment(
+            id = "attachment",
+            ownerId = parent.id,
+            pbId = "remote-id",
+            fileName = "local.jpg",
+            remoteFileName = "remote.jpg",
+            isSynced = false,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+            updatedAt = 100L,
+        )
+        database.taskDao().insert(parent)
+        database.attachmentDao().insert(attachment)
+        val storage = FakeAttachmentFileStorage().apply { addFile(attachment.localPath) }
+        val requests = mutableListOf<HttpMethod>()
+        val gateway = PocketBaseRecordGateway(HttpClient(MockEngine { request ->
+            requests += request.method
+            respond(
+                content =
+                    """{"id":"remote-id","localId":"attachment","ownerType":"task","ownerId":"task","kind":"image","file":"remote.jpg","mimeType":"image/jpeg","fileName":"remote.jpg","fileSizeBytes":100,"width":100,"height":100,"sortOrder":0,"isDeleted":false,"localCreatedAt":100,"localUpdatedAt":100}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }), "https://example.test")
+
+        assertFailsWith<SyncAdapterException> {
+            GatewayAttachmentSyncAdapter(database, storage, gateway)
+                .pushAll(PocketBaseClientProvider().createClient("http://localhost:8090"))
+        }
+
+        assertEquals(listOf(HttpMethod.Get), requests)
+        assertFalse(database.attachmentDao().findByIdAnyState(attachment.id)?.isSynced ?: true)
+    }
+
+    @Test
+    fun equalTimestampDivergentMultipartTombstoneFailsClosedBeforeUpload() = runTest {
+        val attachment = testAttachment(
+            id = "attachment-tombstone",
+            pbId = "remote-id",
+            isDeleted = true,
+            isSynced = false,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+            updatedAt = 100L,
+        )
+        database.attachmentDao().insert(attachment)
+        val requests = mutableListOf<HttpMethod>()
+        val gateway = PocketBaseRecordGateway(HttpClient(MockEngine { request ->
+            requests += request.method
+            respond(
+                content =
+                    """{"id":"remote-id","localId":"attachment-tombstone","ownerType":"task","ownerId":"task-1","kind":"image","file":"still-active.jpg","mimeType":"image/jpeg","fileName":"attachment-tombstone.jpg","fileSizeBytes":100,"width":100,"height":100,"sortOrder":0,"isDeleted":false,"localCreatedAt":100,"localUpdatedAt":100}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }), "https://example.test")
+
+        assertFailsWith<SyncAdapterException> {
+            GatewayAttachmentSyncAdapter(database, FakeAttachmentFileStorage(), gateway)
+                .pushAll(PocketBaseClientProvider().createClient("http://localhost:8090"))
+        }
+
+        assertEquals(listOf(HttpMethod.Get), requests)
+        assertFalse(database.attachmentDao().findByIdAnyState(attachment.id)?.isSynced ?: true)
+    }
+
+    @Test
+    fun seedModeCreatesNeverSyncedTombstoneThroughGuardedGateway() = runTest {
+        val tombstone = testAttachment(
+            id = "seed-tombstone",
+            ownerId = "missing-parent",
+            isDeleted = true,
+            isSynced = false,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+            updatedAt = 100L,
+        )
+        database.attachmentDao().insert(tombstone)
+        val requests = mutableListOf<String>()
+        val gateway = PocketBaseRecordGateway(HttpClient(MockEngine { request ->
+            requests += request.url.encodedPath
+            val body = when {
+                request.method == HttpMethod.Post && request.url.encodedPath.endsWith("attachments/records") ->
+                    """{"id":"remote-id","localId":"seed-tombstone","ownerType":"task","ownerId":"missing-parent","kind":"image","file":"","mimeType":"image/jpeg","fileName":"seed-tombstone.jpg","fileSizeBytes":100,"width":100,"height":100,"sortOrder":0,"isDeleted":true,"localCreatedAt":100,"localUpdatedAt":100}"""
+                else -> """{"items":[]}"""
+            }
+            respond(
+                content = body,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }), "https://example.test")
+
+        GatewayAttachmentSyncAdapter(database, FakeAttachmentFileStorage(), gateway)
+            .seedAll(PocketBaseClientProvider().createClient("http://localhost:8090"))
+
+        val stored = assertNotNull(database.attachmentDao().findByIdAnyState(tombstone.id))
+        assertTrue(stored.isSynced)
+        assertEquals("remote-id", stored.pbId)
+        assertTrue(requests.any { it.endsWith("attachments/records") })
+    }
+
     private fun createAdapter(storage: FakeAttachmentFileStorage) = AttachmentSyncAdapter(
         dao = database.attachmentDao(),
         taskDao = database.taskDao(),
         fileStorage = storage,
     )
+
+    private class GatewayAttachmentSyncAdapter(
+        database: AppDatabase,
+        storage: FakeAttachmentFileStorage,
+        private val gateway: PocketBaseRecordGateway,
+    ) : AttachmentSyncAdapter(database.attachmentDao(), database.taskDao(), storage) {
+        override fun recordGateway(client: PocketbaseClient): PocketBaseRecordGateway = gateway
+    }
 }

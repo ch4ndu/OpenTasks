@@ -12,13 +12,13 @@ import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SaveTextSizePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveThemePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
-import com.udnahc.opentasks.domain.action.task.GenerateCsvExportAction
-import com.udnahc.opentasks.domain.action.task.GenerateIcsExportAction
 import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTextSizePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
+import com.udnahc.opentasks.domain.usecase.task.GenerateCsvExportUseCase
+import com.udnahc.opentasks.domain.usecase.task.GenerateIcsExportUseCase
 import com.udnahc.opentasks.ui.util.FileExportRequest
 import com.udnahc.opentasks.ui.util.FileExportResult
 import kotlinx.coroutines.Dispatchers
@@ -56,8 +56,8 @@ class SettingsViewModel(
     private val clearLocalDataAction: ClearLocalDataAction,
     private val checkNotificationPermission: CheckNotificationPermissionUseCase,
     private val checkCalendarPermission: CheckCalendarPermissionUseCase,
-    private val generateCsvExport: GenerateCsvExportAction,
-    private val generateIcsExport: GenerateIcsExportAction,
+    private val generateCsvExport: GenerateCsvExportUseCase,
+    private val generateIcsExport: GenerateIcsExportUseCase,
 ) : ViewModel() {
 
     val pocketBaseUrl: StateFlow<String?> = observePocketBaseUrl()

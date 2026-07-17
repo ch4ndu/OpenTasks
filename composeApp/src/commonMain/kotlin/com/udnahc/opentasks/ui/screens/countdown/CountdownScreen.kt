@@ -41,7 +41,6 @@ import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
 import com.udnahc.opentasks.domain.usecase.countdown.CountdownOccurrence
-import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownOccurrence
 import com.udnahc.opentasks.ui.screens.OpenTasksSettingsButton
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
@@ -62,6 +61,10 @@ import opentasks.composeapp.generated.resources.countdown_filter_anniversary
 import opentasks.composeapp.generated.resources.countdown_filter_birthday
 import opentasks.composeapp.generated.resources.countdown_filter_countdown
 import opentasks.composeapp.generated.resources.countdown_filter_holiday
+import opentasks.composeapp.generated.resources.countdown_initial_anniversary
+import opentasks.composeapp.generated.resources.countdown_initial_birthday
+import opentasks.composeapp.generated.resources.countdown_initial_countdown
+import opentasks.composeapp.generated.resources.countdown_initial_holiday
 import opentasks.composeapp.generated.resources.countdown_no_items
 import opentasks.composeapp.generated.resources.countdown_no_visible_items
 import opentasks.composeapp.generated.resources.countdown_title
@@ -91,12 +94,15 @@ internal fun countdownTypeLabelRes(type: CountdownType): StringResource = when (
     CountdownType.COUNTDOWN -> Res.string.countdown_filter_countdown
 }
 
-internal fun countdownTypeInitial(type: CountdownType): String = when (type) {
-    CountdownType.HOLIDAY -> "H"
-    CountdownType.BIRTHDAY -> "B"
-    CountdownType.ANNIVERSARY -> "A"
-    CountdownType.COUNTDOWN -> "C"
-}
+@Composable
+internal fun countdownTypeInitial(type: CountdownType): String = stringResource(
+    when (type) {
+        CountdownType.HOLIDAY -> Res.string.countdown_initial_holiday
+        CountdownType.BIRTHDAY -> Res.string.countdown_initial_birthday
+        CountdownType.ANNIVERSARY -> Res.string.countdown_initial_anniversary
+        CountdownType.COUNTDOWN -> Res.string.countdown_initial_countdown
+    },
+)
 
 @Composable
 fun CountdownScreen(
@@ -318,32 +324,50 @@ internal fun CountdownCard(
 
 // -- Previews ------------------------------------------------------------------
 
-private val previewCountdownDate = LocalDate(2026, 1, 1)
-
 internal val previewCountdowns = listOf(
-    Countdown(
-        id = "preview-1",
-        title = "Christmas",
-        targetDate = 1766620800000L,
-        countdownType = CountdownType.HOLIDAY,
+    CountdownOccurrence(
+        countdown = Countdown(
+            id = "preview-1",
+            title = "Christmas",
+            targetDate = 1766620800000L,
+            countdownType = CountdownType.HOLIDAY,
+        ),
+        effectiveTargetDate = 1766620800000L,
+        effectiveDate = LocalDate(2025, 12, 25),
+        daysUntil = -7,
     ),
-    Countdown(
-        id = "preview-2",
-        title = "Mom's Birthday",
-        targetDate = 1773619200000L,
-        countdownType = CountdownType.BIRTHDAY,
+    CountdownOccurrence(
+        countdown = Countdown(
+            id = "preview-2",
+            title = "Mom's Birthday",
+            targetDate = 1773619200000L,
+            countdownType = CountdownType.BIRTHDAY,
+        ),
+        effectiveTargetDate = 1773619200000L,
+        effectiveDate = LocalDate(2026, 3, 16),
+        daysUntil = 74,
     ),
-    Countdown(
-        id = "preview-3",
-        title = "Wedding Anniversary",
-        targetDate = 1758240000000L,
-        countdownType = CountdownType.ANNIVERSARY,
+    CountdownOccurrence(
+        countdown = Countdown(
+            id = "preview-3",
+            title = "Wedding Anniversary",
+            targetDate = 1758240000000L,
+            countdownType = CountdownType.ANNIVERSARY,
+        ),
+        effectiveTargetDate = 1758240000000L,
+        effectiveDate = LocalDate(2025, 9, 19),
+        daysUntil = -104,
     ),
-    Countdown(
-        id = "preview-4",
-        title = "Project Launch",
-        targetDate = 1775088000000L,
-        countdownType = CountdownType.COUNTDOWN,
-        countingMode = CountingMode.COUNTDOWN,
+    CountdownOccurrence(
+        countdown = Countdown(
+            id = "preview-4",
+            title = "Project Launch",
+            targetDate = 1775088000000L,
+            countdownType = CountdownType.COUNTDOWN,
+            countingMode = CountingMode.COUNTDOWN,
+        ),
+        effectiveTargetDate = 1775088000000L,
+        effectiveDate = LocalDate(2026, 4, 1),
+        daysUntil = 90,
     ),
-).map { projectCountdownOccurrence(it, previewCountdownDate) }
+)

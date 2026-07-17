@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.widget
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,15 +29,10 @@ import androidx.compose.ui.unit.sp
 fun WeekPreviewSection(
     theme: WidgetTheme,
     fontSize: WidgetFontSize,
-    opacity: Float,
 ) {
-    val isDark = theme == WidgetTheme.DARK || theme == WidgetTheme.SYSTEM
-    val bgAlpha = (opacity * 255).toInt()
-    val bgColor = if (isDark) {
-        Color(android.graphics.Color.argb(bgAlpha, 30, 30, 30))
-    } else {
-        Color(android.graphics.Color.argb(bgAlpha, 245, 245, 245))
-    }
+    val isDark = theme == WidgetTheme.DARK ||
+            (theme == WidgetTheme.SYSTEM && isSystemInDarkTheme())
+    val bgColor = if (isDark) Color(0xFF1E1E1E) else Color(0xFFF5F5F5)
     val textColor = if (isDark) Color.White else Color.Black
     val subtleColor = if (isDark) Color.Gray else Color.DarkGray
     val accentColor = Color(0xFF4D9EFF)

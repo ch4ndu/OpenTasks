@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,9 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import com.udnahc.opentasks.data.extensions.currentDay
-import com.udnahc.opentasks.data.extensions.currentMonth
-import com.udnahc.opentasks.data.extensions.currentYear
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
@@ -69,10 +67,105 @@ import opentasks.composeapp.generated.resources.today
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import kotlinx.datetime.LocalDate
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateReminderSheetShell(
+    sheetState: androidx.compose.material3.SheetState,
+    onDismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = null,
+        content = content,
+    )
+}
+
+@Composable
+private fun DateReminderSheetContent(
+    selectedTab: Int,
+    onSelectedTabChange: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    dateContent: @Composable () -> Unit,
+    durationContent: @Composable () -> Unit,
+) {
+    val dimens = OpenTasksTheme.dimens
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Header: X, Date/Duration tabs, checkmark
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = dimens.paddingMedium, vertical = dimens.paddingSmall),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_close),
+                    contentDescription = stringResource(Res.string.close),
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+
+            TabRow(
+                selectedTabIndex = selectedTab,
+                modifier = Modifier.weight(1f),
+                containerColor = Color.Transparent,
+                contentColor = PrimaryBlue,
+                indicator = { tabPositions ->
+                    if (selectedTab < tabPositions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                            color = PrimaryBlue,
+                        )
+                    }
+                },
+                divider = {},
+            ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { onSelectedTabChange(0) },
+                    text = {
+                        Text(
+                            stringResource(Res.string.date),
+                            color = if (selectedTab == 0) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { onSelectedTabChange(1) },
+                    text = {
+                        Text(
+                            stringResource(Res.string.duration),
+                            color = if (selectedTab == 1) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+            }
+
+            IconButton(onClick = onConfirm) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_check),
+                    contentDescription = stringResource(Res.string.confirm),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        if (selectedTab == 0) dateContent() else durationContent()
+        Spacer(Modifier.height(dimens.spacerXXLarge))
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun DateReminderBottomSheet(
+    currentDate: LocalDate,
     selectedDay: Int,
     selectedMonth: Int,
     selectedYear: Int,
@@ -101,6 +194,7 @@ internal fun DateReminderBottomSheet(
     var showTimePicker by remember { mutableStateOf(false) }
     var showReminderDialog by remember { mutableStateOf(false) }
     var showRepeatDialog by remember { mutableStateOf(false) }
+    var dateRecurrence by remember { mutableStateOf(selectedRecurrence) }
 
     // Per-tab reminder state (prevents cross-tab contamination)
     var dateTabReminders by remember {
@@ -112,124 +206,62 @@ internal fun DateReminderBottomSheet(
     val activeReminders = if (selectedTab == 0) dateTabReminders else durationTabReminders
 
     // Duration tab state
-    var durDay by remember { mutableIntStateOf(if (initialTab == 1 && selectedDay > 0) selectedDay else currentDay()) }
-    var durMonth by remember { mutableIntStateOf(if (initialTab == 1 && selectedMonth > 0) selectedMonth else currentMonth()) }
-    var durYear by remember { mutableIntStateOf(if (initialTab == 1 && selectedYear > 0) selectedYear else currentYear()) }
+    var durDay by remember { mutableIntStateOf(if (initialTab == 1 && selectedDay > 0) selectedDay else currentDate.dayOfMonth) }
+    var durMonth by remember { mutableIntStateOf(if (initialTab == 1 && selectedMonth > 0) selectedMonth else currentDate.monthNumber) }
+    var durYear by remember { mutableIntStateOf(if (initialTab == 1 && selectedYear > 0) selectedYear else currentDate.year) }
     var durStartHour by remember { mutableIntStateOf(if (initialTab == 1 && selectedHour >= 0) selectedHour else 16) }
     var durStartMinute by remember { mutableIntStateOf(if (initialTab == 1) selectedMinute else 0) }
     var durEndHour by remember { mutableIntStateOf(if (initialTab == 1 && initialEndHour >= 0) initialEndHour else 17) }
     var durEndMinute by remember { mutableIntStateOf(if (initialTab == 1) initialEndMinute else 0) }
     var durAllDay by remember { mutableStateOf(if (initialTab == 1) initialIsAllDay else false) }
-    var durRecurrence by remember { mutableStateOf(RecurrenceType.NONE) }
+    var durRecurrence by remember { mutableStateOf(dateRecurrence) }
     var showDurDateDialog by remember { mutableStateOf(false) }
     var showDurTimeDialog by remember { mutableStateOf(false) }
     var showDurRepeatDialog by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
+    DateReminderSheetShell(
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
-        dragHandle = null,
+        onDismiss = onDismiss,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            val dimens = OpenTasksTheme.dimens
-            // Header: X, Date/Duration tabs, checkmark
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = dimens.paddingMedium, vertical = dimens.paddingSmall),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_close),
-                        contentDescription = stringResource(Res.string.close),
-                        tint = MaterialTheme.colorScheme.onBackground,
-                    )
+        DateReminderSheetContent(
+            selectedTab = selectedTab,
+            onSelectedTabChange = { selectedTab = it },
+            onDismiss = onDismiss,
+            onConfirm = {
+                if (selectedTab == 1) {
+                    onDaySelected(durDay, durMonth, durYear)
+                    if (durAllDay) onTimeSelected(0, 0) else onTimeSelected(durStartHour, durStartMinute)
+                    onEndTimeSelected(durEndHour, durEndMinute)
+                    onAllDayChanged(durAllDay)
+                    onRemindersSelected(durationTabReminders)
+                    onRecurrenceSelected(durRecurrence)
+                    onDurationRemindersChanged(durationTabReminders.toRemindersString())
+                } else {
+                    onRemindersSelected(dateTabReminders)
+                    onRecurrenceSelected(dateRecurrence)
+                    onDurationRemindersChanged("")
                 }
-
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    modifier = Modifier.weight(1f),
-                    containerColor = Color.Transparent,
-                    contentColor = PrimaryBlue,
-                    indicator = { tabPositions ->
-                        if (selectedTab < tabPositions.size) {
-                            TabRowDefaults.SecondaryIndicator(
-                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                                color = PrimaryBlue,
-                            )
-                        }
-                    },
-                    divider = {},
-                ) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = {
-                            Text(
-                                stringResource(Res.string.date),
-                                color = if (selectedTab == 0) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = {
-                            Text(
-                                stringResource(Res.string.duration),
-                                color = if (selectedTab == 1) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                    )
-                }
-
-                IconButton(onClick = {
-                    if (selectedTab == 1) {
-                        // Duration tab -- propagate duration date back to parent
-                        onDaySelected(durDay, durMonth, durYear)
-                        if (durAllDay) {
-                            // All-day tasks should have no time component (midnight)
-                            onTimeSelected(0, 0)
-                        } else {
-                            // Propagate the start time from the duration tab
-                            onTimeSelected(durStartHour, durStartMinute)
-                        }
-                        onEndTimeSelected(durEndHour, durEndMinute)
-                        onAllDayChanged(durAllDay)
-                        onRemindersSelected(durationTabReminders)
-                        onDurationRemindersChanged(durationTabReminders.toRemindersString())
-                    } else {
-                        onRemindersSelected(dateTabReminders)
-                        onDurationRemindersChanged("")
-                    }
-                    onConfirm()
-                }) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_check),
-                        contentDescription = stringResource(Res.string.confirm),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            when (selectedTab) {
-                0 -> DateTabContent(
+                onConfirm()
+            },
+            dateContent = {
+                DateTabContent(
+                    currentDate = currentDate,
                     selectedDay = selectedDay,
                     selectedMonth = selectedMonth,
                     selectedYear = selectedYear,
                     selectedHour = selectedHour,
                     selectedMinute = selectedMinute,
                     selectedReminders = activeReminders,
-                    selectedRecurrence = selectedRecurrence,
+                    selectedRecurrence = dateRecurrence,
                     onDaySelected = onDaySelected,
                     onShowTimePicker = { showTimePicker = true },
                     onShowReminderDialog = { showReminderDialog = true },
                     onShowRepeatDialog = { showRepeatDialog = true },
                 )
-
-                1 -> DurationTabContent(
+            },
+            durationContent = {
+                DurationTabContent(
+                    currentDate = currentDate,
                     selectedDay = durDay,
                     selectedMonth = durMonth,
                     selectedYear = durYear,
@@ -247,14 +279,13 @@ internal fun DateReminderBottomSheet(
                     onShowRepeatDialog = { showDurRepeatDialog = true },
                     onClearReminders = { durationTabReminders = emptySet() },
                 )
-            }
-
-            Spacer(Modifier.height(dimens.spacerXXLarge))
-        }
+            },
+        )
     }
 
     if (showDurDateDialog) {
         DurationDateDialog(
+            currentDate = currentDate,
             selectedDay = durDay,
             selectedMonth = durMonth,
             selectedYear = durYear,
@@ -289,6 +320,7 @@ internal fun DateReminderBottomSheet(
             selected = durRecurrence,
             selectedDay = durDay,
             selectedMonth = durMonth,
+            selectedYear = durYear,
             onSelected = {
                 durRecurrence = it
                 showDurRepeatDialog = false
@@ -326,9 +358,10 @@ internal fun DateReminderBottomSheet(
 
     if (showRepeatDialog) {
         RepeatDialog(
-            selected = selectedRecurrence,
+            selected = dateRecurrence,
             onSelected = {
-                onRecurrenceSelected(it)
+                dateRecurrence = it
+                durRecurrence = it
                 showRepeatDialog = false
             },
             onDismiss = { showRepeatDialog = false },
@@ -338,6 +371,7 @@ internal fun DateReminderBottomSheet(
 
 @Composable
 private fun DateTabContent(
+    currentDate: LocalDate,
     selectedDay: Int,
     selectedMonth: Int,
     selectedYear: Int,
@@ -356,7 +390,7 @@ private fun DateTabContent(
     )
     val coroutineScope = rememberCoroutineScope()
 
-    val (displayMonth, displayYear) = pageToMonthYear(pagerState.currentPage)
+    val (displayMonth, displayYear) = pageToMonthYear(pagerState.currentPage, currentDate)
 
     val dimens = OpenTasksTheme.dimens
     Column(modifier = Modifier.padding(horizontal = dimens.paddingXLarge)) {
@@ -382,12 +416,12 @@ private fun DateTabContent(
         HorizontalPager(
             state = pagerState,
         ) { page ->
-            val (month, year) = pageToMonthYear(page)
+            val (month, year) = pageToMonthYear(page, currentDate)
             SelectableDayGrid(
                 month = month,
                 year = year,
                 selectedDay = if (month == selectedMonth && year == selectedYear) selectedDay else 0,
-                todayDay = if (month == currentMonth() && year == currentYear()) currentDay() else 0,
+                todayDay = if (month == currentDate.monthNumber && year == currentDate.year) currentDate.dayOfMonth else 0,
                 onDayClick = { day -> onDaySelected(day, month, year) },
             )
         }
@@ -426,6 +460,7 @@ private fun DateTabContent(
 
 @Composable
 private fun DurationTabContent(
+    currentDate: LocalDate,
     selectedDay: Int,
     selectedMonth: Int,
     selectedYear: Int,
@@ -443,8 +478,8 @@ private fun DurationTabContent(
     onShowRepeatDialog: () -> Unit,
     onClearReminders: () -> Unit,
 ) {
-    val isToday =
-        selectedDay == currentDay() && selectedMonth == currentMonth() && selectedYear == currentYear()
+    val isToday = selectedDay == currentDate.dayOfMonth &&
+            selectedMonth == currentDate.monthNumber && selectedYear == currentDate.year
     val dayOfWeek = dayOfWeekName(dayOfWeekIndex(selectedYear, selectedMonth, 1), selectedDay)
     val dateLabel = "$dayOfWeek, ${monthNameShort(selectedMonth)} $selectedDay"
     val timeLabel = "${formatTime(startHour, startMinute)} - ${formatTime(endHour, endMinute)}"

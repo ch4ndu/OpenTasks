@@ -59,6 +59,7 @@ import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.attachment.PickedImage
 import com.udnahc.opentasks.data.model.Attachment
+import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
@@ -102,12 +103,15 @@ import opentasks.composeapp.generated.resources.task_completed
 import opentasks.composeapp.generated.resources.title_hint
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import kotlinx.datetime.LocalDate
+import opentasks.composeapp.generated.resources.weekly_with_day
 
 @Composable
 fun CreateTaskScreen(
     onBack: () -> Unit,
+    currentDate: LocalDate,
     initialPriority: TaskPriority = TaskPriority.HIGH,
-    initialCategoryId: String = "00000000-0000-0000-0000-000000000001",
+    initialCategoryId: String = AppConstants.DEFAULT_INBOX_ID,
     initialTitle: String = "",
     initialDescription: String = "",
     initialUrl: String = "",
@@ -115,6 +119,7 @@ fun CreateTaskScreen(
     initialMonth: Int = 0,
     initialYear: Int = 0,
     editTask: Task? = null,
+    retainedFormData: TaskFormData? = null,
     categories: List<Category> = emptyList(),
     filteredCategories: List<Category> = categories,
     categorySearchQuery: String = "",
@@ -128,12 +133,13 @@ fun CreateTaskScreen(
     onRemovePendingImage: (PickedImage) -> Unit = {},
     onDiscardPendingImages: () -> Unit = {},
     confirmDiscardPendingImagesOnBack: Boolean = false,
-    onBackRequestChanged: ((() -> Unit)?) -> Unit = {},
+    onBackRequestChanged: (owner: Any, onBack: (() -> Unit)?) -> Unit = { _, _ -> },
     onRemoveTaskImage: (Attachment) -> Unit = {},
     onDelete: (() -> Unit)? = null,
 ) {
     CreateTaskContent(
         onBack = onBack,
+        currentDate = currentDate,
         initialPriority = initialPriority,
         initialCategoryId = initialCategoryId,
         initialTitle = initialTitle,
@@ -143,6 +149,7 @@ fun CreateTaskScreen(
         initialMonth = initialMonth,
         initialYear = initialYear,
         editTask = editTask,
+        retainedFormData = retainedFormData,
         categories = categories,
         filteredCategories = filteredCategories,
         categorySearchQuery = categorySearchQuery,
@@ -166,8 +173,9 @@ fun CreateTaskScreen(
 @Composable
 private fun CreateTaskContent(
     onBack: () -> Unit,
+    currentDate: LocalDate,
     initialPriority: TaskPriority = TaskPriority.HIGH,
-    initialCategoryId: String = "00000000-0000-0000-0000-000000000001",
+    initialCategoryId: String = AppConstants.DEFAULT_INBOX_ID,
     initialTitle: String = "",
     initialDescription: String = "",
     initialUrl: String = "",
@@ -175,6 +183,7 @@ private fun CreateTaskContent(
     initialMonth: Int = 0,
     initialYear: Int = 0,
     editTask: Task? = null,
+    retainedFormData: TaskFormData? = null,
     categories: List<Category> = emptyList(),
     filteredCategories: List<Category> = categories,
     categorySearchQuery: String = "",
@@ -188,7 +197,7 @@ private fun CreateTaskContent(
     onRemovePendingImage: (PickedImage) -> Unit = {},
     onDiscardPendingImages: () -> Unit = {},
     confirmDiscardPendingImagesOnBack: Boolean = false,
-    onBackRequestChanged: ((() -> Unit)?) -> Unit = {},
+    onBackRequestChanged: (owner: Any, onBack: (() -> Unit)?) -> Unit = { _, _ -> },
     onRemoveTaskImage: (Attachment) -> Unit = {},
     onDelete: (() -> Unit)? = null,
 ) {
@@ -202,31 +211,36 @@ private fun CreateTaskContent(
         initialMonth.toString(),
         initialYear.toString(),
     ).joinToString("|")
-    var title by remember(stateKey) { mutableStateOf(editTask?.title ?: initialTitle) }
-    var description by remember(stateKey) { mutableStateOf(editTask?.content ?: initialDescription) }
-    var priority by remember(stateKey) { mutableStateOf(editTask?.priority ?: initialPriority) }
-    var isCompleted by remember(stateKey) { mutableStateOf(editTask?.status == TaskStatus.DONE) }
+    val seededFormData = retainedFormData ?: editTask?.toTaskFormData()
+    var title by remember(stateKey) { mutableStateOf(seededFormData?.title ?: initialTitle) }
+    var description by remember(stateKey) { mutableStateOf(seededFormData?.content ?: initialDescription) }
+    var priority by remember(stateKey) { mutableStateOf(seededFormData?.priority ?: initialPriority) }
+    var isCompleted by remember(stateKey) { mutableStateOf(seededFormData?.status == TaskStatus.DONE) }
     var selectedCategoryId by remember(stateKey) {
         mutableStateOf(
-            editTask?.categoryId ?: initialCategoryId
+            seededFormData?.categoryId ?: initialCategoryId
         )
     }
-    var section by remember(stateKey) { mutableStateOf(editTask?.section ?: "") }
+    var section by remember(stateKey) { mutableStateOf(seededFormData?.section ?: "") }
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showPriorityMenu by remember { mutableStateOf(false) }
-    var isSubtaskMode by remember(stateKey) { mutableStateOf(editTask?.subtasks?.isNotBlank() == true) }
+    var isSubtaskMode by remember(stateKey) { mutableStateOf(seededFormData?.subtasks?.isNotBlank() == true) }
     var subtaskToggleCount by remember { mutableIntStateOf(0) }
     val subtasks = remember(stateKey) { mutableStateListOf<SubtaskItem>() }
-    var location by remember(stateKey) { mutableStateOf(editTask?.location ?: "") }
-    var taskUrl by remember(stateKey) { mutableStateOf(editTask?.url ?: initialUrl) }
-    var organizer by remember(stateKey) { mutableStateOf(editTask?.organizer ?: "") }
-    var eventStatus by remember(stateKey) { mutableStateOf(editTask?.eventStatus ?: "") }
-    var attendees by remember(stateKey) { mutableStateOf(editTask?.attendees ?: "") }
+    var location by remember(stateKey) { mutableStateOf(seededFormData?.location ?: "") }
+    var taskUrl by remember(stateKey) { mutableStateOf(seededFormData?.url ?: initialUrl) }
+    var organizer by remember(stateKey) { mutableStateOf(seededFormData?.organizer ?: "") }
+    var eventStatus by remember(stateKey) { mutableStateOf(seededFormData?.eventStatus ?: "") }
+    var attendees by remember(stateKey) { mutableStateOf(seededFormData?.attendees ?: "") }
     var showDiscardPendingImagesConfirm by remember { mutableStateOf(false) }
     val descriptionFocusRequester = remember { FocusRequester() }
     val subtaskFocusRequester = remember { FocusRequester() }
     val richTextState = rememberRichTextState()
+    val backHandlerOwner = remember(stateKey) { Any() }
     val inboxName = stringResource(Res.string.inbox)
+    val selectedCategoryName = remember(categories, selectedCategoryId, inboxName) {
+        categories.find { it.id == selectedCategoryId }?.name ?: inboxName
+    }
     var imageError by remember { mutableStateOf(false) }
     val imagePickerActions = rememberTaskImagePickerActions(
         onImagePicked = onAddPendingImage,
@@ -242,12 +256,12 @@ private fun CreateTaskContent(
         }
     }
     val currentBackRequest by rememberUpdatedState { requestBack() }
-    DisposableEffect(confirmDiscardPendingImagesOnBack, onBackRequestChanged) {
+    DisposableEffect(backHandlerOwner, confirmDiscardPendingImagesOnBack, onBackRequestChanged) {
         if (confirmDiscardPendingImagesOnBack) {
-            onBackRequestChanged { currentBackRequest() }
+            onBackRequestChanged(backHandlerOwner) { currentBackRequest() }
         }
         onDispose {
-            onBackRequestChanged(null)
+            onBackRequestChanged(backHandlerOwner, null)
         }
     }
 
@@ -257,12 +271,12 @@ private fun CreateTaskContent(
     )
 
     LaunchedEffect(stateKey) {
-        val initialContent = editTask?.content ?: initialDescription
+        val initialContent = seededFormData?.content ?: initialDescription
         if (initialContent.isNotBlank()) {
             richTextState.setHtml(initialContent)
         }
         subtasks.clear()
-        subtasks.addAll(editTask?.subtasks?.toSubtaskItems().orEmpty())
+        subtasks.addAll(seededFormData?.subtasks?.toSubtaskItems().orEmpty())
         if (isSubtaskMode && subtasks.isEmpty()) {
             subtasks.add(SubtaskItem())
         }
@@ -287,66 +301,67 @@ private fun CreateTaskContent(
     // Date & Reminder state
     var showDateSheet by remember { mutableStateOf(false) }
     var selectedDay by remember(stateKey) {
-        mutableIntStateOf(editTask?.deadline?.let {
+        mutableIntStateOf(seededFormData?.deadline?.let {
             extractDay(
                 it
             )
         } ?: initialDay)
     }
     var selectedMonth by remember(stateKey) {
-        mutableIntStateOf(editTask?.deadline?.let {
+        mutableIntStateOf(seededFormData?.deadline?.let {
             extractMonth(
                 it
             )
         } ?: initialMonth)
     }
     var selectedYear by remember(stateKey) {
-        mutableIntStateOf(editTask?.deadline?.let {
+        mutableIntStateOf(seededFormData?.deadline?.let {
             extractYear(
                 it
             )
         } ?: initialYear)
     }
     var selectedHour by remember(stateKey) {
-        mutableIntStateOf(editTask?.deadline?.let {
+        mutableIntStateOf(seededFormData?.deadline?.let {
             extractHour(
                 it
             )
         } ?: 8)
     }
     var selectedMinute by remember(stateKey) {
-        mutableIntStateOf(editTask?.deadline?.let {
+        mutableIntStateOf(seededFormData?.deadline?.let {
             extractMinute(
                 it
             )
         } ?: 0)
     }
     var selectedReminders by remember(stateKey) {
-        val initial = if ((editTask?.durationReminders ?: "").isNotBlank()) {
-            editTask?.durationReminders?.toReminderSet() ?: emptySet()
+        val initial = if (seededFormData?.durationReminders?.isNotBlank() == true) {
+            seededFormData.durationReminders.toReminderSet()
         } else {
-            editTask?.dateReminders?.toReminderSet() ?: emptySet()
+            seededFormData?.dateReminders?.toReminderSet() ?: emptySet()
         }
         mutableStateOf(initial.ifEmpty { setOf(ReminderOption.ON_TIME) })
     }
     var selectedRecurrence by remember(stateKey) {
         mutableStateOf(
-            editTask?.recurrenceType ?: RecurrenceType.NONE
+            seededFormData?.recurrence ?: RecurrenceType.NONE
         )
     }
+    val reminderDays = remember(stateKey) { seededFormData?.reminderDays ?: 0 }
     var durationReminders by remember(stateKey) {
         mutableStateOf(
-            editTask?.durationReminders ?: ""
+            seededFormData?.durationReminders ?: ""
         )
     }
     var endHour by remember(stateKey) {
-        mutableIntStateOf(editTask?.endDeadline?.let { extractHour(it) } ?: -1)
+        mutableIntStateOf(seededFormData?.endDeadline?.let { extractHour(it) } ?: -1)
     }
     var endMinute by remember(stateKey) {
-        mutableIntStateOf(editTask?.endDeadline?.let { extractMinute(it) } ?: 0)
+        mutableIntStateOf(seededFormData?.endDeadline?.let { extractMinute(it) } ?: 0)
     }
     var isAllDay by remember(stateKey) {
-        mutableStateOf(editTask?.isAllDay ?: false)
+        mutableStateOf(seededFormData?.isAllDay ?: false)
     }
 
     fun toggleSubtaskMode() {
@@ -393,6 +408,7 @@ private fun CreateTaskContent(
                         endMinute
                     ) else null,
                     isAllDay = isAllDay,
+                    reminderDays = reminderDays,
                     recurrence = selectedRecurrence,
                     categoryId = selectedCategoryId,
                     section = section.takeIf { it.isNotBlank() },
@@ -417,7 +433,7 @@ private fun CreateTaskContent(
             .imePadding(),
     ) {
         CreateTaskTopBar(
-            listName = categories.find { it.id == selectedCategoryId }?.name ?: inboxName,
+            listName = selectedCategoryName,
             priority = priority,
             showPriorityMenu = showPriorityMenu,
             onShowPriorityMenu = { showPriorityMenu = it },
@@ -593,6 +609,7 @@ private fun CreateTaskContent(
 
     if (showDateSheet) {
         DateReminderBottomSheet(
+            currentDate = currentDate,
             selectedDay = selectedDay,
             selectedMonth = selectedMonth,
             selectedYear = selectedYear,
@@ -682,6 +699,28 @@ private fun CreateTaskContent(
         )
     }
 }
+
+internal fun Task.toTaskFormData(): TaskFormData = TaskFormData(
+    title = title,
+    content = content,
+    subtasks = subtasks,
+    priority = priority,
+    deadline = deadline,
+    endDeadline = endDeadline,
+    isAllDay = isAllDay,
+    reminderDays = notifyBeforeValue,
+    recurrence = recurrenceType,
+    categoryId = categoryId,
+    section = section,
+    status = status,
+    location = location,
+    url = url,
+    organizer = organizer,
+    eventStatus = eventStatus,
+    attendees = attendees,
+    durationReminders = durationReminders,
+    dateReminders = dateReminders,
+)
 
 @Composable
 private fun TaskTitleField(
@@ -999,11 +1038,11 @@ internal fun DateReminderRow(
                 Spacer(Modifier.height(dimens.spacerTiny))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val recLabel = recurrenceLabel(selectedRecurrence)
-                    // Build recurrence string with day: e.g., "Weekly on Fri"
+                    // Localized weekly labels include the selected day.
                     val fdow = dayOfWeekIndex(selectedYear, selectedMonth, 1)
                     val dowName = dayOfWeekName(fdow, selectedDay)
                     val recText = if (selectedRecurrence == RecurrenceType.WEEKLY) {
-                        "$recLabel on $dowName"
+                        stringResource(Res.string.weekly_with_day, dowName)
                     } else {
                         recLabel
                     }

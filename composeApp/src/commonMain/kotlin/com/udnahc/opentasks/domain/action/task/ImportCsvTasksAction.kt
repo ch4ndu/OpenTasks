@@ -20,6 +20,8 @@ class ImportCsvTasksAction(
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
 ) {
+    private val taskWriteCoordinator = TaskWriteCoordinator(taskRepository)
+
     suspend operator fun invoke(tasks: List<CsvTask>): Int {
         log.d { "Importing ${tasks.size} CSV tasks" }
         if (tasks.isEmpty()) return 0
@@ -40,10 +42,19 @@ class ImportCsvTasksAction(
                 title = csvTask.title,
                 content = csvTask.content,
                 priority = csvTask.priority,
-                deadline = csvTask.startDate?.let { utcToLocal(it) },
-                endDeadline = csvTask.dueDate?.let { utcToLocal(it) },
+                deadline = (csvTask.startDate ?: csvTask.dueDate)?.let { utcToLocal(it) },
+                endDeadline = if (csvTask.startDate != null && csvTask.dueDate != null) {
+                    utcToLocal(csvTask.dueDate)
+                } else {
+                    null
+                },
                 isAllDay = csvTask.isAllDay,
                 status = if (csvTask.isCompleted) TaskStatus.DONE else TaskStatus.TODO,
+                completedAt = if (csvTask.isCompleted) {
+                    csvTask.completedAt?.let { utcToLocal(it) } ?: now
+                } else {
+                    null
+                },
                 recurrenceType = csvTask.recurrenceType,
                 categoryId = categoryId,
                 durationReminders = csvTask.durationReminders,
@@ -51,7 +62,7 @@ class ImportCsvTasksAction(
                 createdAt = if (csvTask.createdAt > 0) utcToLocal(csvTask.createdAt) else now,
                 updatedAt = now,
             )
-            taskRepository.insert(task)
+            taskWriteCoordinator.create(task)
             importedTaskIds += task.id
             importedCount++
         }

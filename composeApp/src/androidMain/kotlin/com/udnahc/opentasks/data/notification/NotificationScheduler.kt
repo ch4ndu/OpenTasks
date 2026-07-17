@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -19,6 +20,8 @@ private const val NOTIFICATION_ACTION_RECEIVER_CLASS =
     "com.udnahc.opentasks.data.notification.NotificationActionReceiver"
 
 actual class NotificationScheduler(private val context: Context) : ReminderScheduler {
+
+    private val keyStore = AndroidReminderKeyStore(context)
 
     init {
         createNotificationChannel()
@@ -35,7 +38,6 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(channel)
 
-        // Ongoing channel (lower importance, no sound)
         val ongoingChannel = NotificationChannel(
             ONGOING_CHANNEL_ID,
             context.appString("notification_channel_all_day_tasks"),
@@ -46,120 +48,166 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         manager.createNotificationChannel(ongoingChannel)
     }
 
-    actual override fun schedule(
-        taskId: String,
-        title: String,
-        body: String,
-        triggerAtMillis: Long,
-        reminderId: Int,
-        occurrenceDeadlineUtcMillis: Long?,
-        allowMarkDone: Boolean,
-        rescheduleAfterFire: Boolean,
-    ) {
+    actual override suspend fun schedule(request: ReminderRequest) {
+        cleanupLegacyOnce(request.eventId)
+        val allocation = keyStore.allocatePending(request.identity)
+        cancelPlatform(allocation, removeFromStore = false)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
             alarmManager.canScheduleExactAlarms()
-        val notificationId = notificationId(taskId, reminderId)
-
-        log.d { "Scheduling alarm for task=$taskId reminderId=$reminderId at $triggerAtMillis (exact=$canExact)" }
-
-        cancel(taskId, reminderId)
-        (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-            .cancel(notificationId)
-
         val intent = context.appComponentIntent(NOTIFICATION_RECEIVER_CLASS).apply {
-            putExtra(EXTRA_TASK_ID, taskId)
-            putExtra(EXTRA_TITLE, title)
-            putExtra(EXTRA_BODY, body)
-            putExtra(EXTRA_NOTIFICATION_ID, notificationId)
-            putExtra(EXTRA_NOTIFICATION_AT_UTC, triggerAtMillis)
-            occurrenceDeadlineUtcMillis?.let { putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, it) }
-            putExtra(EXTRA_ALLOW_MARK_DONE, allowMarkDone)
-            putExtra(EXTRA_RESCHEDULE_AFTER_FIRE, rescheduleAfterFire)
+            data = pendingIntentUri(request.identity.semanticKey, ROLE_ALARM)
+            putExtra(EXTRA_TASK_ID, request.eventId)
+            putExtra(EXTRA_TITLE, request.title)
+            putExtra(EXTRA_BODY, request.body)
+            putExtra(EXTRA_SEMANTIC_KEY, request.identity.semanticKey)
+            putExtra(EXTRA_NOTIFICATION_ID, allocation.notificationId)
+            putExtra(EXTRA_NOTIFICATION_AT_UTC, request.triggerAtUtcMillis)
+            putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, request.occurrenceUtcMillis)
+            putExtra(EXTRA_ALLOW_MARK_DONE, request.allowMarkDone)
+            putExtra(EXTRA_RESCHEDULE_AFTER_FIRE, request.rescheduleAfterFire)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            notificationId,
+            allocation.notificationId,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         if (canExact) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent,
-            )
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, request.triggerAtUtcMillis, pendingIntent)
         } else {
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent,
-            )
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, request.triggerAtUtcMillis, pendingIntent)
+        }
+        log.d {
+            "Scheduled ${request.identity.kind} reminder key=${request.identity.semanticKey} " +
+                "id=${allocation.notificationId} at ${request.triggerAtUtcMillis} (exact=$canExact)"
         }
     }
 
-    actual override fun cancel(taskId: String, reminderId: Int) {
+    actual override suspend fun cancel(semanticKey: String) {
+        keyStore.record(semanticKey)?.let { allocation ->
+            cancelPlatform(allocation, removeFromStore = true)
+        }
+    }
+
+    actual override suspend fun cancelPendingReminders(eventId: String) {
+        cleanupLegacyOnce(eventId)
+        keyStore.recordsForEvent(eventId)
+            .filter { it.lifecycle == ReminderLifecycle.PENDING && it.kind != ReminderKind.ONGOING }
+            .forEach { allocation -> cancelPlatform(allocation, removeFromStore = true) }
+    }
+
+    actual override suspend fun cancelReminders(eventId: String) {
+        cleanupLegacyOnce(eventId)
+        keyStore.recordsForEvent(eventId)
+            .filter { it.kind != ReminderKind.ONGOING }
+            .forEach { allocation -> cancelPlatform(allocation, removeFromStore = true) }
+    }
+
+    actual override suspend fun cancelAll(eventId: String) {
+        cancelReminders(eventId)
+        stopOngoing(eventId)
+    }
+
+    actual override suspend fun startOngoing(identity: ReminderIdentity, title: String) {
+        cleanupLegacyOnce(identity.eventId)
+        stopOngoing(identity.eventId)
+        val allocation = keyStore.allocatePending(identity)
+        val notification = buildOngoingNotification(identity, title, allocation.notificationId)
+        try {
+            NotificationManagerCompat.from(context).notify(allocation.notificationId, notification)
+            keyStore.markDisplayed(identity.semanticKey)
+        } catch (e: SecurityException) {
+            keyStore.remove(identity.semanticKey)
+            log.e(e) { "Failed to post ongoing notification for ${identity.eventId}" }
+        }
+    }
+
+    actual override suspend fun stopOngoing(eventId: String) {
+        keyStore.recordsForEvent(eventId)
+            .filter { it.kind == ReminderKind.ONGOING }
+            .forEach { allocation -> cancelPlatform(allocation, removeFromStore = true) }
+    }
+
+    actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
+        for (request in requests) {
+            schedule(request)
+        }
+    }
+
+    /** Called by the alarm receiver before it validates and displays a delivery. */
+    suspend fun markAlarmDisplayed(semanticKey: String): Int? =
+        keyStore.markDisplayed(semanticKey)?.notificationId
+
+    /** Cancels prior delivered reminders for an event without touching future alarms. */
+    suspend fun cancelDisplayedReminders(eventId: String, exceptSemanticKey: String? = null) {
+        keyStore.recordsForEvent(eventId)
+            .filter {
+                it.lifecycle == ReminderLifecycle.DISPLAYED &&
+                    it.kind != ReminderKind.ONGOING &&
+                    it.semanticKey != exceptSemanticKey
+            }
+            .forEach { allocation -> cancelPlatform(allocation, removeFromStore = true) }
+    }
+
+    private suspend fun cleanupLegacyOnce(eventId: String) {
+        keyStore.cleanupLegacyOnce(eventId) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            LEGACY_REMINDER_SLOTS.forEach { slot ->
+                val notificationId = legacyNotificationId(eventId, slot)
+                val legacyIntent = context.appComponentIntent(NOTIFICATION_RECEIVER_CLASS)
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    notificationId,
+                    legacyIntent,
+                    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+                )
+                pendingIntent?.let {
+                    alarmManager.cancel(it)
+                    it.cancel()
+                }
+                notificationManager.cancel(notificationId)
+            }
+            val legacyOngoingId = legacyNotificationId(eventId, LEGACY_ONGOING_SLOT)
+            notificationManager.cancel(legacyOngoingId)
+        }
+    }
+
+    private suspend fun cancelPlatform(
+        allocation: ReminderKeyRecord,
+        removeFromStore: Boolean,
+    ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val intent = context.appComponentIntent(NOTIFICATION_RECEIVER_CLASS)
+        val intent = context.appComponentIntent(NOTIFICATION_RECEIVER_CLASS).apply {
+            data = pendingIntentUri(allocation.semanticKey, ROLE_ALARM)
+        }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            notificationId(taskId, reminderId),
+            allocation.notificationId,
             intent,
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
         )
-        pendingIntent?.let { alarmManager.cancel(it) }
-    }
-
-    actual override fun cancelReminders(taskId: String) {
-        val notificationManager =
-            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        for (i in REMINDER_NOTIFICATION_IDS) {
-            cancel(taskId, i)
-            notificationManager.cancel(notificationId(taskId, i))
+        pendingIntent?.let {
+            alarmManager.cancel(it)
+            it.cancel()
         }
-    }
-
-    actual override fun cancelAll(taskId: String) {
-        cancelReminders(taskId)
-        stopOngoing(taskId)
-    }
-
-    actual override fun startOngoing(
-        taskId: String,
-        title: String,
-        occurrenceDeadlineUtcMillis: Long?,
-    ) {
-        log.d { "Starting ongoing notification for task=$taskId" }
-        logOngoingChannelState()
-        showOngoingNotification(taskId, title, occurrenceDeadlineUtcMillis)
-    }
-
-    private fun showOngoingNotification(
-        taskId: String,
-        title: String,
-        occurrenceDeadlineUtcMillis: Long?,
-    ) {
-        val notificationId = notificationId(taskId, ONGOING_REMINDER_ID)
-        val notification = buildOngoingNotification(taskId, title, notificationId, occurrenceDeadlineUtcMillis)
-        try {
-            NotificationManagerCompat.from(context).notify(notificationId, notification)
-            log.d { "Posted ongoing notification for task=$taskId notificationId=$notificationId" }
-        } catch (e: SecurityException) {
-            log.e(e) { "Failed to post ongoing notification for task=$taskId" }
-        }
+        NotificationManagerCompat.from(context).cancel(allocation.notificationId)
+        if (removeFromStore) keyStore.remove(allocation.semanticKey)
     }
 
     private fun buildOngoingNotification(
-        taskId: String,
+        identity: ReminderIdentity,
         title: String,
         notificationId: Int,
-        occurrenceDeadlineUtcMillis: Long?,
     ): android.app.Notification {
         val tapIntent = context.appComponentIntent(MAIN_ACTIVITY_CLASS).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_TASK_ID, taskId)
+            data = pendingIntentUri(identity.semanticKey, ROLE_ONGOING_TAP)
+            putExtra(EXTRA_TASK_ID, identity.eventId)
+            putExtra(EXTRA_SEMANTIC_KEY, identity.semanticKey)
             putExtra(EXTRA_NOTIFICATION_AT_UTC, System.currentTimeMillis())
-            occurrenceDeadlineUtcMillis?.let { putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, it) }
+            putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, identity.occurrenceUtcMillis)
         }
         val tapPendingIntent = PendingIntent.getActivity(
             context,
@@ -167,18 +215,18 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             tapIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-
         val gotItIntent = context.appComponentIntent(NOTIFICATION_ACTION_RECEIVER_CLASS).apply {
             action = ACTION_GOT_IT
-            putExtra(EXTRA_TASK_ID, taskId)
+            data = pendingIntentUri(identity.semanticKey, ROLE_GOT_IT)
+            putExtra(EXTRA_TASK_ID, identity.eventId)
+            putExtra(EXTRA_SEMANTIC_KEY, identity.semanticKey)
         }
         val gotItPendingIntent = PendingIntent.getBroadcast(
             context,
-            notificationId + 2,
+            notificationId,
             gotItIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-
         return NotificationCompat.Builder(context, ONGOING_CHANNEL_ID)
             .setSmallIcon(context.appDrawable("ic_notification"))
             .setContentTitle(title)
@@ -189,50 +237,10 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             .addAction(
                 0,
                 context.appString("notification_action_mark_done"),
-                markDonePendingIntent(context, taskId, notificationId, occurrenceDeadlineUtcMillis),
+                markDonePendingIntent(context, identity.eventId, identity.semanticKey, notificationId, identity.occurrenceUtcMillis),
             )
             .addAction(0, context.appString("notification_action_got_it"), gotItPendingIntent)
             .build()
-    }
-
-    private fun logOngoingChannelState() {
-        val notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            log.d { "All-day notification channel state: notificationsEnabled=$notificationsEnabled" }
-            return
-        }
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channel = manager.getNotificationChannel(ONGOING_CHANNEL_ID)
-        if (channel == null) {
-            log.d { "All-day notification channel state: missing, notificationsEnabled=$notificationsEnabled" }
-            return
-        }
-        log.d {
-            "All-day notification channel state: importance=${channel.importance}, " +
-                "blocked=${channel.importance == NotificationManager.IMPORTANCE_NONE}, " +
-                "notificationsEnabled=$notificationsEnabled"
-        }
-    }
-
-    actual override fun stopOngoing(taskId: String) {
-        log.d { "Stopping ongoing notification for task=$taskId" }
-        val notificationId = notificationId(taskId, ONGOING_REMINDER_ID)
-        NotificationManagerCompat.from(context).cancel(notificationId)
-    }
-
-    actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
-        requests.forEach { request ->
-            schedule(
-                taskId = request.eventId,
-                title = request.title,
-                body = request.body,
-                triggerAtMillis = request.triggerAtUtcMillis,
-                reminderId = request.reminderId,
-                occurrenceDeadlineUtcMillis = request.occurrenceUtcMillis,
-                allowMarkDone = request.allowMarkDone,
-                rescheduleAfterFire = request.rescheduleAfterFire,
-            )
-        }
     }
 
     companion object {
@@ -241,6 +249,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         const val EXTRA_TASK_ID = "task_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_BODY = "body"
+        const val EXTRA_SEMANTIC_KEY = "semantic_key"
         const val EXTRA_NOTIFICATION_ID = "notification_id"
         const val EXTRA_OCCURRENCE_DEADLINE_UTC = "occurrence_deadline_utc"
         const val EXTRA_NOTIFICATION_AT_UTC = "notification_at_utc"
@@ -248,46 +257,47 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         const val EXTRA_RESCHEDULE_AFTER_FIRE = "reschedule_after_fire"
         const val ACTION_MARK_DONE = "com.udnahc.opentasks.ACTION_MARK_DONE"
         const val ACTION_GOT_IT = "com.udnahc.opentasks.ACTION_GOT_IT"
-        private const val ONGOING_REMINDER_ID = 99
-        private val REMINDER_NOTIFICATION_IDS = 0 until ONGOING_REMINDER_ID
 
-        fun notificationId(taskId: String, reminderId: Int): Int =
-            "$taskId:$reminderId".hashCode().and(0x7FFFFFFF)
+        fun pendingIntentUri(semanticKey: String, role: String): Uri = Uri.Builder()
+            .scheme("opentasks")
+            .authority("reminder")
+            .appendPath(role)
+            .appendQueryParameter("key", semanticKey)
+            .build()
 
         fun markDonePendingIntent(
             context: Context,
-            taskId: String,
+            eventId: String,
+            semanticKey: String,
             notificationId: Int,
-            occurrenceDeadlineUtcMillis: Long?,
+            occurrenceDeadlineUtcMillis: Long,
         ): PendingIntent {
             val intent = context.appComponentIntent(NOTIFICATION_ACTION_RECEIVER_CLASS).apply {
                 action = ACTION_MARK_DONE
-                putExtra(EXTRA_TASK_ID, taskId)
+                data = pendingIntentUri(semanticKey, ROLE_MARK_DONE)
+                putExtra(EXTRA_TASK_ID, eventId)
+                putExtra(EXTRA_SEMANTIC_KEY, semanticKey)
                 putExtra(EXTRA_NOTIFICATION_ID, notificationId)
-                occurrenceDeadlineUtcMillis?.let { putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, it) }
+                putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, occurrenceDeadlineUtcMillis)
             }
             return PendingIntent.getBroadcast(
                 context,
-                markDoneRequestCode(notificationId),
+                notificationId,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
         }
 
-        fun cancelDisplayedReminders(
-            context: Context,
-            eventId: String,
-            exceptNotificationId: Int? = null,
-        ) {
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            REMINDER_NOTIFICATION_IDS
-                .map { notificationId(eventId, it) }
-                .filter { it != exceptNotificationId }
-                .forEach(manager::cancel)
-        }
+        private const val ROLE_ALARM = "alarm"
+        const val ROLE_TAP = "tap"
+        private const val ROLE_ONGOING_TAP = "ongoing_tap"
+        private const val ROLE_MARK_DONE = "mark_done"
+        private const val ROLE_GOT_IT = "got_it"
+        private const val LEGACY_ONGOING_SLOT = 99
+        private val LEGACY_REMINDER_SLOTS = 0 until LEGACY_ONGOING_SLOT
 
-        private fun markDoneRequestCode(notificationId: Int): Int =
-            "mark_done:$notificationId".hashCode().and(0x7FFFFFFF)
+        private fun legacyNotificationId(eventId: String, slot: Int): Int =
+            "$eventId:$slot".hashCode().and(0x7FFFFFFF)
     }
 }
 

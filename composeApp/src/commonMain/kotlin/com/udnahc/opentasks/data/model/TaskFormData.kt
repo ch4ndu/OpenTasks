@@ -12,7 +12,7 @@ data class TaskFormData(
     val isAllDay: Boolean = false,
     val reminderDays: Int = 0,
     val recurrence: RecurrenceType = RecurrenceType.NONE,
-    val categoryId: String = "00000000-0000-0000-0000-000000000001",
+    val categoryId: String = AppConstants.DEFAULT_INBOX_ID,
     val section: String? = null,
     val status: TaskStatus = TaskStatus.TODO,
     val location: String = "",

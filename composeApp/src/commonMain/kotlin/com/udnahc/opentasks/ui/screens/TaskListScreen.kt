@@ -37,8 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import com.udnahc.opentasks.data.extensions.formatDateShort
-import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
+import androidx.compose.ui.unit.Dp
 import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskListFilter
@@ -143,12 +142,14 @@ fun TaskListScreen(
             val listProjection by viewModel.listProjection.collectAsState()
             val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
             val taskContentPreviews by viewModel.taskContentPreviews.collectAsState()
+            val taskDueTextById by viewModel.taskDueTextById.collectAsState()
             TaskListContent(
                 listName = selectedListName,
                 completedTasks = listProjection.completedTasks,
                 groupedActiveTasks = listProjection.groupedActiveTasks,
                 taskImageSummaries = taskImageSummaries,
                 taskContentPreviews = taskContentPreviews,
+                taskDueTextById = taskDueTextById,
                 onTaskClick = onTaskClick,
                 onToggleComplete = { viewModel.toggleComplete(it) },
                 onToggleStar = { viewModel.toggleStar(it) },
@@ -165,6 +166,7 @@ fun TaskListScreen(
 
         TaskListViewMode.BOARD -> {
             val tasksByStatus by viewModel.tasksByStatus.collectAsState()
+            val taskDueTextById by viewModel.boardTaskDueTextById.collectAsState()
             Box(
                 modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
             ) {
@@ -175,6 +177,7 @@ fun TaskListScreen(
                 ) {
                     KanbanBoardContent(
                         tasksByStatus = tasksByStatus,
+                        taskDueTextById = taskDueTextById,
                         onTaskClick = onTaskClick,
                         onStatusChange = { task, newStatus ->
                             viewModel.moveTaskToStatus(
@@ -255,6 +258,7 @@ internal fun TaskListContent(
     groupedActiveTasks: List<SectionGroup> = emptyList(),
     taskImageSummaries: Map<String, AttachmentSummary> = emptyMap(),
     taskContentPreviews: Map<String, String> = emptyMap(),
+    taskDueTextById: Map<String, String> = emptyMap(),
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onToggleStar: (Task) -> Unit = {},
@@ -320,6 +324,7 @@ internal fun TaskListContent(
                                 },
                                 headerCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
                                 contentCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                                showContent = false,
                             ) {}
                         }
                         if (!isCollapsed) {
@@ -328,6 +333,7 @@ internal fun TaskListContent(
                                     task = task,
                                     contentPreview = taskContentPreviews[task.id].orEmpty(),
                                     imageSummary = taskImageSummaries[task.id],
+                                    dueText = taskDueTextById[task.id].orEmpty(),
                                     isOverdue = group.category == ActiveTaskListSection.OVERDUE,
                                     onToggleComplete = { onToggleComplete(task) },
                                     onClick = { onTaskClick(task) },
@@ -355,6 +361,7 @@ internal fun TaskListContent(
                                 onToggle = { completedCollapsed = !completedCollapsed },
                                 headerCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
                                 contentCardModifier = Modifier.padding(horizontal = dimens.paddingLarge),
+                                showContent = false,
                             ) {}
                         }
 
@@ -367,6 +374,7 @@ internal fun TaskListContent(
                                     task = task,
                                     contentPreview = taskContentPreviews[task.id].orEmpty(),
                                     imageSummary = taskImageSummaries[task.id],
+                                    dueText = taskDueTextById[task.id].orEmpty(),
                                     onToggleComplete = { onToggleComplete(task) },
                                     onClick = { onTaskClick(task) },
                                     onToggleStar = { onToggleStar(task) },
@@ -510,47 +518,24 @@ internal fun TaskRow(
     task: Task,
     contentPreview: String = "",
     imageSummary: AttachmentSummary? = null,
+    dueText: String = "",
     isOverdue: Boolean = false,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
     onToggleStar: () -> Unit = {},
 ) {
-    val dimens = OpenTasksTheme.dimens
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = dimens.paddingLarge, vertical = dimens.listRowVerticalPadding),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TaskCheckboxButton(
-            isChecked = false,
-            tint = priorityColor(task.priority),
-            onClick = onToggleComplete,
-        )
-
-        Spacer(Modifier.width(dimens.spacerLarge))
-
-        Column(modifier = Modifier.weight(1f)) {
-            TaskTitleText(
-                title = task.title,
-                isCompleted = false,
-            )
-            TaskDueDateText(
-                deadline = task.deadline,
-                isCompleted = false,
-                isOverdue = isOverdue,
-            )
-            TaskContentPreviewText(contentPreview)
-        }
-
-        TaskImageSummaryAffordance(imageSummary)
-
-        TaskStarButton(
-            isStarred = task.isStarred,
-            onClick = onToggleStar,
-        )
-    }
+    TaskListRow(
+        task = task,
+        contentPreview = contentPreview,
+        imageSummary = imageSummary,
+        dueText = dueText,
+        isCompleted = false,
+        isOverdue = isOverdue,
+        verticalPadding = OpenTasksTheme.dimens.listRowVerticalPadding,
+        onToggleComplete = onToggleComplete,
+        onClick = onClick,
+        onToggleStar = onToggleStar,
+    )
 }
 
 @Composable
@@ -558,9 +543,37 @@ internal fun CompletedTaskRow(
     task: Task,
     contentPreview: String = "",
     imageSummary: AttachmentSummary? = null,
+    dueText: String = "",
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
     onToggleStar: () -> Unit = {},
+) {
+    TaskListRow(
+        task = task,
+        contentPreview = contentPreview,
+        imageSummary = imageSummary,
+        dueText = dueText,
+        isCompleted = true,
+        isOverdue = false,
+        verticalPadding = OpenTasksTheme.dimens.listRowCompletedVerticalPadding,
+        onToggleComplete = onToggleComplete,
+        onClick = onClick,
+        onToggleStar = onToggleStar,
+    )
+}
+
+@Composable
+private fun TaskListRow(
+    task: Task,
+    contentPreview: String,
+    imageSummary: AttachmentSummary?,
+    dueText: String,
+    isCompleted: Boolean,
+    isOverdue: Boolean,
+    verticalPadding: Dp,
+    onToggleComplete: () -> Unit,
+    onClick: () -> Unit,
+    onToggleStar: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
     Row(
@@ -569,13 +582,17 @@ internal fun CompletedTaskRow(
             .clickable(onClick = onClick)
             .padding(
                 horizontal = dimens.paddingLarge,
-                vertical = dimens.listRowCompletedVerticalPadding
+                vertical = verticalPadding,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TaskCheckboxButton(
-            isChecked = true,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            isChecked = isCompleted,
+            tint = if (isCompleted) {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            } else {
+                priorityColor(task.priority)
+            },
             onClick = onToggleComplete,
         )
 
@@ -584,12 +601,12 @@ internal fun CompletedTaskRow(
         Column(modifier = Modifier.weight(1f)) {
             TaskTitleText(
                 title = task.title,
-                isCompleted = true,
+                isCompleted = isCompleted,
             )
             TaskDueDateText(
-                deadline = task.deadline,
-                isCompleted = true,
-                isOverdue = false,
+                dueText = dueText,
+                isCompleted = isCompleted,
+                isOverdue = isOverdue,
             )
             TaskContentPreviewText(contentPreview)
         }
@@ -627,13 +644,13 @@ private fun activeSectionLabel(category: ActiveTaskListSection): String = when (
 
 @Composable
 private fun TaskDueDateText(
-    deadline: Long?,
+    dueText: String,
     isCompleted: Boolean,
     isOverdue: Boolean,
 ) {
-    val dueDate = deadline ?: return
+    if (dueText.isBlank()) return
     Text(
-        text = "${formatDateShort(dueDate)}, ${formatTimeFromLocalMillis(dueDate)}",
+        text = dueText,
         style = MaterialTheme.typography.labelMedium,
         color = when {
             isCompleted -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)

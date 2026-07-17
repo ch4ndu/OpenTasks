@@ -36,7 +36,12 @@ class ObserveTodayTasksUseCase(
                     .sortedBy { it.deadline },
                 today = active.filter { it.deadline != null && it.deadline >= startOfToday && it.deadline < startOfTomorrow }
                     .sortedBy { it.deadline },
-                completedToday = tasks.filter { it.status == TaskStatus.DONE && it.updatedAt >= startOfToday && it.updatedAt < startOfTomorrow }
+                completedToday = tasks.filter {
+                    it.status == TaskStatus.DONE &&
+                        it.completedAt != null &&
+                        it.completedAt >= startOfToday &&
+                        it.completedAt < startOfTomorrow
+                }
                     .sortedByDescending { it.updatedAt },
             )
         }

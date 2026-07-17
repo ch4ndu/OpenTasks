@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_bg_system">#FF1E1E1E</color>
+    <color name="widget_text_system">#FFFFFFFF</color>
+    <color name="calendar_widget_day_dimmed_system">#FF555555</color>
+</resources>

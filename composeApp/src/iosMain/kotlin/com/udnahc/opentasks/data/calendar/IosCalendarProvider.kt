@@ -54,6 +54,7 @@ class IosCalendarProvider : CalendarProvider {
             val ekEvent = event as? EKEvent ?: return@mapNotNull null
             val title = ekEvent.title ?: return@mapNotNull null
             if (title.isBlank()) return@mapNotNull null
+            val startDate = ekEvent.startDate ?: return@mapNotNull null
 
             val statusStr = when (ekEvent.status.toInt()) {
                 1 -> "Confirmed"
@@ -67,11 +68,10 @@ class IosCalendarProvider : CalendarProvider {
             } ?: emptyList()
 
             CalendarEvent(
-                externalId = "ios_${ekEvent.eventIdentifier}",
+                externalId = "ios_${ekEvent.eventIdentifier}_${startDate.timeIntervalSince1970.toLong()}",
                 title = title,
                 description = ekEvent.notes ?: "",
-                startTimeUtcMillis = ekEvent.startDate?.let { (it.timeIntervalSince1970 * 1000).toLong() }
-                    ?: return@mapNotNull null,
+                startTimeUtcMillis = (startDate.timeIntervalSince1970 * 1000).toLong(),
                 endTimeUtcMillis = ekEvent.endDate?.let { (it.timeIntervalSince1970 * 1000).toLong() },
                 calendarName = ekEvent.calendar?.title ?: "",
                 isAllDay = ekEvent.allDay,

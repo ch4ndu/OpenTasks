@@ -18,7 +18,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,12 +65,13 @@ internal enum class OpenTasksTopBarContainerStyle {
     Translucent,
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun OpenTasksTopBar(
     title: String = "",
     modifier: Modifier = Modifier,
     containerStyle: OpenTasksTopBarContainerStyle = OpenTasksTopBarContainerStyle.Default,
+    centerTitle: Boolean = false,
     navigationIcon: @Composable () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
 ) {
@@ -78,17 +81,19 @@ internal fun OpenTasksTopBar(
         },
         modifier = modifier,
         containerStyle = containerStyle,
+        centerTitle = centerTitle,
         navigationIcon = navigationIcon,
         actions = actions,
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun OpenTasksTopBar(
     titleContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     containerStyle: OpenTasksTopBarContainerStyle = OpenTasksTopBarContainerStyle.Default,
+    centerTitle: Boolean = false,
     navigationIcon: @Composable () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
 ) {
@@ -98,13 +103,23 @@ internal fun OpenTasksTopBar(
         OpenTasksTopBarContainerStyle.Translucent -> MaterialTheme.colorScheme.background.copy(alpha = 0.8f)
     }
 
-    TopAppBar(
-        modifier = modifier,
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = containerColor),
-        navigationIcon = navigationIcon,
-        title = titleContent,
-        actions = actions,
-    )
+    if (centerTitle) {
+        CenterAlignedTopAppBar(
+            modifier = modifier,
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = containerColor),
+            navigationIcon = navigationIcon,
+            title = titleContent,
+            actions = actions,
+        )
+    } else {
+        TopAppBar(
+            modifier = modifier,
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = containerColor),
+            navigationIcon = navigationIcon,
+            title = titleContent,
+            actions = actions,
+        )
+    }
 }
 
 @Composable
@@ -208,8 +223,9 @@ internal fun PrimaryDialogTextButton(
 internal fun DialogCancelTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
-    TextButton(onClick = onClick, modifier = modifier) {
+    TextButton(onClick = onClick, enabled = enabled, modifier = modifier) {
         Text(
             text = stringResource(Res.string.cancel),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -290,6 +306,7 @@ fun CollapsibleSection(
     headerCardModifier: Modifier = Modifier,
     contentCardModifier: Modifier = Modifier,
     labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    showContent: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -297,7 +314,7 @@ fun CollapsibleSection(
     // Header card — fully rounded when collapsed, top-rounded when expanded
     Card(
         modifier = headerCardModifier.fillMaxWidth(),
-        shape = if (isCollapsed) {
+        shape = if (isCollapsed || !showContent) {
             RoundedCornerShape(dimens.cornerXLarge)
         } else {
             RoundedCornerShape(topStart = dimens.cornerXLarge, topEnd = dimens.cornerXLarge)
@@ -316,22 +333,24 @@ fun CollapsibleSection(
     }
 
     // Content card — bottom-rounded, animated
-    AnimatedVisibility(
-        visible = !isCollapsed,
-        enter = expandVertically(),
-        exit = shrinkVertically(),
-    ) {
-        Card(
-            modifier = contentCardModifier.fillMaxWidth(),
-            shape = RoundedCornerShape(
-                bottomStart = dimens.cornerXLarge,
-                bottomEnd = dimens.cornerXLarge,
-            ),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
+    if (showContent) {
+        AnimatedVisibility(
+            visible = !isCollapsed,
+            enter = expandVertically(),
+            exit = shrinkVertically(),
         ) {
-            content()
+            Card(
+                modifier = contentCardModifier.fillMaxWidth(),
+                shape = RoundedCornerShape(
+                    bottomStart = dimens.cornerXLarge,
+                    bottomEnd = dimens.cornerXLarge,
+                ),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            ) {
+                content()
+            }
         }
     }
 }
@@ -384,23 +403,32 @@ fun CompleteSeriesDialog(
     onCompleteOccurrence: () -> Unit,
     onCompleteSeries: () -> Unit,
     onDismiss: () -> Unit,
+    enabled: Boolean = true,
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (enabled) onDismiss() },
         title = { Text(stringResource(Res.string.complete_recurring_task_title)) },
         text = {
             Column {
-                TextButton(onClick = onCompleteOccurrence, modifier = Modifier.fillMaxWidth()) {
+                TextButton(
+                    onClick = onCompleteOccurrence,
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     Text(stringResource(Res.string.complete_this_occurrence))
                 }
-                TextButton(onClick = onCompleteSeries, modifier = Modifier.fillMaxWidth()) {
+                TextButton(
+                    onClick = onCompleteSeries,
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     Text(stringResource(Res.string.complete_series))
                 }
             }
         },
         confirmButton = {},
         dismissButton = {
-            DialogCancelTextButton(onClick = onDismiss)
+            DialogCancelTextButton(onClick = onDismiss, enabled = enabled)
         },
     )
 }

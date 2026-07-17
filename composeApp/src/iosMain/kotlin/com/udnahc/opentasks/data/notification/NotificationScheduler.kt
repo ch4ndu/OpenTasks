@@ -3,16 +3,16 @@ package com.udnahc.opentasks.data.notification
 import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_EVENT_ID_KEY
 import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_NOTIFICATION_AT_UTC_KEY
 import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_OCCURRENCE_DEADLINE_UTC_KEY
-import platform.UserNotifications.UNCalendarNotificationTrigger
+import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_SEMANTIC_KEY
+import kotlinx.coroutines.suspendCancellableCoroutine
+import platform.Foundation.NSDate
+import platform.Foundation.timeIntervalSince1970
 import platform.UserNotifications.UNMutableNotificationContent
 import platform.UserNotifications.UNNotification
 import platform.UserNotifications.UNNotificationRequest
 import platform.UserNotifications.UNNotificationSound
+import platform.UserNotifications.UNTimeIntervalNotificationTrigger
 import platform.UserNotifications.UNUserNotificationCenter
-import platform.Foundation.NSCalendar
-import platform.Foundation.NSDate
-import platform.Foundation.dateWithTimeIntervalSince1970
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -20,99 +20,61 @@ actual class NotificationScheduler : ReminderScheduler {
 
     private val center = UNUserNotificationCenter.currentNotificationCenter()
 
-    actual override fun schedule(
-        taskId: String,
-        title: String,
-        body: String,
-        triggerAtMillis: Long,
-        reminderId: Int,
-        occurrenceDeadlineUtcMillis: Long?,
-        allowMarkDone: Boolean,
-        rescheduleAfterFire: Boolean,
-    ) {
-        val identifier = requestId(taskId, occurrenceDeadlineUtcMillis ?: triggerAtMillis, reminderId)
+    actual override suspend fun schedule(request: ReminderRequest) {
+        val identifier = request.requestId
         center.removePendingNotificationRequestsWithIdentifiers(listOf(identifier))
         center.removeDeliveredNotificationsWithIdentifiers(listOf(identifier))
-        val request = notificationRequest(
-            identifier = identifier,
-            taskId = taskId,
-            title = title,
-            body = body,
-            triggerAtMillis = triggerAtMillis,
-            occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
-        )
-
-        center.getPendingNotificationRequestsWithCompletionHandler { pending ->
-            val reminderIds = pending.orEmpty().mapNotNull { item ->
-                (item as? UNNotificationRequest)?.identifier
-            }
-                .filter(::isReminderRequestId)
-            if (identifier in reminderIds || reminderIds.size < IOS_PENDING_REMINDER_LIMIT) {
-                center.addNotificationRequest(request, withCompletionHandler = null)
-            }
+        val reminderIds = pendingReminderIds()
+        if (identifier in reminderIds || reminderIds.size < IOS_PENDING_REMINDER_LIMIT) {
+            addNotificationRequestAwait(notificationRequest(identifier, request))
         }
     }
 
-    actual override fun cancel(taskId: String, reminderId: Int) {
-        removeMatchingRequests(taskId) { identifier -> identifier.endsWith("_$reminderId") }
+    actual override suspend fun cancel(semanticKey: String) {
+        val identifier = "$REMINDER_REQUEST_PREFIX$semanticKey"
+        center.removePendingNotificationRequestsWithIdentifiers(listOf(identifier))
+        center.removeDeliveredNotificationsWithIdentifiers(listOf(identifier))
     }
 
-    actual override fun cancelReminders(taskId: String) {
-        removeMatchingRequests(taskId) { true }
-        val legacyOngoing = legacyOngoingIds(taskId)
-        center.removePendingNotificationRequestsWithIdentifiers(legacyOngoing)
-        center.removeDeliveredNotificationsWithIdentifiers(legacyOngoing)
+    actual override suspend fun cancelPendingReminders(eventId: String) {
+        removeMatchingRequests(eventId)
     }
 
-    actual override fun cancelAll(taskId: String) {
-        cancelReminders(taskId)
-        stopOngoing(taskId)
+    actual override suspend fun cancelReminders(eventId: String) {
+        removeMatchingRequests(eventId)
     }
 
-    actual override fun startOngoing(
-        taskId: String,
-        title: String,
-        occurrenceDeadlineUtcMillis: Long?,
-    ) {
-        stopOngoing(taskId)
+    actual override suspend fun cancelAll(eventId: String) {
+        cancelReminders(eventId)
+        stopOngoing(eventId)
     }
 
-    actual override fun stopOngoing(taskId: String) {
-        val ids = legacyOngoingIds(taskId)
-        center.removePendingNotificationRequestsWithIdentifiers(ids)
-        center.removeDeliveredNotificationsWithIdentifiers(ids)
+    actual override suspend fun startOngoing(identity: ReminderIdentity, title: String) {
+        // iOS has no persistent ongoing-notification equivalent. Remove a stale
+        // request with this semantic identity instead of inventing one.
+        cancel(identity.semanticKey)
     }
+
+    actual override suspend fun stopOngoing(eventId: String) = Unit
 
     actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
         val pendingIds = pendingReminderIds()
         if (pendingIds.isNotEmpty()) {
             center.removePendingNotificationRequestsWithIdentifiers(pendingIds)
-            center.removeDeliveredNotificationsWithIdentifiers(pendingIds)
         }
         val deliveredIds = deliveredReminderIds()
         if (deliveredIds.isNotEmpty()) {
             center.removeDeliveredNotificationsWithIdentifiers(deliveredIds)
         }
 
-        // This callback is also a barrier for the preceding removal request.
+        // The callback is a barrier for the preceding removal request. Requests
+        // have already been selected fairly by the common 60-request queue.
         pendingReminderIds()
         val selected = requests.take(IOS_PENDING_REMINDER_LIMIT)
-        val selectedIds = selected.map { request ->
-            requestId(request.eventId, request.occurrenceUtcMillis, request.reminderId)
-        }
+        val selectedIds = selected.map(ReminderRequest::requestId)
         try {
-            selected.forEachIndexed { index, request ->
-                val identifier = selectedIds[index]
-                addNotificationRequestAwait(
-                    notificationRequest(
-                        identifier = identifier,
-                        taskId = request.eventId,
-                        title = request.title,
-                        body = request.body,
-                        triggerAtMillis = request.triggerAtUtcMillis,
-                        occurrenceDeadlineUtcMillis = request.occurrenceUtcMillis,
-                    )
-                )
+            selected.forEach { request ->
+                addNotificationRequestAwait(notificationRequest(request.requestId, request))
             }
         } catch (e: Exception) {
             center.removePendingNotificationRequestsWithIdentifiers(selectedIds)
@@ -127,7 +89,7 @@ actual class NotificationScheduler : ReminderScheduler {
                     continuation.resume(
                         pending.orEmpty().mapNotNull { request ->
                             (request as? UNNotificationRequest)?.identifier
-                        }.filter(::isReminderRequestId)
+                        }.filter(::isOpenTasksReminderRequestId)
                     )
                 }
             }
@@ -157,9 +119,7 @@ actual class NotificationScheduler : ReminderScheduler {
                 if (error == null) {
                     continuation.resume(Unit)
                 } else {
-                    continuation.resumeWithException(
-                        IllegalStateException(error.localizedDescription)
-                    )
+                    continuation.resumeWithException(IllegalStateException(error.localizedDescription))
                 }
             }
         }
@@ -167,83 +127,54 @@ actual class NotificationScheduler : ReminderScheduler {
 
     private fun notificationRequest(
         identifier: String,
-        taskId: String,
-        title: String,
-        body: String,
-        triggerAtMillis: Long,
-        occurrenceDeadlineUtcMillis: Long?,
+        request: ReminderRequest,
     ): UNNotificationRequest {
         val userInfo = mutableMapOf<Any?, String>(
-            NOTIFICATION_DEEP_LINK_EVENT_ID_KEY to taskId,
-            NOTIFICATION_DEEP_LINK_NOTIFICATION_AT_UTC_KEY to triggerAtMillis.toString(),
+            NOTIFICATION_DEEP_LINK_EVENT_ID_KEY to request.eventId,
+            NOTIFICATION_DEEP_LINK_NOTIFICATION_AT_UTC_KEY to request.triggerAtUtcMillis.toString(),
+            NOTIFICATION_DEEP_LINK_SEMANTIC_KEY to request.identity.semanticKey,
+            NOTIFICATION_DEEP_LINK_OCCURRENCE_DEADLINE_UTC_KEY to request.occurrenceUtcMillis.toString(),
         )
-        occurrenceDeadlineUtcMillis?.let {
-            userInfo[NOTIFICATION_DEEP_LINK_OCCURRENCE_DEADLINE_UTC_KEY] = it.toString()
-        }
         val content = UNMutableNotificationContent().apply {
-            setTitle(title)
-            setBody(body)
+            setTitle(request.title)
+            setBody(request.body)
             setSound(UNNotificationSound.defaultSound)
-            setThreadIdentifier("opentasks_reminder_$taskId")
+            setThreadIdentifier("opentasks_reminder_${request.eventId}")
             setUserInfo(userInfo)
         }
-        val triggerDate = NSDate.dateWithTimeIntervalSince1970(triggerAtMillis / 1000.0)
-        val calendar = NSCalendar.currentCalendar
-        val components = calendar.components(
-            NSCalendar.currentCalendar.let {
-                platform.Foundation.NSCalendarUnitYear or
-                    platform.Foundation.NSCalendarUnitMonth or
-                    platform.Foundation.NSCalendarUnitDay or
-                    platform.Foundation.NSCalendarUnitHour or
-                    platform.Foundation.NSCalendarUnitMinute or
-                    platform.Foundation.NSCalendarUnitSecond
-            },
-            fromDate = triggerDate,
-        )
-        val trigger = UNCalendarNotificationTrigger.triggerWithDateMatchingComponents(
-            dateComponents = components,
+        // A time interval calculated from the UTC target preserves the delivery
+        // instant when the device timezone changes after this request is queued.
+        val nowUtcMillis = (NSDate().timeIntervalSince1970 * 1000).toLong()
+        val intervalSeconds = ((request.triggerAtUtcMillis - nowUtcMillis) / 1000.0).coerceAtLeast(1.0)
+        val trigger = UNTimeIntervalNotificationTrigger.triggerWithTimeInterval(
+            timeInterval = intervalSeconds,
             repeats = false,
         )
-        return UNNotificationRequest.requestWithIdentifier(
-            identifier = identifier,
-            content = content,
-            trigger = trigger,
-        )
+        return UNNotificationRequest.requestWithIdentifier(identifier, content, trigger)
     }
 
-    private fun requestId(taskId: String, occurrenceUtcMillis: Long, reminderId: Int): String =
-        "${REMINDER_REQUEST_PREFIX}${taskId}_${occurrenceUtcMillis}_$reminderId"
-
-    private fun removeMatchingRequests(
-        taskId: String,
-        predicate: (String) -> Boolean,
-    ) {
-        val eventPrefix = "$REMINDER_REQUEST_PREFIX${taskId}_"
-        val legacyEventPrefix = "task_${taskId}_reminder_"
-        center.getPendingNotificationRequestsWithCompletionHandler { pending ->
-            val ids = pending.orEmpty().mapNotNull { request ->
-                (request as? UNNotificationRequest)?.identifier
-            }
-                .filter {
-                    (it.startsWith(eventPrefix) || it.startsWith(legacyEventPrefix)) && predicate(it)
-                }
-            if (ids.isNotEmpty()) center.removePendingNotificationRequestsWithIdentifiers(ids)
+    private suspend fun removeMatchingRequests(eventId: String) {
+        val semanticPrefix = "$REMINDER_REQUEST_PREFIX" + semanticEventPrefix(eventId)
+        val previousSemanticPrefix = "$REMINDER_REQUEST_PREFIX${eventId}_"
+        val legacyPrefix = "task_${eventId}_reminder_"
+        val pendingIds = pendingReminderIds().filter {
+            it.startsWith(semanticPrefix) ||
+                it.startsWith(previousSemanticPrefix) ||
+                it.startsWith(legacyPrefix)
         }
-        center.getDeliveredNotificationsWithCompletionHandler { delivered ->
-            val ids = delivered.orEmpty().mapNotNull { notification ->
-                (notification as? UNNotification)?.request?.identifier
-            }
-                .filter {
-                    (it.startsWith(eventPrefix) || it.startsWith(legacyEventPrefix)) && predicate(it)
-                }
-            if (ids.isNotEmpty()) center.removeDeliveredNotificationsWithIdentifiers(ids)
+        if (pendingIds.isNotEmpty()) {
+            center.removePendingNotificationRequestsWithIdentifiers(pendingIds)
+        }
+        val deliveredIds = deliveredReminderIds().filter {
+            it.startsWith(semanticPrefix) ||
+                it.startsWith(previousSemanticPrefix) ||
+                it.startsWith(legacyPrefix)
+        }
+        if (deliveredIds.isNotEmpty()) {
+            center.removeDeliveredNotificationsWithIdentifiers(deliveredIds)
         }
     }
 
-    private fun isReminderRequestId(identifier: String): Boolean =
-        isOpenTasksReminderRequestId(identifier)
-
-    private fun legacyOngoingIds(taskId: String): List<String> =
-        (8..22 step 2).map { "task_${taskId}_ongoing_$it" }
-
+    private fun semanticEventPrefix(eventId: String): String =
+        "v1|${eventId.length}|$eventId|"
 }

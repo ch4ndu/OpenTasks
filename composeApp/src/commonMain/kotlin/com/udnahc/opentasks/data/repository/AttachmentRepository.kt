@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface AttachmentRepository {
     fun observeForOwner(ownerType: String, ownerId: String, kind: String): Flow<List<Attachment>>
-    fun observeImageSummaries(): Flow<List<AttachmentSummary>>
+    fun observeTaskImageSummaries(): Flow<List<AttachmentSummary>>
     suspend fun getByIdAnyState(id: String): Attachment?
     suspend fun getActiveForOwnerAnyState(ownerType: String, ownerId: String): List<Attachment>
     suspend fun nextSortOrder(ownerType: String, ownerId: String, kind: String): Int

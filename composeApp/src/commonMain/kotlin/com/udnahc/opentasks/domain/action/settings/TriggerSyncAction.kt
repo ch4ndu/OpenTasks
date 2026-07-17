@@ -10,6 +10,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.lighthousegames.logging.logging
 
 private val log = logging("TriggerSyncAction")
@@ -21,6 +23,7 @@ class TriggerSyncAction(
     // Long-lived scope: this class is a Koin `single` that lives for the app's lifetime.
     // SupervisorJob ensures individual sync failures don't cancel the entire scope.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val debounceMutex = Mutex()
     private var debounceJob: Job? = null
 
     companion object {
@@ -40,14 +43,16 @@ class TriggerSyncAction(
             log.d { "Sync skipped: PocketBase not configured" }
             return
         }
-        debounceJob?.cancel()
-        debounceJob = scope.launch {
+        debounceMutex.withLock {
+            debounceJob?.cancel()
+            debounceJob = scope.launch {
             delay(DEBOUNCE_DELAY_MS)
             log.d { "Debounce elapsed, starting sync" }
             try {
                 syncService.syncAll()
             } catch (e: Exception) {
                 log.e(e) { "Debounced sync failed" }
+            }
             }
         }
     }
@@ -63,12 +68,17 @@ class TriggerSyncAction(
             log.d { "Sync skipped: PocketBase not configured" }
             return
         }
-        debounceJob?.cancel()
+        debounceMutex.withLock {
+            debounceJob?.cancel()
+            debounceJob = null
+        }
         syncService.syncAll()
     }
 
     suspend fun cancelPendingSync() {
-        debounceJob?.cancelAndJoin()
-        debounceJob = null
+        val pending = debounceMutex.withLock {
+            debounceJob.also { debounceJob = null }
+        }
+        pending?.cancelAndJoin()
     }
 }

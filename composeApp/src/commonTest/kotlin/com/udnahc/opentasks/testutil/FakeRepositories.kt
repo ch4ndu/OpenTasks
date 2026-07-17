@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.testutil
 
 import com.udnahc.opentasks.data.model.AppSettings
+import com.udnahc.opentasks.data.model.ATTACHMENT_OWNER_TASK
 import com.udnahc.opentasks.data.model.Attachment
 import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.AttachmentSyncState
@@ -17,16 +18,25 @@ import com.udnahc.opentasks.data.repository.CountdownRepository
 import com.udnahc.opentasks.data.repository.NoteRepository
 import com.udnahc.opentasks.data.repository.TagRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.data.repository.TaskAttachmentFilePaths
+import com.udnahc.opentasks.data.repository.TaskGraphDeletionResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepository {
     private val tasksFlow = MutableStateFlow(initialTasks)
+    private val writerMutex = Mutex()
     val inserted = mutableListOf<Task>()
     val updated = mutableListOf<Task>()
-    val deleted = mutableListOf<Task>()
+    var graphDeletionFiles: List<TaskAttachmentFilePaths> = emptyList()
+    var graphDeletionError: Throwable? = null
+    var mutationError: Throwable? = null
+    var allTasksSubscriptionCount = 0
 
     val tasks: List<Task>
         get() = tasksFlow.value
@@ -35,7 +45,7 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
         tasksFlow.value = tasks
     }
 
-    override fun getAllTasks(): Flow<List<Task>> = tasksFlow
+    override fun getAllTasks(): Flow<List<Task>> = tasksFlow.onStart { allTasksSubscriptionCount += 1 }
 
     override suspend fun getTaskById(id: String): Task? =
         tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }
@@ -52,14 +62,29 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
         return inserted.size.toLong()
     }
 
-    override suspend fun update(task: Task) {
-        updated.add(task)
-        tasksFlow.update { tasks -> tasks.filterNot { it.id == task.id } + task }
+    override suspend fun mutateExisting(
+        id: String,
+        transform: (Task) -> Task?,
+    ): com.udnahc.opentasks.data.repository.TaskMutationResult = writerMutex.withLock {
+        mutationError?.let { throw it }
+        val previous = tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }
+            ?: return@withLock com.udnahc.opentasks.data.repository.TaskMutationResult.Missing
+        val next = transform(previous)
+        if (next != null) {
+            updated.add(next)
+            tasksFlow.update { tasks -> tasks.filterNot { it.id == id } + next }
+        }
+        com.udnahc.opentasks.data.repository.TaskMutationResult.Existing(previous, next)
     }
 
-    override suspend fun delete(task: Task) {
-        deleted.add(task)
-        tasksFlow.update { tasks -> tasks.filterNot { it.id == task.id } }
+    override suspend fun deleteGraph(id: String): TaskGraphDeletionResult = writerMutex.withLock {
+        val previous = tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }
+            ?: return@withLock TaskGraphDeletionResult.Missing
+        graphDeletionError?.let { throw it }
+        val deletedTask = previous.copy(isDeleted = true)
+        updated.add(deletedTask)
+        tasksFlow.update { tasks -> tasks.filterNot { it.id == id } + deletedTask }
+        TaskGraphDeletionResult.Deleted(deletedTask, graphDeletionFiles)
     }
 
     override suspend fun getTasksWithDeadlines(): List<Task> =
@@ -88,9 +113,9 @@ class FakeAttachmentRepository(initialAttachments: List<Attachment> = emptyList(
             }
         }
 
-    override fun observeImageSummaries(): Flow<List<AttachmentSummary>> =
+    override fun observeTaskImageSummaries(): Flow<List<AttachmentSummary>> =
         attachmentsFlow.map { attachments ->
-            attachments.filter { !it.isDeleted }
+            attachments.filter { !it.isDeleted && it.ownerType == ATTACHMENT_OWNER_TASK }
                 .groupBy { it.ownerType to it.ownerId }
                 .map { (key, values) ->
                     val ordered = values.sortedWith(compareBy<Attachment> { it.sortOrder }.thenBy { it.createdAt })
@@ -298,7 +323,7 @@ class FakeCountdownRepository(initialCountdowns: List<Countdown> = emptyList()) 
 
     override suspend fun getCountdownByIdUtc(id: String): Countdown? = getCountdownById(id)
 
-    override suspend fun getCountdownsWithTargetsUtc(): List<Countdown> =
+    override suspend fun getAllCountdownsForReminderReconciliationUtc(): List<Countdown> =
         countdownsFlow.value.filterNot { it.isDeleted }
 
     override suspend fun insert(countdown: Countdown) {

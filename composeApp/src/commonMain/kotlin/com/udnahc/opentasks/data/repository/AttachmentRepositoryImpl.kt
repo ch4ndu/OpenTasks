@@ -30,8 +30,8 @@ class AttachmentRepositoryImpl(
             .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
-    override fun observeImageSummaries(): Flow<List<AttachmentSummary>> =
-        dao.observeActiveImagesOrdered()
+    override fun observeTaskImageSummaries(): Flow<List<AttachmentSummary>> =
+        dao.observeActiveTaskImagesOrdered()
             .map { attachments ->
                 attachments
                     .groupBy { it.ownerType to it.ownerId }
@@ -83,6 +83,7 @@ class AttachmentRepositoryImpl(
     }
 
     override suspend fun hardDelete(attachment: Attachment) {
+        require(attachment.pbId == null) { "Cannot hard-delete a remotely identified attachment" }
         withContext(ioDispatcher) {
             dao.delete(attachment.withUtcTimestamps())
         }

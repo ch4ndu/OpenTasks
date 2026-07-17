@@ -5,6 +5,7 @@ import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
+import com.udnahc.opentasks.data.notification.ReminderKind
 import com.udnahc.opentasks.data.notification.ReminderScheduler
 import com.udnahc.opentasks.data.notification.ReminderTextProvider
 import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
@@ -125,6 +126,48 @@ class ScheduleTaskRemindersActionTest {
 
         assertEquals(listOf(deadline), scheduler.scheduledAt)
         assertTrue(scheduler.startedOngoing.isEmpty())
+    }
+
+    @Test
+    fun semanticOrdinalsAreAssignedBeforePastTriggersAreFiltered() = runTest {
+        val timeZone = TimeZone.currentSystemDefault()
+        val deadline = LocalDateTime(2026, 5, 8, 13, 0).toInstant(timeZone).toEpochMilliseconds()
+        val now = deadline - (90 * MILLIS_PER_HOUR / 60)
+        val task = testTask(id = "stable-ordinal", deadline = deadline, dateReminders = "120,60,0")
+        val action = ScheduleTaskRemindersAction(
+            scheduler = FakeReminderScheduler(),
+            taskRepository = FakeTaskRepository(listOf(task)),
+            nowUtcMillisProvider = { now },
+        )
+
+        val requests = action.buildFutureRequests(task, occurrenceLimit = 1)
+
+        assertEquals(
+            listOf(1, 2),
+            requests.filter { it.identity.kind == ReminderKind.DATE }.map { it.identity.ordinal },
+        )
+    }
+
+    @Test
+    fun futureOccurrenceGenerationHonorsTheRequestedBound() = runTest {
+        val timeZone = TimeZone.currentSystemDefault()
+        val now = LocalDateTime(2026, 5, 8, 12, 0).toInstant(timeZone).toEpochMilliseconds()
+        val task = testTask(
+            id = "bounded-occurrences",
+            deadline = LocalDateTime(2026, 5, 8, 13, 0).toInstant(timeZone).toEpochMilliseconds(),
+            dateReminders = "0",
+            recurrenceType = RecurrenceType.DAILY,
+        )
+        val action = ScheduleTaskRemindersAction(
+            scheduler = FakeReminderScheduler(),
+            taskRepository = FakeTaskRepository(listOf(task)),
+            nowUtcMillisProvider = { now },
+        )
+
+        val requests = action.buildFutureRequests(task, occurrenceLimit = 2)
+
+        assertEquals(2, requests.size)
+        assertEquals(2, requests.map { it.occurrenceUtcMillis }.distinct().size)
     }
 
     @Test
@@ -335,46 +378,38 @@ private class FakeReminderScheduler : ReminderScheduler {
     val scheduledAt = mutableListOf<Long>()
     val scheduled = mutableListOf<ScheduledReminder>()
 
-    override fun schedule(
-        taskId: String,
-        title: String,
-        body: String,
-        triggerAtMillis: Long,
-        reminderId: Int,
-        occurrenceDeadlineUtcMillis: Long?,
-        allowMarkDone: Boolean,
-        rescheduleAfterFire: Boolean,
-    ) {
-        scheduledAt.add(triggerAtMillis)
+    override suspend fun schedule(request: com.udnahc.opentasks.data.notification.ReminderRequest) {
+        scheduledAt.add(request.triggerAtUtcMillis)
         scheduled.add(
             ScheduledReminder(
-                body = body,
-                triggerAtMillis = triggerAtMillis,
-                occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
-                allowMarkDone = allowMarkDone,
-                rescheduleAfterFire = rescheduleAfterFire,
+                body = request.body,
+                triggerAtMillis = request.triggerAtUtcMillis,
+                occurrenceDeadlineUtcMillis = request.occurrenceUtcMillis,
+                allowMarkDone = request.allowMarkDone,
+                rescheduleAfterFire = request.rescheduleAfterFire,
             )
         )
     }
 
-    override fun cancel(taskId: String, reminderId: Int) = Unit
+    override suspend fun cancel(semanticKey: String) = Unit
 
-    override fun cancelReminders(taskId: String) {
-        cancelledReminders.add(taskId)
+    override suspend fun cancelPendingReminders(eventId: String) = Unit
+
+    override suspend fun cancelReminders(eventId: String) {
+        cancelledReminders.add(eventId)
     }
 
-    override fun cancelAll(taskId: String) = Unit
+    override suspend fun cancelAll(eventId: String) = Unit
 
-    override fun startOngoing(
-        taskId: String,
+    override suspend fun startOngoing(
+        identity: com.udnahc.opentasks.data.notification.ReminderIdentity,
         title: String,
-        occurrenceDeadlineUtcMillis: Long?,
     ) {
-        startedOngoing.add(taskId)
-        ongoingOccurrences.add(occurrenceDeadlineUtcMillis)
+        startedOngoing.add(identity.eventId)
+        ongoingOccurrences.add(identity.occurrenceUtcMillis)
     }
 
-    override fun stopOngoing(taskId: String) = Unit
+    override suspend fun stopOngoing(eventId: String) = Unit
 }
 
 private object FakeReminderTextProvider : ReminderTextProvider {

@@ -20,7 +20,7 @@ private fun DayViewStripItemPreview() {
                 dayMillis = PreviewSampleData.sampleTodayMillis,
                 todayMillis = PreviewSampleData.sampleTodayMillis,
                 isSelected = true,
-                tasksByDay = PreviewSampleData.sampleTasksByDay,
+                hasTasks = PreviewSampleData.sampleTasksByDay.containsKey(PreviewSampleData.SAMPLE_TODAY_DAY_KEY),
                 onClick = {},
             )
         }

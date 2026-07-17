@@ -79,10 +79,10 @@ internal fun String.toReminderSet(): Set<ReminderOption> {
 internal const val PAGER_MONTH_RANGE = 120 // 10 years in each direction
 internal const val PAGER_INITIAL_PAGE = PAGER_MONTH_RANGE // current month is at center
 
-internal fun pageToMonthYear(page: Int): Pair<Int, Int> {
+internal fun pageToMonthYear(page: Int, currentDate: kotlinx.datetime.LocalDate): Pair<Int, Int> {
     val offset = page - PAGER_INITIAL_PAGE
-    val baseMonth = com.udnahc.opentasks.data.extensions.currentMonth() - 1 + offset // 0-indexed
-    val year = com.udnahc.opentasks.data.extensions.currentYear() + baseMonth.floorDiv(12)
+    val baseMonth = currentDate.monthNumber - 1 + offset // 0-indexed
+    val year = currentDate.year + baseMonth.floorDiv(12)
     val month = baseMonth.mod(12) + 1 // back to 1-indexed
     return month to year
 }

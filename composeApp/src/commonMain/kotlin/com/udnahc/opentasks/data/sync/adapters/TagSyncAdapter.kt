@@ -3,12 +3,16 @@ package com.udnahc.opentasks.data.sync.adapters
 import com.udnahc.opentasks.data.dao.TagDao
 import com.udnahc.opentasks.data.model.Tag
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
+import com.udnahc.opentasks.data.sync.RemoteMergeResult
+import com.udnahc.opentasks.data.sync.PocketBaseFilter
 import com.udnahc.opentasks.data.sync.records.TagRecord
 import com.udnahc.opentasks.data.sync.records.toTag
 import com.udnahc.opentasks.data.sync.records.toTagRecord
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.dsl.query.Filter
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 
 class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>() {
 
@@ -31,8 +35,14 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
     ) = dao.updatePbId(localId, pbId)
 
     override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
-    override suspend fun hardDeleteLocalNeverSynced(entity: Tag) = dao.deleteTag(entity)
+    override suspend fun shouldHardDeleteLocalNeverSynced(entity: Tag): Boolean =
+        !dao.hasRemoteIdentityTaskTagForTag(entity.id)
+
+    override suspend fun hardDeleteLocalNeverSynced(entity: Tag) {
+        dao.deleteTagIfNoRemoteTaskTags(entity)
+    }
     override suspend fun upsert(entity: Tag) = dao.upsert(entity)
+    override suspend fun mergeRemoteIfNewer(entity: Tag): RemoteMergeResult = dao.mergeRemoteIfNewer(entity)
 
     override fun localId(entity: Tag) = entity.id
     override fun pbId(entity: Tag) = entity.pbId
@@ -46,6 +56,7 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
 
     override fun toRecord(entity: Tag) = entity.toTagRecord()
     override fun toEntity(record: TagRecord) = record.toTag()
+    override fun recordFromJson(json: JsonObject): TagRecord = gatewayJson.decodeFromJsonElement(json)
     override fun toJsonBody(entity: Tag) = Json.encodeToString(entity.toTagRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
@@ -76,7 +87,7 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
             collectionName,
             1,
             1,
-            filterBy = Filter("localId='$localId'")
+            filterBy = Filter(PocketBaseFilter.localIdEquals(localId))
         )
             .items.firstOrNull()
 }

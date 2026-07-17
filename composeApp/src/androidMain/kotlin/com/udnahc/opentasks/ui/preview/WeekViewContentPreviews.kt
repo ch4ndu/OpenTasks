@@ -19,7 +19,7 @@ private fun WeekViewDayCellPreview() {
             WeekViewDayCell(
                 dayMillis = PreviewSampleData.sampleTodayMillis,
                 todayMillis = PreviewSampleData.sampleTodayMillis,
-                tasksByDay = PreviewSampleData.sampleTasksByDay,
+                dayTasks = PreviewSampleData.sampleTasksByDay[PreviewSampleData.SAMPLE_TODAY_DAY_KEY].orEmpty(),
                 onTaskClick = {},
                 isSelected = true,
                 onDaySelected = {},

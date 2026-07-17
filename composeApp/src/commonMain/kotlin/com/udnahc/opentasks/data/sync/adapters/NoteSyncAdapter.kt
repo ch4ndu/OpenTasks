@@ -3,12 +3,16 @@ package com.udnahc.opentasks.data.sync.adapters
 import com.udnahc.opentasks.data.dao.NoteDao
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
+import com.udnahc.opentasks.data.sync.RemoteMergeResult
+import com.udnahc.opentasks.data.sync.PocketBaseFilter
 import com.udnahc.opentasks.data.sync.records.NoteRecord
 import com.udnahc.opentasks.data.sync.records.toNote
 import com.udnahc.opentasks.data.sync.records.toNoteRecord
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.dsl.query.Filter
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 
 class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteRecord>() {
 
@@ -33,6 +37,7 @@ class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteReco
     override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
     override suspend fun hardDeleteLocalNeverSynced(entity: Note) = dao.delete(entity)
     override suspend fun upsert(entity: Note) = dao.upsert(entity)
+    override suspend fun mergeRemoteIfNewer(entity: Note): RemoteMergeResult = dao.mergeRemoteIfNewer(entity)
 
     override fun localId(entity: Note) = entity.id
     override fun pbId(entity: Note) = entity.pbId
@@ -46,6 +51,7 @@ class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteReco
 
     override fun toRecord(entity: Note) = entity.toNoteRecord()
     override fun toEntity(record: NoteRecord) = record.toNote()
+    override fun recordFromJson(json: JsonObject): NoteRecord = gatewayJson.decodeFromJsonElement(json)
     override fun toJsonBody(entity: Note) = Json.encodeToString(entity.toNoteRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
@@ -76,7 +82,7 @@ class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteReco
             collectionName,
             1,
             1,
-            filterBy = Filter("localId='$localId'")
+            filterBy = Filter(PocketBaseFilter.localIdEquals(localId))
         )
             .items.firstOrNull()
 }

@@ -5,6 +5,8 @@
     <color name="widget_bg_light">#FFF5F5F5</color>
     <color name="widget_text_white">#FFFFFFFF</color>
     <color name="widget_text_black">#FF000000</color>
+    <color name="widget_bg_system">#FFF5F5F5</color>
+    <color name="widget_text_system">#FF000000</color>
     <color name="widget_date_red">#FFC83C3C</color>
     <color name="widget_text_gray">#FF888888</color>
 
@@ -15,6 +17,7 @@
     <color name="widget_divider">#80888888</color>
     <color name="calendar_widget_day_dimmed">#FF555555</color>
     <color name="calendar_widget_day_dimmed_light">#FFAAAAAA</color>
+    <color name="calendar_widget_day_dimmed_system">#FFAAAAAA</color>
 
     <!-- Widget priority colors (task bar backgrounds) -->
     <color name="widget_priority_high">#4DFF5F68</color>

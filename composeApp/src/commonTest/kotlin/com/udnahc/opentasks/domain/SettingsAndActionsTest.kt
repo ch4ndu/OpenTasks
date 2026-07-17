@@ -20,7 +20,6 @@ import com.udnahc.opentasks.domain.action.settings.SaveThemePreferenceAction
 import com.udnahc.opentasks.domain.action.tag.AddTagAction
 import com.udnahc.opentasks.domain.action.tag.TagTaskAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
-import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarListDisplayModePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarViewPreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskListViewModeUseCase
@@ -112,20 +111,12 @@ class SettingsAndActionsTest {
     }
 
     @Test
-    fun taskActionsToggleStarAndUpdateSections() = runTest {
+    fun taskActionsToggleStar() = runTest {
         val task = testTask(id = "task-1", isStarred = false, section = "Old")
         val repository = FakeTaskRepository(listOf(task))
 
-        ToggleTaskStarredAction(repository)(task)
+        ToggleTaskStarredAction(repository)(task.id)
         assertEquals(true, repository.updated.last().isStarred)
 
-        UpdateSectionAction(repository)(task, "New")
-        assertEquals("New", repository.updated.last().section)
-
-        UpdateSectionAction(repository).renameSection(listOf(task), "Renamed")
-        assertEquals("Renamed", repository.updated.last().section)
-
-        UpdateSectionAction(repository).clearSection(listOf(task))
-        assertEquals(null, repository.updated.last().section)
     }
 }

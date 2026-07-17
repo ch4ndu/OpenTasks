@@ -1,73 +1,40 @@
 package com.udnahc.opentasks.data.notification
 
 interface ReminderScheduler {
-    fun schedule(
-        taskId: String,
+    suspend fun schedule(request: ReminderRequest)
+
+    suspend fun cancel(semanticKey: String)
+
+    suspend fun cancelPendingReminders(eventId: String)
+    suspend fun cancelReminders(eventId: String)
+    suspend fun cancelAll(eventId: String)
+    suspend fun startOngoing(
+        identity: ReminderIdentity,
         title: String,
-        body: String,
-        triggerAtMillis: Long,
-        reminderId: Int,
-        occurrenceDeadlineUtcMillis: Long? = null,
-        allowMarkDone: Boolean = false,
-        rescheduleAfterFire: Boolean = false,
     )
 
-    fun cancel(
-        taskId: String,
-        reminderId: Int
-    )
-
-    fun cancelReminders(taskId: String)
-    fun cancelAll(taskId: String)
-    fun startOngoing(
-        taskId: String,
-        title: String,
-        occurrenceDeadlineUtcMillis: Long? = null,
-    )
-
-    fun stopOngoing(taskId: String)
+    suspend fun stopOngoing(eventId: String)
 
     suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
-        requests.forEach { request ->
-            schedule(
-                taskId = request.eventId,
-                title = request.title,
-                body = request.body,
-                triggerAtMillis = request.triggerAtUtcMillis,
-                reminderId = request.reminderId,
-                occurrenceDeadlineUtcMillis = request.occurrenceUtcMillis,
-                allowMarkDone = request.allowMarkDone,
-                rescheduleAfterFire = request.rescheduleAfterFire,
-            )
+        for (request in requests) {
+            schedule(request)
         }
     }
 }
 
 expect class NotificationScheduler : ReminderScheduler {
-    override fun schedule(
-        taskId: String,
+    override suspend fun schedule(request: ReminderRequest)
+
+    override suspend fun cancel(semanticKey: String)
+
+    override suspend fun cancelPendingReminders(eventId: String)
+    override suspend fun cancelReminders(eventId: String)
+    override suspend fun cancelAll(eventId: String)
+    override suspend fun startOngoing(
+        identity: ReminderIdentity,
         title: String,
-        body: String,
-        triggerAtMillis: Long,
-        reminderId: Int,
-        occurrenceDeadlineUtcMillis: Long?,
-        allowMarkDone: Boolean,
-        rescheduleAfterFire: Boolean,
     )
 
-    override fun cancel(
-        taskId: String,
-        reminderId: Int
-    )
-
-    override fun cancelReminders(taskId: String)
-    override fun cancelAll(taskId: String)
-    override fun startOngoing(
-        taskId: String,
-        title: String,
-        occurrenceDeadlineUtcMillis: Long?,
-    )
-
-    override fun stopOngoing(taskId: String)
+    override suspend fun stopOngoing(eventId: String)
     override suspend fun replacePendingReminders(requests: List<ReminderRequest>)
 }

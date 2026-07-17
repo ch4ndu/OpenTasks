@@ -45,6 +45,9 @@ import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
 import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.calendar_overflow
+import org.jetbrains.compose.resources.stringResource
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  THREE-DAY VIEW
@@ -136,7 +139,7 @@ internal fun ThreeDayViewContent(
                     ThreeDayColumn(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
-                        timelineTasksByDay = timelineTasksByDay,
+                        dayTasks = timelineTasksByDay[dayKey(dayMillis)] ?: CalendarDayTasks(),
                         hourHeight = hourHeight,
                         dayHeaderHeight = dayHeaderHeight,
                         scrollState = scrollState,
@@ -155,7 +158,7 @@ internal fun ThreeDayViewContent(
 private fun ThreeDayColumn(
     dayMillis: Long,
     todayMillis: Long,
-    timelineTasksByDay: Map<Long, CalendarDayTasks>,
+    dayTasks: CalendarDayTasks,
     hourHeight: Dp,
     dayHeaderHeight: Dp,
     scrollState: androidx.compose.foundation.ScrollState,
@@ -170,8 +173,6 @@ private fun ThreeDayColumn(
             extractYear(dayMillis), extractMonth(dayMillis), extractDay(dayMillis)
         )
     }
-    val dk = remember(dayMillis) { dayKey(dayMillis) }
-    val dayTasks = timelineTasksByDay[dk] ?: CalendarDayTasks()
     val allDayTasks = dayTasks.allDayTasks
     val timedTasks = dayTasks.timedTasks
 
@@ -236,7 +237,7 @@ private fun ThreeDayColumn(
                 }
                 if (allDayOverflow > 0) {
                     Text(
-                        text = "+$allDayOverflow",
+                        text = stringResource(Res.string.calendar_overflow, allDayOverflow),
                         style = OpenTasksTheme.typography.calendarEventOverflow,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 2.dp),
@@ -276,10 +277,7 @@ private fun ThreeDayColumn(
 
             // Positioned timed events
             timedTasks.forEach { task ->
-                val dl = task.deadline ?: return@forEach
-                val hour = extractHour(dl)
-                val minute = extractMinute(dl)
-                val yOffset = hourHeight * hour + hourHeight * (minute / 60f)
+                val yOffset = hourHeight * (dayTasks.timedTaskStartMinutes[task.id] ?: 0) / 60f
                 TimelineEventBar(
                     task = task,
                     modifier = Modifier

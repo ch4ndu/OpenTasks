@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
 class AppSettingsRepositoryImpl(
@@ -17,7 +18,7 @@ class AppSettingsRepositoryImpl(
         withContext(ioDispatcher) { appSettingsDao.getValue(key) }
 
     override fun observeValue(key: String): Flow<String?> =
-        appSettingsDao.observeValue(key)
+        appSettingsDao.observeValue(key).distinctUntilChanged()
 
     override suspend fun setValue(
         key: String,

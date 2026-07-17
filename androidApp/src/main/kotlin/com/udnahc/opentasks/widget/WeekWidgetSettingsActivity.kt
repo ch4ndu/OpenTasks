@@ -53,8 +53,8 @@ class WeekWidgetSettingsActivity : ComponentActivity() {
                     onSave = { prefs -> saveAndFinish(prefs, appWidgetId) },
                     onCancel = { finish() },
                     title = stringResource(Res.string.week_widget_title),
-                    previewContent = { theme, fontSize, opacity ->
-                        WeekPreviewSection(theme, fontSize, opacity)
+                    previewContent = { theme, fontSize ->
+                        WeekPreviewSection(theme, fontSize)
                     },
                 )
             }

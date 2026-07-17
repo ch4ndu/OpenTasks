@@ -1,8 +1,10 @@
-package com.udnahc.opentasks.data.attachment
+package com.udnahc.opentasks.domain.attachment
 
+import com.udnahc.opentasks.data.attachment.PickedImage
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/** Transfers retryable image input from the create result to the edit form. */
 class PendingTaskImageHandoff {
     private val imagesByTaskId = mutableMapOf<String, List<PickedImage>>()
     private val mutex = Mutex()

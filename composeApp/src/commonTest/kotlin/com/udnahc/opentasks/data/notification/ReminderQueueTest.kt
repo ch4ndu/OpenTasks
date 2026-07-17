@@ -55,17 +55,32 @@ class ReminderQueueTest {
         assertTrue(!isOpenTasksReminderRequestId("task_event-1_ongoing_8"))
     }
 
+    @Test
+    fun semanticKeysSeparateReminderKindsAndOriginalOrdinals() {
+        val date = ReminderIdentity("event", 100L, ReminderKind.DATE, 0)
+        val duration = ReminderIdentity("event", 100L, ReminderKind.DURATION, 0)
+        val overdue = ReminderIdentity("event", 100L, ReminderKind.OVERDUE, 0)
+        val countdown = ReminderIdentity("event", 100L, ReminderKind.COUNTDOWN, 0)
+        val ongoing = ReminderIdentity("event", 100L, ReminderKind.ONGOING, 0)
+
+        assertEquals(5, setOf(date, duration, overdue, countdown, ongoing).map { it.semanticKey }.size)
+        assertEquals(date, ReminderIdentity.fromSemanticKey(date.semanticKey))
+    }
+
     private fun request(
         event: String,
         occurrence: Long,
         trigger: Long,
         reminder: Int,
     ) = ReminderRequest(
-        eventId = event,
+        identity = ReminderIdentity(
+            eventId = event,
+            occurrenceUtcMillis = occurrence,
+            kind = ReminderKind.DATE,
+            ordinal = reminder,
+        ),
         title = event,
         body = event,
         triggerAtUtcMillis = trigger,
-        reminderId = reminder,
-        occurrenceUtcMillis = occurrence,
     )
 }

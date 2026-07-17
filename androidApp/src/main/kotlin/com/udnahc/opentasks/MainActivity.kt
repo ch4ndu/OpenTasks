@@ -12,9 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
@@ -28,7 +26,8 @@ class MainActivity : ComponentActivity() {
 
     private var deepLinkNotificationEvent by mutableStateOf<NotificationDeepLinkEvent?>(null)
     private var deepLinkCountdownId by mutableStateOf("")
-    private var widgetAction by mutableStateOf("")
+    private var widgetNavigationEvent by mutableStateOf<WidgetNavigationEvent?>(null)
+    private val widgetNavigationEventPublisher = WidgetNavigationEventPublisher()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -45,7 +44,7 @@ class MainActivity : ComponentActivity() {
 
         publishShareIntent(intent)
         handleDeepLinkIntent(intent)
-        widgetAction = intent?.getStringExtra("widget_action").orEmpty()
+        publishWidgetNavigationIntent(intent)
 
         schedulePeriodicSync()
 
@@ -53,19 +52,13 @@ class MainActivity : ComponentActivity() {
             App(
                 deepLinkNotificationEvent = deepLinkNotificationEvent,
                 deepLinkCountdownId = deepLinkCountdownId,
-                widgetAction = widgetAction,
+                widgetNavigationEvent = widgetNavigationEvent,
             )
         }
     }
 
     private fun schedulePeriodicSync() {
-        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(2, TimeUnit.HOURS)
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-            )
-            .build()
+        val syncRequest = periodicSyncRequest()
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "sync_and_schedule",
             ExistingPeriodicWorkPolicy.KEEP,
@@ -77,7 +70,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         publishShareIntent(intent)
         handleDeepLinkIntent(intent)
-        widgetAction = intent.getStringExtra("widget_action").orEmpty()
+        publishWidgetNavigationIntent(intent)
     }
 
     private fun publishShareIntent(intent: Intent?) {
@@ -144,6 +137,7 @@ class MainActivity : ComponentActivity() {
                 notificationAtUtcMillis = intent.optionalLongExtra(
                     NotificationScheduler.EXTRA_NOTIFICATION_AT_UTC
                 ),
+                semanticKey = intent?.getStringExtra(NotificationScheduler.EXTRA_SEMANTIC_KEY),
             )
             deepLinkCountdownId = ""
         } else {
@@ -152,9 +146,50 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun publishWidgetNavigationIntent(intent: Intent?) {
+        val action = intent?.getStringExtra(EXTRA_WIDGET_ACTION) ?: return
+        val navigationAction = when (action) {
+            ACTION_CREATE_TASK -> WidgetNavigationAction.CREATE_TASK
+            ACTION_VIEW_LIST -> WidgetNavigationAction.VIEW_LIST
+            ACTION_VIEW_TASK -> WidgetNavigationAction.VIEW_TASK
+            ACTION_VIEW_CALENDAR -> WidgetNavigationAction.VIEW_CALENDAR
+            else -> return
+        }
+        val taskId = intent.getStringExtra(EXTRA_WIDGET_TASK_ID)?.takeIf { it.isNotBlank() }
+        val calendarDate = if (navigationAction == WidgetNavigationAction.VIEW_CALENDAR) {
+            WidgetCalendarDate(
+                year = intent.getIntExtra(EXTRA_WIDGET_CALENDAR_YEAR, 0),
+                month = intent.getIntExtra(EXTRA_WIDGET_CALENDAR_MONTH, 0),
+                day = intent.getIntExtra(EXTRA_WIDGET_CALENDAR_DAY, 0),
+            ).takeIf { it.isValid }
+        } else {
+            null
+        }
+        widgetNavigationEvent = widgetNavigationEventPublisher.publish(
+            action = navigationAction,
+            taskId = taskId,
+            calendarDate = calendarDate,
+        ) ?: return
+    }
+
     private fun Intent?.optionalLongExtra(key: String): Long? =
         if (this != null && hasExtra(key)) getLongExtra(key, 0L).takeIf { it > 0L } else null
 }
+
+/** The worker dynamically skips network sync but still performs offline maintenance. */
+internal fun periodicSyncRequest() =
+    PeriodicWorkRequestBuilder<SyncWorker>(2, TimeUnit.HOURS).build()
+
+const val EXTRA_WIDGET_ACTION = "widget_action"
+const val EXTRA_WIDGET_TASK_ID = "task_id"
+const val EXTRA_WIDGET_CALENDAR_YEAR = "calendar_year"
+const val EXTRA_WIDGET_CALENDAR_MONTH = "calendar_month"
+const val EXTRA_WIDGET_CALENDAR_DAY = "calendar_day"
+const val ACTION_CREATE_TASK = "create_task"
+const val ACTION_VIEW_LIST = "view_list"
+const val ACTION_VIEW_TASK = "view_task"
+const val ACTION_VIEW_CALENDAR = "view_calendar"
+
 
 private data class AndroidSharedTaskPayload(
     val description: String = "",

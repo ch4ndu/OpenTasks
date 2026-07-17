@@ -6,7 +6,9 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import androidx.room.Upsert
+import androidx.room.Transaction
 import com.udnahc.opentasks.data.model.Category
+import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -56,8 +58,19 @@ interface CategoryDao {
         pbId: String
     )
 
+    @Query("UPDATE categories SET pbId = NULL, isSynced = 0")
+    suspend fun resetSyncMetadataForServerSeed()
+
     @Upsert
     suspend fun upsert(category: Category)
+
+    @Transaction
+    suspend fun mergeRemoteIfNewer(remote: Category): RemoteMergeResult {
+        val local = findCategoryByIdAnyState(remote.id)
+        if (local != null && local.updatedAt >= remote.updatedAt) return RemoteMergeResult.KeptLocal
+        upsert(remote)
+        return RemoteMergeResult.Applied
+    }
 
     @Query("SELECT * FROM categories")
     suspend fun getAllCategoriesOnce(): List<Category>

@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.domain.usecase.countdown
 
 import com.udnahc.opentasks.data.extensions.computeNextDeadlineLocal
+import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.CountingMode
@@ -101,6 +102,7 @@ private fun nextOccurrence(
     currentDeadlineLocalMillis = currentOccurrence,
     recurrenceType = countdown.recurrenceType.name,
     interval = countdown.recurrenceInterval,
+    anchorDay = extractDay(countdown.targetDate),
 )
 
 private fun daysUntil(

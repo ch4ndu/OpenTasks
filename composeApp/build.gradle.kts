@@ -165,6 +165,7 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.turbine)
+            implementation(libs.ktor.client.mock)
         }
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
@@ -233,15 +234,17 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "com.udnahc.opentasks"
+            packageName = "OpenTasks"
             packageVersion = "1.0.0"
             macOS {
+                bundleID = "com.udnahc.opentasks"
                 iconFile.set(project.file("src/jvmMain/resources/ic_launcher.png"))
             }
             windows {
                 iconFile.set(project.file("src/jvmMain/resources/ic_launcher.png"))
             }
             linux {
+                packageName = "opentasks"
                 iconFile.set(project.file("src/jvmMain/resources/ic_launcher.png"))
             }
         }

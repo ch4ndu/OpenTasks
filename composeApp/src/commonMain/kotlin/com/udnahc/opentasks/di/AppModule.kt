@@ -4,7 +4,6 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
-import com.udnahc.opentasks.data.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.database.MIGRATION_1_2
 import com.udnahc.opentasks.data.database.MIGRATION_2_3
@@ -16,6 +15,7 @@ import com.udnahc.opentasks.data.database.MIGRATION_7_8
 import com.udnahc.opentasks.data.database.MIGRATION_8_9
 import com.udnahc.opentasks.data.database.MIGRATION_9_10
 import com.udnahc.opentasks.data.database.MIGRATION_10_11
+import com.udnahc.opentasks.data.database.MIGRATION_11_12
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
@@ -37,6 +37,8 @@ import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.data.repository.TaskRepositoryImpl
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.PocketBaseConnectionVerifier
+import com.udnahc.opentasks.data.sync.ServerMigrationCoordinator
+import com.udnahc.opentasks.data.sync.ServerSeedExecutor
 import com.udnahc.opentasks.data.sync.SyncService
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import com.udnahc.opentasks.data.sync.adapters.CategorySyncAdapter
@@ -51,7 +53,6 @@ import com.udnahc.opentasks.domain.action.attachment.AddTaskImageAction
 import com.udnahc.opentasks.domain.action.attachment.RemoveTaskImageAction
 import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
-import com.udnahc.opentasks.domain.action.countdown.RescheduleAllCountdownRemindersAction
 import com.udnahc.opentasks.domain.action.countdown.ScheduleCountdownRemindersAction
 import com.udnahc.opentasks.domain.action.countdown.UpdateCountdownAction
 import com.udnahc.opentasks.domain.action.note.AddNoteAction
@@ -74,19 +75,16 @@ import com.udnahc.opentasks.domain.action.tag.AddTagAction
 import com.udnahc.opentasks.domain.action.tag.TagTaskAction
 import com.udnahc.opentasks.domain.action.task.AddTaskAction
 import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
-import com.udnahc.opentasks.domain.action.task.GenerateCsvExportAction
-import com.udnahc.opentasks.domain.action.task.GenerateIcsExportAction
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
 import com.udnahc.opentasks.domain.action.task.DismissTaskNotificationAction
 import com.udnahc.opentasks.domain.action.task.MarkTaskNotificationDoneAction
-import com.udnahc.opentasks.domain.action.task.RescheduleAllRemindersAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
-import com.udnahc.opentasks.domain.action.task.UpdateSectionAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
+import com.udnahc.opentasks.domain.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
@@ -106,15 +104,18 @@ import com.udnahc.opentasks.domain.usecase.settings.ObserveTextSizePreferenceUse
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.tag.ObserveTagsForTaskUseCase
 import com.udnahc.opentasks.domain.usecase.task.FetchCalendarEventsUseCase
+import com.udnahc.opentasks.domain.usecase.task.GenerateCsvExportUseCase
+import com.udnahc.opentasks.domain.usecase.task.GenerateIcsExportUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
+import com.udnahc.opentasks.domain.usecase.task.LocalizedTaskDueTextProvider
+import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.viewmodel.AppViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
@@ -136,6 +137,7 @@ expect val platformModule: Module
 
 val sharedModule = module {
     single<ReminderTextProvider> { LocalizedReminderTextProvider() }
+    single<TaskDueTextProvider> { LocalizedTaskDueTextProvider() }
     single<AppDatabase> {
         get<androidx.room.RoomDatabase.Builder<AppDatabase>>()
             .addMigrations(
@@ -148,7 +150,8 @@ val sharedModule = module {
                 MIGRATION_7_8,
                 MIGRATION_8_9,
                 MIGRATION_9_10,
-                MIGRATION_10_11
+                MIGRATION_10_11,
+                MIGRATION_11_12,
             )
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
@@ -165,7 +168,7 @@ val sharedModule = module {
     single { get<AppDatabase>().taskDao() }
     single { get<AppDatabase>().categoryDao() }
     single { get<AppDatabase>().noteDao() }
-    single<TaskRepository> { TaskRepositoryImpl(get(), get()) }
+    single<TaskRepository> { TaskRepositoryImpl(get(), get(), get()) }
     single<CategoryRepository> { CategoryRepositoryImpl(get(), get()) }
     single<NoteRepository> { NoteRepositoryImpl(get(), get()) }
     single { get<AppDatabase>().tagDao() }
@@ -184,7 +187,6 @@ val sharedModule = module {
     single { ObserveTasksByPriorityUseCase(get()) }
     single { ObserveTasksByDayUseCase(get()) }
     factory { ObserveTasksForCategoryUseCase(get()) }
-    factory { ObserveTasksForPriorityUseCase(get()) }
     single { ObserveAllCategoriesUseCase(get()) }
     factory { ObserveTaskImagesUseCase(get()) }
     single { ObserveTaskImageSummariesUseCase(get()) }
@@ -208,20 +210,19 @@ val sharedModule = module {
     single { FetchCalendarEventsUseCase(get()) }
     single { ParseCsvUseCase() }
     single { ParseIcsUseCase() }
-    single { GenerateCsvExportAction(get(), get()) }
-    single { GenerateIcsExportAction(get()) }
+    single { GenerateCsvExportUseCase(get(), get()) }
+    single { GenerateIcsExportUseCase(get()) }
 
     // Actions
     single { AddTaskAction(get(), get(), get()) }
     single { UpdateTaskAction(get(), get(), get()) }
-    single { DeleteTaskAction(get(), get(), get(), get(), get()) }
+    single { DeleteTaskAction(get(), get(), get(), get()) }
     single { AddTaskImageAction(get(), get()) }
     single { RemoveTaskImageAction(get(), get()) }
     single { ToggleTaskCompleteAction(get(), get(), get()) }
-    single { MarkTaskNotificationDoneAction(get(), get()) }
+    single { MarkTaskNotificationDoneAction(get()) }
     single { DismissTaskNotificationAction(get(), get(), get<NotificationScheduler>()) }
     single { ToggleTaskStarredAction(get()) }
-    single { UpdateSectionAction(get()) }
     single { AddCategoryAction(get()) }
     single { AddNoteAction(get()) }
     single { AddCountdownAction(get(), get(), get()) }
@@ -234,16 +235,14 @@ val sharedModule = module {
     single { ImportCalendarEventsAction(get(), get(), get(), get(), get(), get()) }
     single { ImportCsvTasksAction(get(), get(), get(), get()) }
     single { ScheduleTaskRemindersAction(get<NotificationScheduler>(), get(), get(), get()) }
-    single { RescheduleAllRemindersAction(get(), get()) }
     single { ScheduleCountdownRemindersAction(get<NotificationScheduler>(), get(), get()) }
-    single { RescheduleAllCountdownRemindersAction(get(), get()) }
     single { RebuildReminderQueueAction(get(), get(), get(), get(), get()) }
-    single { SavePocketBaseUrlAction(get(), get(), get(), get()) }
+    single { SavePocketBaseUrlAction(get(), get(), get(), get(), get()) }
     single { ClearPocketBaseUrlAction(get(), get()) }
     single { TriggerSyncAction(get(), get()) }
     single<SyncTrigger> { get<TriggerSyncAction>() }
     single { ConfigurePocketBaseUrlAction(get(), get()) }
-    single { InitializeSyncAction(get(), get()) }
+    single { InitializeSyncAction(get(), get(), get()) }
     single { SaveTaskSortOptionAction(get()) }
     single { SaveTaskListViewModeAction(get()) }
     single { UpdateTaskStatusAction(get(), get(), get()) }
@@ -255,13 +254,24 @@ val sharedModule = module {
 
     // Sync
     single { PocketBaseClientProvider() }
-    single { TaskSyncAdapter(get()) }
+    single { ServerMigrationCoordinator(get()) }
+    single { TaskSyncAdapter(get(), get(), get()) }
     single { AttachmentSyncAdapter(get(), get(), get()) }
     single { CategorySyncAdapter(get()) }
     single { TagSyncAdapter(get()) }
     single { TaskTagSyncAdapter(get(), get()) }
     single { NoteSyncAdapter(get()) }
     single { CountdownSyncAdapter(get()) }
+    single {
+        ServerSeedExecutor(
+            get(),
+            listOf(
+                get<CategorySyncAdapter>(), get<TagSyncAdapter>(), get<TaskSyncAdapter>(),
+                get<AttachmentSyncAdapter>(), get<TaskTagSyncAdapter>(), get<NoteSyncAdapter>(),
+                get<CountdownSyncAdapter>(),
+            ),
+        )
+    }
     single {
         PocketBaseConnectionVerifier(
             get(),
@@ -288,6 +298,7 @@ val sharedModule = module {
                 get<NoteSyncAdapter>(),
                 get<CountdownSyncAdapter>(),
             ),
+            get(),
         )
     }
 

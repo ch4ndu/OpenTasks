@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.widget
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,13 +26,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,7 +46,6 @@ import opentasks.composeapp.generated.resources.calendar_widget_title
 import opentasks.composeapp.generated.resources.widget_font_size_large
 import opentasks.composeapp.generated.resources.widget_font_size_normal
 import opentasks.composeapp.generated.resources.widget_font_size_small
-import opentasks.composeapp.generated.resources.widget_opacity
 import opentasks.composeapp.generated.resources.widget_setting_font_size
 import opentasks.composeapp.generated.resources.widget_setting_theme
 import opentasks.composeapp.generated.resources.widget_settings_section_appearance
@@ -64,11 +61,10 @@ fun CalendarWidgetSettingsContent(
     onSave: (CalendarWidgetPreferences) -> Unit,
     onCancel: () -> Unit,
     title: String? = null,
-    previewContent: (@Composable (WidgetTheme, WidgetFontSize, Float) -> Unit)? = null,
+    previewContent: (@Composable (WidgetTheme, WidgetFontSize) -> Unit)? = null,
 ) {
     var theme by remember { mutableStateOf(initialPreferences.theme) }
     var fontSize by remember { mutableStateOf(initialPreferences.fontSize) }
-    var opacity by remember { mutableFloatStateOf(initialPreferences.opacity) }
 
     val accentColor = Color(0xFF4D9EFF)
     val surfaceColor = Color(0xFF1E1E1E)
@@ -102,7 +98,6 @@ fun CalendarWidgetSettingsContent(
                                 widgetId = initialPreferences.widgetId,
                                 theme = theme,
                                 fontSize = fontSize,
-                                opacity = opacity,
                             )
                         )
                     }) {
@@ -129,9 +124,9 @@ fun CalendarWidgetSettingsContent(
         ) {
             // Widget Preview
             if (previewContent != null) {
-                previewContent(theme, fontSize, opacity)
+                previewContent(theme, fontSize)
             } else {
-                CalendarPreviewSection(theme = theme, fontSize = fontSize, opacity = opacity)
+                CalendarPreviewSection(theme = theme, fontSize = fontSize)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -171,17 +166,6 @@ fun CalendarWidgetSettingsContent(
                         onSelect = { fontSize = WidgetFontSize.valueOf(it) },
                         accentColor = accentColor,
                     )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(0.5.dp)
-                            .background(Color(0xFF3A3A3A)),
-                    )
-                    CalendarOpacityRow(
-                        opacity = opacity,
-                        onOpacityChange = { opacity = it },
-                        accentColor = accentColor,
-                    )
                 }
             }
 
@@ -196,15 +180,10 @@ fun CalendarWidgetSettingsContent(
 private fun CalendarPreviewSection(
     theme: WidgetTheme,
     fontSize: WidgetFontSize,
-    opacity: Float,
 ) {
-    val isDark = theme == WidgetTheme.DARK || theme == WidgetTheme.SYSTEM
-    val bgAlpha = (opacity * 255).toInt()
-    val bgColor = if (isDark) {
-        Color(android.graphics.Color.argb(bgAlpha, 30, 30, 30))
-    } else {
-        Color(android.graphics.Color.argb(bgAlpha, 245, 245, 245))
-    }
+    val isDark = theme == WidgetTheme.DARK ||
+            (theme == WidgetTheme.SYSTEM && isSystemInDarkTheme())
+    val bgColor = if (isDark) Color(0xFF1E1E1E) else Color(0xFFF5F5F5)
     val textColor = if (isDark) Color.White else Color.Black
     val subtleColor = if (isDark) Color.Gray else Color.DarkGray
     val accentColor = Color(0xFF4D9EFF)
@@ -372,35 +351,6 @@ private fun CalendarDropdownRow(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun CalendarOpacityRow(
-    opacity: Float,
-    onOpacityChange: (Float) -> Unit,
-    accentColor: Color,
-) {
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(text = stringResource(Res.string.widget_opacity), color = Color.White, fontSize = 15.sp)
-            Text(text = "${(opacity * 100).toInt()}%", color = accentColor, fontSize = 15.sp)
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Slider(
-            value = opacity,
-            onValueChange = onOpacityChange,
-            valueRange = 0f..1f,
-            colors = SliderDefaults.colors(
-                thumbColor = accentColor,
-                activeTrackColor = accentColor,
-                inactiveTrackColor = Color(0xFF3A3A3A),
-            ),
-        )
     }
 }
 

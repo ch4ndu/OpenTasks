@@ -58,7 +58,13 @@ class NoteRepositoryImpl(
     override suspend fun delete(note: Note) {
         log.v { "Soft-deleting note: ${note.id}" }
         withContext(ioDispatcher) {
-            noteDao.update(note.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
+            noteDao.update(
+                note.withUtcTimestamps().copy(
+                    isDeleted = true,
+                    isSynced = false,
+                    updatedAt = localToUtc(localNow()),
+                )
+            )
         }
         syncTrigger.triggerSync()
     }

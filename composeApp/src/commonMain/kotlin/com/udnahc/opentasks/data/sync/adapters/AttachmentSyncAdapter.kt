@@ -5,6 +5,8 @@ import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.attachment.AttachmentImageDecodeException
 import com.udnahc.opentasks.data.attachment.StoredAttachmentFile
 import com.udnahc.opentasks.data.dao.AttachmentDao
+import com.udnahc.opentasks.data.dao.AttachmentDownloadInstallResult
+import com.udnahc.opentasks.data.dao.AttachmentTombstoneMergeResult
 import com.udnahc.opentasks.data.dao.TaskDao
 import com.udnahc.opentasks.data.model.ATTACHMENT_KIND_IMAGE
 import com.udnahc.opentasks.data.model.ATTACHMENT_OWNER_TASK
@@ -12,20 +14,24 @@ import com.udnahc.opentasks.data.model.Attachment
 import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.model.withSyncState
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
+import com.udnahc.opentasks.data.sync.RemoteMergeResult
+import com.udnahc.opentasks.data.sync.PocketBaseRecordGateway
 import com.udnahc.opentasks.data.sync.SyncAdapterException
 import com.udnahc.opentasks.data.sync.SyncDegradedException
 import com.udnahc.opentasks.data.sync.records.AttachmentRecord
 import com.udnahc.opentasks.data.sync.records.toAttachment
 import com.udnahc.opentasks.data.sync.records.toAttachmentRecord
-import io.github.agrevster.pocketbaseKotlin.FileUpload
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
-import io.github.agrevster.pocketbaseKotlin.dsl.query.Filter
 import io.ktor.client.request.get
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.http.path
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonPrimitive
 import org.lighthousegames.logging.logging
 
 private val log = logging("AttachmentSyncAdapter")
@@ -33,7 +39,7 @@ private val log = logging("AttachmentSyncAdapter")
 internal class AttachmentFileDownloadException(val statusCode: Int) :
     IllegalStateException("Attachment file download failed with HTTP $statusCode")
 
-class AttachmentSyncAdapter(
+open class AttachmentSyncAdapter(
     private val dao: AttachmentDao,
     private val taskDao: TaskDao,
     private val fileStorage: AttachmentFileStorage,
@@ -51,12 +57,14 @@ class AttachmentSyncAdapter(
     override suspend fun updatePbId(localId: String, pbId: String) = dao.updatePbId(localId, pbId)
     override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
     override suspend fun hardDeleteLocalNeverSynced(entity: Attachment) {
-        fileStorage.delete(entity.localPath)
-        fileStorage.delete(entity.thumbnailPath)
         dao.delete(entity)
+        runCatching { fileStorage.delete(entity.localPath) }
+        runCatching { fileStorage.delete(entity.thumbnailPath) }
     }
 
     override suspend fun upsert(entity: Attachment) = dao.upsert(entity)
+    override suspend fun mergeRemoteIfNewer(entity: Attachment): RemoteMergeResult =
+        dao.mergeRemoteIfNewer(entity)
     override fun localId(entity: Attachment) = entity.id
     override fun pbId(entity: Attachment) = entity.pbId
     override fun isDeleted(entity: Attachment) = entity.isDeleted
@@ -67,6 +75,7 @@ class AttachmentSyncAdapter(
     override fun recordUpdatedAt(record: AttachmentRecord) = record.updatedAtUtc
     override fun toRecord(entity: Attachment) = entity.toAttachmentRecord()
     override fun toEntity(record: AttachmentRecord) = record.toAttachment()
+    override fun recordFromJson(json: JsonObject): AttachmentRecord = gatewayJson.decodeFromJsonElement(json)
     override fun toJsonBody(entity: Attachment) = Json.encodeToString(entity.toAttachmentRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
@@ -76,19 +85,14 @@ class AttachmentSyncAdapter(
         client.records.getList<AttachmentRecord>(collectionName, 1, 1, skipTotal = true)
     }
 
-    override suspend fun createRecord(client: PocketbaseClient, body: String) =
-        client.records.create<AttachmentRecord>(collectionName, body)
+    override suspend fun createRecord(client: PocketbaseClient, body: String): AttachmentRecord =
+        throw SyncAdapterException("Attachment creates must use the guarded multipart gateway")
 
-    override suspend fun updateRecord(client: PocketbaseClient, pbId: String, body: String) =
-        client.records.update<AttachmentRecord>(collectionName, pbId, body)
+    override suspend fun updateRecord(client: PocketbaseClient, pbId: String, body: String): AttachmentRecord =
+        throw SyncAdapterException("Attachment updates must use the guarded multipart gateway")
 
     override suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): AttachmentRecord? =
-        client.records.getList<AttachmentRecord>(
-            collectionName,
-            1,
-            1,
-            filterBy = Filter("localId='$localId'")
-        ).items.firstOrNull()
+        throw SyncAdapterException("Attachment lookup must use the structured guarded gateway")
 
     override suspend fun pullAll(client: PocketbaseClient) {
         val remoteRecords = fetchAllRecords(client)
@@ -98,12 +102,25 @@ class AttachmentSyncAdapter(
             val local = localById[record.localId]
             if (shouldSkipIncomingRecord(record, local)) continue
             val incoming = record.toAttachment()
-            if (record.isDeleted || record.file.isNullOrBlank()) {
+            if (record.isDeleted) {
                 upsertRemoteTombstone(incoming, local)
+                continue
+            }
+            if (record.file.isNullOrBlank()) {
+                log.w { "Active remote attachment ${record.localId} has no file; retaining local files" }
+                upsertRemoteDownloadFailure(
+                    incoming,
+                    SyncAdapterException("Active remote attachment ${record.localId} has no file"),
+                    local,
+                )
                 continue
             }
             if (record.fileSizeBytes > AttachmentFilePolicy.MAX_UPLOAD_BYTES || record.kind != ATTACHMENT_KIND_IMAGE) {
                 upsertRemotePolicyBlock(incoming, local)
+                continue
+            }
+            if (local?.remoteFileName == record.file && fileStorage.exists(local.localPath)) {
+                upsertRemoteSameFile(incoming)
                 continue
             }
             runCatching {
@@ -135,22 +152,22 @@ class AttachmentSyncAdapter(
             is AttachmentFileDownloadException -> AttachmentSyncState.FAILED to error.downloadErrorCode()
             else -> AttachmentSyncState.FAILED to "download_failed"
         }
-        val merged = incoming.retainingLocalFileMetadata(local)
-        dao.upsert(
-            merged.withSyncState(syncState)
-                .copy(lastSyncError = errorCode)
-        )
+        dao.mergeRemoteWithRetainedFilesIfNewer(incoming, syncState, errorCode)
     }
 
     internal suspend fun upsertRemotePolicyBlock(
         incoming: Attachment,
         local: Attachment? = null,
     ) {
-        dao.upsert(
-            incoming.retainingLocalFileMetadata(local)
-                .withSyncState(AttachmentSyncState.BLOCKED)
-                .copy(lastSyncError = "blocked_policy")
+        dao.mergeRemoteWithRetainedFilesIfNewer(
+            incoming,
+            AttachmentSyncState.BLOCKED,
+            "blocked_policy",
         )
+    }
+
+    internal suspend fun upsertRemoteSameFile(incoming: Attachment) {
+        dao.mergeSameFileRemoteIfNewer(incoming)
     }
 
     internal suspend fun upsertRemoteDownloadSuccess(
@@ -167,8 +184,11 @@ class AttachmentSyncAdapter(
             width = stored.width,
             height = stored.height,
         ).withSyncState(AttachmentSyncState.SYNCED)
-        dao.upsert(replacement)
-        local?.let { deleteSupersededLocalFiles(it, replacement) }
+        when (val installed = dao.installDownloadedRemoteIfNewer(replacement)) {
+            is AttachmentDownloadInstallResult.Applied ->
+                installed.replaced?.let { deleteSupersededLocalFiles(it, replacement) }
+            AttachmentDownloadInstallResult.KeptLocal -> deleteDownloadedFiles(replacement)
+        }
     }
 
     internal suspend fun shouldSkipIncomingRecord(record: AttachmentRecord, local: Attachment?): Boolean {
@@ -182,8 +202,10 @@ class AttachmentSyncAdapter(
     }
 
     internal suspend fun upsertRemoteTombstone(incoming: Attachment, local: Attachment?) {
-        local?.let { deleteLocalFilesFor(it) }
-        dao.upsert(incoming.withSyncState(AttachmentSyncState.SYNCED))
+        when (val merged = dao.mergeRemoteTombstoneIfNewer(incoming.withSyncState(AttachmentSyncState.SYNCED))) {
+            is AttachmentTombstoneMergeResult.Applied -> merged.replaced?.let { deleteLocalFilesFor(it) }
+            AttachmentTombstoneMergeResult.KeptLocal -> Unit
+        }
     }
 
     private suspend fun deleteLocalFilesFor(attachment: Attachment) {
@@ -204,22 +226,31 @@ class AttachmentSyncAdapter(
         }
     }
 
-    private fun Attachment.retainingLocalFileMetadata(local: Attachment?): Attachment =
-        local?.let {
-            copy(
-                localPath = it.localPath,
-                thumbnailPath = it.thumbnailPath,
-                mimeType = it.mimeType,
-                fileName = it.fileName,
-                fileSizeBytes = it.fileSizeBytes,
-                width = it.width,
-                height = it.height,
-            )
-        } ?: this
+    private suspend fun deleteDownloadedFiles(attachment: Attachment) {
+        if (attachment.localPath.isNotBlank()) runCatching { fileStorage.delete(attachment.localPath) }
+        if (attachment.thumbnailPath.isNotBlank()) runCatching { fileStorage.delete(attachment.thumbnailPath) }
+    }
 
     override suspend fun pushAll(client: PocketbaseClient) {
+        pushAttachments(client, seedMode = false)
+    }
+
+    /**
+     * Seed mode preserves never-synced tombstones so the replacement server
+     * receives durable deletion metadata. Normal sync retains the local-only
+     * cleanup shortcut before any parent or gateway work.
+     */
+    override suspend fun seedAll(client: PocketbaseClient) {
+        pushAttachments(client, seedMode = true)
+    }
+
+    private suspend fun pushAttachments(client: PocketbaseClient, seedMode: Boolean) {
         val failures = mutableListOf<Throwable>()
         for (attachment in getUnsynced()) {
+            if (!seedMode && attachment.isDeleted && attachment.pbId == null) {
+                hardDeleteLocalNeverSynced(attachment)
+                continue
+            }
             if (!shouldPush(attachment)) continue
             try {
                 pushOne(client, attachment)
@@ -234,6 +265,39 @@ class AttachmentSyncAdapter(
         }
     }
 
+    override suspend fun isSeedComplete(rows: List<JsonObject>): Boolean =
+        super.isSeedComplete(rows) && rows.all { row ->
+            val record = recordFromJson(row)
+            if (record.isDeleted) record.file.isNullOrBlank() else !record.file.isNullOrBlank()
+        }
+
+    /** PocketBase assigns active attachment file names, so only that server-owned field may differ on resume. */
+    override suspend fun validateSeedInventory(rows: List<JsonObject>): Boolean {
+        for (row in rows) {
+            val record = runCatching { recordFromJson(row) }.getOrElse { return false }
+            val local = getById(record.localId) ?: return false
+            when {
+                record.updatedAtUtc > local.updatedAt -> return false
+                record.updatedAtUtc == local.updatedAt &&
+                    !attachmentSeedPayloadEquals(local, row, record.isDeleted) -> return false
+                record.isDeleted && !record.file.isNullOrBlank() -> return false
+            }
+        }
+        return true
+    }
+
+    private fun attachmentSeedPayloadEquals(
+        local: Attachment,
+        remote: JsonObject,
+        isDeleted: Boolean,
+    ): Boolean {
+        val localBody = JsonObject(local.toBody()).let { body ->
+            if (isDeleted) body else JsonObject(body.filterKeys { it != "file" })
+        }
+        val remoteBody = if (isDeleted) remote else JsonObject(remote.filterKeys { it != "file" })
+        return canonicalPayloadEquals(localBody, remoteBody)
+    }
+
     private suspend fun shouldPush(attachment: Attachment): Boolean {
         if (attachment.isDeleted) return true
         if (attachment.syncState == AttachmentSyncState.BLOCKED ||
@@ -246,7 +310,7 @@ class AttachmentSyncAdapter(
     }
 
     private fun Attachment.isRemoteOriginDownloadFailure(): Boolean =
-        lastSyncError == "download_failed" || lastSyncError?.startsWith("download_http_") == true
+        !isDeleted && (lastSyncError == "download_failed" || lastSyncError?.startsWith("download_http_") == true)
 
     private fun AttachmentFileDownloadException.downloadErrorCode(): String =
         when (statusCode) {
@@ -257,38 +321,188 @@ class AttachmentSyncAdapter(
         }
 
     private suspend fun pushOne(client: PocketbaseClient, attachment: Attachment) {
-        if (attachment.isDeleted && attachment.pbId == null) {
-            hardDeleteLocalNeverSynced(attachment)
+        val body = JsonObject(attachment.toBody())
+        if (attachment.isDeleted) {
+            pushAttachmentTombstone(client, attachment, body)
             return
         }
 
         val parent = taskDao.findTaskByIdAnyState(attachment.ownerId)
         if (attachment.ownerType == ATTACHMENT_OWNER_TASK && parent?.pbId == null) return
 
-        val body = attachment.toBody()
-        val updated = if (attachment.pbId != null) {
-            if (attachment.isDeleted) {
-                updateByPbIdOrRecover(client, attachment, body, bytes = null, clearFile = true)
-            } else {
-                val bytes = fileStorage.readBytes(attachment.localPath)
-                if (bytes == null) {
-                    dao.markSyncFailed(attachment.id, AttachmentSyncState.FAILED.name, "local_file_missing")
-                    return
-                }
-                updateByPbIdOrRecover(client, attachment, body, bytes = bytes, clearFile = false)
-            }
-        } else {
-            val bytes = fileStorage.readBytes(attachment.localPath)
-            if (bytes == null) {
-                dao.markSyncFailed(attachment.id, AttachmentSyncState.FAILED.name, "local_file_missing")
-                return
-            }
-            createOrRecover(client, attachment, body, bytes = bytes, clearFile = false)
+        val bytes = fileStorage.readBytes(attachment.localPath)
+        if (bytes == null) {
+            dao.markSyncFailed(attachment.id, AttachmentSyncState.FAILED.name, "local_file_missing")
+            return
+        }
+        val gateway = recordGateway(client)
+        val updated = pushActiveAttachment(gateway, attachment, body, bytes) ?: return
+        val remoteId = updated["id"]?.jsonPrimitive?.contentOrNull
+        if (remoteId != null) dao.updatePbId(attachment.id, remoteId)
+        val changed = dao.confirmActiveSyncedIfUnchanged(
+            id = attachment.id,
+            updatedAt = attachment.updatedAt,
+            pbId = remoteId,
+            remoteFileName = updated["file"]?.jsonPrimitive?.contentOrNull,
+        )
+        if (changed == 0) log.w { "Attachment ${attachment.id} changed during multipart upload; leaving it unsynced" }
+    }
+
+    /**
+     * Resolve every rejected multipart write from structured gateway responses.
+     * A newer/equal-different remote row is never overwritten by an SDK retry.
+     */
+    private suspend fun pushActiveAttachment(
+        gateway: PocketBaseRecordGateway,
+        attachment: Attachment,
+        body: JsonObject,
+        bytes: ByteArray,
+    ): JsonObject? {
+        val preflight = attachment.pbId?.let { gateway.getRecord(collectionName, it) }
+        if (preflight?.isSuccess == true) {
+            val remote = preflight.body
+                ?: throw SyncAdapterException("Attachment ${attachment.id} preflight returned no record")
+            return reconcileActiveAttachment(gateway, attachment, body, bytes, remote)
+        }
+        if (preflight != null && !preflight.isNotFound) {
+            throw SyncAdapterException("Attachment ${attachment.id} preflight failed with HTTP ${preflight.status.value}")
         }
 
-        updated.id?.let { dao.updatePbId(attachment.id, it) }
-        dao.updateRemoteFileName(attachment.id, updated.file)
-        dao.markSyncedIfUnchanged(attachment.id, attachment.updatedAt, attachment.isDeleted)
+        val lookup = gateway.findByLocalId(collectionName, attachment.id)
+        if (!lookup.isSuccess) {
+            throw SyncAdapterException("Attachment ${attachment.id} lookup failed with HTTP ${lookup.status.value}")
+        }
+        val existing = lookup.body
+        if (existing == null) {
+            val created = gateway.createAttachment(body, attachment.fileName, bytes)
+            if (created.isSuccess) return created.body
+            val recovery = gateway.findByLocalId(collectionName, attachment.id)
+            if (!recovery.isSuccess) {
+                throw SyncAdapterException("Attachment create rejected with HTTP ${created.status.value}; recovery failed with HTTP ${recovery.status.value}")
+            }
+            val recovered = recovery.body
+                ?: throw SyncAdapterException("Attachment create rejected with HTTP ${created.status.value}")
+            return reconcileActiveAttachment(gateway, attachment, body, bytes, recovered)
+        }
+        return reconcileActiveAttachment(gateway, attachment, body, bytes, existing)
+    }
+
+    private suspend fun reconcileActiveAttachment(
+        gateway: PocketBaseRecordGateway,
+        attachment: Attachment,
+        body: JsonObject,
+        bytes: ByteArray,
+        remote: JsonObject,
+    ): JsonObject? {
+        val record = recordFromJson(remote)
+        when {
+            record.updatedAtUtc > attachment.updatedAt -> {
+                mergeRemoteIfNewer(record.toAttachment())
+                return null
+            }
+            record.updatedAtUtc == attachment.updatedAt && canonicalPayloadEquals(body, remote) -> return remote
+            record.updatedAtUtc < attachment.updatedAt -> {
+                val remoteId = remote["id"]?.jsonPrimitive?.contentOrNull
+                    ?: throw SyncAdapterException("Attachment ${attachment.id} recovery has no record id")
+                val retried = gateway.updateAttachment(remoteId, body, attachment.fileName, bytes)
+                if (retried.isSuccess) return retried.body
+            }
+        }
+        throw SyncAdapterException("Attachment ${attachment.id} guarded write conflict was not safely resolvable")
+    }
+
+    private suspend fun pushAttachmentTombstone(
+        client: PocketbaseClient,
+        attachment: Attachment,
+        body: JsonObject,
+    ) {
+        val gateway = recordGateway(client)
+        val byPbId = attachment.pbId?.let { pbId ->
+            val preflight = gateway.getRecord(collectionName, pbId)
+            when {
+                preflight.isSuccess -> preflight.body
+                preflight.isNotFound -> null
+                else -> throw SyncAdapterException(
+                    "Attachment ${attachment.id} tombstone preflight failed with HTTP ${preflight.status.value}",
+                )
+            }
+        }
+        var currentRecord = byPbId ?: findAttachmentRecordByLocalId(gateway, attachment.id)
+        if (currentRecord == null) {
+            val created = gateway.createAttachmentTombstone(body)
+            if (created.isSuccess) {
+                currentRecord = created.body
+            } else {
+                // A process death after create can surface as a unique-create conflict.
+                currentRecord = findAttachmentRecordByLocalId(gateway, attachment.id)
+                    ?: throw SyncAdapterException("Attachment tombstone was rejected with HTTP ${created.status.value}")
+            }
+        }
+        val current = currentRecord
+            ?: throw SyncAdapterException("Unable to resolve attachment ${attachment.id} before tombstone")
+        val updated = reconcileAttachmentTombstone(gateway, attachment, body, current) ?: return
+        val returnedFile = updated["file"]?.jsonPrimitive?.contentOrNull
+        if (!returnedFile.isNullOrBlank()) {
+            throw SyncAdapterException("Attachment tombstone retained a remote file")
+        }
+        dao.confirmTombstoneSyncedIfUnchanged(
+            id = attachment.id,
+            updatedAt = attachment.updatedAt,
+            pbId = updated["id"]?.jsonPrimitive?.contentOrNull,
+        )
+    }
+
+    private suspend fun findAttachmentRecordByLocalId(
+        gateway: PocketBaseRecordGateway,
+        localId: String,
+    ): JsonObject? {
+        val lookup = gateway.findByLocalId(collectionName, localId)
+        if (!lookup.isSuccess) {
+            throw SyncAdapterException("Attachment $localId lookup failed with HTTP ${lookup.status.value}")
+        }
+        return lookup.body
+    }
+
+    /** Re-read a rejected tombstone write, but never retry without reapplying timestamp guards. */
+    private suspend fun reconcileAttachmentTombstone(
+        gateway: PocketBaseRecordGateway,
+        attachment: Attachment,
+        body: JsonObject,
+        remote: JsonObject,
+        mayWrite: Boolean = true,
+    ): JsonObject? {
+        val remoteRecord = recordFromJson(remote)
+        return when {
+            remoteRecord.updatedAtUtc > attachment.updatedAt -> {
+                mergeRemoteIfNewer(remoteRecord.toAttachment())
+                null
+            }
+            remoteRecord.updatedAtUtc == attachment.updatedAt &&
+                canonicalPayloadEquals(body, remote) &&
+                remote["file"]?.jsonPrimitive?.contentOrNull.isNullOrBlank() -> remote
+            remoteRecord.updatedAtUtc == attachment.updatedAt -> throw SyncAdapterException(
+                "Attachment ${attachment.id} equal-timestamp tombstone payload differs remotely",
+            )
+            !mayWrite -> throw SyncAdapterException(
+                "Attachment ${attachment.id} tombstone write was rejected without a safely newer remote row",
+            )
+            else -> {
+                val remoteId = remote["id"]?.jsonPrimitive?.contentOrNull
+                    ?: throw SyncAdapterException("Resolved attachment ${attachment.id} has no record id")
+                val response = gateway.updateAttachmentTombstone(
+                    remoteId,
+                    body,
+                    remote["file"]?.jsonPrimitive?.contentOrNull,
+                )
+                if (response.isSuccess) {
+                    response.body ?: throw SyncAdapterException("Attachment tombstone update returned no record")
+                } else {
+                    val reread = findAttachmentRecordByLocalId(gateway, attachment.id)
+                        ?: throw SyncAdapterException("Attachment tombstone was rejected with HTTP ${response.status.value}")
+                    reconcileAttachmentTombstone(gateway, attachment, body, reread, mayWrite = false)
+                }
+            }
+        }
     }
 
     internal suspend fun recoverMissingRemoteRows(
@@ -304,8 +518,10 @@ class AttachmentSyncAdapter(
             throw SyncDegradedException(message)
         }
         if (remoteRecords.size < localSyncedActive.size * MISSING_ROW_RECOVERY_MIN_RATIO) {
-            log.w { "Skipping $collectionName missing-row recovery: server returned ${remoteRecords.size} records but ${localSyncedActive.size} local synced exist -- possible partial response" }
-            return
+            val message =
+                "Degraded $collectionName sync: server returned ${remoteRecords.size} records but ${localSyncedActive.size} local synced exist -- possible partial response"
+            log.w { message }
+            throw SyncDegradedException(message)
         }
         val remoteIds = remoteRecords.map { it.localId }.toSet()
         for (local in localSyncedActive) {
@@ -315,89 +531,6 @@ class AttachmentSyncAdapter(
             }
         }
     }
-
-    private suspend fun updateByPbIdOrRecover(
-        client: PocketbaseClient,
-        attachment: Attachment,
-        body: Map<String, JsonPrimitive>,
-        bytes: ByteArray?,
-        clearFile: Boolean,
-    ): AttachmentRecord {
-        val pbId = attachment.pbId ?: return createOrRecover(client, attachment, body, bytes, clearFile)
-        val updated = runCatching { updateRecordWithFile(client, pbId, body, bytes, attachment.fileName, clearFile) }
-        if (updated.isSuccess) return updated.getOrThrow()
-        val error = updated.exceptionOrNull()
-        if (!error.isNotFound()) throw error ?: SyncAdapterException("Failed to update attachment ${attachment.id}")
-
-        log.w { "Stale pbId for $collectionName ${attachment.id}; looking up by localId" }
-        val existing = runCatching { findRecordByLocalId(client, attachment.id) }
-            .onFailure { log.e(it) { "Failed localId lookup for $collectionName ${attachment.id}" } }
-            .getOrNull()
-        val recoveredPbId = existing?.id
-        if (recoveredPbId != null) {
-            dao.updatePbId(attachment.id, recoveredPbId)
-            return updateRecordWithFile(client, recoveredPbId, body, bytes, attachment.fileName, clearFile)
-        }
-        return createRecordWithFile(client, body, bytes, attachment.fileName, clearFile)
-    }
-
-    private suspend fun createOrRecover(
-        client: PocketbaseClient,
-        attachment: Attachment,
-        body: Map<String, JsonPrimitive>,
-        bytes: ByteArray?,
-        clearFile: Boolean,
-    ): AttachmentRecord {
-        val created = runCatching { createRecordWithFile(client, body, bytes, attachment.fileName, clearFile) }
-        if (created.isSuccess) return created.getOrThrow()
-
-        val error = created.exceptionOrNull()
-        log.w(error) { "Create failed for $collectionName ${attachment.id}; looking up existing server row by localId" }
-        val existing = runCatching { findRecordByLocalId(client, attachment.id) }
-            .onFailure { log.e(it) { "Failed localId lookup after create failure for $collectionName ${attachment.id}" } }
-            .getOrNull()
-        val recoveredPbId = existing?.id ?: throw error ?: SyncAdapterException("Failed to create attachment ${attachment.id}")
-        dao.updatePbId(attachment.id, recoveredPbId)
-        return updateRecordWithFile(client, recoveredPbId, body, bytes, attachment.fileName, clearFile)
-    }
-
-    private suspend fun createRecordWithFile(
-        client: PocketbaseClient,
-        body: Map<String, JsonPrimitive>,
-        bytes: ByteArray?,
-        fileName: String,
-        clearFile: Boolean,
-    ): AttachmentRecord =
-        if (clearFile) {
-            client.records.create<AttachmentRecord>(collectionName, body.withClearedFile(), emptyList())
-        } else {
-            val uploadBytes = bytes ?: throw SyncAdapterException("Attachment file bytes missing")
-            client.records.create<AttachmentRecord>(
-                collectionName,
-                body,
-                listOf(FileUpload(FILE_FIELD, uploadBytes, fileName))
-            )
-        }
-
-    private suspend fun updateRecordWithFile(
-        client: PocketbaseClient,
-        pbId: String,
-        body: Map<String, JsonPrimitive>,
-        bytes: ByteArray?,
-        fileName: String,
-        clearFile: Boolean,
-    ): AttachmentRecord =
-        if (clearFile) {
-            client.records.update<AttachmentRecord>(collectionName, pbId, body.withClearedFile(), emptyList())
-        } else {
-            val uploadBytes = bytes ?: throw SyncAdapterException("Attachment file bytes missing")
-            client.records.update<AttachmentRecord>(
-                collectionName,
-                pbId,
-                body,
-                listOf(FileUpload(FILE_FIELD, uploadBytes, fileName))
-            )
-        }
 
     private fun Attachment.toBody(): Map<String, JsonPrimitive> =
         mapOf(
@@ -416,14 +549,7 @@ class AttachmentSyncAdapter(
             "localUpdatedAt" to JsonPrimitive(updatedAt),
         )
 
-    private fun Map<String, JsonPrimitive>.withClearedFile(): Map<String, JsonPrimitive> =
-        this + (FILE_FIELD to JsonPrimitive(""))
-
-    private fun Throwable?.isNotFound(): Boolean =
-        this?.message?.contains(": 404") == true
-
     private companion object {
-        const val FILE_FIELD = "file"
         const val MISSING_ROW_RECOVERY_MIN_RATIO = 0.1
     }
 }

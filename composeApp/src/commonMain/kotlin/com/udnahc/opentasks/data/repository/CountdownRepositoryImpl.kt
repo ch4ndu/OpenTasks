@@ -42,8 +42,8 @@ class CountdownRepositoryImpl(
     override suspend fun getCountdownByIdUtc(id: String): Countdown? =
         withContext(ioDispatcher) { countdownDao.getCountdownByIdUtc(id) }
 
-    override suspend fun getCountdownsWithTargetsUtc(): List<Countdown> =
-        withContext(ioDispatcher) { countdownDao.getCountdownsWithTargetsUtc() }
+    override suspend fun getAllCountdownsForReminderReconciliationUtc(): List<Countdown> =
+        withContext(ioDispatcher) { countdownDao.getAllCountdownsForReminderReconciliationUtc() }
 
     override suspend fun insert(countdown: Countdown) {
         log.v { "Inserting countdown: ${countdown.id}" }
@@ -65,7 +65,11 @@ class CountdownRepositoryImpl(
         log.v { "Soft-deleting countdown: ${countdown.id}" }
         withContext(ioDispatcher) {
             countdownDao.update(
-                countdown.withUtcTimestamps().copy(isDeleted = true, isSynced = false)
+                countdown.withUtcTimestamps().copy(
+                    isDeleted = true,
+                    isSynced = false,
+                    updatedAt = localToUtc(localNow()),
+                )
             )
         }
         syncTrigger.triggerSync()

@@ -324,6 +324,7 @@ internal fun TimelineEventBar(
     horizontalPadding: Dp = 2.dp,
     iconSpacing: Dp = 2.dp,
     showTime: Boolean = false,
+    timeText: String? = null,
 ) {
     val dimens = OpenTasksTheme.dimens
     val priorityColor = priorityColor(task.priority)
@@ -364,18 +365,14 @@ internal fun TimelineEventBar(
                 overflow = TextOverflow.Ellipsis,
                 modifier = if (showTime) Modifier.weight(1f) else Modifier,
             )
-            if (showTime && task.deadline != null) {
-                val hour = extractHour(task.deadline)
-                val minute = extractMinute(task.deadline)
-                if (hour != 0 || minute != 0) {
-                    Spacer(Modifier.width(dimens.paddingSmall))
-                    Text(
-                        text = formatTime12Hr(hour, minute),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = contentColor,
-                        maxLines = 1,
-                    )
-                }
+            if (showTime && !timeText.isNullOrEmpty()) {
+                Spacer(Modifier.width(dimens.paddingSmall))
+                Text(
+                    text = timeText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = contentColor,
+                    maxLines = 1,
+                )
             }
         }
     } else {

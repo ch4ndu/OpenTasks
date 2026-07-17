@@ -71,22 +71,17 @@ private class FakeScheduler : ReminderScheduler {
     data class Scheduled(val occurrence: Long?, val rescheduleAfterFire: Boolean)
     val scheduled = mutableListOf<Scheduled>()
 
-    override fun schedule(
-        taskId: String,
-        title: String,
-        body: String,
-        triggerAtMillis: Long,
-        reminderId: Int,
-        occurrenceDeadlineUtcMillis: Long?,
-        allowMarkDone: Boolean,
-        rescheduleAfterFire: Boolean,
-    ) {
-        scheduled += Scheduled(occurrenceDeadlineUtcMillis, rescheduleAfterFire)
+    override suspend fun schedule(request: com.udnahc.opentasks.data.notification.ReminderRequest) {
+        scheduled += Scheduled(request.occurrenceUtcMillis, request.rescheduleAfterFire)
     }
 
-    override fun cancel(taskId: String, reminderId: Int) = Unit
-    override fun cancelReminders(taskId: String) = Unit
-    override fun cancelAll(taskId: String) = Unit
-    override fun startOngoing(taskId: String, title: String, occurrenceDeadlineUtcMillis: Long?) = Unit
-    override fun stopOngoing(taskId: String) = Unit
+    override suspend fun cancel(semanticKey: String) = Unit
+    override suspend fun cancelPendingReminders(eventId: String) = Unit
+    override suspend fun cancelReminders(eventId: String) = Unit
+    override suspend fun cancelAll(eventId: String) = Unit
+    override suspend fun startOngoing(
+        identity: com.udnahc.opentasks.data.notification.ReminderIdentity,
+        title: String,
+    ) = Unit
+    override suspend fun stopOngoing(eventId: String) = Unit
 }

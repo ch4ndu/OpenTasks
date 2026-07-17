@@ -1,9 +1,9 @@
-package com.udnahc.opentasks.domain.action.task
+package com.udnahc.opentasks.domain.usecase.task
 
 import com.udnahc.opentasks.data.calendar.IcsGenerator
 import com.udnahc.opentasks.data.repository.TaskRepository
 
-class GenerateIcsExportAction(
+class GenerateIcsExportUseCase(
     private val taskRepository: TaskRepository,
 ) {
     suspend operator fun invoke(): Pair<String, Int> {

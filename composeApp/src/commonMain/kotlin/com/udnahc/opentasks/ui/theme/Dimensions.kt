@@ -10,6 +10,8 @@ import androidx.compose.ui.unit.dp
  */
 enum class WindowSizeCategory { COMPACT, MEDIUM, EXPANDED }
 
+val LocalWindowSizeCategory = staticCompositionLocalOf { WindowSizeCategory.COMPACT }
+
 data class OpenTasksDimensions(
     // ── Padding ──────────────────────────────────────────────────────────
     val paddingTiny: Dp,        // 2.dp baseline

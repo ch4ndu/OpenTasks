@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.navigation
 
+import com.udnahc.opentasks.data.model.AppConstants
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -17,7 +18,7 @@ sealed class Screen : NavClass() {
     @Serializable
     data class CreateTask(
         val priorityOrdinal: Int = 0,
-        val categoryId: String = "00000000-0000-0000-0000-000000000001",
+        val categoryId: String = AppConstants.DEFAULT_INBOX_ID,
         val day: Int = 0,
         val month: Int = 0,
         val year: Int = 0,

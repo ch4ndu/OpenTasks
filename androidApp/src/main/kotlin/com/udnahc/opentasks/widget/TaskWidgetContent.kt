@@ -27,6 +27,11 @@ import androidx.glance.layout.padding
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import com.udnahc.opentasks.ACTION_CREATE_TASK
+import com.udnahc.opentasks.ACTION_VIEW_LIST
+import com.udnahc.opentasks.ACTION_VIEW_TASK
+import com.udnahc.opentasks.EXTRA_WIDGET_ACTION
+import com.udnahc.opentasks.EXTRA_WIDGET_TASK_ID
 import com.udnahc.opentasks.R
 
 private const val PKG = "com.udnahc.opentasks"
@@ -35,8 +40,8 @@ private const val MAIN_ACTIVITY = "$PKG.MainActivity"
 private fun mainIntent(action: String, taskId: String? = null): Intent =
     Intent().apply {
         component = ComponentName(PKG, MAIN_ACTIVITY)
-        putExtra("widget_action", action)
-        if (taskId != null) putExtra("task_id", taskId)
+        putExtra(EXTRA_WIDGET_ACTION, action)
+        if (taskId != null) putExtra(EXTRA_WIDGET_TASK_ID, taskId)
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
 
@@ -62,9 +67,9 @@ fun TaskWidgetContent(
     appWidgetId: Int,
     emptyMessage: String?,
 ) {
-    val isDark = prefs.theme != WidgetTheme.LIGHT
-    val bgColor = widgetResourceColor(if (isDark) R.color.widget_bg_dark else R.color.widget_bg_light)
-    val textColor = widgetResourceColor(if (isDark) R.color.widget_text_white else R.color.widget_text_black)
+    val themeColors = widgetThemeColors(prefs.theme)
+    val bgColor = widgetResourceColor(themeColors.background)
+    val textColor = widgetResourceColor(themeColors.text)
     val dateColor = widgetResourceColor(R.color.widget_date_red)
     val grayColor = widgetResourceColor(R.color.widget_text_gray)
 
@@ -104,7 +109,7 @@ fun TaskWidgetContent(
                 style = TextStyle(color = textColor, fontSize = 20.sp, fontWeight = FontWeight.Bold),
                 modifier = GlanceModifier
                     .padding(horizontal = 8.dp)
-                    .clickable(actionStartActivity(mainIntent("create_task"))),
+                    .clickable(actionStartActivity(mainIntent(ACTION_CREATE_TASK))),
             )
             Text(
                 text = "\u21BB",
@@ -139,9 +144,9 @@ fun TaskWidgetContent(
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
                 items(tasks, itemId = { it.id.hashCode().toLong() }) { task ->
                     val clickAction = if (prefs.onClickAction == WidgetClickAction.OPEN_TASK) {
-                        actionStartActivity(mainIntent("view_task", task.id))
+                        actionStartActivity(mainIntent(ACTION_VIEW_TASK, task.id))
                     } else {
-                        actionStartActivity(mainIntent("view_list"))
+                        actionStartActivity(mainIntent(ACTION_VIEW_LIST))
                     }
                     Row(
                         modifier = GlanceModifier

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
+import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
@@ -41,6 +42,9 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.calendar_overflow
+import org.jetbrains.compose.resources.stringResource
 
 // Day name headers moved to CalendarComposables.kt (DayNameHeaders)
 
@@ -69,6 +73,15 @@ internal fun WeekViewContent(
 ) {
     val dimens = OpenTasksTheme.dimens
     val todayWeekSunMillis = remember { startOfWeekLocalMillis(todayMillis) }
+    val miniCalendarTasksByDay = remember(calendarYear, calendarMonth, tasksByDay) {
+        buildMonthWeeks(calendarYear, calendarMonth)
+            .asSequence()
+            .flatten()
+            .associate { day ->
+                val key = dayKeyFromDate(day.year, day.month, day.day)
+                key to tasksByDay[key].orEmpty()
+            }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Spacer(Modifier.height(topBarHeight))
@@ -91,11 +104,17 @@ internal fun WeekViewContent(
                 ) { page ->
                     val weekOffset = page - weekPagerCentre
                     val pageSundayMillis = todayWeekSunMillis + weekOffset * 7 * MILLIS_PER_DAY
+                    val pageTasksByDay = remember(pageSundayMillis, tasksByDay) {
+                        (0..6).associate { dayIndex ->
+                            val day = pageSundayMillis + dayIndex * MILLIS_PER_DAY
+                            dayKey(day) to tasksByDay[dayKey(day)].orEmpty()
+                        }
+                    }
 
                     WeekViewDayPagerContent(
                         sundayMillis = pageSundayMillis,
                         todayMillis = todayMillis,
-                        tasksByDay = tasksByDay,
+                        tasksByDay = pageTasksByDay,
                         cellWidth = cellWidth,
                         cellHeight = cellHeight,
                         onTaskClick = onTaskClick,
@@ -123,7 +142,7 @@ internal fun WeekViewContent(
                         todayYear = todayYear,
                         todayMonth = todayMonth,
                         todayDay = todayDay,
-                        tasksByDay = tasksByDay,
+                        tasksByDay = miniCalendarTasksByDay,
                         onDayClick = { dayMillis ->
                             val sundayMillis = startOfWeekLocalMillis(dayMillis)
                             onWeekSelected(sundayMillis)
@@ -161,7 +180,7 @@ private fun WeekViewDayPagerContent(
                         WeekViewDayCell(
                             dayMillis = dayMillis,
                             todayMillis = todayMillis,
-                            tasksByDay = tasksByDay,
+                            dayTasks = tasksByDay[dayKey(dayMillis)].orEmpty(),
                             onTaskClick = onTaskClick,
                             isSelected = dayMillis == selectedDayMillis,
                             onDaySelected = onDaySelected,
@@ -180,7 +199,7 @@ private fun WeekViewDayPagerContent(
 internal fun WeekViewDayCell(
     dayMillis: Long,
     todayMillis: Long,
-    tasksByDay: Map<Long, List<Task>>,
+    dayTasks: List<Task>,
     onTaskClick: (Task) -> Unit,
     isSelected: Boolean,
     onDaySelected: (Long) -> Unit,
@@ -194,11 +213,6 @@ internal fun WeekViewDayCell(
             extractYear(dayMillis), extractMonth(dayMillis), extractDay(dayMillis)
         )
     }
-    val dk = remember(dayMillis) { dayKey(dayMillis) }
-    val dayTasks = remember(dk, tasksByDay) {
-        tasksByDay[dk] ?: emptyList()
-    }
-
     val textColor = when {
         isSelected -> Color.White
         isToday -> PrimaryBlue
@@ -289,7 +303,7 @@ internal fun WeekViewDayCell(
                     }
                     if (overflow > 0) {
                         Text(
-                            text = "+$overflow",
+                            text = stringResource(Res.string.calendar_overflow, overflow),
                             style = OpenTasksTheme.typography.calendarEventOverflow,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 2.dp),

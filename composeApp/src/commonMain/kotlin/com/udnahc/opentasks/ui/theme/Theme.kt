@@ -80,6 +80,7 @@ fun OpenTasksTheme(
         CompositionLocalProvider(
             LocalOpenTasksTypography provides extendedTypography,
             LocalOpenTasksDimensions provides dimensions,
+            LocalWindowSizeCategory provides sizeCategory,
         ) {
             MaterialTheme(
                 colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
@@ -98,4 +99,8 @@ object OpenTasksTheme {
     val dimens: OpenTasksDimensions
         @Composable
         get() = LocalOpenTasksDimensions.current
+
+    val windowSizeCategory: WindowSizeCategory
+        @Composable
+        get() = LocalWindowSizeCategory.current
 }

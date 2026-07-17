@@ -29,6 +29,8 @@ class ImportCalendarEventsAction(
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
 ) {
+    private val taskWriteCoordinator = TaskWriteCoordinator(taskRepository)
+
     suspend operator fun invoke(events: List<CalendarEvent>): Int {
         log.d { "Importing ${events.size} calendar events" }
         if (events.isEmpty()) return 0
@@ -80,7 +82,7 @@ class ImportCalendarEventsAction(
                 createdAt = now,
                 updatedAt = now,
             )
-            taskRepository.insert(task)
+            taskWriteCoordinator.create(task)
             importedTaskIds += task.id
 
             // Tag the task

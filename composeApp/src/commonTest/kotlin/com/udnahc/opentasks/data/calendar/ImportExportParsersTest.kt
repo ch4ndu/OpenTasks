@@ -1,10 +1,13 @@
 package com.udnahc.opentasks.data.calendar
 
+import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
+import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.testutil.testTask
+import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -45,7 +48,7 @@ class ImportExportParsersTest {
             recurrenceType = RecurrenceType.MONTHLY,
             status = TaskStatus.DONE,
             createdAt = 1_777_900_000_000L,
-        )
+        ).copy(completedAt = 1_778_004_200_000L)
 
         val csv = CsvGenerator.generate(listOf(task), listOf(Category(id = "work", name = "Work")))
         val parsed = CsvParser.parse(csv).single()
@@ -57,6 +60,21 @@ class ImportExportParsersTest {
         assertEquals(true, parsed.isCompleted)
         assertEquals(RecurrenceType.MONTHLY, parsed.recurrenceType)
         assertEquals("60,0", parsed.durationReminders)
+        assertEquals(task.completedAt, parsed.completedAt)
+    }
+
+    @Test
+    fun csvParserPreservesCompletionTimeAndDueDateWithoutStartDate() {
+        val csv = """
+            "Folder Name","List Name","Title","Content","Is All Day","Start Date","Due Date","Reminder","Repeat","Priority","Status","Created Time","Completed Time","Order","Timezone","Is Floating"
+            "","Inbox","Done","","false","","2026-05-04T16:00:00+0000","","","0","2","2026-05-01T12:00:00+0000","2026-05-04T17:00:00+0000","0","",""
+        """.trimIndent()
+
+        val parsed = CsvParser.parse(csv).single()
+
+        assertEquals(Instant.parse("2026-05-04T16:00:00Z").toEpochMilliseconds(), parsed.dueDate)
+        assertEquals(Instant.parse("2026-05-04T17:00:00Z").toEpochMilliseconds(), parsed.completedAt)
+        assertTrue(parsed.isCompleted)
     }
 
     @Test
@@ -86,6 +104,7 @@ class ImportExportParsersTest {
         assertEquals("Line one\nLine two", event.description)
         assertEquals("Team Calendar", event.calendarName)
         assertEquals(true, event.isAllDay)
+        assertEquals("2026-05-04", localMillisToLocalDate(utcToLocal(event.startTimeUtcMillis)).toString())
         assertEquals("Room; A", event.location)
         assertEquals("MURALI", event.organizer)
         assertEquals(listOf("ALEX"), event.attendees)

@@ -4,6 +4,8 @@ import com.udnahc.opentasks.data.dao.TagDao
 import com.udnahc.opentasks.data.dao.TaskDao
 import com.udnahc.opentasks.data.model.TaskTag
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
+import com.udnahc.opentasks.data.sync.RemoteMergeResult
+import com.udnahc.opentasks.data.sync.PocketBaseFilter
 import com.udnahc.opentasks.data.sync.records.TaskTagRecord
 import com.udnahc.opentasks.data.sync.records.taskTagLocalId
 import com.udnahc.opentasks.data.sync.records.toTaskTag
@@ -11,6 +13,8 @@ import com.udnahc.opentasks.data.sync.records.toTaskTagRecord
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.dsl.query.Filter
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 
 class TaskTagSyncAdapter(
     private val dao: TagDao,
@@ -54,6 +58,8 @@ class TaskTagSyncAdapter(
 
     override suspend fun hardDeleteLocalNeverSynced(entity: TaskTag) = dao.hardDeleteTaskTag(entity)
     override suspend fun upsert(entity: TaskTag) = dao.upsertTaskTag(entity)
+    override suspend fun mergeRemoteIfNewer(entity: TaskTag): RemoteMergeResult =
+        dao.mergeRemoteTaskTagIfNewer(entity)
 
     override fun localId(entity: TaskTag) = taskTagLocalId(entity.taskId, entity.tagId)
     override fun pbId(entity: TaskTag) = entity.pbId
@@ -67,6 +73,7 @@ class TaskTagSyncAdapter(
 
     override fun toRecord(entity: TaskTag) = entity.toTaskTagRecord()
     override fun toEntity(record: TaskTagRecord) = record.toTaskTag()
+    override fun recordFromJson(json: JsonObject): TaskTagRecord = gatewayJson.decodeFromJsonElement(json)
     override fun toJsonBody(entity: TaskTag) = Json.encodeToString(entity.toTaskTagRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
@@ -97,27 +104,21 @@ class TaskTagSyncAdapter(
             collectionName,
             1,
             1,
-            filterBy = Filter("localId='$localId'")
+            filterBy = Filter(PocketBaseFilter.localIdEquals(localId))
         )
             .items.firstOrNull()
 
     override suspend fun prepareRemoteValidation(records: List<TaskTagRecord>) {
-        existingTaskIds = taskDao.getAllTasksOnce().mapTo(HashSet()) { it.id }
-        existingTagIds = dao.getAllTagsOnce().mapTo(HashSet()) { it.id }
+        existingTaskIds = taskDao.getActiveTaskIds().toHashSet()
+        existingTagIds = dao.getActiveTagIds().toHashSet()
     }
 
-    override suspend fun validateRemoteRecord(record: TaskTagRecord): String? {
-        val hasTask = existingTaskIds?.contains(record.taskId)
-            ?: (taskDao.findTaskByIdAnyState(record.taskId) != null)
-        val hasTag = existingTagIds?.contains(record.tagId)
-            ?: (dao.findTagByIdAnyState(record.tagId) != null)
-        return when {
-            !hasTask && !hasTag -> "Skipping orphan task_tags ${record.localId}: missing task ${record.taskId} and tag ${record.tagId}"
-            !hasTask -> "Skipping orphan task_tags ${record.localId}: missing task ${record.taskId}"
-            !hasTag -> "Skipping orphan task_tags ${record.localId}: missing tag ${record.tagId}"
-            else -> null
-        }
-    }
+    override suspend fun skipRemoteRecordSilently(record: TaskTagRecord): Boolean =
+        record.isDeleted && !hasActiveParents(record)
+
+    override suspend fun validateRemoteRecord(record: TaskTagRecord): String? =
+        if (hasActiveParents(record)) null
+        else "Skipping active orphan task_tags ${record.localId}: missing local task or tag parent"
 
     override fun clearRemoteValidation() {
         existingTaskIds = null
@@ -129,4 +130,7 @@ class TaskTagSyncAdapter(
         if (separator <= 0 || separator == localId.lastIndex) return null
         return localId.substring(0, separator) to localId.substring(separator + 1)
     }
+
+    private fun hasActiveParents(record: TaskTagRecord): Boolean =
+        record.taskId in existingTaskIds.orEmpty() && record.tagId in existingTagIds.orEmpty()
 }

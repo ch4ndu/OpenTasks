@@ -53,6 +53,9 @@ import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import kotlinx.coroutines.launch
+import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.calendar_overflow
+import org.jetbrains.compose.resources.stringResource
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DAY VIEW
@@ -119,7 +122,7 @@ internal fun DayViewContent(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
                         isSelected = index == pagerState.currentPage,
-                        tasksByDay = tasksByDay,
+                        hasTasks = tasksByDay.containsKey(dayKey(dayMillis)),
                         modifier = Modifier.width(dayStripWidth),
                         onClick = { scope.launch { pagerState.scrollToPage(index) } },
                     )
@@ -189,7 +192,7 @@ internal fun DayViewContent(
                     DayViewTimeline(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
-                        timelineTasksByDay = timelineTasksByDay,
+                        dayTasks = timelineTasksByDay[dayKey(dayMillis)] ?: CalendarDayTasks(),
                         hourHeight = hourHeight,
                         onTimelineScrolled = { scrollValue ->
                             scope.launch { timeColumnScrollState.scrollTo(scrollValue) }
@@ -210,7 +213,7 @@ internal fun DayViewStripItem(
     dayMillis: Long,
     todayMillis: Long,
     isSelected: Boolean,
-    tasksByDay: Map<Long, List<Task>>,
+    hasTasks: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -222,9 +225,6 @@ internal fun DayViewStripItem(
             extractYear(dayMillis), extractMonth(dayMillis), extractDay(dayMillis)
         )
     }
-    val dk = remember(dayMillis) { dayKey(dayMillis) }
-    val hasTasks = tasksByDay.containsKey(dk)
-
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
@@ -282,7 +282,7 @@ internal fun DayViewStripItem(
 private fun DayViewTimeline(
     dayMillis: Long,
     todayMillis: Long,
-    timelineTasksByDay: Map<Long, CalendarDayTasks>,
+    dayTasks: CalendarDayTasks,
     hourHeight: Dp,
     onTimelineScrolled: (Int) -> Unit,
     onTaskClick: (Task) -> Unit,
@@ -293,8 +293,6 @@ private fun DayViewTimeline(
         snapshotFlow { scrollState.value }.collect { onTimelineScrolled(it) }
     }
     val dimens = OpenTasksTheme.dimens
-    val dk = remember(dayMillis) { dayKey(dayMillis) }
-    val dayTasks = timelineTasksByDay[dk] ?: CalendarDayTasks()
     val allDayTasks = dayTasks.allDayTasks
     val timedTasks = dayTasks.timedTasks
 
@@ -328,7 +326,7 @@ private fun DayViewTimeline(
                 }
                 if (allDayOverflow > 0) {
                     Text(
-                        text = "+$allDayOverflow",
+                        text = stringResource(Res.string.calendar_overflow, allDayOverflow),
                         style = OpenTasksTheme.typography.calendarEventOverflow,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 2.dp),
@@ -368,10 +366,7 @@ private fun DayViewTimeline(
 
             // Positioned timed events
             timedTasks.forEach { task ->
-                val dl = task.deadline ?: return@forEach
-                val hour = extractHour(dl)
-                val minute = extractMinute(dl)
-                val yOffset = hourHeight * hour + hourHeight * (minute / 60f)
+                val yOffset = hourHeight * (dayTasks.timedTaskStartMinutes[task.id] ?: 0) / 60f
                 TimelineEventBar(
                     task = task,
                     modifier = Modifier
@@ -385,6 +380,7 @@ private fun DayViewTimeline(
                     horizontalPadding = dimens.paddingSmall,
                     iconSpacing = dimens.paddingSmall,
                     showTime = true,
+                    timeText = dayTasks.timedTaskTimeText[task.id],
                 )
             }
         }

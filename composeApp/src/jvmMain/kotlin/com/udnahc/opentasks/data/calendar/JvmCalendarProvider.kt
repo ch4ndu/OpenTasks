@@ -5,7 +5,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
@@ -116,8 +118,8 @@ class JvmCalendarProvider : CalendarProvider {
                     externalId = "mac_${parts[0].trim()}",
                     title = title,
                     description = parts[2].trim(),
-                    startTimeUtcMillis = startEpochSeconds * 1000,
-                    endTimeUtcMillis = endEpochSeconds?.let { it * 1000 },
+                    startTimeUtcMillis = localEpochSecondsToUtcMillis(startEpochSeconds),
+                    endTimeUtcMillis = endEpochSeconds?.let(::localEpochSecondsToUtcMillis),
                     calendarName = parts[5].trim(),
                     isAllDay = parts[6].trim().equals("true", ignoreCase = true),
                     location = parts.getOrNull(7)?.trim() ?: "",
@@ -133,4 +135,11 @@ class JvmCalendarProvider : CalendarProvider {
             .withZone(ZoneId.systemDefault())
         return formatter.format(instant)
     }
+
+    /** AppleScript's date subtraction uses local 1970 midnight, not UTC epoch. */
+    private fun localEpochSecondsToUtcMillis(seconds: Long): Long =
+        LocalDateTime.ofInstant(Instant.ofEpochSecond(seconds), ZoneOffset.UTC)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
 }

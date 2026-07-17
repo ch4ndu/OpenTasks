@@ -28,7 +28,11 @@ data class Task(
     val notifyBeforeUnit: NotifyBeforeUnit = NotifyBeforeUnit.NONE,
     val recurrenceType: RecurrenceType = RecurrenceType.NONE,
     val recurrenceInterval: Int = 0,
+    /** Original local day-of-month for monthly/yearly recurrence advancement. */
+    val recurrenceAnchorDay: Int? = null,
     val status: TaskStatus = TaskStatus.TODO,
+    /** Local completion time. It is meaningful only while [status] is DONE. */
+    val completedAt: Long? = null,
     val isStarred: Boolean = false,
     val section: String? = null,
     val isUrgent: Boolean = false,

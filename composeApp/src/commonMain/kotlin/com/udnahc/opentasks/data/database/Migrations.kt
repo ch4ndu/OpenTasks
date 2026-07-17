@@ -221,3 +221,10 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
         connection.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_pbId ON attachments(pbId)")
     }
 }
+
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.addColumnIfMissing("tasks", "recurrenceAnchorDay", "recurrenceAnchorDay INTEGER DEFAULT NULL")
+        connection.addColumnIfMissing("tasks", "completedAt", "completedAt INTEGER DEFAULT NULL")
+    }
+}

@@ -67,6 +67,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     private static let notificationEventIdKey = "notification_event_id"
     private static let notificationOccurrenceDeadlineUtcKey = "notification_occurrence_deadline_utc"
     private static let notificationAtUtcKey = "notification_at_utc"
+    private static let notificationSemanticKey = "notification_semantic_key"
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -105,7 +106,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             NotificationDeepLinkKt.publishNotificationDeepLinkEvent(
                 eventId: eventId,
                 occurrenceDeadlineUtcMillis: Int64(userInfo[Self.notificationOccurrenceDeadlineUtcKey] as? String ?? "") ?? 0,
-                notificationAtUtcMillis: Int64(userInfo[Self.notificationAtUtcKey] as? String ?? "") ?? 0
+                notificationAtUtcMillis: Int64(userInfo[Self.notificationAtUtcKey] as? String ?? "") ?? 0,
+                semanticKey: userInfo[Self.notificationSemanticKey] as? String
             )
         }
         completionHandler()

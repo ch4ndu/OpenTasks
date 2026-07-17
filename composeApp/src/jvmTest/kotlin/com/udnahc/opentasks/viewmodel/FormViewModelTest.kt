@@ -2,10 +2,12 @@ package com.udnahc.opentasks.viewmodel
 
 import app.cash.turbine.test
 import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
-import com.udnahc.opentasks.data.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.data.attachment.PickedImage
 import com.udnahc.opentasks.data.model.TaskFormData
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.model.TaskStatus
+import com.udnahc.opentasks.data.model.RecurrenceType
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.attachment.AddTaskImageAction
@@ -18,6 +20,7 @@ import com.udnahc.opentasks.domain.action.task.AddTaskAction
 import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
+import com.udnahc.opentasks.domain.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImagesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveCountdownByIdUseCase
@@ -57,7 +60,7 @@ class FormViewModelTest : MainDispatcherRule() {
             observeAllCategories = ObserveAllCategoriesUseCase(categoryRepository),
             addTaskAction = AddTaskAction(taskRepository, scheduler),
             updateTaskAction = UpdateTaskAction(taskRepository, scheduler),
-            deleteTaskAction = DeleteTaskAction(taskRepository, attachmentRepository, attachmentFileStorage, scheduler),
+            deleteTaskAction = DeleteTaskAction(taskRepository, attachmentFileStorage, scheduler),
             observeTaskImagesUseCase = ObserveTaskImagesUseCase(attachmentRepository),
             addTaskImageAction = AddTaskImageAction(attachmentRepository, attachmentFileStorage),
             removeTaskImageAction = RemoveTaskImageAction(attachmentRepository, attachmentFileStorage),
@@ -77,7 +80,8 @@ class FormViewModelTest : MainDispatcherRule() {
             priority = TaskPriority.MEDIUM,
             categoryId = "inbox",
         )
-        viewModel.saveEvents.test {
+        viewModel.saveEvent.test {
+            assertEquals(null, awaitItem())
             viewModel.saveNewTask(formData)
             advanceUntilIdle()
             assertEquals(formData, (awaitItem() as TaskFormSaveEvent.Saved).formData)
@@ -86,7 +90,7 @@ class FormViewModelTest : MainDispatcherRule() {
         assertEquals("New", taskRepository.inserted.single().title)
 
         viewModel.addCategory("Projects")
-        viewModel.deleteTask(testTask(id = "task"))
+        viewModel.deleteTask("task")
         advanceUntilIdle()
         assertEquals("Projects", categoryRepository.inserted.single().name)
         assertTrue(taskRepository.updated.last().isDeleted)
@@ -115,7 +119,8 @@ class FormViewModelTest : MainDispatcherRule() {
         viewModel.addPendingImage(goodImage)
         viewModel.addPendingImage(largeImage)
 
-        viewModel.saveEvents.test {
+        viewModel.saveEvent.test {
+            assertEquals(null, awaitItem())
             viewModel.saveNewTask(TaskFormData(title = "New", content = ""))
             advanceUntilIdle()
 
@@ -148,7 +153,8 @@ class FormViewModelTest : MainDispatcherRule() {
         createViewModel.addPendingImage(failedImage)
 
         lateinit var taskId: String
-        createViewModel.saveEvents.test {
+        createViewModel.saveEvent.test {
+            assertEquals(null, awaitItem())
             createViewModel.saveNewTask(TaskFormData(title = "New", content = ""))
             advanceUntilIdle()
 
@@ -197,8 +203,9 @@ class FormViewModelTest : MainDispatcherRule() {
         viewModel.addPendingImage(goodImage)
         viewModel.addPendingImage(largeImage)
 
-        viewModel.saveEvents.test {
-            viewModel.saveExistingTask(existingTask, TaskFormData(title = "Updated", content = ""))
+        viewModel.saveEvent.test {
+            assertEquals(null, awaitItem())
+            viewModel.saveExistingTask(existingTask.id, TaskFormData(title = "Updated", content = ""))
             advanceUntilIdle()
 
             val event = awaitItem()
@@ -218,7 +225,8 @@ class FormViewModelTest : MainDispatcherRule() {
         val createViewModel = taskFormViewModel(taskRepository = createTaskRepository)
         val createFormData = TaskFormData(title = "New", content = "")
 
-        createViewModel.saveEvents.test {
+        createViewModel.saveEvent.test {
+            assertEquals(null, awaitItem())
             createViewModel.saveNewTask(createFormData)
             createViewModel.saveNewTask(createFormData)
             assertTrue(createViewModel.isSaving.value)
@@ -235,15 +243,45 @@ class FormViewModelTest : MainDispatcherRule() {
         val editViewModel = taskFormViewModel(taskRepository = editTaskRepository)
         val editFormData = TaskFormData(title = "Updated", content = "")
 
-        editViewModel.saveEvents.test {
-            editViewModel.saveExistingTask(existingTask, editFormData)
-            editViewModel.saveExistingTask(existingTask, editFormData)
+        editViewModel.saveEvent.test {
+            assertEquals(null, awaitItem())
+            editViewModel.saveExistingTask(existingTask.id, editFormData)
+            editViewModel.saveExistingTask(existingTask.id, editFormData)
             assertTrue(editViewModel.isSaving.value)
             advanceUntilIdle()
 
             assertEquals(1, editTaskRepository.updated.size)
             assertFalse(editViewModel.isSaving.value)
             assertTrue(awaitItem() is TaskFormSaveEvent.Saved)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun taskFormSaveResultSurvivesCollectorRecreationAndIsConsumedOnce() = runTest(dispatcher) {
+        val viewModel = taskFormViewModel()
+        val form = TaskFormData(title = "Durable", content = "")
+
+        viewModel.saveNewTask(form)
+        advanceUntilIdle()
+
+        viewModel.saveEvent.test {
+            assertEquals(form, (awaitItem() as TaskFormSaveEvent.Saved).formData)
+            cancelAndIgnoreRemainingEvents()
+        }
+        viewModel.saveEvent.test {
+            assertEquals(form, (awaitItem() as TaskFormSaveEvent.Saved).formData)
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        val event = viewModel.saveEvent.value
+        assertTrue(event is TaskFormSaveEvent.Saved)
+        assertTrue(viewModel.consumeSaveEvent(event))
+        assertFalse(viewModel.consumeSaveEvent(event))
+        assertEquals(null, viewModel.saveEvent.value)
+
+        viewModel.saveEvent.test {
+            assertEquals(null, awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -281,11 +319,174 @@ class FormViewModelTest : MainDispatcherRule() {
         viewModel.addPendingImage(PickedImage("first.jpg", ByteArray(8), id = "first"))
         viewModel.addPendingImage(PickedImage("second.jpg", ByteArray(8), id = "second"))
 
-        viewModel.deleteTask(task)
+        viewModel.deleteTask(task.id)
         advanceUntilIdle()
 
         assertTrue(viewModel.pendingImages.value.isEmpty())
         assertTrue(taskRepository.updated.single().isDeleted)
+    }
+
+    @Test
+    fun recurringFormCompletionKeepsPendingDraftAcrossDismissalFailureRetryAndDuplicateConfirmation() = runTest(dispatcher) {
+        val deadline = 1_778_918_400_000L
+        val task = testTask(
+            id = "recurring-form",
+            deadline = deadline,
+            recurrenceType = RecurrenceType.DAILY,
+        )
+        val repository = FakeTaskRepository(listOf(task))
+        val viewModel = taskFormViewModel(taskRepository = repository)
+        val form = TaskFormData(
+            title = "Typed title",
+            content = "Typed body",
+            deadline = deadline,
+            recurrence = RecurrenceType.DAILY,
+            status = TaskStatus.DONE,
+        )
+
+        viewModel.saveExistingTask(task.id, form)
+        advanceUntilIdle()
+        assertEquals(PendingFormCompletion(task.id, form, deadline), viewModel.pendingFormCompletion.value)
+        assertEquals(form, viewModel.retainedFormDraft.value)
+        assertEquals(null, viewModel.saveEvent.value)
+        assertTrue(repository.updated.isEmpty())
+
+        viewModel.dismissPendingFormCompletion()
+        assertEquals(null, viewModel.pendingFormCompletion.value)
+        assertEquals(form, viewModel.retainedFormDraft.value)
+
+        viewModel.saveExistingTask(task.id, form)
+        advanceUntilIdle()
+        repository.mutationError = IllegalStateException("temporary database failure")
+        viewModel.confirmPendingFormOccurrence()
+        advanceUntilIdle()
+        assertEquals(PendingFormCompletion(task.id, form, deadline), viewModel.pendingFormCompletion.value)
+        assertEquals(form, viewModel.retainedFormDraft.value)
+        assertTrue(repository.updated.isEmpty())
+
+        repository.mutationError = null
+        viewModel.confirmPendingFormOccurrence()
+        viewModel.confirmPendingFormOccurrence()
+        advanceUntilIdle()
+        assertEquals(null, viewModel.pendingFormCompletion.value)
+        assertEquals(null, viewModel.retainedFormDraft.value)
+        assertEquals(1, repository.updated.size)
+        assertEquals(deadline + MILLIS_PER_DAY, repository.tasks.single().deadline)
+    }
+
+    @Test
+    fun recurringFormCompletionRetainsFailedImagesAndDraftAfterCoreMutation() = runTest(dispatcher) {
+        val deadline = 1_778_918_400_000L
+        val task = testTask(id = "recurring-image", deadline = deadline, recurrenceType = RecurrenceType.DAILY)
+        val repository = FakeTaskRepository(listOf(task))
+        val storage = FakeAttachmentFileStorage().apply {
+            storePickedImageError = IllegalStateException("image storage unavailable")
+        }
+        val viewModel = taskFormViewModel(taskRepository = repository, attachmentFileStorage = storage)
+        val form = TaskFormData(
+            title = "Updated",
+            content = "",
+            deadline = deadline,
+            recurrence = RecurrenceType.DAILY,
+            status = TaskStatus.DONE,
+        )
+        val image = PickedImage("retry.jpg", ByteArray(16), id = "retry")
+        viewModel.addPendingImage(image)
+
+        viewModel.saveExistingTask(task.id, form)
+        advanceUntilIdle()
+        viewModel.confirmPendingFormOccurrence()
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.pendingFormCompletion.value)
+        assertEquals(form, viewModel.retainedFormDraft.value)
+        assertEquals(listOf(image), viewModel.pendingImages.value)
+        assertEquals(deadline + MILLIS_PER_DAY, repository.tasks.single().deadline)
+    }
+
+    @Test
+    fun missingRecurringFormTaskRetainsTheSubmittedDraftForAResubmission() = runTest(dispatcher) {
+        val viewModel = taskFormViewModel()
+        val form = TaskFormData(
+            title = "Still typed",
+            content = "",
+            deadline = 1_778_918_400_000L,
+            recurrence = RecurrenceType.DAILY,
+            status = TaskStatus.DONE,
+        )
+
+        viewModel.saveExistingTask("missing", form)
+        advanceUntilIdle()
+
+        assertEquals(form, viewModel.retainedFormDraft.value)
+        assertEquals(null, viewModel.pendingFormCompletion.value)
+        assertFalse(viewModel.isSaving.value)
+    }
+
+    @Test
+    fun recurringFormCompletionReplaysAcrossCollectorRecreationAndSeriesConfirmationIsIdempotent() = runTest(dispatcher) {
+        val deadline = 1_778_918_400_000L
+        val task = testTask(id = "series-form", deadline = deadline, recurrenceType = RecurrenceType.DAILY)
+        val repository = FakeTaskRepository(listOf(task))
+        val viewModel = taskFormViewModel(taskRepository = repository)
+        val form = TaskFormData(
+            title = "Complete the series",
+            content = "",
+            deadline = deadline,
+            recurrence = RecurrenceType.DAILY,
+            status = TaskStatus.DONE,
+        )
+        val expected = PendingFormCompletion(task.id, form, deadline)
+
+        viewModel.saveExistingTask(task.id, form)
+        advanceUntilIdle()
+
+        viewModel.pendingFormCompletion.test {
+            assertEquals(expected, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+        viewModel.pendingFormCompletion.test {
+            assertEquals(expected, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        viewModel.confirmPendingFormSeries()
+        viewModel.confirmPendingFormSeries()
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.pendingFormCompletion.value)
+        assertEquals(TaskStatus.DONE, repository.tasks.single().status)
+        assertEquals(1, repository.updated.size)
+    }
+
+    @Test
+    fun staleRecurringFormCompletionClearsChoiceAndRetainsDraftWithOneResult() = runTest(dispatcher) {
+        val deadline = 1_778_918_400_000L
+        val task = testTask(id = "stale-form", deadline = deadline, recurrenceType = RecurrenceType.DAILY)
+        val repository = FakeTaskRepository(listOf(task))
+        val viewModel = taskFormViewModel(taskRepository = repository)
+        val form = TaskFormData(
+            title = "Keep this draft",
+            content = "",
+            deadline = deadline,
+            recurrence = RecurrenceType.DAILY,
+            status = TaskStatus.DONE,
+        )
+
+        viewModel.saveExistingTask(task.id, form)
+        advanceUntilIdle()
+        repository.replaceTasks(listOf(task.copy(deadline = deadline + MILLIS_PER_DAY)))
+
+        viewModel.confirmPendingFormOccurrence()
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.pendingFormCompletion.value)
+        assertEquals(form, viewModel.retainedFormDraft.value)
+        val event = viewModel.saveEvent.value
+        assertTrue(event is TaskFormSaveEvent.StaleOccurrence)
+        assertEquals(form, event.formData)
+        viewModel.consumeSaveEvent(event)
+        assertEquals(null, viewModel.saveEvent.value)
     }
 
     @Test
@@ -307,17 +508,15 @@ class FormViewModelTest : MainDispatcherRule() {
             cancelAndIgnoreRemainingEvents()
         }
 
-        var completed = 0
-        viewModel.addCountdown(testCountdown(id = "new")) { completed += 1 }
-        viewModel.updateCountdown(countdown.copy(title = "Updated")) { completed += 1 }
-        viewModel.deleteCountdown(countdown) { completed += 1 }
+        viewModel.addCountdown(testCountdown(id = "new"))
+        viewModel.updateCountdown(countdown.copy(title = "Updated"))
+        viewModel.deleteCountdown(countdown)
         advanceUntilIdle()
 
         assertEquals("new", repository.inserted.single().id)
         assertEquals("Updated", repository.updated.first().title)
         assertEquals("countdown", repository.updated.last().id)
         assertTrue(repository.updated.last().isDeleted)
-        assertEquals(3, completed)
     }
 
     private suspend fun <T> app.cash.turbine.ReceiveTurbine<T>.awaitMatching(predicate: (T) -> Boolean): T {
@@ -341,7 +540,7 @@ class FormViewModelTest : MainDispatcherRule() {
             observeAllCategories = ObserveAllCategoriesUseCase(categoryRepository),
             addTaskAction = AddTaskAction(taskRepository, scheduler),
             updateTaskAction = UpdateTaskAction(taskRepository, scheduler),
-            deleteTaskAction = DeleteTaskAction(taskRepository, attachmentRepository, attachmentFileStorage, scheduler),
+            deleteTaskAction = DeleteTaskAction(taskRepository, attachmentFileStorage, scheduler),
             observeTaskImagesUseCase = ObserveTaskImagesUseCase(attachmentRepository),
             addTaskImageAction = AddTaskImageAction(attachmentRepository, attachmentFileStorage),
             removeTaskImageAction = RemoveTaskImageAction(attachmentRepository, attachmentFileStorage),

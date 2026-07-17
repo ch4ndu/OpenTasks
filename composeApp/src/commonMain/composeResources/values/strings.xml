@@ -32,6 +32,7 @@
     <string name="save">Save</string>
     <string name="select">Select</string>
     <string name="more">More</string>
+    <string name="calendar_overflow">+%1$d</string>
     <string name="delete">Delete</string>
     <string name="complete_recurring_task_title">Complete recurring task</string>
     <string name="complete_this_occurrence">Complete this occurrence</string>
@@ -89,8 +90,14 @@
     <string name="task_remove_star">Remove task star</string>
     <string name="countdown_detail_subtitle">%1$s %2$s</string>
     <string name="all_day">All day</string>
+    <string name="previous_day">Previous day</string>
+    <string name="next_day">Next day</string>
+    <string name="previous_week">Previous week</string>
+    <string name="next_week">Next week</string>
     <string name="previous_month">Previous month</string>
     <string name="next_month">Next month</string>
+    <string name="previous_year">Previous year</string>
+    <string name="next_year">Next year</string>
     <string name="clear_reminder">Clear reminder</string>
     <string name="task_reminder_due_now">Due now</string>
     <string name="task_reminder_due_in_minutes">Due in %1$d min</string>
@@ -199,6 +206,9 @@
     <string name="calendar_view_week">Week</string>
     <string name="calendar_view_three_day">3 Day</string>
     <string name="calendar_view_day">Day</string>
+    <string name="choose_calendar_view">Choose calendar view</string>
+    <string name="show_card_view">Show card view</string>
+    <string name="show_timeline_view">Show timeline view</string>
     <string name="view_coming_soon">%1$s view coming soon</string>
 
     <!-- Lists -->
@@ -331,7 +341,6 @@
 
     <!-- Widget -->
     <string name="widget_description">Shows upcoming tasks on your home screen</string>
-    <string name="widget_opacity">Opacity</string>
     <string name="widget_filter_all">All</string>
     <string name="widget_filter_today">Today</string>
     <string name="widget_filter_tomorrow">Tomorrow</string>
@@ -347,7 +356,6 @@
     <string name="widget_setting_theme">Theme</string>
     <string name="widget_setting_font_size">Font Size</string>
     <string name="widget_setting_list_tag">List / Tag</string>
-    <string name="widget_setting_group_by">Group by</string>
     <string name="widget_setting_sort_by">Sort by</string>
     <string name="widget_setting_hide_due_date">Hide Due Date</string>
     <string name="widget_setting_hide_due_date_description">Remove date labels from task rows</string>
@@ -358,8 +366,6 @@
     <string name="widget_font_size_small">Small</string>
     <string name="widget_font_size_normal">Normal</string>
     <string name="widget_font_size_large">Large</string>
-    <string name="widget_group_by_date">Date</string>
-    <string name="widget_group_by_priority">Priority</string>
     <string name="widget_sort_by_date">Date</string>
     <string name="widget_sort_by_priority">Priority</string>
     <string name="widget_sort_by_name">Name</string>
@@ -380,6 +386,10 @@
     <string name="countdown_filter_birthday">Birthday</string>
     <string name="countdown_filter_anniversary">Anniversary</string>
     <string name="countdown_filter_countdown">Countdown</string>
+    <string name="countdown_initial_holiday">H</string>
+    <string name="countdown_initial_birthday">B</string>
+    <string name="countdown_initial_anniversary">A</string>
+    <string name="countdown_initial_countdown">C</string>
     <string name="countdown_no_items">No countdowns yet</string>
     <string name="countdown_no_visible_items">No countdowns are visible for this filter today</string>
     <string name="countdown_days_left">Days Left</string>

@@ -88,7 +88,7 @@ object IcsGenerator {
     /** Format UTC millis to ICS date-only format for the next day (exclusive end): 20260316 */
     private fun formatDateOnlyPlusOneDay(utcMillis: Long): String {
         val date = Instant.fromEpochMilliseconds(utcMillis)
-            .toLocalDateTime(TimeZone.UTC)
+            .toLocalDateTime(TimeZone.currentSystemDefault())
             .date
         return formatDateOnly(date.plus(1, DateTimeUnit.DAY))
     }
@@ -96,7 +96,7 @@ object IcsGenerator {
     /** Format UTC millis to ICS date-only format: 20260315 */
     private fun formatDateOnly(utcMillis: Long): String {
         val instant = Instant.fromEpochMilliseconds(utcMillis)
-        return formatDateOnly(instant.toLocalDateTime(TimeZone.UTC).date)
+        return formatDateOnly(instant.toLocalDateTime(TimeZone.currentSystemDefault()).date)
     }
 
     private fun formatDateOnly(date: LocalDate): String {

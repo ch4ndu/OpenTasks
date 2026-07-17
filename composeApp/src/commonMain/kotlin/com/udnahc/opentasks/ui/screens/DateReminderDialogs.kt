@@ -28,9 +28,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import com.udnahc.opentasks.data.extensions.currentDay
-import com.udnahc.opentasks.data.extensions.currentMonth
-import com.udnahc.opentasks.data.extensions.currentYear
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
@@ -50,6 +47,7 @@ import opentasks.composeapp.generated.resources.time
 import opentasks.composeapp.generated.resources.weekly_with_day
 import opentasks.composeapp.generated.resources.yearly_with_date
 import org.jetbrains.compose.resources.stringResource
+import kotlinx.datetime.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,9 +81,12 @@ internal fun TimePickerDialog(
 }
 
 @Composable
-internal fun ReminderDialog(
-    selected: Set<ReminderOption>,
-    onConfirm: (Set<ReminderOption>) -> Unit,
+internal fun <T> MultiSelectReminderDialog(
+    selected: Set<T>,
+    options: List<T>,
+    noneOption: T,
+    optionLabel: @Composable (T) -> String,
+    onConfirm: (Set<T>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var localSelected by remember { mutableStateOf(selected) }
@@ -94,17 +95,17 @@ internal fun ReminderDialog(
         title = { Text(stringResource(Res.string.reminder), fontWeight = FontWeight.Bold) },
         text = {
             Column {
-                ReminderOption.entries.forEach { option ->
-                    val isSelected = if (option == ReminderOption.NONE) {
+                options.forEach { option ->
+                    val isSelected = if (option == noneOption) {
                         localSelected.isEmpty()
                     } else {
                         option in localSelected
                     }
                     SelectedOptionRow(
-                        label = stringResource(option.labelRes),
+                        label = optionLabel(option),
                         isSelected = isSelected,
                         onClick = {
-                            localSelected = if (option == ReminderOption.NONE) {
+                            localSelected = if (option == noneOption) {
                                 emptySet()
                             } else {
                                 if (option in localSelected) {
@@ -126,6 +127,22 @@ internal fun ReminderDialog(
         dismissButton = {
             DialogCancelTextButton(onClick = onDismiss)
         },
+    )
+}
+
+@Composable
+internal fun ReminderDialog(
+    selected: Set<ReminderOption>,
+    onConfirm: (Set<ReminderOption>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    MultiSelectReminderDialog(
+        selected = selected,
+        options = ReminderOption.entries,
+        noneOption = ReminderOption.NONE,
+        optionLabel = { option -> stringResource(option.labelRes) },
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
     )
 }
 
@@ -158,16 +175,21 @@ internal fun RepeatDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun DurationDateDialog(
+internal fun CalendarDatePickerDialog(
+    currentDate: LocalDate,
     selectedDay: Int,
     selectedMonth: Int,
     selectedYear: Int,
     onDaySelected: (day: Int, month: Int, year: Int) -> Unit,
     onDismiss: () -> Unit,
+    initialPage: Int = PAGER_INITIAL_PAGE,
+    pageCount: Int = PAGER_MONTH_RANGE * 2,
+    useLargeCells: Boolean = false,
+    pageToMonthYear: (Int) -> Pair<Int, Int> = { page -> pageToMonthYear(page, currentDate) },
 ) {
     val pagerState = rememberPagerState(
-        initialPage = PAGER_INITIAL_PAGE,
-        pageCount = { PAGER_MONTH_RANGE * 2 },
+        initialPage = initialPage,
+        pageCount = { pageCount },
     )
     val coroutineScope = rememberCoroutineScope()
     val (displayMonth, displayYear) = pageToMonthYear(pagerState.currentPage)
@@ -199,7 +221,8 @@ internal fun DurationDateDialog(
                         month = month,
                         year = year,
                         selectedDay = if (month == selectedMonth && year == selectedYear) selectedDay else 0,
-                        todayDay = if (month == currentMonth() && year == currentYear()) currentDay() else 0,
+                        todayDay = if (month == currentDate.monthNumber && year == currentDate.year) currentDate.dayOfMonth else 0,
+                        useLargeCells = useLargeCells,
                         onDayClick = { day ->
                             onDaySelected(day, month, year)
                             onDismiss()
@@ -212,6 +235,25 @@ internal fun DurationDateDialog(
         dismissButton = {
             DialogCancelTextButton(onClick = onDismiss)
         },
+    )
+}
+
+@Composable
+internal fun DurationDateDialog(
+    currentDate: LocalDate,
+    selectedDay: Int,
+    selectedMonth: Int,
+    selectedYear: Int,
+    onDaySelected: (day: Int, month: Int, year: Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    CalendarDatePickerDialog(
+        selectedDay = selectedDay,
+        selectedMonth = selectedMonth,
+        selectedYear = selectedYear,
+        currentDate = currentDate,
+        onDaySelected = onDaySelected,
+        onDismiss = onDismiss,
     )
 }
 
@@ -280,6 +322,7 @@ internal fun DurationRepeatDialog(
     selected: RecurrenceType,
     selectedDay: Int,
     selectedMonth: Int,
+    selectedYear: Int,
     onSelected: (RecurrenceType) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -295,7 +338,7 @@ internal fun DurationRepeatDialog(
                         RecurrenceType.DAILY -> stringResource(Res.string.daily)
                         RecurrenceType.WEEKLY -> {
                             val dow = dayOfWeekName(
-                                dayOfWeekIndex(currentYear(), selectedMonth, 1),
+                                dayOfWeekIndex(selectedYear, selectedMonth, 1),
                                 selectedDay
                             )
                             stringResource(Res.string.weekly_with_day, dow)

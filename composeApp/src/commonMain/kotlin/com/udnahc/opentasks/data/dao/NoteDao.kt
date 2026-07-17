@@ -6,7 +6,9 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import androidx.room.Upsert
+import androidx.room.Transaction
 import com.udnahc.opentasks.data.model.Note
+import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -56,8 +58,19 @@ interface NoteDao {
         pbId: String
     )
 
+    @Query("UPDATE notes SET pbId = NULL, isSynced = 0")
+    suspend fun resetSyncMetadataForServerSeed()
+
     @Upsert
     suspend fun upsert(note: Note)
+
+    @Transaction
+    suspend fun mergeRemoteIfNewer(remote: Note): RemoteMergeResult {
+        val local = findNoteByIdAnyState(remote.id)
+        if (local != null && local.updatedAt >= remote.updatedAt) return RemoteMergeResult.KeptLocal
+        upsert(remote)
+        return RemoteMergeResult.Applied
+    }
 
     @Query("SELECT * FROM notes")
     suspend fun getAllNotesOnce(): List<Note>

@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,16 +28,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import com.udnahc.opentasks.data.extensions.computeLocalMillis
-import com.udnahc.opentasks.data.extensions.currentDay
-import com.udnahc.opentasks.data.extensions.currentMonth
-import com.udnahc.opentasks.data.extensions.currentYear
 import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
@@ -50,19 +44,16 @@ import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.SmartListVisibility
 import com.udnahc.opentasks.ui.screens.DialogCancelTextButton
 import com.udnahc.opentasks.ui.screens.DialogOkTextButton
-import com.udnahc.opentasks.ui.screens.MonthPagerHeader
+import com.udnahc.opentasks.ui.screens.CalendarDatePickerDialog
+import com.udnahc.opentasks.ui.screens.MultiSelectReminderDialog
 import com.udnahc.opentasks.ui.screens.NoIconLabelValueNavigationRow
 import com.udnahc.opentasks.ui.screens.OpenTasksCloseButton
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
-import com.udnahc.opentasks.ui.screens.SelectableDayGrid
 import com.udnahc.opentasks.ui.screens.SelectedOptionRow
-import com.udnahc.opentasks.ui.screens.WeekdayHeader
-import com.udnahc.opentasks.ui.screens.monthName
 import com.udnahc.opentasks.ui.screens.monthNameShort
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
-import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add
 import opentasks.composeapp.generated.resources.countdown_counting_count_up
@@ -94,6 +85,7 @@ import opentasks.composeapp.generated.resources.weekly
 import opentasks.composeapp.generated.resources.yearly
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import kotlinx.datetime.LocalDate
 
 // ---- Reminder options for countdowns ----
 
@@ -155,23 +147,18 @@ private fun countingModeLabelRes(mode: CountingMode): StringResource = when (mod
 private const val PAGER_INITIAL_PAGE = 600
 private const val PAGER_MONTH_RANGE = 600
 
-private fun pageToMonthYear(page: Int): Pair<Int, Int> {
+private fun countdownPageToMonthYear(page: Int, currentDate: LocalDate): Pair<Int, Int> {
     val delta = page - PAGER_INITIAL_PAGE
-    val currentMonth = currentMonth()
-    val currentYear = currentYear()
-    val totalMonths = (currentYear * 12 + currentMonth - 1) + delta
-    val year = totalMonths / 12
-    val month = totalMonths % 12 + 1
-    return month to year
+    val totalMonths = (currentDate.year * 12 + currentDate.monthNumber - 1) + delta
+    return totalMonths % 12 + 1 to totalMonths / 12
 }
 
 private fun monthYearToPage(
     month: Int,
-    year: Int
+    year: Int,
+    currentDate: LocalDate,
 ): Int {
-    val currentMonth = currentMonth()
-    val currentYear = currentYear()
-    val currentTotal = currentYear * 12 + currentMonth - 1
+    val currentTotal = currentDate.year * 12 + currentDate.monthNumber - 1
     val targetTotal = year * 12 + month - 1
     return PAGER_INITIAL_PAGE + (targetTotal - currentTotal)
 }
@@ -180,12 +167,14 @@ private fun monthYearToPage(
 fun CreateCountdownScreen(
     editCountdown: Countdown?,
     initialType: CountdownType,
+    currentDate: LocalDate,
     onSave: (Countdown) -> Unit,
     onBack: () -> Unit,
 ) {
     CreateCountdownContent(
         editCountdown = editCountdown,
         initialType = initialType,
+        currentDate = currentDate,
         onSave = onSave,
         onBack = onBack,
     )
@@ -196,6 +185,7 @@ fun CreateCountdownScreen(
 internal fun CreateCountdownContent(
     editCountdown: Countdown?,
     initialType: CountdownType,
+    currentDate: LocalDate,
     onSave: (Countdown) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -204,13 +194,13 @@ internal fun CreateCountdownContent(
 
     var name by remember(stateKey) { mutableStateOf(editCountdown?.title ?: "") }
     var selectedDay by remember(stateKey) {
-        mutableIntStateOf(editCountdown?.targetDate?.let { extractDay(it) } ?: currentDay())
+        mutableIntStateOf(editCountdown?.targetDate?.let { extractDay(it) } ?: currentDate.dayOfMonth)
     }
     var selectedMonth by remember(stateKey) {
-        mutableIntStateOf(editCountdown?.targetDate?.let { extractMonth(it) } ?: currentMonth())
+        mutableIntStateOf(editCountdown?.targetDate?.let { extractMonth(it) } ?: currentDate.monthNumber)
     }
     var selectedYear by remember(stateKey) {
-        mutableIntStateOf(editCountdown?.targetDate?.let { extractYear(it) } ?: currentYear())
+        mutableIntStateOf(editCountdown?.targetDate?.let { extractYear(it) } ?: currentDate.year)
     }
     var selectedReminders by remember(stateKey) {
         mutableStateOf(editCountdown?.reminders?.toCountdownReminderSet() ?: emptySet())
@@ -413,7 +403,8 @@ internal fun CreateCountdownContent(
     // ---- Dialogs ----
 
     if (showDatePicker) {
-        CountdownDatePickerDialog(
+        CalendarDatePickerDialog(
+            currentDate = currentDate,
             selectedDay = selectedDay,
             selectedMonth = selectedMonth,
             selectedYear = selectedYear,
@@ -423,13 +414,23 @@ internal fun CreateCountdownContent(
                 selectedYear = year
             },
             onDismiss = { showDatePicker = false },
+            initialPage = monthYearToPage(selectedMonth, selectedYear, currentDate),
+            pageCount = PAGER_MONTH_RANGE * 2,
+            useLargeCells = true,
+            pageToMonthYear = { page -> countdownPageToMonthYear(page, currentDate) },
         )
     }
 
     if (showReminderPicker) {
-        CountdownReminderPickerDialog(
+        MultiSelectReminderDialog(
             selected = selectedReminders,
-            onConfirm = { selectedReminders = it },
+            options = CountdownReminderOption.entries,
+            noneOption = CountdownReminderOption.NONE,
+            optionLabel = { option -> stringResource(option.labelRes) },
+            onConfirm = {
+                selectedReminders = it
+                showReminderPicker = false
+            },
             onDismiss = { showReminderPicker = false },
         )
     }
@@ -473,119 +474,6 @@ internal fun CreateCountdownContent(
             onDismiss = { showSmartListPicker = false },
         )
     }
-}
-
-// ---- Date picker dialog (calendar grid, same pattern as CreateTaskScreen) ----
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CountdownDatePickerDialog(
-    selectedDay: Int,
-    selectedMonth: Int,
-    selectedYear: Int,
-    onDaySelected: (day: Int, month: Int, year: Int) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val initialPage = monthYearToPage(selectedMonth, selectedYear)
-    val pagerState = rememberPagerState(
-        initialPage = initialPage,
-        pageCount = { PAGER_MONTH_RANGE * 2 },
-    )
-    val coroutineScope = rememberCoroutineScope()
-    val (displayMonth, displayYear) = pageToMonthYear(pagerState.currentPage)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            MonthPagerHeader(
-                title = "${monthName(displayMonth)} $displayYear",
-                onPreviousMonth = {
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                    }
-                },
-                onNextMonth = {
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                    }
-                },
-            )
-        },
-        text = {
-            Column {
-                WeekdayHeader()
-                Spacer(Modifier.height(OpenTasksTheme.dimens.spacerLarge))
-                HorizontalPager(state = pagerState) { page ->
-                    val (month, year) = pageToMonthYear(page)
-                    SelectableDayGrid(
-                        month = month,
-                        year = year,
-                        selectedDay = if (month == selectedMonth && year == selectedYear) selectedDay else 0,
-                        todayDay = if (month == currentMonth() && year == currentYear()) currentDay() else 0,
-                        useLargeCells = true,
-                        onDayClick = { day ->
-                            onDaySelected(day, month, year)
-                            onDismiss()
-                        },
-                    )
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            DialogCancelTextButton(onClick = onDismiss)
-        },
-    )
-}
-
-// ---- Reminder picker dialog ----
-
-@Composable
-private fun CountdownReminderPickerDialog(
-    selected: Set<CountdownReminderOption>,
-    onConfirm: (Set<CountdownReminderOption>) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var localSelected by remember { mutableStateOf(selected) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(Res.string.reminder), fontWeight = FontWeight.Bold) },
-        text = {
-            Column {
-                CountdownReminderOption.entries.forEach { option ->
-                    val isSelected = if (option == CountdownReminderOption.NONE) {
-                        localSelected.isEmpty()
-                    } else {
-                        option in localSelected
-                    }
-                    SelectedOptionRow(
-                        label = stringResource(option.labelRes),
-                        isSelected = isSelected,
-                        onClick = {
-                            localSelected = if (option == CountdownReminderOption.NONE) {
-                                emptySet()
-                            } else {
-                                if (option in localSelected) {
-                                    localSelected - option
-                                } else {
-                                    localSelected + option
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            DialogOkTextButton(onClick = {
-                onConfirm(localSelected)
-                onDismiss()
-            })
-        },
-        dismissButton = {
-            DialogCancelTextButton(onClick = onDismiss)
-        },
-    )
 }
 
 // ---- Repeat picker dialog ----

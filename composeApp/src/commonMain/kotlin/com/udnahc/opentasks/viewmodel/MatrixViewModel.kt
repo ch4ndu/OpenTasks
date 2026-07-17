@@ -16,7 +16,8 @@ import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForPriorityUseCase
+import com.udnahc.opentasks.domain.usecase.task.PlainTaskDueTextProvider
+import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.taskPreviewTextById
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import kotlinx.coroutines.Dispatchers
@@ -38,13 +39,13 @@ import kotlinx.datetime.plus
 
 class MatrixViewModel(
     observeTasksByPriority: ObserveTasksByPriorityUseCase,
-    observeTasksForPriority: ObserveTasksForPriorityUseCase,
     observeAllCategories: ObserveAllCategoriesUseCase,
     toggleTaskCompleteAction: ToggleTaskCompleteAction,
     private val toggleTaskStarredAction: ToggleTaskStarredAction,
     private val updateTaskStatusAction: UpdateTaskStatusAction,
     observeTaskImageSummaries: ObserveTaskImageSummariesUseCase,
     localDaySignal: LocalDaySignal,
+    private val taskDueTextProvider: TaskDueTextProvider = PlainTaskDueTextProvider,
 ) : ViewModel() {
 
     data class TaskCategoryGroup(
@@ -52,10 +53,16 @@ class MatrixViewModel(
         val tasks: List<Task>
     )
 
+    data class PriorityProjection(
+        val tasks: List<Task> = emptyList(),
+        val visibleTasks: List<Task> = emptyList(),
+        val hasMore: Boolean = false,
+    )
+
     private val _selectedPriority = MutableStateFlow(TaskPriority.HIGH)
     private val _viewMode = MutableStateFlow(TaskListViewMode.LIST)
     private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
-    val taskPendingSeriesChoice: StateFlow<Task?> = completionHandler.taskPendingSeriesChoice
+    val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
     val viewMode: StateFlow<TaskListViewMode> = _viewMode
 
     val taskImageSummaries: StateFlow<Map<String, AttachmentSummary>> = observeTaskImageSummaries()
@@ -71,10 +78,34 @@ class MatrixViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    private val tasksForSelectedPriority = observeTasksForPriority(_selectedPriority)
+    private val tasksForSelectedPriority: StateFlow<List<Task>> =
+        combine(tasksByPriority, _selectedPriority) { tasks, priority -> tasks[priority].orEmpty() }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val priorityProjections: StateFlow<Map<TaskPriority, PriorityProjection>> = tasksByPriority
+        .map { tasksByPriority ->
+            TaskPriority.entries.associateWith { priority ->
+                val tasks = tasksByPriority[priority].orEmpty()
+                PriorityProjection(
+                    tasks = tasks,
+                    visibleTasks = tasks.take(MATRIX_VISIBLE_TASK_LIMIT),
+                    hasMore = tasks.size > MATRIX_VISIBLE_TASK_LIMIT,
+                )
+            }
+        }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val taskContentPreviews: StateFlow<Map<String, String>> = tasksForSelectedPriority
         .map(::taskPreviewTextById)
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val taskDueTextById: StateFlow<Map<String, String>> = tasksByPriority
+        .map { tasksByPriority ->
+            tasksByPriority.values.flatten().associate { task -> task.id to taskDueTextProvider.matrixDueText(task) }
+        }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
@@ -116,7 +147,12 @@ class MatrixViewModel(
         _viewMode.value = mode
     }
 
-    fun toggleComplete(task: Task) = completionHandler.toggleComplete(task)
+    fun toggleComplete(task: Task) = completionHandler.toggleComplete(
+        task.id,
+        task.status,
+        task.recurrenceType,
+        task.deadline,
+    )
     fun completeOccurrence() = completionHandler.completeOccurrence()
     fun completeSeries() = completionHandler.completeSeries()
     fun dismissSeriesChoice() = completionHandler.dismissSeriesChoice()
@@ -127,14 +163,14 @@ class MatrixViewModel(
     ) {
         if (targetStatus == task.status) return
         if (targetStatus == TaskStatus.DONE && task.status != TaskStatus.DONE) {
-            completionHandler.toggleComplete(task)
+            toggleComplete(task)
         } else {
-            viewModelScope.launch(Dispatchers.IO) { updateTaskStatusAction(task, targetStatus) }
+            viewModelScope.launch(Dispatchers.IO) { updateTaskStatusAction(task.id, targetStatus) }
         }
     }
 
     fun toggleStar(task: Task) {
-        viewModelScope.launch(Dispatchers.IO) { toggleTaskStarredAction(task) }
+        viewModelScope.launch(Dispatchers.IO) { toggleTaskStarredAction(task.id) }
     }
 
     private fun categorize(
@@ -183,3 +219,5 @@ class MatrixViewModel(
         )
     }
 }
+
+private const val MATRIX_VISIBLE_TASK_LIMIT = 6

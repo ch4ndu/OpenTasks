@@ -2,6 +2,8 @@ package com.udnahc.opentasks.data.notification
 
 import com.udnahc.opentasks.data.extensions.utcNow
 import com.udnahc.opentasks.data.repository.AppSettingsRepository
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -14,16 +16,20 @@ class AllDayNotificationDismissalStore(
     private val appSettingsRepository: AppSettingsRepository,
     private val nowUtcMillisProvider: () -> Long = ::utcNow,
 ) {
+    private val mutex = Mutex()
+
     suspend fun isDismissedToday(taskId: String): Boolean =
-        taskId in dismissedIdsToday()
+        mutex.withLock { taskId in dismissedIdsToday() }
 
     suspend fun dismissToday(taskId: String) {
-        val today = todayKey()
-        val ids = dismissedIdsToday() + taskId
-        appSettingsRepository.setValue(
-            ALL_DAY_DISMISSALS_KEY,
-            today + DATE_SEPARATOR + ids.sorted().joinToString(ID_SEPARATOR),
-        )
+        mutex.withLock {
+            val today = todayKey()
+            val ids = dismissedIdsToday() + taskId
+            appSettingsRepository.setValue(
+                ALL_DAY_DISMISSALS_KEY,
+                today + DATE_SEPARATOR + ids.sorted().joinToString(ID_SEPARATOR),
+            )
+        }
     }
 
     private suspend fun dismissedIdsToday(): Set<String> {

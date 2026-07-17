@@ -3,12 +3,15 @@ package com.udnahc.opentasks.domain.usecase.task
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
+import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.isCountdownItem
 
 data class CalendarDayTasks(
     val allDayTasks: List<Task> = emptyList(),
     val timedTasks: List<Task> = emptyList(),
+    val timedTaskStartMinutes: Map<String, Int> = emptyMap(),
+    val timedTaskTimeText: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -34,16 +37,30 @@ fun splitCalendarDayTasks(tasks: List<Task>): CalendarDayTasks {
     return CalendarDayTasks(
         allDayTasks = allDayTasks,
         timedTasks = timedTasks,
+        timedTaskStartMinutes = timedTasks.associate { task ->
+            val deadline = task.deadline
+            task.id to if (deadline == null) 0 else extractHour(deadline) * 60 + extractMinute(deadline)
+        },
+        timedTaskTimeText = timedTasks.mapNotNull { task ->
+            val deadline = task.deadline ?: return@mapNotNull null
+            val hour = extractHour(deadline)
+            val minute = extractMinute(deadline)
+            task.id.takeIf { hour != 0 || minute != 0 }?.let { it to formatTimeFromLocalMillis(deadline) }
+        }.toMap(),
     )
 }
 
-private val calendarDayComparator: Comparator<Task> = compareBy(
-    { if (it.isCalendarAllDay()) 0 else 1 },
-    { it.deadline ?: Long.MAX_VALUE },
-    { if (it.isCountdownItem) 1 else 0 },
-    { it.title.lowercase() },
-    { it.id },
-)
+private val calendarDayComparator: Comparator<Task> = Comparator { first, second ->
+    compareValuesBy(
+        first,
+        second,
+        { if (it.isCalendarAllDay()) 0 else 1 },
+        { it.deadline ?: Long.MAX_VALUE },
+        { if (it.isCountdownItem) 1 else 0 },
+    ).takeIf { it != 0 }
+        ?: first.title.compareTo(second.title, ignoreCase = true).takeIf { it != 0 }
+        ?: first.id.compareTo(second.id)
+}
 
 fun sortCalendarTasksForDay(tasks: List<Task>): List<Task> =
     tasks.sortedWith(calendarDayComparator)

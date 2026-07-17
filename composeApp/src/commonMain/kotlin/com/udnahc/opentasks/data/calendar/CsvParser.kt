@@ -25,6 +25,7 @@ data class CsvTask(
     val isAllDay: Boolean,
     val priority: TaskPriority,
     val isCompleted: Boolean,
+    val completedAt: Long?,
     val durationReminders: String,
     val recurrenceType: RecurrenceType,
     val createdAt: Long,
@@ -82,6 +83,7 @@ object CsvParser {
         val reminderStr = fields.getOrNull(col["Reminder"] ?: -1)?.trim() ?: ""
         val repeatStr = fields.getOrNull(col["Repeat"] ?: -1)?.trim() ?: ""
         val createdStr = fields.getOrNull(col["Created Time"] ?: -1)?.trim() ?: ""
+        val completedStr = fields.getOrNull(col["Completed Time"] ?: -1)?.trim() ?: ""
 
         return CsvTask(
             title = title,
@@ -92,6 +94,7 @@ object CsvParser {
             isAllDay = isAllDayStr.equals("true", ignoreCase = true),
             priority = parsePriority(priorityStr),
             isCompleted = statusStr == "1" || statusStr == "2",
+            completedAt = parseIso8601(completedStr),
             durationReminders = parseReminders(reminderStr),
             recurrenceType = parseRecurrence(repeatStr),
             createdAt = parseIso8601(createdStr) ?: Instant.DISTANT_PAST.toEpochMilliseconds(),

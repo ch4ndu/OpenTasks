@@ -16,6 +16,7 @@ import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownOccurrence
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
@@ -56,14 +57,14 @@ class WidgetDataProvider : KoinComponent {
 
     private suspend fun fetchTasks(prefs: WidgetPreferences): List<Task> {
         return when (prefs.filterType) {
-            WidgetFilterType.ALL -> taskDao.getActiveTasksOnce()
+            WidgetFilterType.ALL -> taskDao.getIncompleteTasksOnce()
             WidgetFilterType.TODAY -> getTasksForDayRange(0, 1)
             WidgetFilterType.TOMORROW -> getTasksForDayRange(1, 2)
             WidgetFilterType.NEXT_7_DAYS -> getTasksForDayRange(0, 7)
             WidgetFilterType.CATEGORY -> {
-                val catId = prefs.filterCategoryId ?: return taskDao.getActiveTasksOnce()
-                if (getCategories().none { it.id == catId }) return taskDao.getActiveTasksOnce()
-                taskDao.getActiveTasksOnce().filter { it.categoryId == catId }
+                val catId = prefs.filterCategoryId ?: return taskDao.getIncompleteTasksOnce()
+                if (getCategories().none { it.id == catId }) return taskDao.getIncompleteTasksOnce()
+                taskDao.getIncompleteTasksOnce().filter { it.categoryId == catId }
             }
         }
     }
@@ -88,7 +89,9 @@ class WidgetDataProvider : KoinComponent {
         return when (sortBy) {
             WidgetSortBy.DATE -> tasks.sortedWith(compareBy(nullsLast()) { it.deadline })
             WidgetSortBy.PRIORITY -> tasks.sortedBy { it.priority.ordinal }
-            WidgetSortBy.NAME -> tasks.sortedBy { it.title.lowercase() }
+            WidgetSortBy.NAME -> tasks.sortedWith { first, second ->
+                first.title.compareTo(second.title, ignoreCase = true)
+            }
         }
     }
 
@@ -102,7 +105,7 @@ class WidgetDataProvider : KoinComponent {
         val endLocalMillis = startOfDayLocalMillis(endDate.year, endDate.monthNumber, endDate.dayOfMonth)
         val startUtc = localMillisToUtcMillis(startLocalMillis)
         val endUtc = localMillisToUtcMillis(endLocalMillis)
-        val tasks = taskDao.getTasksInDateRange(startUtc, endUtc)
+        val tasks = taskDao.getTasksInDateRangeIncludingCompleted(startUtc, endUtc)
         val result = mutableMapOf<Int, MutableList<CalendarDayTask>>()
         for (task in tasks) {
             val deadline = task.deadline ?: continue
@@ -116,7 +119,7 @@ class WidgetDataProvider : KoinComponent {
         // Merge countdown items into the same map
         val countdowns = countdownDao.getAllCountdownsOnce().filter { !it.isDeleted }
         for (countdown in countdowns) {
-            val localMillis = utcMillisToLocalMillis(countdown.targetDate)
+            val localMillis = effectiveCountdownTargetLocalMillis(countdown, todayLocal())
             if (localMillis < startLocalMillis || localMillis >= endLocalMillis) continue
             val day = extractDay(localMillis)
             val list = result.getOrPut(day) { mutableListOf() }
@@ -134,7 +137,7 @@ class WidgetDataProvider : KoinComponent {
         val endLocalMillis = weekStartLocalMillis + 7 * MILLIS_PER_DAY
         val startUtc = localMillisToUtcMillis(weekStartLocalMillis)
         val endUtc = localMillisToUtcMillis(endLocalMillis)
-        val tasks = taskDao.getTasksInDateRange(startUtc, endUtc)
+        val tasks = taskDao.getTasksInDateRangeIncludingCompleted(startUtc, endUtc)
         val result = mutableMapOf<Int, MutableList<CalendarDayTask>>()
         for (task in tasks) {
             val deadline = task.deadline ?: continue
@@ -150,7 +153,7 @@ class WidgetDataProvider : KoinComponent {
         // Merge countdown items into the same map
         val countdowns = countdownDao.getAllCountdownsOnce().filter { !it.isDeleted }
         for (countdown in countdowns) {
-            val localMillis = utcMillisToLocalMillis(countdown.targetDate)
+            val localMillis = effectiveCountdownTargetLocalMillis(countdown, todayLocal())
             val dayIndex = ((localMillis - weekStartLocalMillis) / MILLIS_PER_DAY).toInt()
             if (dayIndex !in 0..6) continue
             val list = result.getOrPut(dayIndex) { mutableListOf() }
@@ -167,6 +170,7 @@ class WidgetDataProvider : KoinComponent {
         CountdownType.ANNIVERSARY -> TaskPriority.LOW     // blue
         CountdownType.COUNTDOWN -> TaskPriority.MEDIUM    // amber
     }
+
 
     companion object {
         const val MAX_TASKS_PER_DAY = 2
@@ -191,3 +195,12 @@ class WidgetDataProvider : KoinComponent {
         return WidgetTask(id = id, title = title, dateLabel = dateLabel, isOverdue = isOverdue)
     }
 }
+
+/** Widget queries receive raw UTC Room rows, while occurrence projection operates on local civil millis. */
+internal fun effectiveCountdownTargetLocalMillis(
+    countdown: com.udnahc.opentasks.data.model.Countdown,
+    today: LocalDate,
+): Long = projectCountdownOccurrence(
+    countdown.copy(targetDate = utcMillisToLocalMillis(countdown.targetDate)),
+    today,
+).effectiveTargetDate

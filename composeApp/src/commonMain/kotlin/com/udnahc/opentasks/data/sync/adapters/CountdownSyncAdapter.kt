@@ -3,12 +3,16 @@ package com.udnahc.opentasks.data.sync.adapters
 import com.udnahc.opentasks.data.dao.CountdownDao
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
+import com.udnahc.opentasks.data.sync.RemoteMergeResult
+import com.udnahc.opentasks.data.sync.PocketBaseFilter
 import com.udnahc.opentasks.data.sync.records.CountdownRecord
 import com.udnahc.opentasks.data.sync.records.toCountdown
 import com.udnahc.opentasks.data.sync.records.toCountdownRecord
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.dsl.query.Filter
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 
 class CountdownSyncAdapter(private val dao: CountdownDao) :
     BaseSyncAdapter<Countdown, CountdownRecord>() {
@@ -34,6 +38,7 @@ class CountdownSyncAdapter(private val dao: CountdownDao) :
     override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
     override suspend fun hardDeleteLocalNeverSynced(entity: Countdown) = dao.delete(entity)
     override suspend fun upsert(entity: Countdown) = dao.upsert(entity)
+    override suspend fun mergeRemoteIfNewer(entity: Countdown): RemoteMergeResult = dao.mergeRemoteIfNewer(entity)
 
     override fun localId(entity: Countdown) = entity.id
     override fun pbId(entity: Countdown) = entity.pbId
@@ -47,6 +52,7 @@ class CountdownSyncAdapter(private val dao: CountdownDao) :
 
     override fun toRecord(entity: Countdown) = entity.toCountdownRecord()
     override fun toEntity(record: CountdownRecord) = record.toCountdown()
+    override fun recordFromJson(json: JsonObject): CountdownRecord = gatewayJson.decodeFromJsonElement(json)
     override fun toJsonBody(entity: Countdown) = Json.encodeToString(entity.toCountdownRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
@@ -77,7 +83,7 @@ class CountdownSyncAdapter(private val dao: CountdownDao) :
             collectionName,
             1,
             1,
-            filterBy = Filter("localId='$localId'")
+            filterBy = Filter(PocketBaseFilter.localIdEquals(localId))
         )
             .items.firstOrNull()
 }

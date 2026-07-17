@@ -25,7 +25,7 @@ class RebuildReminderQueueAction(
 
     suspend operator fun invoke() {
         val tasks = taskRepository.getTasksWithDeadlines()
-        val countdowns = countdownRepository.getCountdownsWithTargetsUtc()
+        val countdowns = countdownRepository.getAllCountdownsForReminderReconciliationUtc()
         val limit = pendingReminderQueueLimit()
         if (limit == null) {
             log.d { "Rebuilding reminders for ${tasks.size} tasks and ${countdowns.size} countdowns" }

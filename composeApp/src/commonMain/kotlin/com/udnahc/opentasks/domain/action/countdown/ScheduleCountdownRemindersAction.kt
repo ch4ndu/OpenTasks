@@ -2,12 +2,15 @@ package com.udnahc.opentasks.domain.action.countdown
 
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
 import com.udnahc.opentasks.data.extensions.computeNextDeadlineUtc
+import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.extensions.utcNow
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.notification.PlainReminderTextProvider
+import com.udnahc.opentasks.data.notification.ReminderIdentity
+import com.udnahc.opentasks.data.notification.ReminderKind
 import com.udnahc.opentasks.data.notification.ReminderScheduler
 import com.udnahc.opentasks.data.notification.ReminderTextProvider
 import com.udnahc.opentasks.data.notification.ReminderRequest
@@ -25,6 +28,7 @@ private val log = logging("ScheduleCountdownRemindersAction")
 
 private const val COUNTDOWN_REMINDER_HOUR = 9
 private const val COUNTDOWN_REMINDER_MINUTE = 0
+private const val MAX_OCCURRENCE_ADVANCES_PER_LOOKUP = 4096
 
 class ScheduleCountdownRemindersAction(
     private val scheduler: ReminderScheduler,
@@ -55,7 +59,11 @@ class ScheduleCountdownRemindersAction(
             cancelPending(countdownId)
             return
         }
-        scheduleForCountdown(countdown, occurrenceTargetUtcMillis)
+        scheduleForCountdown(
+            countdown,
+            occurrenceTargetUtcMillis,
+            preserveDeliveredReminder = true,
+        )
     }
 
     suspend fun buildFutureRequests(
@@ -66,21 +74,23 @@ class ScheduleCountdownRemindersAction(
         val now = nowUtcMillisProvider()
         val requests = mutableListOf<ReminderRequest>()
         var occurrence = countdown.occurrenceTargetUtc(now, afterOccurrenceTargetUtcMillis = null)
+            ?: return emptyList()
         repeat(occurrenceLimit) {
             val baseAt = countdown.reminderBaseAtUtc(occurrence)
-            countdown.reminders.parseMinuteValues().forEachIndexed { index, offsetMinutes ->
+            countdown.reminders.parseMinuteValues().mapIndexed { ordinal, offsetMinutes ->
                 val triggerAt = baseAt - offsetMinutes.toLong() * MILLIS_PER_MINUTE
-                if (triggerAt > now) {
-                    requests += ReminderRequest(
+                ReminderRequest(
+                    identity = ReminderIdentity(
                         eventId = countdown.eventId(),
-                        title = countdown.title,
-                        body = textProvider.countdownDue(offsetMinutes),
-                        triggerAtUtcMillis = triggerAt,
-                        reminderId = index,
                         occurrenceUtcMillis = occurrence,
-                    )
-                }
-            }
+                        kind = ReminderKind.COUNTDOWN,
+                        ordinal = ordinal,
+                    ),
+                    title = countdown.title,
+                    body = textProvider.countdownDue(offsetMinutes),
+                    triggerAtUtcMillis = triggerAt,
+                )
+            }.filter { it.triggerAtUtcMillis > now }.let(requests::addAll)
             if (countdown.recurrenceType == com.udnahc.opentasks.data.model.RecurrenceType.NONE) {
                 return requests
             }
@@ -92,9 +102,14 @@ class ScheduleCountdownRemindersAction(
     private suspend fun scheduleForCountdown(
         countdown: Countdown,
         afterOccurrenceTargetUtcMillis: Long? = null,
+        preserveDeliveredReminder: Boolean = false,
     ) {
         log.d { "Scheduling reminders for countdown ${countdown.id}" }
-        cancelPending(countdown.id)
+        if (preserveDeliveredReminder) {
+            scheduler.cancelPendingReminders(countdown.eventId())
+        } else {
+            cancelPending(countdown.id)
+        }
 
         if (countdown.isCompleted || countdown.isDeleted) {
             log.d { "Cancelled pending reminders for completed/deleted countdown ${countdown.id}" }
@@ -102,30 +117,35 @@ class ScheduleCountdownRemindersAction(
         }
 
         val now = nowUtcMillisProvider()
-        val occurrenceTarget = countdown.occurrenceTargetUtc(now, afterOccurrenceTargetUtcMillis)
+        val occurrenceTarget = countdown.occurrenceTargetUtc(now, afterOccurrenceTargetUtcMillis) ?: return
         val reminderBaseAt = countdown.reminderBaseAtUtc(occurrenceTarget)
-        val reminderValues = countdown.reminders.parseMinuteValues()
-        val futureTriggers = reminderValues.mapIndexedNotNull { index, offsetMinutes ->
+        val futureRequests = countdown.reminders.parseMinuteValues().mapIndexed { ordinal, offsetMinutes ->
             val triggerAt = reminderBaseAt - (offsetMinutes.toLong() * MILLIS_PER_MINUTE)
-            if (triggerAt > now) Triple(index, offsetMinutes, triggerAt) else null
-        }
-        val lastTriggerAt = futureTriggers.maxOfOrNull { it.third }
-        futureTriggers.forEach { (index, offsetMinutes, triggerAt) ->
-                scheduler.schedule(
-                    taskId = countdown.eventId(),
-                    title = countdown.title,
-                    body = textProvider.countdownDue(offsetMinutes),
-                    triggerAtMillis = triggerAt,
-                    reminderId = index,
-                    occurrenceDeadlineUtcMillis = occurrenceTarget,
-                    allowMarkDone = false,
-                    rescheduleAfterFire = countdown.recurrenceType != com.udnahc.opentasks.data.model.RecurrenceType.NONE &&
-                        triggerAt == lastTriggerAt,
+            ReminderRequest(
+                identity = ReminderIdentity(
+                    eventId = countdown.eventId(),
+                    occurrenceUtcMillis = occurrenceTarget,
+                    kind = ReminderKind.COUNTDOWN,
+                    ordinal = ordinal,
+                ),
+                title = countdown.title,
+                body = textProvider.countdownDue(offsetMinutes),
+                triggerAtUtcMillis = triggerAt,
+            )
+        }.filter { it.triggerAtUtcMillis > now }
+        val lastTriggerAt = futureRequests.maxOfOrNull(ReminderRequest::triggerAtUtcMillis)
+        futureRequests.forEach { request ->
+            scheduler.schedule(
+                request.copy(
+                    rescheduleAfterFire = countdown.recurrenceType !=
+                        com.udnahc.opentasks.data.model.RecurrenceType.NONE &&
+                        request.triggerAtUtcMillis == lastTriggerAt,
                 )
+            )
         }
     }
 
-    private fun cancelPending(countdownId: String) {
+    private suspend fun cancelPending(countdownId: String) {
         val eventId = "$COUNTDOWN_ID_PREFIX$countdownId"
         scheduler.cancelReminders(eventId)
     }
@@ -138,7 +158,7 @@ class ScheduleCountdownRemindersAction(
     private fun Countdown.occurrenceTargetUtc(
         now: Long,
         afterOccurrenceTargetUtcMillis: Long?,
-    ): Long {
+    ): Long? {
         if (recurrenceType == com.udnahc.opentasks.data.model.RecurrenceType.NONE) return targetDate
         val timeZone = TimeZone.currentSystemDefault()
         val today = Instant.fromEpochMilliseconds(now).toLocalDateTime(timeZone).date
@@ -148,18 +168,30 @@ class ScheduleCountdownRemindersAction(
                 today,
             )
         )
-        if (afterOccurrenceTargetUtcMillis != null) {
-            while (occurrence <= afterOccurrenceTargetUtcMillis) occurrence = nextOccurrenceUtc(occurrence)
-        }
-        val offsets = reminders.parseMinuteValues()
+        var advances = 0
         while (
-            offsets.isNotEmpty() && offsets.none { offset ->
-                reminderBaseAtUtc(occurrence) - offset.toLong() * MILLIS_PER_MINUTE > now
-            }
+            afterOccurrenceTargetUtcMillis != null &&
+            occurrence <= afterOccurrenceTargetUtcMillis &&
+            advances < MAX_OCCURRENCE_ADVANCES_PER_LOOKUP
         ) {
             occurrence = nextOccurrenceUtc(occurrence)
+            advances += 1
         }
-        return occurrence
+        if (afterOccurrenceTargetUtcMillis != null && occurrence <= afterOccurrenceTargetUtcMillis) {
+            log.w { "Skipped unbounded countdown lookup for $id" }
+            return null
+        }
+        val offsets = reminders.parseMinuteValues()
+        for (advance in 0 until MAX_OCCURRENCE_ADVANCES_PER_LOOKUP) {
+            if (
+                offsets.isEmpty() || offsets.any { offset ->
+                    reminderBaseAtUtc(occurrence) - offset.toLong() * MILLIS_PER_MINUTE > now
+                }
+            ) return occurrence
+            occurrence = nextOccurrenceUtc(occurrence)
+        }
+        log.w { "Skipped unbounded countdown reminder generation for $id" }
+        return null
     }
 
     fun isValidOccurrence(countdown: Countdown, occurrenceTargetUtcMillis: Long): Boolean {
@@ -168,18 +200,20 @@ class ScheduleCountdownRemindersAction(
             return occurrenceTargetUtcMillis == countdown.targetDate
         }
         var occurrence = countdown.targetDate
-        while (occurrence < occurrenceTargetUtcMillis) {
+        for (advance in 0 until MAX_OCCURRENCE_ADVANCES_PER_LOOKUP) {
+            if (occurrence >= occurrenceTargetUtcMillis) return occurrence == occurrenceTargetUtcMillis
             val next = countdown.nextOccurrenceUtc(occurrence)
             if (next <= occurrence) return false
             occurrence = next
         }
-        return occurrence == occurrenceTargetUtcMillis
+        return false
     }
 
     private fun Countdown.nextOccurrenceUtc(current: Long): Long = computeNextDeadlineUtc(
         currentDeadlineUtcMillis = current,
         recurrenceType = recurrenceType.name,
         interval = recurrenceInterval,
+        anchorDay = extractDay(targetDate),
     )
 
     private fun Countdown.reminderBaseAtUtc(occurrenceTargetUtcMillis: Long): Long {

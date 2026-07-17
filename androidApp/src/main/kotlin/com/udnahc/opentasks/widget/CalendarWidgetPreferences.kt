@@ -6,7 +6,6 @@ data class CalendarWidgetPreferences(
     val widgetId: Int,
     val theme: WidgetTheme = WidgetTheme.DARK,
     val fontSize: WidgetFontSize = WidgetFontSize.NORMAL,
-    val opacity: Float = 0.9f,
 ) {
     companion object {
         private fun prefsName(widgetId: Int) = "calendar_widget_$widgetId"
@@ -22,7 +21,6 @@ data class CalendarWidgetPreferences(
                     sp.getString("fontSize", WidgetFontSize.NORMAL.name)
                         ?: WidgetFontSize.NORMAL.name
                 ),
-                opacity = sp.getFloat("opacity", 0.9f),
             )
         }
 
@@ -30,7 +28,6 @@ data class CalendarWidgetPreferences(
             context.getSharedPreferences(prefsName(prefs.widgetId), Context.MODE_PRIVATE).edit()
                 .putString("theme", prefs.theme.name)
                 .putString("fontSize", prefs.fontSize.name)
-                .putFloat("opacity", prefs.opacity)
                 .commit()
         }
 

@@ -50,38 +50,37 @@ class TagRepositoryImpl(
 
     override suspend fun deleteTag(tag: Tag) {
         withContext(ioDispatcher) {
-            tagDao.update(tag.withUtcTimestamps().copy(isDeleted = true, isSynced = false))
+            tagDao.update(
+                tag.withUtcTimestamps().copy(
+                    isDeleted = true,
+                    isSynced = false,
+                    updatedAt = localToUtc(localNow()),
+                )
+            )
         }
         syncTrigger.triggerSync()
     }
 
     override suspend fun insertTaskTag(taskTag: TaskTag) {
-        val existing = withContext(ioDispatcher) {
-            tagDao.findTaskTagByIdAnyState(taskTag.taskId, taskTag.tagId)?.withLocalTimestamps()
-        }
         val now = localNow()
-        val current = existing ?: taskTag
-        val stamped = current.copy(
+        val stamped = taskTag.copy(
             isDeleted = false,
             isSynced = false,
-            createdAt = if (current.createdAt == 0L) now else current.createdAt,
+            createdAt = if (taskTag.createdAt == 0L) now else taskTag.createdAt,
             updatedAt = now,
         ).withUtcTimestamps()
-        withContext(ioDispatcher) { tagDao.upsertTaskTag(stamped) }
+        withContext(ioDispatcher) { tagDao.restoreTaskTagPreservingCreatedAt(stamped) }
         syncTrigger.triggerSync()
     }
 
     override suspend fun deleteTaskTag(taskTag: TaskTag) {
-        val existing = withContext(ioDispatcher) {
-            tagDao.findTaskTagByIdAnyState(taskTag.taskId, taskTag.tagId)?.withLocalTimestamps()
-        } ?: taskTag
         val now = localNow()
         withContext(ioDispatcher) {
-            tagDao.updateTaskTag(
-                existing.copy(
+            tagDao.tombstoneTaskTagPreservingCreatedAt(
+                taskTag.copy(
                     isDeleted = true,
                     isSynced = false,
-                    createdAt = if (existing.createdAt == 0L) now else existing.createdAt,
+                    createdAt = if (taskTag.createdAt == 0L) now else taskTag.createdAt,
                     updatedAt = now,
                 ).withUtcTimestamps()
             )

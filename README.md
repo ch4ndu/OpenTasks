@@ -123,6 +123,21 @@ See [docs/README.md](docs/README.md) for feature behavior and technical design n
 ./gradlew :composeApp:run
 ```
 
+### Bundle a macOS Release
+
+Run the release packaging task on macOS with JDK 17 or newer:
+
+```bash
+./gradlew :composeApp:packageReleaseDmg
+```
+
+The DMG is written to `composeApp/build/compose/binaries/main-release/dmg/`. The bundle targets the
+architecture of the Mac and JDK used to build it. Its package name, version, icon, and release
+ProGuard configuration come from `composeApp/build.gradle.kts`.
+
+The current project configuration does not sign or notarize the DMG. Configure Apple code signing
+and notarization before distributing it to users without macOS Gatekeeper warnings.
+
 For **iOS**, open `iosApp/iosApp.xcodeproj` in Xcode and build the `iosApp` scheme.
 
 ## Project Structure

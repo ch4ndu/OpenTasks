@@ -11,6 +11,7 @@ object PreviewSampleData {
     const val SAMPLE_YEAR = 2026
     const val SAMPLE_MONTH = 3
     const val SAMPLE_DAY = 16
+    const val SAMPLE_TODAY_DAY_KEY = 20528L
 
     // Hardcoded UTC epoch millis to avoid kotlinx-datetime calls that crash Android Studio previews.
     // 2026-03-16T00:00Z, 2026-03-15T00:00Z (Sunday), deadlines at given UTC times.

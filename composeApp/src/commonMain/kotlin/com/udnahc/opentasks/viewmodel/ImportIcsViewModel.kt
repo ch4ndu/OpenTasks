@@ -3,6 +3,7 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
+import kotlinx.coroutines.CancellationException
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -31,11 +32,13 @@ class ImportIcsViewModel(
 
     private val _uiState = MutableStateFlow(ImportIcsUiState())
     val uiState: StateFlow<ImportIcsUiState> = _uiState.asStateFlow()
+    private val importInProgress = MutableStateFlow(false)
 
     fun importFromIcsContent(
         fileName: String,
         content: String
     ) {
+        if (!importInProgress.compareAndSet(expect = false, update = true)) return
         log.d { "Importing ICS events" }
         viewModelScope.launch(ioDispatcher) {
             _uiState.update {
@@ -59,6 +62,8 @@ class ImportIcsViewModel(
                 }
                 val count = importAction(events)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.e(e) { "ICS import failed" }
                 _uiState.update {
@@ -70,6 +75,8 @@ class ImportIcsViewModel(
                         ),
                     )
                 }
+            } finally {
+                importInProgress.value = false
             }
         }
     }

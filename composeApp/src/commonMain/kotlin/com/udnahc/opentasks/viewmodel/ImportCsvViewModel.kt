@@ -3,6 +3,7 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
+import kotlinx.coroutines.CancellationException
 import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -31,11 +32,13 @@ class ImportCsvViewModel(
 
     private val _uiState = MutableStateFlow(ImportCsvUiState())
     val uiState: StateFlow<ImportCsvUiState> = _uiState.asStateFlow()
+    private val importInProgress = MutableStateFlow(false)
 
     fun importFromCsvContent(
         fileName: String,
         content: String
     ) {
+        if (!importInProgress.compareAndSet(expect = false, update = true)) return
         log.d { "Importing CSV tasks" }
         viewModelScope.launch(ioDispatcher) {
             _uiState.update {
@@ -59,6 +62,8 @@ class ImportCsvViewModel(
                 }
                 val count = importAction(tasks)
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.e(e) { "CSV import failed" }
                 _uiState.update {
@@ -70,6 +75,8 @@ class ImportCsvViewModel(
                         ),
                     )
                 }
+            } finally {
+                importInProgress.value = false
             }
         }
     }

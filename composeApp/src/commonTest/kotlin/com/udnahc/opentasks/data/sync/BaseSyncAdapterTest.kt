@@ -16,6 +16,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -43,17 +44,19 @@ class BaseSyncAdapterTest {
     }
 
     @Test
-    fun equalTimestampUnsyncedLocalPushesLocal() = runBlocking {
+    fun equalTimestampDivergentLocalPayloadFailsClosed() = runBlocking {
         val adapter = FakeAdapter(
             local = mutableListOf(FakeEntity(id = "one", pbId = "pb-one", value = "local", synced = false, updatedAt = 20)),
             remote = mutableListOf(FakeRecord(localId = "one", value = "remote", updatedAt = 20).withId("pb-one")),
         )
 
         adapter.pullAll(client)
-        adapter.pushAll(client)
+        assertFailsWith<SyncAdapterException> {
+            adapter.pushAll(client)
+        }
 
-        assertEquals("local", adapter.remote.single().value)
-        assertTrue(adapter.local.single().synced)
+        assertEquals("remote", adapter.remote.single().value)
+        assertFalse(adapter.local.single().synced)
     }
 
     @Test
@@ -81,6 +84,20 @@ class BaseSyncAdapterTest {
 
         assertTrue(adapter.local.isEmpty())
         assertEquals(1, adapter.hardDeletedCount)
+    }
+
+    @Test
+    fun seedModeCreatesNeverSyncedTombstoneInsteadOfHardDeletingIt() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(FakeEntity(id = "one", deleted = true, synced = false, updatedAt = 30)),
+            remote = mutableListOf(),
+        )
+
+        adapter.seedAll(client)
+
+        assertEquals(0, adapter.hardDeletedCount)
+        assertTrue(adapter.local.single().synced)
+        assertTrue(adapter.remote.single().deleted)
     }
 
     @Test
@@ -119,9 +136,33 @@ class BaseSyncAdapterTest {
             remote = mutableListOf(FakeRecord(localId = "local-1", value = "remote", updatedAt = 30).withId("pb-1")),
         )
 
-        adapter.pullAll(client)
+        assertFailsWith<SyncDegradedException> {
+            adapter.pullAll(client)
+        }
 
         assertTrue(adapter.local.all { it.synced })
+    }
+
+    @Test
+    fun degradedSmallPullSkipsThatCollectionsPush() = runBlocking {
+        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val adapter = FakeAdapter(
+            local = (1..20).map { index ->
+                FakeEntity(
+                    id = "local-$index",
+                    pbId = "pb-$index",
+                    value = "$index",
+                    synced = true,
+                    updatedAt = 30,
+                )
+            }.toMutableList(),
+            remote = mutableListOf(FakeRecord(localId = "local-1", value = "1", updatedAt = 30).withId("pb-1")),
+        )
+        val service = SyncService(provider, listOf(adapter))
+
+        assertFailsWith<SyncException> { service.syncAll() }
+
+        assertEquals(0, adapter.pushCount)
     }
 
     @Test
@@ -131,7 +172,7 @@ class BaseSyncAdapterTest {
             remote = mutableListOf(),
         )
 
-        assertFailsWith<SyncAdapterException> {
+        assertFailsWith<SyncDegradedException> {
             adapter.pullAll(client)
         }
         assertTrue(adapter.local.single().synced)
@@ -148,7 +189,7 @@ class BaseSyncAdapterTest {
             invalidRemoteIds = setOf("orphan"),
         )
 
-        assertFailsWith<SyncAdapterException> {
+        assertFailsWith<SyncDegradedException> {
             adapter.pullAll(client)
         }
         assertEquals("remote", adapter.local.single { it.id == "valid" }.value)
@@ -197,6 +238,20 @@ class BaseSyncAdapterTest {
         assertEquals("pb-one", adapter.local.single().pbId)
         assertEquals("local", adapter.remote.single().value)
         assertTrue(adapter.local.single().synced)
+    }
+
+    @Test
+    fun equalTimestampDivergentCreateConflictFailsClosed() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(FakeEntity(id = "one", value = "local", synced = false, updatedAt = 30)),
+            remote = mutableListOf(FakeRecord(localId = "one", value = "remote", updatedAt = 30).withId("pb-one")),
+            failCreate = true,
+        )
+
+        assertFailsWith<SyncAdapterException> { adapter.pushAll(client) }
+
+        assertEquals("remote", adapter.remote.single().value)
+        assertFalse(adapter.local.single().synced)
     }
 
     @Test
@@ -279,11 +334,12 @@ class BaseSyncAdapterTest {
     }
 
     @Test
-    fun successfulPendingPassClearsPreviousTransientFailures() = runBlocking {
+    fun queuedPassCompletesAfterPreviousTransientFailure() = runBlocking {
         val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
         lateinit var service: SyncService
         lateinit var adapter: FakeAdapter
         var requestedPending = false
+        val pendingPassCompleted = CompletableDeferred<Unit>()
         adapter = FakeAdapter(
             local = mutableListOf(FakeEntity(id = "one", value = "local", synced = false, updatedAt = 30)),
             remote = mutableListOf(),
@@ -291,14 +347,18 @@ class BaseSyncAdapterTest {
             onPull = {
                 if (!requestedPending) {
                     requestedPending = true
-                    service.syncAll()
+                    launch {
+                        service.syncAll()
+                        pendingPassCompleted.complete(Unit)
+                    }
                     adapter.failFetch = false
                 }
             },
         )
         service = SyncService(provider, listOf(adapter))
 
-        service.syncAll()
+        assertFailsWith<SyncException> { service.syncAll() }
+        pendingPassCompleted.await()
 
         assertEquals(2, adapter.pullCount)
         assertTrue(adapter.local.single().synced)
@@ -537,6 +597,8 @@ private class FakeAdapter(
     var pullCount = 0
     var pushCount = 0
 
+    override fun allowsTestOnlyLegacySdkWrites(): Boolean = true
+
     override suspend fun getUnsynced(): List<FakeEntity> {
         pushCount += 1
         return local.filter { !it.synced }
@@ -571,6 +633,13 @@ private class FakeAdapter(
         local.add(entity)
     }
 
+    override suspend fun mergeRemoteIfNewer(entity: FakeEntity): RemoteMergeResult {
+        val current = getById(entity.id)
+        if (current != null && current.updatedAt >= entity.updatedAt) return RemoteMergeResult.KeptLocal
+        upsert(entity)
+        return RemoteMergeResult.Applied
+    }
+
     override fun localId(entity: FakeEntity) = entity.id
     override fun pbId(entity: FakeEntity) = entity.pbId
     override fun isDeleted(entity: FakeEntity) = entity.deleted
@@ -583,6 +652,12 @@ private class FakeAdapter(
 
     override fun toRecord(entity: FakeEntity) = FakeRecord(entity.id, entity.value, entity.deleted, entity.updatedAt)
     override fun toEntity(record: FakeRecord) = FakeEntity(record.localId, record.id, record.value, record.deleted, synced = true, record.updatedAt)
+    override fun recordFromJson(json: JsonObject): FakeRecord = FakeRecord(
+        localId = json["localId"]?.jsonPrimitive?.content.orEmpty(),
+        value = json["value"]?.jsonPrimitive?.content.orEmpty(),
+        deleted = json["isDeleted"]?.jsonPrimitive?.boolean ?: false,
+        updatedAt = json["localUpdatedAt"]?.jsonPrimitive?.long ?: 0L,
+    )
 
     override suspend fun fetchAllRecords(client: PocketbaseClient): List<FakeRecord> {
         pullCount += 1

@@ -39,7 +39,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskCategory
@@ -95,6 +94,7 @@ fun QuadrantDetailScreen(
             val categorizedTasks by viewModel.categorizedTasks.collectAsState()
             val categoryNames by viewModel.categoryNames.collectAsState()
             val taskContentPreviews by viewModel.taskContentPreviews.collectAsState()
+            val taskDueTextById by viewModel.taskDueTextById.collectAsState()
             val defaultCategoryName = stringResource(Res.string.inbox)
             QuadrantDetailContent(
                 title = title,
@@ -102,6 +102,7 @@ fun QuadrantDetailScreen(
                 categorizedTasks = categorizedTasks,
                 categoryNames = categoryNames,
                 taskContentPreviews = taskContentPreviews,
+                taskDueTextById = taskDueTextById,
                 defaultCategoryName = defaultCategoryName,
                 onBack = onBack,
                 onTaskClick = onTaskClick,
@@ -114,6 +115,7 @@ fun QuadrantDetailScreen(
 
         TaskListViewMode.BOARD -> {
             val tasksByStatus by viewModel.tasksByStatus.collectAsState()
+            val taskDueTextById by viewModel.taskDueTextById.collectAsState()
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -121,6 +123,7 @@ fun QuadrantDetailScreen(
             ) {
                 KanbanBoardContent(
                     tasksByStatus = tasksByStatus,
+                    taskDueTextById = taskDueTextById,
                     onTaskClick = onTaskClick,
                     onStatusChange = { task, newStatus ->
                         viewModel.moveTaskToStatus(
@@ -186,6 +189,7 @@ internal fun QuadrantDetailContent(
     categorizedTasks: List<MatrixViewModel.TaskCategoryGroup>,
     categoryNames: Map<String, String> = emptyMap(),
     taskContentPreviews: Map<String, String> = emptyMap(),
+    taskDueTextById: Map<String, String> = emptyMap(),
     defaultCategoryName: String,
     onBack: () -> Unit,
     onTaskClick: (Task) -> Unit,
@@ -253,14 +257,17 @@ internal fun QuadrantDetailContent(
 
                 item(key = "section_$category") {
                     val label = categoryLabel(category)
-                    QuadrantSectionHeader(
+                    CollapsibleSection(
                         label = label,
                         count = categoryTasks.size,
                         isCollapsed = isCollapsed,
                         onToggle = { collapsedState[category] = !isCollapsed },
                         labelColor = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(top = dimens.paddingMedium),
-                    )
+                        headerCardModifier = Modifier.padding(top = dimens.paddingMedium),
+                        showContent = false,
+                    ) {
+                        // Task rows are LazyColumn items so their state remains keyed by task id.
+                    }
                 }
 
                 if (!isCollapsed) {
@@ -268,6 +275,7 @@ internal fun QuadrantDetailContent(
                         DetailTaskRow(
                             task = task,
                             contentPreview = taskContentPreviews[task.id].orEmpty(),
+                            dueText = taskDueTextById[task.id].orEmpty(),
                             priority = priority,
                             isOverdue = category == TaskCategory.OVERDUE,
                             categoryName = categoryNames[task.categoryId] ?: defaultCategoryName,
@@ -291,57 +299,10 @@ internal fun QuadrantDetailContent(
 }
 
 @Composable
-private fun QuadrantSectionHeader(
-    label: String,
-    count: Int,
-    isCollapsed: Boolean,
-    onToggle: () -> Unit,
-    labelColor: Color,
-    modifier: Modifier = Modifier,
-) {
-    val dimens = OpenTasksTheme.dimens
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onToggle),
-        shape = RoundedCornerShape(dimens.cornerXLarge),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingMedium),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = labelColor,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = count.toString(),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.width(dimens.spacerSmall))
-            Icon(
-                painter = painterResource(
-                    if (isCollapsed) Res.drawable.ic_list else Res.drawable.ic_unfold
-                ),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(dimens.iconSmall),
-            )
-        }
-    }
-}
-
-@Composable
 internal fun DetailTaskRow(
     task: Task,
     contentPreview: String = "",
+    dueText: String = "",
     priority: TaskPriority,
     isOverdue: Boolean,
     categoryName: String,
@@ -378,10 +339,10 @@ internal fun DetailTaskRow(
             )
 
             // Show deadline info if present
-            if (task.deadline != null && task.status != TaskStatus.DONE) {
+            if (dueText.isNotBlank() && task.status != TaskStatus.DONE) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = formatDateShort(task.deadline),
+                        text = dueText,
                         style = MaterialTheme.typography.labelMedium,
                         color = if (isOverdue) DateOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                     )

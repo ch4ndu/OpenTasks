@@ -99,7 +99,7 @@ class TaskNotificationViewModel(
             _isBusy.value = true
             try {
                 withContext(ioDispatcher) {
-                    dismissTaskNotificationAction(event.eventId)
+                    dismissTaskNotificationAction(event.eventId, event.semanticKey)
                 }
                 onComplete()
             } finally {

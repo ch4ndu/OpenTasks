@@ -2,8 +2,6 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.udnahc.opentasks.data.model.Category
-import com.udnahc.opentasks.data.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.data.attachment.PickedImage
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.Task
@@ -14,6 +12,10 @@ import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.task.AddTaskAction
 import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
+import com.udnahc.opentasks.domain.attachment.PendingTaskImageHandoff
+import com.udnahc.opentasks.domain.action.task.FormCompletionScope
+import com.udnahc.opentasks.domain.action.task.TaskWriteIntent
+import com.udnahc.opentasks.domain.action.task.TaskWriteResult
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImagesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
@@ -22,13 +24,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
@@ -55,7 +53,14 @@ sealed class TaskFormSaveEvent {
     ) : TaskFormSaveEvent()
 
     data class Error(val error: Throwable) : TaskFormSaveEvent()
+    data class StaleOccurrence(val formData: TaskFormData) : TaskFormSaveEvent()
 }
+
+data class PendingFormCompletion(
+    val taskId: String,
+    val formData: TaskFormData,
+    val expectedOccurrence: Long,
+)
 
 class TaskFormViewModel(
     private val observeTaskByIdUseCase: ObserveTaskByIdUseCase,
@@ -66,21 +71,27 @@ class TaskFormViewModel(
     private val observeTaskImagesUseCase: ObserveTaskImagesUseCase,
     private val addTaskImageAction: AddTaskImageAction,
     private val removeTaskImageAction: RemoveTaskImageAction,
-    private val addCategoryAction: AddCategoryAction,
+    addCategoryAction: AddCategoryAction,
     private val pendingTaskImageHandoff: PendingTaskImageHandoff = PendingTaskImageHandoff(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val _taskId = MutableStateFlow<String?>(null)
     private val _pendingImages = MutableStateFlow<List<PickedImage>>(emptyList())
-    private val _saveEvents = MutableSharedFlow<TaskFormSaveEvent>(
-        replay = 0,
-        extraBufferCapacity = 1,
-    )
-    val saveEvents: SharedFlow<TaskFormSaveEvent> = _saveEvents.asSharedFlow()
+    private val _saveEvent = MutableStateFlow<TaskFormSaveEvent?>(null)
+    val saveEvent: StateFlow<TaskFormSaveEvent?> = _saveEvent
     val pendingImages: StateFlow<List<PickedImage>> = _pendingImages
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving
+    private val _pendingFormCompletion = MutableStateFlow<PendingFormCompletion?>(null)
+    val pendingFormCompletion: StateFlow<PendingFormCompletion?> = _pendingFormCompletion
+    private val _retainedFormDraft = MutableStateFlow<TaskFormData?>(null)
+    val retainedFormDraft: StateFlow<TaskFormData?> = _retainedFormDraft
+    private val categoryPicker = CategoryPickerDelegate(
+        observeAllCategories,
+        addCategoryAction,
+        viewModelScope,
+    )
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val editTask: StateFlow<Task?> = _taskId
@@ -98,19 +109,9 @@ class TaskFormViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val categories: StateFlow<List<Category>> = observeAllCategories()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _categorySearchQuery = MutableStateFlow("")
-    val categorySearchQuery: StateFlow<String> = _categorySearchQuery
-
-    val filteredCategories: StateFlow<List<Category>> =
-        combine(categories, _categorySearchQuery) { categories, query ->
-            if (query.isBlank()) categories
-            else categories.filter { it.name.contains(query, ignoreCase = true) }
-        }
-            .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val categories = categoryPicker.categories
+    val categorySearchQuery = categoryPicker.categorySearchQuery
+    val filteredCategories = categoryPicker.filteredCategories
 
     fun setTaskId(taskId: String) {
         if (_taskId.value == taskId) return
@@ -123,8 +124,12 @@ class TaskFormViewModel(
         }
     }
 
+    /** Claims and clears the current event so only one collector performs its effect. */
+    fun consumeSaveEvent(event: TaskFormSaveEvent): Boolean =
+        _saveEvent.compareAndSet(expect = event, update = null)
+
     fun setCategorySearchQuery(query: String) {
-        _categorySearchQuery.value = query
+        categoryPicker.setCategorySearchQuery(query)
     }
 
     fun addPendingImage(image: PickedImage) {
@@ -166,10 +171,10 @@ class TaskFormViewModel(
                 )
                 val imageResult = savePendingImages(task.id)
                 if (imageResult.failedImages.isEmpty()) {
-                    _saveEvents.emit(TaskFormSaveEvent.Saved(formData))
+                    publishSaveEvent(TaskFormSaveEvent.Saved(formData))
                 } else {
                     pendingTaskImageHandoff.put(task.id, imageResult.failedImages)
-                    _saveEvents.emit(
+                    publishSaveEvent(
                         TaskFormSaveEvent.TaskCreatedWithImageError(
                             taskId = task.id,
                             formData = formData,
@@ -182,70 +187,97 @@ class TaskFormViewModel(
                 throw e
             } catch (e: Exception) {
                 log.e(e) { "Failed to save new task" }
-                _saveEvents.emit(TaskFormSaveEvent.Error(e))
+                publishSaveEvent(TaskFormSaveEvent.Error(e))
             } finally {
                 _isSaving.value = false
             }
         }
     }
 
-    fun saveExistingTask(
-        existingTask: Task,
-        formData: TaskFormData
-    ) {
+    fun saveExistingTask(taskId: String, formData: TaskFormData) {
         if (!_isSaving.compareAndSet(expect = false, update = true)) return
+        _retainedFormDraft.value = formData
         viewModelScope.launch(ioDispatcher) {
             try {
-                updateTaskAction(
-                    existingTask.copy(
-                        title = formData.title,
-                        content = formData.content,
-                        subtasks = formData.subtasks,
-                        priority = formData.priority,
-                        deadline = formData.deadline,
-                        endDeadline = formData.endDeadline,
-                        isAllDay = formData.isAllDay,
-                        notifyBeforeValue = formData.reminderDays,
-                        notifyBeforeUnit = formData.notifyBeforeUnit(),
-                        recurrenceType = formData.recurrence,
-                        categoryId = formData.categoryId,
-                        section = formData.section,
-                        status = formData.status,
-                        location = formData.location,
-                        url = formData.url,
-                        organizer = formData.organizer,
-                        eventStatus = formData.eventStatus,
-                        attendees = formData.attendees,
-                        durationReminders = formData.durationReminders,
-                        dateReminders = formData.dateReminders,
-                    )
-                )
-                val imageResult = savePendingImages(existingTask.id)
-                if (imageResult.failedImages.isEmpty()) {
-                    _saveEvents.emit(TaskFormSaveEvent.Saved(formData))
-                } else {
-                    _saveEvents.emit(
-                        TaskFormSaveEvent.ImagesFailed(
+                when (val result = updateTaskAction(taskId, TaskWriteIntent.FormUpdate(formData))) {
+                    is TaskWriteResult.CompletionChoiceRequired -> {
+                        _pendingFormCompletion.value = PendingFormCompletion(
+                            taskId = taskId,
                             formData = formData,
-                            failedImages = imageResult.failedImages,
-                            error = imageResult.error,
+                            expectedOccurrence = result.expectedOccurrence,
                         )
-                    )
+                    }
+                    is TaskWriteResult.Updated -> finishExistingTaskSave(taskId, formData)
+                    TaskWriteResult.StaleOccurrence -> publishSaveEvent(TaskFormSaveEvent.StaleOccurrence(formData))
+                    TaskWriteResult.Missing -> publishSaveEvent(TaskFormSaveEvent.Error(IllegalStateException("Task no longer exists")))
+                    TaskWriteResult.NoOp -> Unit
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                log.e(e) { "Failed to save existing task ${existingTask.id}" }
-                _saveEvents.emit(TaskFormSaveEvent.Error(e))
+                log.e(e) { "Failed to save existing task $taskId" }
+                publishSaveEvent(TaskFormSaveEvent.Error(e))
             } finally {
                 _isSaving.value = false
             }
         }
     }
 
-    fun deleteTask(task: Task) {
+    fun confirmPendingFormOccurrence() = confirmPendingFormCompletion(FormCompletionScope.OCCURRENCE)
+
+    fun confirmPendingFormSeries() = confirmPendingFormCompletion(FormCompletionScope.SERIES)
+
+    fun dismissPendingFormCompletion() {
+        _pendingFormCompletion.value = null
+    }
+
+    private fun confirmPendingFormCompletion(scope: FormCompletionScope) {
+        if (!_isSaving.compareAndSet(expect = false, update = true)) return
+        val pending = _pendingFormCompletion.value
+        if (pending == null) {
+            _isSaving.value = false
+            return
+        }
+        viewModelScope.launch(ioDispatcher) {
+            try {
+                when (updateTaskAction(
+                    pending.taskId,
+                    TaskWriteIntent.ApplyFormAndComplete(
+                        pending.formData,
+                        pending.expectedOccurrence,
+                        scope,
+                    ),
+                )) {
+                    is TaskWriteResult.Updated -> {
+                        _pendingFormCompletion.value = null
+                        finishExistingTaskSave(pending.taskId, pending.formData)
+                    }
+                    TaskWriteResult.StaleOccurrence -> {
+                        _pendingFormCompletion.value = null
+                        publishSaveEvent(TaskFormSaveEvent.StaleOccurrence(pending.formData))
+                    }
+                    TaskWriteResult.Missing -> {
+                        _pendingFormCompletion.value = null
+                        publishSaveEvent(TaskFormSaveEvent.Error(IllegalStateException("Task no longer exists")))
+                    }
+                    else -> Unit
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.e(e) { "Failed to complete pending task form ${pending.taskId}" }
+                publishSaveEvent(TaskFormSaveEvent.Error(e))
+            } finally {
+                _isSaving.value = false
+            }
+        }
+    }
+
+    fun deleteTask(taskId: String) {
         discardPendingImages()
-        viewModelScope.launch(ioDispatcher) { deleteTaskAction(task) }
+        _pendingFormCompletion.value = null
+        _retainedFormDraft.value = null
+        viewModelScope.launch(ioDispatcher) { deleteTaskAction(taskId) }
     }
 
     fun removeTaskImage(attachment: com.udnahc.opentasks.data.model.Attachment) {
@@ -253,7 +285,7 @@ class TaskFormViewModel(
     }
 
     fun addCategory(name: String) {
-        viewModelScope.launch(ioDispatcher) { addCategoryAction(name) }
+        categoryPicker.addCategory(name)
     }
 
     private fun TaskFormData.notifyBeforeUnit(): NotifyBeforeUnit =
@@ -279,8 +311,28 @@ class TaskFormViewModel(
         )
     }
 
+    private suspend fun finishExistingTaskSave(taskId: String, formData: TaskFormData) {
+        val imageResult = savePendingImages(taskId)
+        if (imageResult.failedImages.isEmpty()) {
+            _retainedFormDraft.value = null
+            publishSaveEvent(TaskFormSaveEvent.Saved(formData))
+        } else {
+            publishSaveEvent(
+                TaskFormSaveEvent.ImagesFailed(
+                    formData = formData,
+                    failedImages = imageResult.failedImages,
+                    error = imageResult.error,
+                )
+            )
+        }
+    }
+
     private data class ImageSaveResult(
         val failedImages: List<PickedImage>,
         val error: Throwable,
     )
+
+    private fun publishSaveEvent(event: TaskFormSaveEvent) {
+        _saveEvent.value = event
+    }
 }

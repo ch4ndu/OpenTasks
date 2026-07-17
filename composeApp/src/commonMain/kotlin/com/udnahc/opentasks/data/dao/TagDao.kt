@@ -7,8 +7,10 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import androidx.room.Upsert
+import androidx.room.Transaction
 import com.udnahc.opentasks.data.model.Tag
 import com.udnahc.opentasks.data.model.TaskTag
+import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -22,6 +24,9 @@ interface TagDao {
 
     @Query("SELECT * FROM tags WHERE isDeleted = 0 ORDER BY name ASC")
     fun getAllTags(): Flow<List<Tag>>
+
+    @Query("SELECT id FROM tags WHERE isDeleted = 0")
+    suspend fun getActiveTagIds(): List<String>
 
     @Query("SELECT * FROM tags WHERE id = :id AND isDeleted = 0")
     suspend fun getTagById(id: String): Tag?
@@ -48,6 +53,60 @@ interface TagDao {
     @Upsert
     suspend fun upsertTaskTag(taskTag: TaskTag)
 
+    /**
+     * Restores an assignment without racing an existing row's original creation time.
+     * The caller supplies storage (UTC) timestamps.
+     */
+    @Transaction
+    suspend fun restoreTaskTagPreservingCreatedAt(taskTag: TaskTag) {
+        val existing = findTaskTagByIdAnyState(taskTag.taskId, taskTag.tagId)
+        val createdAt = existing?.createdAt?.takeIf { it != 0L }
+            ?: taskTag.createdAt.takeIf { it != 0L }
+            ?: taskTag.updatedAt
+        upsertTaskTag(
+            taskTag.copy(
+                pbId = existing?.pbId ?: taskTag.pbId,
+                isDeleted = false,
+                isSynced = false,
+                createdAt = createdAt,
+            )
+        )
+    }
+
+    /** Tombstones an assignment while preserving its original creation time in one transaction. */
+    @Transaction
+    suspend fun tombstoneTaskTagPreservingCreatedAt(taskTag: TaskTag) {
+        val existing = findTaskTagByIdAnyState(taskTag.taskId, taskTag.tagId)
+        val createdAt = existing?.createdAt?.takeIf { it != 0L }
+            ?: taskTag.createdAt.takeIf { it != 0L }
+            ?: taskTag.updatedAt
+        upsertTaskTag(
+            taskTag.copy(
+                pbId = existing?.pbId ?: taskTag.pbId,
+                isDeleted = true,
+                isSynced = false,
+                createdAt = createdAt,
+            )
+        )
+    }
+
+    @Query("SELECT EXISTS(SELECT 1 FROM tasks WHERE id = :taskId AND isDeleted = 0)")
+    suspend fun hasActiveTask(taskId: String): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM tags WHERE id = :tagId AND isDeleted = 0)")
+    suspend fun hasActiveTag(tagId: String): Boolean
+
+    @Transaction
+    suspend fun mergeRemoteTaskTagIfNewer(remote: TaskTag): RemoteMergeResult {
+        if (!hasActiveTask(remote.taskId) || !hasActiveTag(remote.tagId)) {
+            return RemoteMergeResult.MissingParent
+        }
+        val local = findTaskTagByIdAnyState(remote.taskId, remote.tagId)
+        if (local != null && local.updatedAt >= remote.updatedAt) return RemoteMergeResult.KeptLocal
+        upsertTaskTag(remote)
+        return RemoteMergeResult.Applied
+    }
+
     @Query("SELECT * FROM task_tags WHERE taskId = :taskId AND tagId = :tagId")
     suspend fun findTaskTagByIdAnyState(
         taskId: String,
@@ -56,6 +115,30 @@ interface TagDao {
 
     @Query("SELECT * FROM task_tags WHERE isSynced = 0")
     suspend fun getUnsyncedTaskTags(): List<TaskTag>
+
+    /** Includes tombstones so graph deletion can decide whether a parent must remain durable. */
+    @Query("SELECT * FROM task_tags WHERE taskId = :taskId")
+    suspend fun getTaskTagsForTaskAnyState(taskId: String): List<TaskTag>
+
+    @Query("UPDATE task_tags SET isDeleted = 1, isSynced = 0, updatedAt = :updatedAt WHERE taskId = :taskId AND isDeleted = 0")
+    suspend fun tombstoneActiveTaskTagsForTask(taskId: String, updatedAt: Long)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM task_tags WHERE taskId = :taskId AND pbId IS NOT NULL)")
+    suspend fun hasRemoteIdentityTaskTag(taskId: String): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM task_tags WHERE tagId = :tagId AND pbId IS NOT NULL)")
+    suspend fun hasRemoteIdentityTaskTagForTag(tagId: String): Boolean
+
+    /**
+     * Protect the foreign-key cascade when a local-only tag tombstone still
+     * owns task-tag rows that must be synchronized to an existing remote row.
+     */
+    @Transaction
+    suspend fun deleteTagIfNoRemoteTaskTags(tag: Tag): Boolean {
+        if (hasRemoteIdentityTaskTagForTag(tag.id)) return false
+        deleteTag(tag)
+        return true
+    }
 
     @Query("SELECT * FROM task_tags")
     suspend fun getAllTaskTagsOnce(): List<TaskTag>
@@ -87,6 +170,9 @@ interface TagDao {
         pbId: String
     )
 
+    @Query("UPDATE task_tags SET pbId = NULL, isSynced = 0")
+    suspend fun resetTaskTagSyncMetadataForServerSeed()
+
     @Query("DELETE FROM task_tags")
     suspend fun deleteAllTaskTags()
 
@@ -98,6 +184,14 @@ interface TagDao {
 
     @Upsert
     suspend fun upsert(tag: Tag)
+
+    @Transaction
+    suspend fun mergeRemoteIfNewer(remote: Tag): RemoteMergeResult {
+        val local = findTagByIdAnyState(remote.id)
+        if (local != null && local.updatedAt >= remote.updatedAt) return RemoteMergeResult.KeptLocal
+        upsert(remote)
+        return RemoteMergeResult.Applied
+    }
 
     @Query("SELECT * FROM tags WHERE isSynced = 0")
     suspend fun getUnsynced(): List<Tag>
@@ -120,6 +214,9 @@ interface TagDao {
         id: String,
         pbId: String
     )
+
+    @Query("UPDATE tags SET pbId = NULL, isSynced = 0")
+    suspend fun resetTagSyncMetadataForServerSeed()
 
     @Query("SELECT * FROM tags")
     suspend fun getAllTagsOnce(): List<Tag>

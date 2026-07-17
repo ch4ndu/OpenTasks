@@ -69,4 +69,7 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.kotlinx.datetime)
     implementation(libs.slf4j.simple)
+
+    testImplementation(libs.kotlin.testJunit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

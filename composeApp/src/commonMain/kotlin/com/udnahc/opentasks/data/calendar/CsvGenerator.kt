@@ -62,7 +62,7 @@ object CsvGenerator {
                 formatPriority(task.priority),                  // Priority
                 if (task.status == TaskStatus.DONE) "2" else "0", // Status
                 formatCreatedAt(task.createdAt),                // Created Time
-                "",                                             // Completed Time
+                if (task.status == TaskStatus.DONE) formatDeadline(task.completedAt) else "", // Completed Time
                 "0",                                            // Order
                 "",                                             // Timezone
                 "",                                             // Is Floating

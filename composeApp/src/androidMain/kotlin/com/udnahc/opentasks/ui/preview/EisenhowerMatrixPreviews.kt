@@ -12,13 +12,21 @@ import com.udnahc.opentasks.ui.screens.QuadrantCard
 import com.udnahc.opentasks.ui.screens.QuadrantTaskRow
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PriorityHigh
+import com.udnahc.opentasks.viewmodel.MatrixViewModel
 
 @Composable
 @LightDarkPreview
 private fun EisenhowerMatrixScreenPreview() {
     OpenTasksTheme {
         EisenhowerMatrixContent(
-            tasksByPriority = PreviewSampleData.sampleTasks.groupBy { it.priority },
+            priorityProjections = TaskPriority.entries.associateWith { priority ->
+                val tasks = PreviewSampleData.sampleTasks.filter { it.priority == priority }
+                MatrixViewModel.PriorityProjection(
+                    tasks = tasks,
+                    visibleTasks = tasks.take(6),
+                    hasMore = tasks.size > 6,
+                )
+            },
             onTaskClick = {},
             onToggleComplete = {},
         )
@@ -34,7 +42,10 @@ private fun QuadrantCardPreview() {
             title = "Urgent & Important",
             badge = "I",
             color = PriorityHigh,
-            tasks = PreviewSampleData.sampleTasks.filter { it.priority == TaskPriority.HIGH },
+            priorityProjection = MatrixViewModel.PriorityProjection(
+                tasks = PreviewSampleData.sampleTasks.filter { it.priority == TaskPriority.HIGH },
+                visibleTasks = PreviewSampleData.sampleTasks.filter { it.priority == TaskPriority.HIGH }.take(6),
+            ),
             onTaskClick = {},
             onToggleComplete = {},
             onCardClick = {},

@@ -171,6 +171,13 @@ internal fun MiniCalendarGrid(
 ) {
     val dimens = OpenTasksTheme.dimens
     val weeks = remember(year, month) { buildMonthWeeks(year, month) }
+    val taskDayKeys = remember(weeks, tasksByDay) {
+        weeks.asSequence()
+            .flatten()
+            .map { day -> dayKeyFromDate(day.year, day.month, day.day) }
+            .filter(tasksByDay::containsKey)
+            .toSet()
+    }
 
     // Month name header (year view)
     if (showMonthHeader) {
@@ -196,7 +203,7 @@ internal fun MiniCalendarGrid(
             todayYear = todayYear,
             todayMonth = todayMonth,
             todayDay = todayDay,
-            tasksByDay = tasksByDay,
+            taskDayKeys = taskDayKeys,
         )
     } else {
         // Week view: fills available space, supports animated week highlight
@@ -206,7 +213,7 @@ internal fun MiniCalendarGrid(
             todayMonth = todayMonth,
             todayDay = todayDay,
             highlightedWeekSundayMillis = highlightedWeekSundayMillis,
-            tasksByDay = tasksByDay,
+            taskDayKeys = taskDayKeys,
             onDayClick = onDayClick,
         )
     }
@@ -220,7 +227,7 @@ private fun MiniCalendarAspectRatioGrid(
     todayYear: Int,
     todayMonth: Int,
     todayDay: Int,
-    tasksByDay: Map<Long, List<Task>>,
+    taskDayKeys: Set<Long>,
 ) {
     weeks.forEach { week ->
         Row(
@@ -231,7 +238,7 @@ private fun MiniCalendarAspectRatioGrid(
                 val isToday =
                     day.year == todayYear && day.month == todayMonth && day.day == todayDay
                 val dayKey = dayKeyFromDate(day.year, day.month, day.day)
-                val hasTasks = tasksByDay.containsKey(dayKey)
+                val hasTasks = dayKey in taskDayKeys
 
                 Box(
                     modifier = Modifier
@@ -273,7 +280,7 @@ private fun MiniCalendarFillGrid(
     todayMonth: Int,
     todayDay: Int,
     highlightedWeekSundayMillis: Long?,
-    tasksByDay: Map<Long, List<Task>>,
+    taskDayKeys: Set<Long>,
     onDayClick: ((Long) -> Unit)?,
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -335,7 +342,7 @@ private fun MiniCalendarFillGrid(
                         val isToday =
                             day.year == todayYear && day.month == todayMonth && day.day == todayDay
                         val dk = dayKeyFromDate(day.year, day.month, day.day)
-                        val hasTasks = tasksByDay.containsKey(dk)
+                        val hasTasks = dk in taskDayKeys
                         val dayMillis = startOfDayLocalMillis(day.year, day.month, day.day)
 
                         Box(

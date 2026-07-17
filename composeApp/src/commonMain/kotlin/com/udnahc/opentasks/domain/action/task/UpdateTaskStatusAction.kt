@@ -1,7 +1,5 @@
 package com.udnahc.opentasks.domain.action.task
 
-import com.udnahc.opentasks.data.extensions.localNow
-import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
@@ -11,13 +9,17 @@ class UpdateTaskStatusAction(
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
 ) {
+    private val coordinator = TaskWriteCoordinator(repository)
+
     suspend operator fun invoke(
-        task: Task,
+        taskId: String,
         newStatus: TaskStatus
-    ) {
-        val updated = task.copy(status = newStatus, updatedAt = localNow())
-        repository.update(updated)
-        rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(updated.id) }
-            ?: scheduleTaskRemindersAction(updated.id)
+    ): TaskWriteResult {
+        val result = coordinator.write(taskId, TaskWriteIntent.SetStatus(newStatus))
+        if (result is TaskWriteResult.Updated) {
+            rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(taskId) }
+                ?: scheduleTaskRemindersAction(taskId)
+        }
+        return result
     }
 }

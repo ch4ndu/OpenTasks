@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
@@ -16,6 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -25,14 +27,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
-import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
-import com.udnahc.opentasks.data.extensions.currentDay
-import com.udnahc.opentasks.data.extensions.currentMonth
-import com.udnahc.opentasks.data.extensions.currentYear
 import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
@@ -41,6 +41,8 @@ import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.CalendarListDisplayModePreference
 import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.WidgetCalendarDate
+import com.udnahc.opentasks.WidgetNavigationEvent
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
 import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
 import com.udnahc.opentasks.ui.screens.OpenTasksBackButton
@@ -51,7 +53,6 @@ import com.udnahc.opentasks.ui.screens.SelectedOptionRow
 import com.udnahc.opentasks.ui.screens.SyncPullToRefresh
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
@@ -61,9 +62,22 @@ import opentasks.composeapp.generated.resources.calendar_view_month
 import opentasks.composeapp.generated.resources.calendar_view_three_day
 import opentasks.composeapp.generated.resources.calendar_view_week
 import opentasks.composeapp.generated.resources.calendar_view_year
+import opentasks.composeapp.generated.resources.choose_calendar_view
+import opentasks.composeapp.generated.resources.ic_chevron_left
+import opentasks.composeapp.generated.resources.ic_chevron_right
 import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_schedule
+import opentasks.composeapp.generated.resources.next_day
+import opentasks.composeapp.generated.resources.next_month
+import opentasks.composeapp.generated.resources.next_week
+import opentasks.composeapp.generated.resources.next_year
+import opentasks.composeapp.generated.resources.previous_day
+import opentasks.composeapp.generated.resources.previous_month
+import opentasks.composeapp.generated.resources.previous_week
+import opentasks.composeapp.generated.resources.previous_year
+import opentasks.composeapp.generated.resources.show_card_view
+import opentasks.composeapp.generated.resources.show_timeline_view
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -74,10 +88,13 @@ private const val DAY_PAGER_RANGE = 7300
 private const val DAY_PAGER_CENTRE = DAY_PAGER_RANGE / 2
 private const val WEEK_PAGER_RANGE = 1040
 private const val WEEK_PAGER_CENTRE = WEEK_PAGER_RANGE / 2
-private const val MONTH_PAGER_RANGE = 240
-private const val MONTH_PAGER_CENTRE = MONTH_PAGER_RANGE / 2
-private const val YEAR_PAGER_RANGE = 20
-private const val YEAR_PAGER_CENTRE = YEAR_PAGER_RANGE / 2
+internal const val YEAR_PAGER_RANGE = 20
+internal const val YEAR_PAGER_CENTRE = YEAR_PAGER_RANGE / 2
+internal const val MONTH_PAGER_MIN_OFFSET = -(YEAR_PAGER_CENTRE * 12 + 11)
+internal const val MONTH_PAGER_MAX_OFFSET =
+    ((YEAR_PAGER_RANGE - YEAR_PAGER_CENTRE - 1) * 12) + 11
+internal const val MONTH_PAGER_RANGE = MONTH_PAGER_MAX_OFFSET - MONTH_PAGER_MIN_OFFSET + 1
+internal const val MONTH_PAGER_CENTRE = -MONTH_PAGER_MIN_OFFSET
 
 // ── View types ──────────────────────────────────────────────────────────────
 
@@ -98,23 +115,62 @@ private data class TodayCalendarDate(
     val day: Int,
 )
 
+internal data class CalendarNavigationDate(
+    val year: Int,
+    val month: Int,
+)
+
+internal fun monthPagerPageFor(
+    todayYear: Int,
+    todayMonth: Int,
+    targetYear: Int,
+    targetMonth: Int,
+): Int? {
+    val offset = (targetYear - todayYear) * 12 + (targetMonth - todayMonth)
+    return (MONTH_PAGER_CENTRE + offset).takeIf { it in 0 until MONTH_PAGER_RANGE }
+}
+
+internal fun widgetCalendarDay(date: WidgetCalendarDate): CalendarDay =
+    CalendarDay(date.year, date.month, date.day, isCurrentMonth = true)
+
+internal fun calendarYearEntryDate(
+    currentView: CalendarViewType,
+    listDate: CalendarNavigationDate,
+    yearDate: CalendarNavigationDate,
+    monthDate: CalendarNavigationDate,
+    weekDate: CalendarNavigationDate,
+    threeDayDate: CalendarNavigationDate,
+    dayDate: CalendarNavigationDate,
+): CalendarNavigationDate = when (currentView) {
+    CalendarViewType.LIST -> listDate
+    CalendarViewType.YEAR -> yearDate
+    CalendarViewType.MONTH -> monthDate
+    CalendarViewType.WEEK -> weekDate
+    CalendarViewType.THREE_DAY -> threeDayDate
+    CalendarViewType.DAY -> dayDate
+}
+
 // ── Public entry point ──────────────────────────────────────────────────────
 
 @Composable
 fun CalendarScreen(
     viewModel: CalendarViewModel,
     onTaskClick: (Task) -> Unit,
+    widgetNavigationEvent: WidgetNavigationEvent? = null,
+    onWidgetNavigationConsumed: (Long) -> Unit = {},
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
     onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
     onRefresh: () -> Unit = {},
 ) {
     val tasksByDay by viewModel.tasksByDay.collectAsState()
+    val today by viewModel.today.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
     val calendarViewPreference by viewModel.calendarViewPreference.collectAsState()
     val listDisplayModePreference by viewModel.calendarListDisplayModePreference.collectAsState()
 
     CalendarContent(
+        todayDate = TodayCalendarDate(today.year, today.monthNumber, today.dayOfMonth),
         tasksByDay = tasksByDay,
         timelineTasksByDayFlow = viewModel.timelineTasksByDay,
         selectedListDayTasksFlow = viewModel.selectedListDayTasks,
@@ -129,6 +185,8 @@ fun CalendarScreen(
         onListDaySelected = { viewModel.selectListDay(it) },
         onMonthDaySelected = { year, month, day -> viewModel.selectMonthDay(year, month, day) },
         onMonthDayCleared = { viewModel.clearMonthSelectedDay() },
+        widgetNavigationEvent = widgetNavigationEvent,
+        onWidgetNavigationConsumed = onWidgetNavigationConsumed,
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onSelectedDateChanged = onSelectedDateChanged,
@@ -151,6 +209,7 @@ fun CalendarScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CalendarContent(
+    todayDate: TodayCalendarDate,
     tasksByDay: Map<Long, List<Task>>,
     timelineTasksByDayFlow: StateFlow<Map<Long, CalendarDayTasks>>,
     selectedListDayTasksFlow: StateFlow<List<Task>>,
@@ -163,6 +222,8 @@ private fun CalendarContent(
     onListDaySelected: (Long) -> Unit,
     onMonthDaySelected: (Int, Int, Int) -> Unit,
     onMonthDayCleared: () -> Unit,
+    widgetNavigationEvent: WidgetNavigationEvent?,
+    onWidgetNavigationConsumed: (Long) -> Unit,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
@@ -176,20 +237,6 @@ private fun CalendarContent(
     val dimens = OpenTasksTheme.dimens
     val topBarHeight = dimens.topBarHeight + statusBarHeight
 
-    var todayDate by remember { mutableStateOf(currentTodayCalendarDate()) }
-    LifecycleResumeEffect(Unit) {
-        todayDate = currentTodayCalendarDate()
-        onPauseOrDispose { }
-    }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(MILLIS_PER_MINUTE)
-            val latestToday = currentTodayCalendarDate()
-            if (latestToday != todayDate) {
-                todayDate = latestToday
-            }
-        }
-    }
     val todayYear = todayDate.year
     val todayMonth = todayDate.month
     val todayDay = todayDate.day
@@ -239,6 +286,25 @@ private fun CalendarContent(
         derivedStateOf {
             todayYear + (yearPagerState.currentPage - YEAR_PAGER_CENTRE)
         }
+    }
+    var yearViewMonth by remember { mutableStateOf(todayMonth) }
+
+    LaunchedEffect(widgetNavigationEvent?.id) {
+        val event = widgetNavigationEvent ?: return@LaunchedEffect
+        val date = event.calendarDate ?: run {
+            onWidgetNavigationConsumed(event.id)
+            return@LaunchedEffect
+        }
+        val targetPage = monthPagerPageFor(todayYear, todayMonth, date.year, date.month)
+            ?: run {
+                onWidgetNavigationConsumed(event.id)
+                return@LaunchedEffect
+            }
+        pagerState.scrollToPage(targetPage)
+        onMonthDaySelected(date.year, date.month, date.day)
+        selectedDay = widgetCalendarDay(date)
+        onCalendarViewChanged(CalendarViewType.MONTH)
+        onWidgetNavigationConsumed(event.id)
     }
 
     // ── List-view week-pager state ───
@@ -362,9 +428,9 @@ private fun CalendarContent(
             )
         }
     }
-    LaunchedEffect(currentView, displayedYear, displayedMonth) {
+    LaunchedEffect(currentView, yearViewYear, yearViewMonth) {
         if (currentView == CalendarViewType.YEAR) {
-            onSelectedDateChanged(displayedYear, displayedMonth, 0)
+            onSelectedDateChanged(yearViewYear, yearViewMonth, 0)
         }
     }
 
@@ -373,8 +439,8 @@ private fun CalendarContent(
         year: Int,
         month: Int
     ) {
-        val offset = (year - todayYear) * 12 + (month - todayMonth)
-        scope.launch { pagerState.scrollToPage(centreIndex + offset) }
+        val targetPage = monthPagerPageFor(todayYear, todayMonth, year, month) ?: return
+        scope.launch { pagerState.scrollToPage(targetPage) }
         onCalendarViewChanged(CalendarViewType.MONTH)
     }
 
@@ -386,6 +452,30 @@ private fun CalendarContent(
         CalendarViewType.WEEK -> calendarMonthName(weekViewCalendarMonth)
         CalendarViewType.THREE_DAY -> calendarMonthName(threeDayMonth)
         CalendarViewType.DAY -> calendarMonthName(dayViewMonth)
+    }
+
+    val activePagerState = when (currentView) {
+        CalendarViewType.LIST -> weekPagerState
+        CalendarViewType.YEAR -> yearPagerState
+        CalendarViewType.MONTH -> pagerState
+        CalendarViewType.WEEK -> weekViewPagerState
+        CalendarViewType.THREE_DAY -> threeDayPagerState
+        CalendarViewType.DAY -> dayViewPagerState
+    }
+    val isMonthPagerCollapsed by remember(currentView, selectedDay) {
+        derivedStateOf { currentView == CalendarViewType.MONTH && selectedDay != null }
+    }
+    val canNavigateCalendar = !activePagerState.isScrollInProgress && !isMonthPagerCollapsed
+    val canNavigatePrevious = canNavigateCalendar && activePagerState.canScrollBackward
+    val canNavigateNext = canNavigateCalendar && activePagerState.canScrollForward
+
+    fun navigateCalendarBy(pageDelta: Int) {
+        if (activePagerState.isScrollInProgress || isMonthPagerCollapsed) return
+        val targetPage = (activePagerState.currentPage + pageDelta)
+            .coerceIn(0, activePagerState.pageCount - 1)
+        if (targetPage != activePagerState.currentPage) {
+            scope.launch { activePagerState.animateScrollToPage(targetPage) }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -545,9 +635,13 @@ private fun CalendarContent(
                         onMonthDayCleared()
                     }
                 } else if (currentView == CalendarViewType.YEAR) {
-                    onCalendarViewChanged(CalendarViewType.MONTH)
+                    navigateToMonth(yearViewYear, yearViewMonth)
                 }
             },
+            canNavigatePrevious = canNavigatePrevious,
+            onNavigatePrevious = { navigateCalendarBy(-1) },
+            canNavigateNext = canNavigateNext,
+            onNavigateNext = { navigateCalendarBy(1) },
             listDisplayMode = listDisplayMode,
             onToggleDisplayMode = {
                 onListDisplayModeChanged(
@@ -562,7 +656,32 @@ private fun CalendarContent(
             onViewSelected = { view ->
                 showViewPicker = false
                 if (view == CalendarViewType.YEAR) {
-                    val targetPage = YEAR_PAGER_CENTRE + (displayedYear - todayYear)
+                    val activeViewDate = calendarYearEntryDate(
+                        currentView = currentView,
+                        listDate = CalendarNavigationDate(
+                            extractYear(listSelectedDayMillis),
+                            extractMonth(listSelectedDayMillis),
+                        ),
+                        yearDate = CalendarNavigationDate(yearViewYear, yearViewMonth),
+                        monthDate = selectedDay?.let {
+                            CalendarNavigationDate(it.year, it.month)
+                        } ?: CalendarNavigationDate(displayedYear, displayedMonth),
+                        weekDate = CalendarNavigationDate(
+                            extractYear(weekViewSundayMillis),
+                            extractMonth(weekViewSundayMillis),
+                        ),
+                        threeDayDate = CalendarNavigationDate(
+                            extractYear(threeDayStartMillis),
+                            extractMonth(threeDayStartMillis),
+                        ),
+                        dayDate = CalendarNavigationDate(
+                            extractYear(dayViewSelectedMillis),
+                            extractMonth(dayViewSelectedMillis),
+                        ),
+                    )
+                    yearViewMonth = activeViewDate.month
+                    val targetPage = (YEAR_PAGER_CENTRE + (activeViewDate.year - todayYear))
+                        .coerceIn(0, yearPagerState.pageCount - 1)
                     scope.launch { yearPagerState.scrollToPage(targetPage) }
                 }
                 onCalendarViewChanged(view)
@@ -582,6 +701,10 @@ internal fun CalendarTopBar(
     currentView: CalendarViewType,
     showBackButton: Boolean,
     onBack: () -> Unit,
+    canNavigatePrevious: Boolean,
+    onNavigatePrevious: () -> Unit,
+    canNavigateNext: Boolean,
+    onNavigateNext: () -> Unit,
     listDisplayMode: ListDisplayMode,
     onToggleDisplayMode: () -> Unit,
     showViewPicker: Boolean,
@@ -591,8 +714,18 @@ internal fun CalendarTopBar(
     onSettingsClick: () -> Unit = {},
 ) {
     OpenTasksTopBar(
-        title = title,
+        titleContent = {
+            CalendarPeriodNavigation(
+                title = title,
+                currentView = currentView,
+                canNavigatePrevious = canNavigatePrevious,
+                onNavigatePrevious = onNavigatePrevious,
+                canNavigateNext = canNavigateNext,
+                onNavigateNext = onNavigateNext,
+            )
+        },
         containerStyle = OpenTasksTopBarContainerStyle.Translucent,
+        centerTitle = true,
         navigationIcon = {
             if (showBackButton) {
                 OpenTasksBackButton(onClick = onBack)
@@ -610,7 +743,7 @@ internal fun CalendarTopBar(
                 IconButton(onClick = onViewPickerToggle) {
                     Icon(
                         painter = painterResource(Res.drawable.ic_list),
-                        contentDescription = null,
+                        contentDescription = stringResource(Res.string.choose_calendar_view),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(dimens.iconLarge),
                     )
@@ -630,6 +763,49 @@ internal fun CalendarTopBar(
 }
 
 @Composable
+private fun CalendarPeriodNavigation(
+    title: String,
+    currentView: CalendarViewType,
+    canNavigatePrevious: Boolean,
+    onNavigatePrevious: () -> Unit,
+    canNavigateNext: Boolean,
+    onNavigateNext: () -> Unit,
+) {
+    val dimens = OpenTasksTheme.dimens
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(
+            onClick = onNavigatePrevious,
+            enabled = canNavigatePrevious,
+        ) {
+            Icon(
+                painter = painterResource(Res.drawable.ic_chevron_left),
+                contentDescription = stringResource(currentView.previousNavigationLabel()),
+                modifier = Modifier.size(dimens.iconLarge),
+            )
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        IconButton(
+            onClick = onNavigateNext,
+            enabled = canNavigateNext,
+        ) {
+            Icon(
+                painter = painterResource(Res.drawable.ic_chevron_right),
+                contentDescription = stringResource(currentView.nextNavigationLabel()),
+                modifier = Modifier.size(dimens.iconLarge),
+            )
+        }
+    }
+}
+
+@Composable
 private fun DisplayModeToggle(
     displayMode: ListDisplayMode,
     onToggle: () -> Unit,
@@ -643,11 +819,34 @@ private fun DisplayModeToggle(
                     ListDisplayMode.CARD -> Res.drawable.ic_schedule
                 }
             ),
-            contentDescription = null,
+            contentDescription = stringResource(
+                when (displayMode) {
+                    ListDisplayMode.TIMELINE -> Res.string.show_card_view
+                    ListDisplayMode.CARD -> Res.string.show_timeline_view
+                }
+            ),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(dimens.iconLarge),
         )
     }
+}
+
+private fun CalendarViewType.previousNavigationLabel(): StringResource = when (this) {
+    CalendarViewType.MONTH -> Res.string.previous_month
+    CalendarViewType.YEAR -> Res.string.previous_year
+    CalendarViewType.LIST,
+    CalendarViewType.WEEK -> Res.string.previous_week
+    CalendarViewType.THREE_DAY,
+    CalendarViewType.DAY -> Res.string.previous_day
+}
+
+private fun CalendarViewType.nextNavigationLabel(): StringResource = when (this) {
+    CalendarViewType.MONTH -> Res.string.next_month
+    CalendarViewType.YEAR -> Res.string.next_year
+    CalendarViewType.LIST,
+    CalendarViewType.WEEK -> Res.string.next_week
+    CalendarViewType.THREE_DAY,
+    CalendarViewType.DAY -> Res.string.next_day
 }
 
 // ── View Picker Dropdown ────────────────────────────────────────────────────
@@ -680,12 +879,6 @@ internal fun ViewPickerDropdown(
 
 private val dimens @Composable get() = OpenTasksTheme.dimens
 
-private fun currentTodayCalendarDate(): TodayCalendarDate =
-    TodayCalendarDate(
-        year = currentYear(),
-        month = currentMonth(),
-        day = currentDay(),
-    )
 
 private fun CalendarViewPreference.toCalendarViewType(): CalendarViewType = when (this) {
     CalendarViewPreference.LIST -> CalendarViewType.LIST

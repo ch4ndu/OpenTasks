@@ -5,6 +5,7 @@ import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.ui.screens.countdown.CreateCountdownContent
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import kotlinx.datetime.LocalDate
 
 @Composable
 @LightDarkPreview
@@ -13,6 +14,7 @@ private fun CreateCountdownContentPreview() {
         CreateCountdownContent(
             editCountdown = null,
             initialType = CountdownType.COUNTDOWN,
+            currentDate = LocalDate(2026, 7, 17),
             onSave = {},
             onBack = {},
         )
@@ -31,6 +33,7 @@ private fun CreateCountdownEditPreview() {
                 countdownType = CountdownType.HOLIDAY,
             ),
             initialType = CountdownType.HOLIDAY,
+            currentDate = LocalDate(2026, 7, 17),
             onSave = {},
             onBack = {},
         )

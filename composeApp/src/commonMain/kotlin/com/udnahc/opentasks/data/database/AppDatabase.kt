@@ -23,7 +23,7 @@ import com.udnahc.opentasks.data.model.TaskTag
 
 @Database(
     entities = [Task::class, Category::class, Note::class, Tag::class, TaskTag::class, AppSettings::class, Countdown::class, Attachment::class],
-    version = 11
+    version = 12
 )
 @TypeConverters(Converters::class)
 @ConstructedBy(AppDatabaseConstructor::class)

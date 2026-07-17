@@ -9,8 +9,18 @@ interface TaskRepository {
     fun observeTaskById(id: String): Flow<Task?>
     suspend fun getTaskByExternalId(externalId: String): Task?
     suspend fun insert(task: Task): Long
-    suspend fun update(task: Task)
-    suspend fun delete(task: Task)
+
+    /**
+     * The sole ordinary existing-task write boundary. The transform receives a
+     * current active row with local timestamps and runs in the Room writer transaction.
+     */
+    suspend fun mutateExisting(id: String, transform: (Task) -> Task?): TaskMutationResult
+
+    /**
+     * Deletes one task and its child relations at the single Room writer boundary.
+     * Paths are returned only after the transaction commits, for best-effort file cleanup.
+     */
+    suspend fun deleteGraph(id: String): TaskGraphDeletionResult
     suspend fun getTasksWithDeadlines(): List<Task>
 
     /** Returns task with raw UTC timestamps for notification scheduling. */
@@ -22,3 +32,21 @@ interface TaskRepository {
     /** Returns all non-deleted tasks with raw UTC timestamps (for export generators). */
     suspend fun getAllTasksOnceUtc(): List<Task>
 }
+
+sealed interface TaskMutationResult {
+    data object Missing : TaskMutationResult
+    data class Existing(val previous: Task, val next: Task?) : TaskMutationResult
+}
+
+sealed interface TaskGraphDeletionResult {
+    data object Missing : TaskGraphDeletionResult
+    data class Deleted(
+        val task: Task,
+        val neverUploadedFilePaths: List<TaskAttachmentFilePaths>,
+    ) : TaskGraphDeletionResult
+}
+
+data class TaskAttachmentFilePaths(
+    val localPath: String,
+    val thumbnailPath: String,
+)

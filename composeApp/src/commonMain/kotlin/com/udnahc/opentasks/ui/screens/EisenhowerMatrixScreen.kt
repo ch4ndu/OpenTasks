@@ -37,7 +37,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
@@ -71,13 +70,15 @@ fun EisenhowerMatrixScreen(
     isRefreshing: Boolean = false,
     onRefresh: () -> Unit = {},
 ) {
-    val tasksByPriority by viewModel.tasksByPriority.collectAsState()
+    val priorityProjections by viewModel.priorityProjections.collectAsState()
     val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
+    val taskDueTextById by viewModel.taskDueTextById.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
 
     EisenhowerMatrixContent(
-        tasksByPriority = tasksByPriority,
+        priorityProjections = priorityProjections,
         taskImageSummaries = taskImageSummaries,
+        taskDueTextById = taskDueTextById,
         onTaskClick = onTaskClick,
         onToggleComplete = { viewModel.toggleComplete(it) },
         onQuadrantClick = onQuadrantClick,
@@ -97,8 +98,9 @@ fun EisenhowerMatrixScreen(
 
 @Composable
 internal fun EisenhowerMatrixContent(
-    tasksByPriority: Map<TaskPriority, List<Task>>,
+    priorityProjections: Map<TaskPriority, MatrixViewModel.PriorityProjection>,
     taskImageSummaries: Map<String, AttachmentSummary> = emptyMap(),
+    taskDueTextById: Map<String, String> = emptyMap(),
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onQuadrantClick: (TaskPriority) -> Unit = {},
@@ -115,10 +117,10 @@ internal fun EisenhowerMatrixContent(
             MatrixHeader(onSettingsClick = onSettingsClick)
 
             // 2x2 Grid
-            val highTasks = tasksByPriority[TaskPriority.HIGH].orEmpty()
-            val lowTasks = tasksByPriority[TaskPriority.LOW].orEmpty()
-            val mediumTasks = tasksByPriority[TaskPriority.MEDIUM].orEmpty()
-            val noneTasks = tasksByPriority[TaskPriority.NONE].orEmpty()
+            val highTasks = priorityProjections[TaskPriority.HIGH] ?: MatrixViewModel.PriorityProjection()
+            val lowTasks = priorityProjections[TaskPriority.LOW] ?: MatrixViewModel.PriorityProjection()
+            val mediumTasks = priorityProjections[TaskPriority.MEDIUM] ?: MatrixViewModel.PriorityProjection()
+            val noneTasks = priorityProjections[TaskPriority.NONE] ?: MatrixViewModel.PriorityProjection()
 
             QuadrantGrid(
                 highTasks = highTasks,
@@ -126,6 +128,7 @@ internal fun EisenhowerMatrixContent(
                 mediumTasks = mediumTasks,
                 noneTasks = noneTasks,
                 taskImageSummaries = taskImageSummaries,
+                taskDueTextById = taskDueTextById,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
                 onQuadrantClick = onQuadrantClick,
@@ -164,11 +167,12 @@ internal fun MatrixHeader(
 
 @Composable
 private fun QuadrantGrid(
-    highTasks: List<Task>,
-    lowTasks: List<Task>,
-    mediumTasks: List<Task>,
-    noneTasks: List<Task>,
+    highTasks: MatrixViewModel.PriorityProjection,
+    lowTasks: MatrixViewModel.PriorityProjection,
+    mediumTasks: MatrixViewModel.PriorityProjection,
+    noneTasks: MatrixViewModel.PriorityProjection,
     taskImageSummaries: Map<String, AttachmentSummary>,
+    taskDueTextById: Map<String, String>,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onQuadrantClick: (TaskPriority) -> Unit,
@@ -192,8 +196,9 @@ private fun QuadrantGrid(
                 title = stringResource(Res.string.urgent_important),
                 badge = "I",
                 color = PriorityHigh,
-                tasks = highTasks,
+                priorityProjection = highTasks,
                 taskImageSummaries = taskImageSummaries,
+                taskDueTextById = taskDueTextById,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
                 onCardClick = { onQuadrantClick(TaskPriority.HIGH) },
@@ -203,8 +208,9 @@ private fun QuadrantGrid(
                 title = stringResource(Res.string.urgent_unimportant),
                 badge = "III",
                 color = PriorityLow,
-                tasks = lowTasks,
+                priorityProjection = lowTasks,
                 taskImageSummaries = taskImageSummaries,
+                taskDueTextById = taskDueTextById,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
                 onCardClick = { onQuadrantClick(TaskPriority.LOW) },
@@ -221,8 +227,9 @@ private fun QuadrantGrid(
                 title = stringResource(Res.string.not_urgent_important),
                 badge = "II",
                 color = PriorityMedium,
-                tasks = mediumTasks,
+                priorityProjection = mediumTasks,
                 taskImageSummaries = taskImageSummaries,
+                taskDueTextById = taskDueTextById,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
                 onCardClick = { onQuadrantClick(TaskPriority.MEDIUM) },
@@ -232,8 +239,9 @@ private fun QuadrantGrid(
                 title = stringResource(Res.string.not_urgent_unimportant),
                 badge = "IV",
                 color = PriorityNone,
-                tasks = noneTasks,
+                priorityProjection = noneTasks,
                 taskImageSummaries = taskImageSummaries,
+                taskDueTextById = taskDueTextById,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
                 onCardClick = { onQuadrantClick(TaskPriority.NONE) },
@@ -249,15 +257,14 @@ internal fun QuadrantCard(
     title: String,
     badge: String,
     color: Color,
-    tasks: List<Task>,
+    priorityProjection: MatrixViewModel.PriorityProjection,
     taskImageSummaries: Map<String, AttachmentSummary> = emptyMap(),
+    taskDueTextById: Map<String, String> = emptyMap(),
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onCardClick: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
-    val hasMore = tasks.size > QUADRANT_MAX_VISIBLE
-
     Card(
         onClick = onCardClick,
         modifier = modifier,
@@ -275,10 +282,11 @@ internal fun QuadrantCard(
             LazyColumn(
                 modifier = Modifier.weight(1f),
             ) {
-                items(tasks.take(QUADRANT_MAX_VISIBLE), key = { it.id }) { task ->
+                items(priorityProjection.visibleTasks, key = { it.id }) { task ->
                     QuadrantTaskRow(
                         task = task,
                         imageSummary = taskImageSummaries[task.id],
+                        dueText = taskDueTextById[task.id].orEmpty(),
                         color = color,
                         onToggleComplete = { onToggleComplete(task) },
                         onClick = { onTaskClick(task) },
@@ -287,14 +295,12 @@ internal fun QuadrantCard(
                 }
             }
 
-            if (hasMore) {
+            if (priorityProjection.hasMore) {
                 ViewMoreLabel()
             }
         }
     }
 }
-
-private const val QUADRANT_MAX_VISIBLE = 6
 
 @Composable
 private fun QuadrantCardHeader(
@@ -349,6 +355,7 @@ private fun ViewMoreLabel() {
 internal fun QuadrantTaskRow(
     task: Task,
     imageSummary: AttachmentSummary? = null,
+    dueText: String = "",
     color: Color,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
@@ -406,9 +413,9 @@ internal fun QuadrantTaskRow(
                 overflow = TextOverflow.Ellipsis,
             )
             // Show deadline date if present
-            if (task.deadline != null && task.status != TaskStatus.DONE) {
+            if (dueText.isNotBlank() && task.status != TaskStatus.DONE) {
                 Text(
-                    text = formatDateShort(task.deadline),
+                    text = dueText,
                     style = MaterialTheme.typography.labelSmall,
                     color = DateOrange,
                 )

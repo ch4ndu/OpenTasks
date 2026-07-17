@@ -45,6 +45,10 @@ class SyncRecordMappingTest {
             isDeleted = true,
             createdAt = 10L,
             updatedAt = 20L,
+        ).copy(
+            recurrenceType = com.udnahc.opentasks.data.model.RecurrenceType.MONTHLY,
+            recurrenceAnchorDay = 31,
+            completedAt = 1_500L,
         )
 
         val record = task.toTaskRecord()
@@ -56,6 +60,10 @@ class SyncRecordMappingTest {
         assertTrue(roundTrip.isSynced)
         assertEquals(task.isDeleted, roundTrip.isDeleted)
         assertEquals(task.updatedAt, roundTrip.updatedAt)
+        assertEquals(31, record.recurrenceAnchorDay)
+        assertEquals(31, roundTrip.recurrenceAnchorDay)
+        assertEquals(1_500L, record.completedAt)
+        assertEquals(1_500L, roundTrip.completedAt)
     }
 
     @Test

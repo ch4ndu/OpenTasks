@@ -32,11 +32,18 @@ class PocketBaseClientProvider {
             protocol = endpoint.protocol
             host = endpoint.host
             port = endpoint.port
-        })
+        }).also { knownEndpoints[it] = endpoint }
 
     fun disconnect() {
         _client = null
         _endpoint = null
+    }
+
+    companion object {
+        private val knownEndpoints = mutableMapOf<PocketbaseClient, PocketBaseEndpoint>()
+
+        /** The canonical endpoint used to construct a client, including detached candidates. */
+        fun endpointFor(client: PocketbaseClient): PocketBaseEndpoint? = knownEndpoints[client]
     }
 }
 

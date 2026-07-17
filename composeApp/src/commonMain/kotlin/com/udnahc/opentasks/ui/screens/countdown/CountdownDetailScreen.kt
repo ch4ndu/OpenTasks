@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import com.udnahc.opentasks.domain.usecase.countdown.CountdownOccurrence
-import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownOccurrence
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
 import com.udnahc.opentasks.ui.screens.OpenTasksBackButton
@@ -219,7 +218,9 @@ private val previewCountdownSource = com.udnahc.opentasks.data.model.Countdown(
     countingMode = CountingMode.COUNTDOWN,
 )
 
-internal val previewCountdown = projectCountdownOccurrence(
-    previewCountdownSource,
-    LocalDate(2026, 1, 1),
+internal val previewCountdown = CountdownOccurrence(
+    countdown = previewCountdownSource,
+    effectiveTargetDate = 1775088000000L,
+    effectiveDate = LocalDate(2026, 4, 1),
+    daysUntil = 90,
 )

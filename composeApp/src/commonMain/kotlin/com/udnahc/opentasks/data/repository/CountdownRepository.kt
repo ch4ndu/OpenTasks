@@ -8,7 +8,8 @@ interface CountdownRepository {
     fun observeCountdownById(id: String): Flow<Countdown?>
     suspend fun getCountdownById(id: String): Countdown?
     suspend fun getCountdownByIdUtc(id: String): Countdown?
-    suspend fun getCountdownsWithTargetsUtc(): List<Countdown>
+    /** Includes tombstones so reminder reconciliation can cancel removed countdown occurrences. */
+    suspend fun getAllCountdownsForReminderReconciliationUtc(): List<Countdown>
     suspend fun insert(countdown: Countdown)
     suspend fun update(countdown: Countdown)
     suspend fun delete(countdown: Countdown)

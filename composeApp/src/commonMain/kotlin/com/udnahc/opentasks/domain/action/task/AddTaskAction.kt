@@ -17,6 +17,8 @@ class AddTaskAction(
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
 ) {
+    private val coordinator = TaskWriteCoordinator(repository)
+
     suspend operator fun invoke(
         title: String,
         content: String,
@@ -69,10 +71,10 @@ class AddTaskAction(
             createdAt = now,
             updatedAt = now,
         )
-        repository.insert(task)
+        val persisted = coordinator.create(task)
         log.v { "Task created: id=${task.id}" }
-        rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(task.id) }
-            ?: scheduleTaskRemindersAction(task.id)
-        return task
+        rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(persisted.id) }
+            ?: scheduleTaskRemindersAction(persisted.id)
+        return persisted
     }
 }

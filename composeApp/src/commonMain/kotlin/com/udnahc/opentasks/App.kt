@@ -1,7 +1,6 @@
 package com.udnahc.opentasks
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -45,14 +44,15 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
-import com.udnahc.opentasks.data.extensions.currentDay
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.TaskFormData
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
@@ -64,6 +64,7 @@ import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionU
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import com.udnahc.opentasks.navigation.AppNavController
 import com.udnahc.opentasks.navigation.Screen
+import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
 import com.udnahc.opentasks.ui.screens.CreateNoteBottomSheet
 import com.udnahc.opentasks.ui.screens.CreateTaskScreen
 import com.udnahc.opentasks.ui.screens.EisenhowerMatrixScreen
@@ -128,18 +129,15 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.lighthousegames.logging.logging
+import kotlinx.datetime.LocalDate
 
-private val IosTransitionEasing = CubicBezierEasing(0.2833f, 0.99f, 0.31833f, 0.99f)
 private val log = logging("App")
-
-private fun isTabScreen(key: Any): Boolean =
-    key is Screen.Matrix || key is Screen.TaskList || key is Screen.Calendar || key is Screen.Notes || key is Screen.Countdown
 
 @Composable
 fun App(
     deepLinkNotificationEvent: NotificationDeepLinkEvent? = null,
     deepLinkCountdownId: String = "",
-    widgetAction: String = "",
+    widgetNavigationEvent: WidgetNavigationEvent? = null,
 ) {
     val settingsViewModel: SettingsViewModel = koinViewModel()
     val themeMode by settingsViewModel.themePreference.collectAsState()
@@ -155,6 +153,7 @@ fun App(
         val rebuildReminderQueueAction = koinInject<RebuildReminderQueueAction>()
         val triggerSyncAction = koinInject<TriggerSyncAction>()
         val localDaySignal = koinInject<LocalDaySignal>()
+        val currentDate by localDaySignal.dates.collectAsState(initial = localDaySignal.snapshot())
         val isSyncInitialized = remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             withContext(Dispatchers.IO) {
@@ -216,17 +215,33 @@ fun App(
                 }
             }
         }
-        if (widgetAction.isNotEmpty()) {
-            LaunchedEffect(widgetAction) {
-                when (widgetAction) {
-                    "create_task" -> navController.navigate(Screen.CreateTask())
-                    "view_list" -> navController.navigateToTab(Screen.TaskList)
+        var calendarNavigationEvent by remember { mutableStateOf<WidgetNavigationEvent?>(null) }
+        LaunchedEffect(widgetNavigationEvent?.id) {
+            val event = widgetNavigationEvent ?: return@LaunchedEffect
+            when (event.action) {
+                WidgetNavigationAction.CREATE_TASK -> navController.navigate(Screen.CreateTask())
+                WidgetNavigationAction.VIEW_LIST -> navController.navigateToTab(Screen.TaskList)
+                WidgetNavigationAction.VIEW_TASK -> {
+                    event.taskId?.takeIf { it.isNotBlank() }?.let { taskId ->
+                        navController.navigate(Screen.EditTask(taskId))
+                    }
+                }
+                WidgetNavigationAction.VIEW_CALENDAR -> {
+                    val date = event.calendarDate?.takeIf { it.isValid } ?: return@LaunchedEffect
+                    calendarNavigationEvent = event.copy(calendarDate = date)
+                    navController.navigateToTab(Screen.Calendar)
                 }
             }
         }
         MainScreen(
             navController = navController,
             backStack = backStack,
+            calendarTodayDay = currentDate.dayOfMonth,
+            currentDate = currentDate,
+            calendarNavigationEvent = calendarNavigationEvent,
+            onCalendarNavigationConsumed = { eventId ->
+                calendarNavigationEvent = consumeCalendarNavigationEvent(calendarNavigationEvent, eventId)
+            },
             taskNotificationEvent = taskNotificationEvent,
             onTaskNotificationDismiss = { taskNotificationEvent = null },
         )
@@ -238,21 +253,53 @@ private data class BottomNavItem(
     val isCalendar: Boolean = false,
 )
 
+private data class TaskFormBackHandler(
+    val owner: Any,
+    val onBack: () -> Unit,
+)
+
+/** An entry-scoped store owns lifecycle; this key also separates form destinations by task. */
+internal fun taskFormViewModelKey(screen: Screen): String = when (screen) {
+    is Screen.CreateTask -> "create:${screen.priorityOrdinal}:${screen.categoryId}:${screen.day}:${screen.month}:${screen.year}"
+    is Screen.EditTask -> "edit:${screen.taskId}"
+    else -> error("TaskFormViewModel is only valid for task-form navigation entries")
+}
+
+/** Keeps a departing form from unregistering the handler that replaced it. */
+internal class TaskFormBackHandlerRegistry {
+    private var handler: TaskFormBackHandler? = null
+
+    fun register(owner: Any, onBack: (() -> Unit)?) {
+        if (onBack == null) {
+            if (handler?.owner == owner) handler = null
+        } else {
+            handler = TaskFormBackHandler(owner, onBack)
+        }
+    }
+
+    fun handle(fallback: () -> Unit) {
+        handler?.onBack?.invoke() ?: fallback()
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreen(
     navController: AppNavController,
     backStack: NavBackStack<NavKey>,
+    calendarTodayDay: Int?,
+    currentDate: LocalDate,
+    calendarNavigationEvent: WidgetNavigationEvent?,
+    onCalendarNavigationConsumed: (Long) -> Unit,
     taskNotificationEvent: NotificationDeepLinkEvent?,
     onTaskNotificationDismiss: () -> Unit,
 ) {
     val noteViewModel: NoteViewModel = koinViewModel()
     val taskNotificationViewModel: TaskNotificationViewModel = koinViewModel()
     val appViewModel: AppViewModel = koinViewModel()
-    val taskNotificationUiState by taskNotificationViewModel.uiState.collectAsState()
     val isRefreshing by appViewModel.isRefreshing.collectAsState()
     val onPullToRefresh = remember(appViewModel) { { appViewModel.triggerSync() } }
-    var selectedListId by rememberSaveable { mutableStateOf("00000000-0000-0000-0000-000000000001") }
+    var selectedListId by rememberSaveable { mutableStateOf(AppConstants.DEFAULT_INBOX_ID) }
     var calendarSelectedYear by remember { mutableIntStateOf(0) }
     var calendarSelectedMonth by remember { mutableIntStateOf(0) }
     var calendarSelectedDay by remember { mutableIntStateOf(0) }
@@ -261,7 +308,7 @@ private fun MainScreen(
     var showImportCalendar by remember { mutableStateOf(false) }
     var showImportIcs by remember { mutableStateOf(false) }
     var showImportCsv by remember { mutableStateOf(false) }
-    var taskFormBackHandler by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val taskFormBackHandlerRegistry = remember { TaskFormBackHandlerRegistry() }
     val snackbarHostState = remember { SnackbarHostState() }
     val checkNotificationPermissionUseCase = koinInject<CheckNotificationPermissionUseCase>()
     val parseIcsUseCase = koinInject<ParseIcsUseCase>()
@@ -359,54 +406,21 @@ private fun MainScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         fun handleBack() {
-            taskFormBackHandler?.invoke() ?: navController.popBackStack()
+            taskFormBackHandlerRegistry.handle { navController.popBackStack() }
+        }
+
+        fun registerTaskFormBackHandler(owner: Any, onBack: (() -> Unit)?) {
+            taskFormBackHandlerRegistry.register(owner, onBack)
         }
 
         NavDisplay(
             backStack = backStack,
             onBack = { handleBack() },
             modifier = Modifier.fillMaxSize(),
-            entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
-//            transitionSpec = {
-//                if (isTabScreen(initialState.key) && isTabScreen(targetState.key)) {
-//                    ContentTransform(
-//                        fadeIn(animationSpec = snap()),
-//                        fadeOut(animationSpec = snap()),
-//                    )
-//                } else {
-//                    ContentTransform(
-//                        slideIntoContainer(
-//                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
-//                            animationSpec = tween(500, easing = IosTransitionEasing),
-//                        ),
-//                        slideOutOfContainer(
-//                            towards = AnimatedContentTransitionScope.SlideDirection.Left,
-//                            targetOffset = { it / 4 },
-//                            animationSpec = tween(500, easing = IosTransitionEasing),
-//                        ),
-//                    )
-//                }
-//            },
-//            popTransitionSpec = {
-//                if (isTabScreen(initialState.key) && isTabScreen(targetState.key)) {
-//                    ContentTransform(
-//                        fadeIn(animationSpec = snap()),
-//                        fadeOut(animationSpec = snap()),
-//                    )
-//                } else {
-//                    ContentTransform(
-//                        slideIntoContainer(
-//                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
-//                            initialOffset = { it / 4 },
-//                            animationSpec = tween(500, easing = IosTransitionEasing),
-//                        ),
-//                        slideOutOfContainer(
-//                            towards = AnimatedContentTransitionScope.SlideDirection.Right,
-//                            animationSpec = tween(500, easing = IosTransitionEasing),
-//                        ),
-//                    )
-//                }
-//            },
+            entryDecorators = listOf(
+                rememberSaveableStateHolderNavEntryDecorator(),
+                rememberViewModelStoreNavEntryDecorator<NavKey>(),
+            ),
             entryProvider = entryProvider {
                 entry<Screen.Matrix> {
                     val matrixViewModel: MatrixViewModel = koinViewModel()
@@ -443,6 +457,8 @@ private fun MainScreen(
                     val calendarViewModel: CalendarViewModel = koinViewModel()
                     CalendarScreen(
                         viewModel = calendarViewModel,
+                        widgetNavigationEvent = calendarNavigationEvent,
+                        onWidgetNavigationConsumed = onCalendarNavigationConsumed,
                         onTaskClick = { task ->
                             if (task.isCountdownItem) {
                                 val countdownId = task.id.removePrefix(COUNTDOWN_ID_PREFIX)
@@ -503,7 +519,9 @@ private fun MainScreen(
                 }
 
                 entry<Screen.CreateTask> { screen ->
-                    val taskFormViewModel: TaskFormViewModel = koinViewModel()
+                    val taskFormViewModel: TaskFormViewModel = koinViewModel(
+                        key = taskFormViewModelKey(screen),
+                    )
                     val categories by taskFormViewModel.categories.collectAsState()
                     val filteredCategories by taskFormViewModel.filteredCategories.collectAsState()
                     val categorySearchQuery by taskFormViewModel.categorySearchQuery.collectAsState()
@@ -530,27 +548,35 @@ private fun MainScreen(
                         onDispose { pendingPostSaveReminderCheck = null }
                     }
                     LaunchedEffect(taskFormViewModel) {
-                        taskFormViewModel.saveEvents.collect { event ->
-                            when (event) {
+                        taskFormViewModel.saveEvent.collect { event ->
+                            val saveEvent = event ?: return@collect
+                            if (!taskFormViewModel.consumeSaveEvent(saveEvent)) return@collect
+                            when (saveEvent) {
                                 is TaskFormSaveEvent.Saved -> {
                                     navController.popBackStack()
-                                    if (event.formData.hasFutureReminder()) {
-                                        pendingPostSaveReminderCheck = event.formData
+                                    if (saveEvent.formData.hasFutureReminder()) {
+                                        pendingPostSaveReminderCheck = saveEvent.formData
                                         requestNotificationPermission()
                                     }
                                 }
 
                                 is TaskFormSaveEvent.TaskCreatedWithImageError -> {
-                                    navController.replaceTop(Screen.EditTask(event.taskId))
+                                    navController.replaceTop(Screen.EditTask(saveEvent.taskId))
                                     snackbarScope.launch {
                                         snackbarHostState.showSnackbar(getString(Res.string.image_save_partial_failed))
-                                        requestPostSaveReminderCheck(event.formData)
+                                        requestPostSaveReminderCheck(saveEvent.formData)
                                     }
                                 }
 
                                 is TaskFormSaveEvent.ImagesFailed -> Unit
 
                                 is TaskFormSaveEvent.Error -> {
+                                    snackbarScope.launch {
+                                        snackbarHostState.showSnackbar(getString(Res.string.task_save_failed))
+                                    }
+                                }
+
+                                is TaskFormSaveEvent.StaleOccurrence -> {
                                     snackbarScope.launch {
                                         snackbarHostState.showSnackbar(getString(Res.string.task_save_failed))
                                     }
@@ -568,6 +594,7 @@ private fun MainScreen(
                         initialDay = screen.day,
                         initialMonth = screen.month,
                         initialYear = screen.year,
+                        currentDate = currentDate,
                         categories = categories,
                         filteredCategories = filteredCategories,
                         categorySearchQuery = categorySearchQuery,
@@ -582,12 +609,14 @@ private fun MainScreen(
                         onRemovePendingImage = { taskFormViewModel.removePendingImage(it) },
                         onDiscardPendingImages = { taskFormViewModel.discardPendingImages() },
                         confirmDiscardPendingImagesOnBack = true,
-                        onBackRequestChanged = { taskFormBackHandler = it },
+                        onBackRequestChanged = ::registerTaskFormBackHandler,
                     )
                 }
 
                 entry<Screen.EditTask> { screen ->
-                    val taskFormViewModel: TaskFormViewModel = koinViewModel()
+                    val taskFormViewModel: TaskFormViewModel = koinViewModel(
+                        key = taskFormViewModelKey(screen),
+                    )
                     var pendingPostSaveReminderCheck by remember {
                         mutableStateOf<TaskFormData?>(
                             null
@@ -609,12 +638,14 @@ private fun MainScreen(
                         onDispose { pendingPostSaveReminderCheck = null }
                     }
                     LaunchedEffect(taskFormViewModel) {
-                        taskFormViewModel.saveEvents.collect { event ->
-                            when (event) {
+                        taskFormViewModel.saveEvent.collect { event ->
+                            val saveEvent = event ?: return@collect
+                            if (!taskFormViewModel.consumeSaveEvent(saveEvent)) return@collect
+                            when (saveEvent) {
                                 is TaskFormSaveEvent.Saved -> {
                                     navController.popBackStack()
-                                    if (event.formData.hasFutureReminder()) {
-                                        pendingPostSaveReminderCheck = event.formData
+                                    if (saveEvent.formData.hasFutureReminder()) {
+                                        pendingPostSaveReminderCheck = saveEvent.formData
                                         requestNotificationPermission()
                                     }
                                 }
@@ -624,14 +655,20 @@ private fun MainScreen(
                                 is TaskFormSaveEvent.ImagesFailed -> {
                                     snackbarScope.launch {
                                         snackbarHostState.showSnackbar(getString(Res.string.image_save_partial_failed))
-                                        if (event.formData.hasFutureReminder()) {
-                                            pendingPostSaveReminderCheck = event.formData
+                                        if (saveEvent.formData.hasFutureReminder()) {
+                                            pendingPostSaveReminderCheck = saveEvent.formData
                                             requestNotificationPermission()
                                         }
                                     }
                                 }
 
                                 is TaskFormSaveEvent.Error -> {
+                                    snackbarScope.launch {
+                                        snackbarHostState.showSnackbar(getString(Res.string.task_save_failed))
+                                    }
+                                }
+
+                                is TaskFormSaveEvent.StaleOccurrence -> {
                                     snackbarScope.launch {
                                         snackbarHostState.showSnackbar(getString(Res.string.task_save_failed))
                                     }
@@ -647,11 +684,14 @@ private fun MainScreen(
                     val filteredCategories by taskFormViewModel.filteredCategories.collectAsState()
                     val categorySearchQuery by taskFormViewModel.categorySearchQuery.collectAsState()
                     val isSaving by taskFormViewModel.isSaving.collectAsState()
+                    val pendingFormCompletion by taskFormViewModel.pendingFormCompletion.collectAsState()
+                    val retainedFormDraft by taskFormViewModel.retainedFormDraft.collectAsState()
                     val currentEditTask = editTask
                     if (currentEditTask != null) {
                         CreateTaskScreen(
                             onBack = { navController.popBackStack() },
                             editTask = currentEditTask,
+                            currentDate = currentDate,
                             categories = categories,
                             filteredCategories = filteredCategories,
                             categorySearchQuery = categorySearchQuery,
@@ -660,8 +700,9 @@ private fun MainScreen(
                             },
                             onAddCategory = { name -> taskFormViewModel.addCategory(name) },
                             onSave = { formData ->
-                                taskFormViewModel.saveExistingTask(currentEditTask, formData)
+                                taskFormViewModel.saveExistingTask(screen.taskId, formData)
                             },
+                            retainedFormData = retainedFormDraft,
                             isSaving = isSaving,
                             existingImages = editTaskImages,
                             pendingImages = pendingImages,
@@ -669,12 +710,20 @@ private fun MainScreen(
                             onRemovePendingImage = { taskFormViewModel.removePendingImage(it) },
                             onDiscardPendingImages = { taskFormViewModel.discardPendingImages() },
                             confirmDiscardPendingImagesOnBack = true,
-                            onBackRequestChanged = { taskFormBackHandler = it },
+                            onBackRequestChanged = ::registerTaskFormBackHandler,
                             onRemoveTaskImage = { taskFormViewModel.removeTaskImage(it) },
                             onDelete = {
-                                taskFormViewModel.deleteTask(currentEditTask)
+                                taskFormViewModel.deleteTask(screen.taskId)
                                 navController.popBackStack()
                             },
+                        )
+                    }
+                    if (pendingFormCompletion != null) {
+                        CompleteSeriesDialog(
+                            onCompleteOccurrence = taskFormViewModel::confirmPendingFormOccurrence,
+                            onCompleteSeries = taskFormViewModel::confirmPendingFormSeries,
+                            onDismiss = taskFormViewModel::dismissPendingFormCompletion,
+                            enabled = !isSaving,
                         )
                     }
                 }
@@ -698,6 +747,7 @@ private fun MainScreen(
                     CreateCountdownScreen(
                         editCountdown = null,
                         initialType = initialType,
+                        currentDate = currentDate,
                         onSave = { countdown -> viewModel.addCountdown(countdown) },
                         onBack = { navController.popBackStack() },
                     )
@@ -716,8 +766,7 @@ private fun MainScreen(
                         },
                         onDelete = {
                             val current = countdown ?: return@CountdownDetailScreen
-                            viewModel.deleteCountdown(current) {
-                            }
+                            viewModel.deleteCountdown(current)
                             navController.popBackStack()
                         },
                     )
@@ -731,6 +780,7 @@ private fun MainScreen(
                         CreateCountdownScreen(
                             editCountdown = countdown,
                             initialType = countdown.countdownType,
+                            currentDate = currentDate,
                             onSave = { updated ->
                                 viewModel.updateCountdown(updated)
                             },
@@ -751,6 +801,7 @@ private fun MainScreen(
             BottomNavBar(
                 tabs = tabs,
                 selectedTab = selectedTab,
+                calendarTodayDay = calendarTodayDay,
                 onTabSelected = { index ->
                     val target: NavKey = when (index) {
                         0 -> Screen.Matrix
@@ -785,7 +836,7 @@ private fun MainScreen(
                     } else {
                         navController.navigate(
                             Screen.CreateTask(
-                                categoryId = if (selectedTab == 1) selectedListId else "00000000-0000-0000-0000-000000000001",
+                                categoryId = if (selectedTab == 1) selectedListId else AppConstants.DEFAULT_INBOX_ID,
                                 day = if (selectedTab == 2) calendarSelectedDay else 0,
                                 month = if (selectedTab == 2) calendarSelectedMonth else 0,
                                 year = if (selectedTab == 2) calendarSelectedYear else 0,
@@ -840,6 +891,7 @@ private fun MainScreen(
     }
 
     if (taskNotificationEvent != null) {
+        val taskNotificationUiState by taskNotificationViewModel.uiState.collectAsState()
         LaunchedEffect(taskNotificationEvent) {
             taskNotificationViewModel.setNotificationEvent(taskNotificationEvent)
         }
@@ -970,6 +1022,7 @@ private fun TaskFormData.legacyReminderMinutes(): List<Int> {
 private fun BottomNavBar(
     tabs: List<BottomNavItem>,
     selectedTab: Int,
+    calendarTodayDay: Int?,
     onTabSelected: (Int) -> Unit,
 ) {
     NavigationBar(
@@ -983,7 +1036,7 @@ private fun BottomNavBar(
                 onClick = { onTabSelected(index) },
                 icon = {
                     if (item.isCalendar) {
-                        CalendarTabIcon(item.iconRes)
+                        CalendarTabIcon(item.iconRes, calendarTodayDay)
                     } else {
                         Icon(
                             painter = painterResource(item.iconRes),
@@ -1005,7 +1058,10 @@ private fun BottomNavBar(
 }
 
 @Composable
-private fun CalendarTabIcon(iconRes: DrawableResource) {
+private fun CalendarTabIcon(
+    iconRes: DrawableResource,
+    todayDay: Int?,
+) {
     Box(
         modifier = Modifier.size(OpenTasksTheme.dimens.iconNavBar),
         contentAlignment = Alignment.Center,
@@ -1016,7 +1072,7 @@ private fun CalendarTabIcon(iconRes: DrawableResource) {
             modifier = Modifier.fillMaxSize(),
         )
         Text(
-            text = currentDay().toString(),
+            text = todayDay?.toString().orEmpty(),
             style = OpenTasksTheme.typography.calendarDayNumber,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.background,

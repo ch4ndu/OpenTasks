@@ -6,7 +6,9 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import androidx.room.Upsert
+import androidx.room.Transaction
 import com.udnahc.opentasks.data.model.Countdown
+import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -24,6 +26,14 @@ interface CountdownDao {
     @Upsert
     suspend fun upsert(countdown: Countdown)
 
+    @Transaction
+    suspend fun mergeRemoteIfNewer(remote: Countdown): RemoteMergeResult {
+        val local = findCountdownByIdAnyState(remote.id)
+        if (local != null && local.updatedAt >= remote.updatedAt) return RemoteMergeResult.KeptLocal
+        upsert(remote)
+        return RemoteMergeResult.Applied
+    }
+
     @Query("SELECT * FROM countdowns WHERE isDeleted = 0 ORDER BY targetDate ASC")
     fun getAllCountdowns(): Flow<List<Countdown>>
 
@@ -33,8 +43,9 @@ interface CountdownDao {
     @Query("SELECT * FROM countdowns WHERE id = :id")
     suspend fun getCountdownByIdUtc(id: String): Countdown?
 
+    /** Reminder reconciliation must see tombstones so obsolete scheduled occurrences are cancelled. */
     @Query("SELECT * FROM countdowns")
-    suspend fun getCountdownsWithTargetsUtc(): List<Countdown>
+    suspend fun getAllCountdownsForReminderReconciliationUtc(): List<Countdown>
 
     @Query("SELECT * FROM countdowns WHERE id = :id AND isDeleted = 0")
     fun observeCountdownById(id: String): Flow<Countdown?>
@@ -64,6 +75,9 @@ interface CountdownDao {
         id: String,
         pbId: String
     )
+
+    @Query("UPDATE countdowns SET pbId = NULL, isSynced = 0")
+    suspend fun resetSyncMetadataForServerSeed()
 
     @Query("SELECT * FROM countdowns")
     suspend fun getAllCountdownsOnce(): List<Countdown>

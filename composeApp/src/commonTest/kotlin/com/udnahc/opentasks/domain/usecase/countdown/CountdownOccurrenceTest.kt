@@ -144,6 +144,31 @@ class CountdownOccurrenceTest {
         assertEquals(dateMillis(2025, 5, 10), countdown.targetDate)
     }
 
+    @Test
+    fun countdownRecurrenceAlwaysUsesTheImmutableOriginalAnchor() {
+        val januaryThirtyFirst = dateMillis(2026, 1, 31)
+        val monthly = countdown(
+            targetDate = januaryThirtyFirst,
+            recurrenceType = RecurrenceType.MONTHLY,
+        )
+        val leapDay = dateMillis(2024, 2, 29)
+        val yearly = countdown(
+            targetDate = leapDay,
+            recurrenceType = RecurrenceType.YEARLY,
+        )
+
+        assertEquals(
+            dateMillis(2026, 3, 31),
+            nextCountdownOccurrenceOnOrAfter(monthly, LocalDate(2026, 3, 1)),
+        )
+        assertEquals(
+            dateMillis(2028, 2, 29),
+            nextCountdownOccurrenceOnOrAfter(yearly, LocalDate(2028, 1, 1)),
+        )
+        assertEquals(januaryThirtyFirst, monthly.targetDate)
+        assertEquals(leapDay, yearly.targetDate)
+    }
+
     private fun countdown(
         targetDate: Long,
         recurrenceType: RecurrenceType = RecurrenceType.NONE,

@@ -47,8 +47,8 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.calendar_overflow
 import opentasks.composeapp.generated.resources.inbox
-import opentasks.composeapp.generated.resources.no_tasks
 import opentasks.composeapp.generated.resources.today
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
@@ -170,6 +170,11 @@ private fun CollapsibleMonthPager(
         }
 
         val weeks = remember(y, m) { buildMonthWeeks(y, m) }
+        val pageTasksByDay = remember(weeks, tasksByDay) {
+            weeks.flatten().associate { day ->
+                dayKeyFromDate(day.year, day.month, day.day) to tasksByDay[dayKeyFromDate(day.year, day.month, day.day)].orEmpty()
+            }
+        }
         val isCurrentPage = page == pagerState.currentPage
         val pageSelectedDay = if (isCurrentPage) selectedDay else null
         val pageProgress = if (isCurrentPage) progress else 0f
@@ -181,7 +186,7 @@ private fun CollapsibleMonthPager(
             todayDay = todayDay,
             selectedDay = pageSelectedDay,
             collapseProgress = pageProgress,
-            tasksByDay = tasksByDay,
+            tasksByDay = pageTasksByDay,
             onDayClick = onDayClick,
         )
     }
@@ -214,6 +219,11 @@ private fun StackedMonthEvents(
     }
     val currentWeeks = remember(pageYear, pageMonth) { buildMonthWeeks(pageYear, pageMonth) }
     val selectedWeek = currentWeeks.firstOrNull { week -> week.any { it == selectedDay } }
+    val selectedWeekTasks = remember(selectedWeek, tasksByDay) {
+        selectedWeek.orEmpty().map { day ->
+            day to tasksByDay[dayKeyFromDate(day.year, day.month, day.day)].orEmpty()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -229,10 +239,8 @@ private fun StackedMonthEvents(
                     .padding(horizontal = dimens.paddingSmall),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                selectedWeek.forEach { day ->
-                    val isSelected = day == selectedDay
-                    val dk = dayKeyFromDate(day.year, day.month, day.day)
-                    val dayEvents = tasksByDay[dk] ?: emptyList()
+            selectedWeekTasks.forEach { (day, dayEvents) ->
+                val isSelected = day == selectedDay
 
                     Column(
                         modifier = Modifier
@@ -255,7 +263,7 @@ private fun StackedMonthEvents(
                             .padding(horizontal = 1.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        val (visibleEvents, overflow) = remember(dk, dayEvents, 5) {
+                        val (visibleEvents, overflow) = remember(dayEvents) {
                             truncateWithOverflow(dayEvents, 5)
                         }
                         visibleEvents.forEach { task ->
@@ -280,7 +288,7 @@ private fun StackedMonthEvents(
                         }
                         if (overflow > 0) {
                             Text(
-                                text = "+$overflow",
+                                text = stringResource(Res.string.calendar_overflow, overflow),
                                 style = OpenTasksTheme.typography.calendarEventOverflow,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -357,17 +365,7 @@ private fun MonthSelectedTaskList(
 
             if (selectedTasks.isEmpty()) {
                 item(key = "empty") {
-                    Box(
-                        modifier = Modifier.fillMaxWidth()
-                            .padding(vertical = dimens.calendarEmptyPadding),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = stringResource(Res.string.no_tasks),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    EmptyDayPlaceholder()
                 }
             }
         }
@@ -433,14 +431,17 @@ private fun AnimatedMonthGrid(
                         .alpha(rowAlpha),
                 ) {
                     WeekRowContent(
-                        week = week,
+                        weekTasks = remember(week, tasksByDay) {
+                            week.map { day ->
+                                day to tasksByDay[dayKeyFromDate(day.year, day.month, day.day)].orEmpty()
+                            }
+                        },
                         todayYear = todayYear,
                         todayMonth = todayMonth,
                         todayDay = todayDay,
                         selectedDay = selectedDay,
                         collapseProgress = collapseProgress,
                         isSelectedWeek = weekIndex == selectedWeekIndex,
-                        tasksByDay = tasksByDay,
                         onDayClick = onDayClick,
                     )
                 }
@@ -453,14 +454,13 @@ private fun AnimatedMonthGrid(
 
 @Composable
 private fun WeekRowContent(
-    week: List<CalendarDay>,
+    weekTasks: List<Pair<CalendarDay, List<Task>>>,
     todayYear: Int,
     todayMonth: Int,
     todayDay: Int,
     selectedDay: CalendarDay?,
     collapseProgress: Float,
     isSelectedWeek: Boolean,
-    tasksByDay: Map<Long, List<Task>>,
     onDayClick: (CalendarDay) -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -470,11 +470,10 @@ private fun WeekRowContent(
             .padding(horizontal = dimens.paddingSmall),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        week.forEach { day ->
+        weekTasks.forEach { (day, dayTasks) ->
             val isToday = day.year == todayYear && day.month == todayMonth && day.day == todayDay
             val isSelected = day == selectedDay
             val dk = dayKeyFromDate(day.year, day.month, day.day)
-            val dayTasks = tasksByDay[dk] ?: emptyList()
 
             Column(
                 modifier = Modifier
@@ -576,7 +575,7 @@ private fun WeekRowContent(
                             }
                             if (overflow > 0) {
                                 Text(
-                                    text = "+$overflow",
+                                text = stringResource(Res.string.calendar_overflow, overflow),
                                     style = OpenTasksTheme.typography.calendarEventOverflow,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier

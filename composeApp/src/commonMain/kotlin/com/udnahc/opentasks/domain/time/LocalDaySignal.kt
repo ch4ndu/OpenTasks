@@ -33,6 +33,9 @@ class LocalDaySignal(
         .map { currentDate() }
         .distinctUntilChanged()
 
+    /** Initial composition snapshot from the same clock source as [dates]. */
+    fun snapshot(): LocalDate = currentDate()
+
     fun refresh() {
         refreshes.tryEmit(Unit)
     }

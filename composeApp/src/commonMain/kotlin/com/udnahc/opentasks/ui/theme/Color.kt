@@ -46,3 +46,9 @@ fun priorityColor(priority: TaskPriority): Color = when (priority) {
     TaskPriority.LOW -> PriorityLow
     TaskPriority.NONE -> PriorityNone
 }
+
+fun kanbanStatusColor(status: com.udnahc.opentasks.data.model.TaskStatus): Color = when (status) {
+    com.udnahc.opentasks.data.model.TaskStatus.TODO -> PrimaryBlue
+    com.udnahc.opentasks.data.model.TaskStatus.IN_PROGRESS -> Color(0xFFFF9800)
+    com.udnahc.opentasks.data.model.TaskStatus.DONE -> Color(0xFF4CAF50)
+}

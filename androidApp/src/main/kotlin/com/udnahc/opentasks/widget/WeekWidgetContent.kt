@@ -35,6 +35,11 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
+import com.udnahc.opentasks.ACTION_VIEW_CALENDAR
+import com.udnahc.opentasks.EXTRA_WIDGET_ACTION
+import com.udnahc.opentasks.EXTRA_WIDGET_CALENDAR_DAY
+import com.udnahc.opentasks.EXTRA_WIDGET_CALENDAR_MONTH
+import com.udnahc.opentasks.EXTRA_WIDGET_CALENDAR_YEAR
 import com.udnahc.opentasks.R
 import android.content.Context as AndroidContext
 
@@ -48,10 +53,10 @@ private fun weekDayIntent(
 ): Intent =
     Intent().apply {
         component = ComponentName(PKG, MAIN_ACTIVITY)
-        putExtra("widget_action", "view_calendar")
-        putExtra("calendar_year", year)
-        putExtra("calendar_month", month)
-        putExtra("calendar_day", day)
+        putExtra(EXTRA_WIDGET_ACTION, ACTION_VIEW_CALENDAR)
+        putExtra(EXTRA_WIDGET_CALENDAR_YEAR, year)
+        putExtra(EXTRA_WIDGET_CALENDAR_MONTH, month)
+        putExtra(EXTRA_WIDGET_CALENDAR_DAY, day)
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
 
@@ -94,10 +99,9 @@ fun WeekWidgetContent(
     prefs: CalendarWidgetPreferences,
     appWidgetId: Int,
 ) {
-    val isDark = prefs.theme != WidgetTheme.LIGHT
-    val bgColor = widgetResourceColor(if (isDark) R.color.widget_bg_dark else R.color.widget_bg_light)
-    val textColor =
-        widgetResourceColor(if (isDark) R.color.widget_text_white else R.color.widget_text_black)
+    val themeColors = widgetThemeColors(prefs.theme)
+    val bgColor = widgetResourceColor(themeColors.background)
+    val textColor = widgetResourceColor(themeColors.text)
     val headerColor = widgetResourceColor(R.color.widget_text_gray)
     val todayBgColor = widgetResourceColor(R.color.calendar_widget_today_bg)
     val todayTextColor = widgetResourceColor(R.color.calendar_widget_today_text)

@@ -76,7 +76,7 @@ fun extractMinute(localMillis: Long): Int =
  * Algorithm adapted from Howard Hinnant's `civil_from_days`.
  */
 private fun civilFromMillis(localMillis: Long): Triple<Int, Int, Int> {
-    val z = (localMillis / MILLIS_PER_DAY) + 719468
+    val z = floorDiv(localMillis, MILLIS_PER_DAY) + 719468
     val era = (if (z >= 0) z else z - 146096) / 146097
     val doe = (z - era * 146097).toInt()                 // day of era [0, 146096]
     val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
@@ -158,6 +158,7 @@ fun computeNextDeadlineUtc(
     currentDeadlineUtcMillis: Long,
     recurrenceType: String,
     interval: Int = 1,
+    anchorDay: Int? = null,
 ): Long {
     val tz = TimeZone.currentSystemDefault()
     val instant = Instant.fromEpochMilliseconds(currentDeadlineUtcMillis)
@@ -171,11 +172,17 @@ fun computeNextDeadlineUtc(
         "WEEKLY" -> localDt.date.plus(effectiveInterval * 7, DateTimeUnit.DAY)
             .let { LocalDateTime(it, localDt.time) }
 
-        "MONTHLY" -> localDt.date.plus(effectiveInterval, DateTimeUnit.MONTH)
-            .let { LocalDateTime(it, localDt.time) }
+        "MONTHLY" -> anchoredDateTime(
+            localDt,
+            localDt.date.plus(effectiveInterval, DateTimeUnit.MONTH),
+            anchorDay,
+        )
 
-        "YEARLY" -> localDt.date.plus(effectiveInterval, DateTimeUnit.YEAR)
-            .let { LocalDateTime(it, localDt.time) }
+        "YEARLY" -> anchoredDateTime(
+            localDt,
+            localDt.date.plus(effectiveInterval, DateTimeUnit.YEAR),
+            anchorDay,
+        )
 
         "EVERY_WEEKDAY" -> {
             var next = localDt.date.plus(1, DateTimeUnit.DAY)
@@ -199,6 +206,7 @@ fun computeNextDeadlineLocal(
     currentDeadlineLocalMillis: Long,
     recurrenceType: String,
     interval: Int = 1,
+    anchorDay: Int? = null,
 ): Long {
     val localDt = localMillisToLocalDateTime(currentDeadlineLocalMillis)
     val effectiveInterval = if (interval > 0) interval else 1
@@ -210,11 +218,17 @@ fun computeNextDeadlineLocal(
         "WEEKLY" -> localDt.date.plus(effectiveInterval * 7, DateTimeUnit.DAY)
             .let { LocalDateTime(it, localDt.time) }
 
-        "MONTHLY" -> localDt.date.plus(effectiveInterval, DateTimeUnit.MONTH)
-            .let { LocalDateTime(it, localDt.time) }
+        "MONTHLY" -> anchoredDateTime(
+            localDt,
+            localDt.date.plus(effectiveInterval, DateTimeUnit.MONTH),
+            anchorDay,
+        )
 
-        "YEARLY" -> localDt.date.plus(effectiveInterval, DateTimeUnit.YEAR)
-            .let { LocalDateTime(it, localDt.time) }
+        "YEARLY" -> anchoredDateTime(
+            localDt,
+            localDt.date.plus(effectiveInterval, DateTimeUnit.YEAR),
+            anchorDay,
+        )
 
         "EVERY_WEEKDAY" -> {
             var next = localDt.date.plus(1, DateTimeUnit.DAY)
@@ -227,6 +241,16 @@ fun computeNextDeadlineLocal(
         else -> return currentDeadlineLocalMillis // NONE or unknown — no advancement
     }
     return nextLocalDt.toInstant(TimeZone.UTC).toEpochMilliseconds()
+}
+
+private fun anchoredDateTime(
+    source: LocalDateTime,
+    targetMonth: LocalDate,
+    anchorDay: Int?,
+): LocalDateTime {
+    val requestedDay = anchorDay?.takeIf { it in 1..31 } ?: source.dayOfMonth
+    val targetDay = minOf(requestedDay, daysInMonth(targetMonth.year, targetMonth.monthNumber))
+    return LocalDateTime(targetMonth.year, targetMonth.monthNumber, targetDay, source.hour, source.minute, source.second, source.nanosecond)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -261,7 +285,7 @@ fun daysInMonth(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Day key from local-shifted millis. Matches old `millis / 86400000L`. */
-fun dayKey(localMillis: Long): Long = localMillis / MILLIS_PER_DAY
+fun dayKey(localMillis: Long): Long = floorDiv(localMillis, MILLIS_PER_DAY)
 
 /** Day key from a year/month/day. */
 fun dayKeyFromDate(
@@ -269,10 +293,18 @@ fun dayKeyFromDate(
     month: Int,
     day: Int
 ): Long =
-    startOfDayLocalMillis(year, month, day) / MILLIS_PER_DAY
+    floorDiv(startOfDayLocalMillis(year, month, day), MILLIS_PER_DAY)
 
 /** Local-shifted millis from a day key. */
 fun dayKeyToMillis(dayKey: Long): Long = dayKey * MILLIS_PER_DAY
+
+private fun floorDiv(
+    dividend: Long,
+    divisor: Long,
+): Long {
+    val quotient = dividend / divisor
+    return if (dividend % divisor < 0) quotient - 1 else quotient
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  WEEK UTILITIES

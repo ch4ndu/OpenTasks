@@ -18,8 +18,14 @@ class BootReceiver : BroadcastReceiver(), KoinComponent {
     private val rebuildReminderQueueAction: RebuildReminderQueueAction by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-        log.d { "Boot completed, rescheduling all reminders" }
+        when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            Intent.ACTION_TIMEZONE_CHANGED,
+            Intent.ACTION_TIME_CHANGED -> Unit
+            else -> return
+        }
+        log.d { "System time or package event received, rescheduling all reminders" }
 
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
