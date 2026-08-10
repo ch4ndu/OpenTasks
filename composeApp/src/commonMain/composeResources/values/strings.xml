@@ -311,22 +311,61 @@
     <!-- Settings / Sync -->
     <string name="sync">Sync</string>
     <string name="pocketbase_url">PocketBase URL</string>
-    <string name="pocketbase_url_hint">e.g. http://192.168.1.100:8090</string>
+    <string name="pocketbase_url_hint">e.g. https://tasks.example.com or http://192.168.1.100:8090</string>
     <string name="not_configured">Not configured</string>
     <string name="configured">Configured</string>
     <string name="checking_connection">Checking connection...</string>
     <string name="connected">Connected</string>
     <string name="connection_failed">Connection failed</string>
+    <string name="sync_failed">Sync failed</string>
     <string name="sync_error">Sync error</string>
     <string name="syncing">Syncing...</string>
     <string name="clear">Clear</string>
 
     <!-- Settings / Account -->
     <string name="account">Account</string>
+    <string name="account_current">Current account</string>
+    <string name="account_switch">Switch account</string>
+    <string name="account_switch_description">Sign in to another pre-created account on this server.</string>
+    <string name="account_sign_in_title">Sign in to OpenTasks</string>
+    <string name="account_sign_in_description">Sign in with a pre-created account to open your tasks.</string>
+    <string name="account_sign_in">Sign in</string>
+    <string name="account_reauthenticate">Sign in again</string>
+    <string name="account_reauthenticate_description">Your session for %1$s needs to be restored. Enter your credentials to continue.</string>
+    <string name="account_endpoint">PocketBase endpoint</string>
+    <string name="account_endpoint_hint">https://tasks.example.com or http://192.168.1.100:8090</string>
+    <string name="account_endpoint_read_only">Read-only while signed in</string>
+    <string name="account_endpoint_read_only_value">%1$s (read-only while signed in)</string>
+    <string name="account_email">Email</string>
+    <string name="account_password">Password</string>
+    <string name="account_storage_warning">Credential storage note: %1$s</string>
+    <string name="account_restore">Restore session</string>
+    <string name="account_restoring">Restoring your session…</string>
+    <string name="account_restore_failed">Session restoration failed. Retry, or sign in again.</string>
+    <string name="account_retry">Retry</string>
+    <string name="account_dismiss">Dismiss</string>
+    <string name="account_session_invalid_input">Check the email and endpoint. Public servers require HTTPS; HTTP is limited to this device or a private LAN.</string>
+    <string name="account_session_credentials_rejected">The email or password was rejected. Check them and try again.</string>
+    <string name="account_session_connection_failed">OpenTasks could not reach the server. Check the endpoint and connection, then retry.</string>
+    <string name="account_session_server_unsupported">This server is not ready for multi-user OpenTasks. Use the migrated server and retry.</string>
+    <string name="account_session_cache_ownership_unproven">The existing local cache cannot be proven for this account. Sign in as the original account; no data was uploaded.</string>
+    <string name="account_session_transition_blocked">The account change is blocked until local changes sync successfully. Retry after the connection is restored.</string>
+    <string name="account_session_storage_failed">Secure credential storage is unavailable. Fix device keychain access and try again.</string>
+    <string name="account_session_generic_error">The account operation failed. Check the server and retry.</string>
+    <string name="account_session_transitioning">Completing account change</string>
+    <string name="account_session_transition_prepared">The account change is prepared and waiting to replace local data.</string>
+    <string name="account_session_transition_needs_activation">The new account cache is ready and waiting for activation.</string>
+    <string name="account_reauthentication_reason_authentication_rejected">The saved session was rejected. Sign in again to continue.</string>
+    <string name="account_reauthentication_reason_token_unavailable">Saved credentials are unavailable. Sign in again to continue.</string>
+    <string name="account_reauthentication_reason_cache_binding_missing">The local account boundary is missing. Sign in to establish it.</string>
+    <string name="account_reauthentication_reason_cache_binding_mismatch">The saved server or account no longer matches. Sign in with the bound account.</string>
+    <string name="account_reauthentication_reason_capability_mismatch">The server or account capability changed. Confirm the migrated server and account.</string>
+    <string name="account_reauthentication_reason_legacy_cache">The existing local data belongs to another or unverified account. Sign in as the original account.</string>
+    <string name="account_reauthentication_reason_persisted_state">Saved account state is invalid. Sign in again.</string>
     <string name="logout">Logout</string>
-    <string name="logout_description">Delete all local data. Server data will not be affected.</string>
+    <string name="logout_description">Remove this account's local cache. Server data is not deleted.</string>
     <string name="logout_confirm_title">Logout?</string>
-    <string name="logout_confirm_message">This will permanently delete all local tasks, categories, notes, and settings. Data on the server will not be touched. This action cannot be undone.</string>
+    <string name="logout_confirm_message">This clears local tasks, categories, notes, countdowns, and attachments for this account. Server data remains unchanged, and you can sign in again later.</string>
     <string name="clear_local_data_error">Could not clear local data. PocketBase remains disconnected.</string>
 
     <!-- Import -->

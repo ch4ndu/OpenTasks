@@ -4,6 +4,7 @@ package com.udnahc.opentasks.data.sync
 data class PocketBaseServerInventory(
     val serverInstanceId: String,
     val recordsByCollection: Map<String, List<kotlinx.serialization.json.JsonObject>>,
+    val accountId: String? = null,
 ) {
     val isEmpty: Boolean get() = recordsByCollection.values.all { it.isEmpty() }
 }
@@ -19,7 +20,7 @@ class PocketBaseServerInventoryReader(
             throw PocketBaseConnectionException("PocketBase sync capability is unsupported")
         }
         val inventories = COLLECTIONS.associateWith { collection -> readAll(collection) }
-        return PocketBaseServerInventory(meta.serverInstanceId, inventories)
+        return PocketBaseServerInventory(meta.serverInstanceId, inventories, gateway.ownerAccountId)
     }
 
     private suspend fun readAll(collection: String): List<kotlinx.serialization.json.JsonObject> {
@@ -36,7 +37,7 @@ class PocketBaseServerInventoryReader(
     }
 
     companion object {
-        const val CAPABILITY_VERSION = 1
+        const val CAPABILITY_VERSION = 2
         const val PAGE_SIZE = 200
         val COLLECTIONS = listOf("categories", "tags", "tasks", "attachments", "task_tags", "notes", "countdowns")
     }

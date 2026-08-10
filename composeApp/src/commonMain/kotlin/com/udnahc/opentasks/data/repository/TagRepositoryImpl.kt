@@ -6,6 +6,7 @@ import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Tag
 import com.udnahc.opentasks.data.model.TaskTag
+import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +21,7 @@ class TagRepositoryImpl(
     private val tagDao: TagDao,
     private val syncTrigger: SyncTrigger,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mutationGate: AccountMutationGate,
 ) : TagRepository {
 
     override fun getAllTags(): Flow<List<Tag>> =
@@ -40,15 +42,15 @@ class TagRepositoryImpl(
             .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
-    override suspend fun insertTag(tag: Tag): Long {
+    override suspend fun insertTag(tag: Tag): Long = mutationGate.withExclusive {
         val result = withContext(ioDispatcher) {
             tagDao.insertTag(tag.withDefaultTimestamps().withUtcTimestamps())
         }
         syncTrigger.triggerSync()
-        return result
+        result
     }
 
-    override suspend fun deleteTag(tag: Tag) {
+    override suspend fun deleteTag(tag: Tag) = mutationGate.withExclusive {
         withContext(ioDispatcher) {
             tagDao.update(
                 tag.withUtcTimestamps().copy(
@@ -61,7 +63,7 @@ class TagRepositoryImpl(
         syncTrigger.triggerSync()
     }
 
-    override suspend fun insertTaskTag(taskTag: TaskTag) {
+    override suspend fun insertTaskTag(taskTag: TaskTag) = mutationGate.withExclusive {
         val now = localNow()
         val stamped = taskTag.copy(
             isDeleted = false,
@@ -73,7 +75,7 @@ class TagRepositoryImpl(
         syncTrigger.triggerSync()
     }
 
-    override suspend fun deleteTaskTag(taskTag: TaskTag) {
+    override suspend fun deleteTaskTag(taskTag: TaskTag) = mutationGate.withExclusive {
         val now = localNow()
         withContext(ioDispatcher) {
             tagDao.tombstoneTaskTagPreservingCreatedAt(

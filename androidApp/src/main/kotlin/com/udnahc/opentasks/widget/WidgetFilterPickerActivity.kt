@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
+import com.udnahc.opentasks.data.auth.WidgetAccountGate
 import com.udnahc.opentasks.data.model.Category
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -46,6 +47,8 @@ import opentasks.composeapp.generated.resources.widget_filter_today
 import opentasks.composeapp.generated.resources.widget_filter_tomorrow
 import org.jetbrains.compose.resources.stringResource
 import org.lighthousegames.logging.logging
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 private val log = logging("WidgetFilterPicker")
 
@@ -56,7 +59,9 @@ private data class FilterOption(
     val categoryId: String? = null,
 )
 
-class WidgetFilterPickerActivity : ComponentActivity() {
+class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
+
+    private val widgetAccountGate: WidgetAccountGate by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,9 +76,16 @@ class WidgetFilterPickerActivity : ComponentActivity() {
             return
         }
 
-        val prefs = WidgetPreferences.load(this, appWidgetId)
-
-        setContent {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val prefs = widgetAccountGate.withAuthenticatedBoundary {
+                WidgetPreferences.load(this@WidgetFilterPickerActivity, appWidgetId)
+            }
+            withContext(Dispatchers.Main) {
+                if (prefs == null) {
+                    finish()
+                    return@withContext
+                }
+                setContent {
             var categories by remember { mutableStateOf(emptyList<Category>()) }
             LaunchedEffect(Unit) {
                 categories = withContext(Dispatchers.IO) {
@@ -201,16 +213,24 @@ class WidgetFilterPickerActivity : ComponentActivity() {
                     }
                 }
             }
+                }
+            }
         }
     }
 
     private fun saveSelectionAndFinish(prefs: WidgetPreferences, appWidgetId: Int) {
         lifecycleScope.launch(Dispatchers.IO) {
-            WidgetPreferences.save(this@WidgetFilterPickerActivity, prefs)
-            log.d { "Prefs saved, updating widget $appWidgetId" }
-            log.d { "Refreshing widget $appWidgetId" }
-            TaskWidget.refreshWidget(this@WidgetFilterPickerActivity, appWidgetId)
-            log.d { "Widget $appWidgetId refreshed" }
+            val saved = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                WidgetPreferences.save(this@WidgetFilterPickerActivity, prefs)
+                log.d { "Prefs saved, updating widget $appWidgetId" }
+                log.d { "Refreshing widget $appWidgetId" }
+                TaskWidget.refreshWidgetWithinBoundary(this@WidgetFilterPickerActivity, appWidgetId, boundary)
+                log.d { "Widget $appWidgetId refreshed" }
+            }
+            if (saved == null) {
+                withContext(Dispatchers.Main) { finish() }
+                return@launch
+            }
             withContext(Dispatchers.Main) { finish() }
         }
     }

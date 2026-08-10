@@ -1,12 +1,22 @@
 package com.udnahc.opentasks.data.sync
 
+import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
 import com.udnahc.opentasks.domain.action.settings.ConfigurePocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase.Companion.KEY_POCKETBASE_URL
 import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLProtocol
+import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -127,6 +137,60 @@ class BaseSyncAdapterTest {
     }
 
     @Test
+    fun guardedStalePbIdRecoversByOwnerScopedLocalIdBeforeUpdatingRemote() = runBlocking {
+        val requests = mutableListOf<Pair<HttpMethod, String>>()
+        val gateway = PocketBaseRecordGateway(
+            client = HttpClient(MockEngine { request ->
+                requests += request.method to request.url.encodedPath
+                when {
+                    request.method == HttpMethod.Get && request.url.encodedPath.endsWith("/stale-pb") -> respond(
+                        content = "{}",
+                        status = HttpStatusCode.NotFound,
+                        headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                    )
+                    request.method == HttpMethod.Get -> respond(
+                        content = """{"items":[{"id":"current-pb","account":"account-a","localId":"one","value":"remote","isDeleted":false,"localUpdatedAt":20}],"page":1,"totalPages":1}""",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                    )
+                    request.method == HttpMethod.Patch && request.url.encodedPath.endsWith("/current-pb") -> respond(
+                        content = """{"id":"current-pb","account":"account-a","localId":"one","value":"local","isDeleted":false,"localUpdatedAt":30}""",
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                    )
+                    else -> error("Unexpected request ${request.method.value} ${request.url}")
+                }
+            }),
+            baseUrl = "https://example.test",
+            ownerBinding = CacheBinding(
+                canonicalEndpoint = "https://example.test",
+                serverInstanceId = "server",
+                accountId = "account-a",
+                capabilityVersion = 2,
+                boundaryEpoch = 1,
+            ),
+        )
+        val adapter = GuardedFakeAdapter(
+            local = mutableListOf(
+                FakeEntity(
+                    id = "one",
+                    pbId = "stale-pb",
+                    value = "local",
+                    synced = false,
+                    updatedAt = 30,
+                )
+            ),
+            gateway = gateway,
+        )
+
+        adapter.pushAll(client)
+
+        assertEquals("current-pb", adapter.local.single().pbId)
+        assertTrue(adapter.local.single().synced)
+        assertTrue(requests.contains(HttpMethod.Patch to "/api/collections/fake/records/current-pb"))
+    }
+
+    @Test
     fun suspiciouslySmallRemoteResponseDoesNotMarkManySyncedRowsUnsynced() = runBlocking {
         val local = (1..20).map { index ->
             FakeEntity(id = "local-$index", pbId = "pb-$index", value = "$index", synced = true, updatedAt = 30)
@@ -145,7 +209,7 @@ class BaseSyncAdapterTest {
 
     @Test
     fun degradedSmallPullSkipsThatCollectionsPush() = runBlocking {
-        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val provider = authenticatedProvider()
         val adapter = FakeAdapter(
             local = (1..20).map { index ->
                 FakeEntity(
@@ -158,7 +222,7 @@ class BaseSyncAdapterTest {
             }.toMutableList(),
             remote = mutableListOf(FakeRecord(localId = "local-1", value = "1", updatedAt = 30).withId("pb-1")),
         )
-        val service = SyncService(provider, listOf(adapter))
+        val service = SyncService(provider, listOf(adapter), accountMutationGate = MutexAccountMutationGate())
 
         assertFailsWith<SyncException> { service.syncAll() }
 
@@ -256,7 +320,7 @@ class BaseSyncAdapterTest {
 
     @Test
     fun syncServiceContinuesThroughAdaptersAndReportsFinalFailure() = runBlocking {
-        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val provider = authenticatedProvider()
         val failing = FakeAdapter(
             local = mutableListOf(),
             remote = mutableListOf(),
@@ -267,7 +331,7 @@ class BaseSyncAdapterTest {
             remote = mutableListOf(),
             collectionName = "other",
         )
-        val service = SyncService(provider, listOf(failing, succeeding))
+        val service = SyncService(provider, listOf(failing, succeeding), accountMutationGate = MutexAccountMutationGate())
 
         assertFailsWith<SyncException> {
             service.syncAll()
@@ -277,13 +341,13 @@ class BaseSyncAdapterTest {
 
     @Test
     fun syncServiceSkipsPushWhenPullFails() = runBlocking {
-        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val provider = authenticatedProvider()
         val adapter = FakeAdapter(
             local = mutableListOf(FakeEntity(id = "one", value = "local", synced = false, updatedAt = 30)),
             remote = mutableListOf(FakeRecord(localId = "one", value = "remote", updatedAt = 20).withId("pb-one")),
             failFetch = true,
         )
-        val service = SyncService(provider, listOf(adapter))
+        val service = SyncService(provider, listOf(adapter), accountMutationGate = MutexAccountMutationGate())
 
         assertFailsWith<SyncException> {
             service.syncAll()
@@ -295,7 +359,7 @@ class BaseSyncAdapterTest {
 
     @Test
     fun parentPullFailuresSkipDependentOperations() = runBlocking {
-        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val provider = authenticatedProvider()
         val categories = FakeAdapter(
             local = mutableListOf(),
             remote = mutableListOf(),
@@ -322,7 +386,7 @@ class BaseSyncAdapterTest {
             collectionName = "task_tags",
             order = 20,
         )
-        val service = SyncService(provider, listOf(categories, tags, tasks, taskTags))
+        val service = SyncService(provider, listOf(categories, tags, tasks, taskTags), accountMutationGate = MutexAccountMutationGate())
 
         assertFailsWith<SyncException> {
             service.syncAll()
@@ -335,7 +399,7 @@ class BaseSyncAdapterTest {
 
     @Test
     fun queuedPassCompletesAfterPreviousTransientFailure() = runBlocking {
-        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+        val provider = authenticatedProvider()
         lateinit var service: SyncService
         lateinit var adapter: FakeAdapter
         var requestedPending = false
@@ -355,7 +419,7 @@ class BaseSyncAdapterTest {
                 }
             },
         )
-        service = SyncService(provider, listOf(adapter))
+        service = SyncService(provider, listOf(adapter), accountMutationGate = MutexAccountMutationGate())
 
         assertFailsWith<SyncException> { service.syncAll() }
         pendingPassCompleted.await()
@@ -365,8 +429,8 @@ class BaseSyncAdapterTest {
     }
 
     @Test
-    fun exclusiveResetDisconnectsImmediatelyBlocksNewSyncAndWaitsForActivePass() = runBlocking {
-        val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
+    fun exclusiveResetWaitsForActiveAccountMutationBeforeDisconnectingAndClearing() = runBlocking {
+        val provider = authenticatedProvider()
         val pullStarted = CompletableDeferred<Unit>()
         val releasePull = CompletableDeferred<Unit>()
         val pendingCancelled = CompletableDeferred<Unit>()
@@ -378,7 +442,7 @@ class BaseSyncAdapterTest {
                 releasePull.await()
             },
         )
-        val service = SyncService(provider, listOf(adapter))
+        val service = SyncService(provider, listOf(adapter), accountMutationGate = MutexAccountMutationGate())
         val activeSync = launch { service.syncAll() }
         pullStarted.await()
         var cleared = false
@@ -390,15 +454,17 @@ class BaseSyncAdapterTest {
                 cleared = true
             }
         }
-        pendingCancelled.await()
 
-        assertFalse(provider.isConfigured)
+        // The account mutation gate lets the in-flight sync finish before the
+        // reset disconnects its authenticated client.
+        assertTrue(provider.isConfigured)
         assertFalse(cleared)
-        service.syncAll(client)
         assertEquals(1, adapter.pullCount)
 
         releasePull.complete(Unit)
         activeSync.join()
+        pendingCancelled.await()
+        assertFalse(provider.isConfigured)
         reset.join()
         assertTrue(cleared)
     }
@@ -406,7 +472,7 @@ class BaseSyncAdapterTest {
     @Test
     fun failedExclusiveResetKeepsPocketBaseDisconnected() = runBlocking {
         val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
-        val service = SyncService(provider, emptyList())
+        val service = SyncService(provider, emptyList(), accountMutationGate = MutexAccountMutationGate())
 
         assertFailsWith<IllegalStateException> {
             service.runExclusiveReset(cancelPendingSync = {}) {
@@ -484,7 +550,11 @@ class BaseSyncAdapterTest {
             settings,
             provider,
             verifier,
-            SyncService(provider, listOf(FakeAdapter(mutableListOf(), mutableListOf()))),
+            SyncService(
+                provider,
+                listOf(FakeAdapter(mutableListOf(), mutableListOf())),
+                accountMutationGate = MutexAccountMutationGate(),
+            ),
         )
 
         assertFailsWith<PocketBaseConnectionException> {
@@ -497,7 +567,7 @@ class BaseSyncAdapterTest {
     }
 
     @Test
-    fun failedInitialSyncPreservesOldUrlAndProvider() = runBlocking {
+    fun unboundInitialSyncPreservesOldUrlAndProvider() = runBlocking {
         val settings = FakeAppSettingsRepository(mapOf(KEY_POCKETBASE_URL to "http://old.example:8090"))
         val provider = PocketBaseClientProvider().apply { configure("http://old.example:8090") }
         val oldEndpoint = provider.endpoint
@@ -510,10 +580,14 @@ class BaseSyncAdapterTest {
             settings,
             provider,
             verifier,
-            SyncService(provider, listOf(FakeAdapter(mutableListOf(), mutableListOf(), failFetch = true))),
+            SyncService(
+                provider,
+                listOf(FakeAdapter(mutableListOf(), mutableListOf(), failFetch = true)),
+                accountMutationGate = MutexAccountMutationGate(),
+            ),
         )
 
-        assertFailsWith<SyncException> {
+        assertFailsWith<IllegalStateException> {
             action("http://new.example:8090")
         }
 
@@ -554,6 +628,18 @@ class BaseSyncAdapterTest {
         }
         Unit
     }
+    private fun authenticatedProvider(): PocketBaseClientProvider = PocketBaseClientProvider().apply {
+        activate(
+            CacheBinding(
+                canonicalEndpoint = "http://localhost:8090",
+                serverInstanceId = "server",
+                accountId = "account-a",
+                capabilityVersion = 2,
+                boundaryEpoch = 1,
+            ),
+            token = "test-token",
+        )
+    }
 }
 
 private data class FakeEntity(
@@ -582,7 +668,7 @@ private class FakeRecordWithId(
     updatedAt: Long,
 ) : FakeRecord(localId, value, deleted, updatedAt)
 
-private class FakeAdapter(
+private open class FakeAdapter(
     val local: MutableList<FakeEntity>,
     val remote: MutableList<FakeRecord>,
     var failFetch: Boolean = false,
@@ -652,12 +738,15 @@ private class FakeAdapter(
 
     override fun toRecord(entity: FakeEntity) = FakeRecord(entity.id, entity.value, entity.deleted, entity.updatedAt)
     override fun toEntity(record: FakeRecord) = FakeEntity(record.localId, record.id, record.value, record.deleted, synced = true, record.updatedAt)
-    override fun recordFromJson(json: JsonObject): FakeRecord = FakeRecord(
-        localId = json["localId"]?.jsonPrimitive?.content.orEmpty(),
-        value = json["value"]?.jsonPrimitive?.content.orEmpty(),
-        deleted = json["isDeleted"]?.jsonPrimitive?.boolean ?: false,
-        updatedAt = json["localUpdatedAt"]?.jsonPrimitive?.long ?: 0L,
-    )
+    override fun recordFromJson(json: JsonObject): FakeRecord {
+        val record = FakeRecord(
+            localId = json["localId"]?.jsonPrimitive?.content.orEmpty(),
+            value = json["value"]?.jsonPrimitive?.content.orEmpty(),
+            deleted = json["isDeleted"]?.jsonPrimitive?.boolean ?: false,
+            updatedAt = json["localUpdatedAt"]?.jsonPrimitive?.long ?: 0L,
+        )
+        return json["id"]?.jsonPrimitive?.content?.let(record::withId) ?: record
+    }
 
     override suspend fun fetchAllRecords(client: PocketbaseClient): List<FakeRecord> {
         pullCount += 1
@@ -717,4 +806,13 @@ private class FakeAdapter(
             updatedAt = obj.getValue("localUpdatedAt").jsonPrimitive.long,
         )
     }
+}
+
+private class GuardedFakeAdapter(
+    local: MutableList<FakeEntity>,
+    private val gateway: PocketBaseRecordGateway,
+) : FakeAdapter(local = local, remote = mutableListOf()) {
+    override fun allowsTestOnlyLegacySdkWrites(): Boolean = false
+
+    override fun recordGateway(client: PocketbaseClient): PocketBaseRecordGateway = gateway
 }

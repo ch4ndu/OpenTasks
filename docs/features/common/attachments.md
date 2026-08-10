@@ -38,7 +38,7 @@ The image policy currently uses a 1600 px maximum long edge, 320 px thumbnails, 
 
 ## Sync Behavior
 
-Attachment sync uses `AttachmentSyncAdapter` and the PocketBase `attachments` collection. Push uses multipart file upload through the PocketBase Kotlin SDK. Pull downloads the remote file from `/api/files/attachments/{recordId}/{filename}` and stores a local optimized copy plus thumbnail.
+Attachment sync uses `AttachmentSyncAdapter` and the PocketBase `attachments` collection. Push uses the structured owner-scoped multipart gateway. Pull obtains a short-lived PocketBase file token, downloads the protected file, and stores a local optimized copy plus thumbnail. Confirmed token rejection refreshes and retries once.
 
 Attachment uploads are gated on parent task sync. A task attachment is not uploaded until its task has a PocketBase id.
 
@@ -56,7 +56,7 @@ Deletes are tombstones. Deleting an image marks the attachment deleted and remov
 
 PocketBase requires the `attachments` collection created by `pocketbase/pb_migrations/008_create_attachments.js`. The collection contains owner fields, metadata fields, local timestamps, and a single `file` field with a 5 MB max size and image MIME type allowlist.
 
-Files follow the app's current public sync model: collection rules are public, and file URLs are public-by-randomized-name rather than account-protected.
+Migration `011` adds the required account owner relation and protects the file field. Collection rules and the client gateway restrict metadata and file access to the active owner; cross-account raw responses are rejected before local persistence.
 
 ## Related Docs
 

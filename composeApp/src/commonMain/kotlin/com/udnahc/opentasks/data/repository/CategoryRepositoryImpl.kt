@@ -5,6 +5,7 @@ import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Category
+import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,7 @@ class CategoryRepositoryImpl(
     private val categoryDao: CategoryDao,
     private val syncTrigger: SyncTrigger,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mutationGate: AccountMutationGate,
 ) : CategoryRepository {
 
     override fun getAllCategories(): Flow<List<Category>> =
@@ -36,16 +38,16 @@ class CategoryRepositoryImpl(
     override suspend fun getCategoryByName(name: String): Category? =
         withContext(ioDispatcher) { categoryDao.getCategoryByName(name)?.withLocalTimestamps() }
 
-    override suspend fun insert(category: Category): Long {
+    override suspend fun insert(category: Category): Long = mutationGate.withExclusive {
         log.v { "Inserting category: ${category.id}" }
         val result = withContext(ioDispatcher) {
             categoryDao.insert(category.withDefaultTimestamps().withUtcTimestamps())
         }
         syncTrigger.triggerSync()
-        return result
+        result
     }
 
-    override suspend fun update(category: Category) {
+    override suspend fun update(category: Category) = mutationGate.withExclusive {
         log.v { "Updating category: ${category.id}" }
         withContext(ioDispatcher) {
             categoryDao.update(category.withUtcTimestamps().copy(isSynced = false))
@@ -53,7 +55,7 @@ class CategoryRepositoryImpl(
         syncTrigger.triggerSync()
     }
 
-    override suspend fun delete(category: Category) {
+    override suspend fun delete(category: Category) = mutationGate.withExclusive {
         log.v { "Soft-deleting category: ${category.id}" }
         withContext(ioDispatcher) {
             categoryDao.update(

@@ -68,6 +68,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     private static let notificationOccurrenceDeadlineUtcKey = "notification_occurrence_deadline_utc"
     private static let notificationAtUtcKey = "notification_at_utc"
     private static let notificationSemanticKey = "notification_semantic_key"
+    private static let notificationAccountIdKey = "notification_account_id"
+    private static let notificationBoundaryEpochKey = "notification_boundary_epoch"
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -85,32 +87,90 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        removeOlderDeliveredRemindersPerEvent()
+        NotificationBoundaryHelper.shared.currentBoundary { [weak self] accountId, boundaryEpochText in
+            guard let accountId = accountId,
+                  !accountId.isEmpty,
+                  let boundaryEpochText = boundaryEpochText,
+                  let boundaryEpoch = Int64(boundaryEpochText),
+                  boundaryEpoch > 0 else { return }
+            self?.removeOlderDeliveredRemindersPerEvent(
+                accountId: accountId,
+                boundaryEpoch: boundaryEpoch
+            )
+        }
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        if let eventId = eventId(for: notification) {
-            removeDeliveredReminders(for: eventId, keepingIdentifier: notification.request.identifier)
+        let userInfo = notification.request.content.userInfo
+        let eventId = userInfo[Self.notificationEventIdKey] as? String
+        let accountId = userInfo[Self.notificationAccountIdKey] as? String
+        let boundaryEpoch = Int64(userInfo[Self.notificationBoundaryEpochKey] as? String ?? "") ?? 0
+        guard let eventId = eventId,
+              !eventId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let accountId = accountId,
+              !accountId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              boundaryEpoch > 0 else {
+            completionHandler([])
+            return
         }
-        completionHandler([.banner, .sound, .badge])
+
+        NotificationBoundaryHelper.shared.validate(
+            accountId: accountId,
+            boundaryEpoch: boundaryEpoch
+        ) { [weak self] allowed in
+            guard allowed.boolValue else {
+                completionHandler([])
+                return
+            }
+            self?.removeDeliveredReminders(
+                for: eventId,
+                accountId: accountId,
+                boundaryEpoch: boundaryEpoch,
+                keepingIdentifier: notification.request.identifier
+            )
+            completionHandler([.banner, .sound, .badge])
+        }
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
-        if let eventId = userInfo[Self.notificationEventIdKey] as? String {
-            removeDeliveredReminders(for: eventId)
+        let eventId = userInfo[Self.notificationEventIdKey] as? String
+        let accountId = userInfo[Self.notificationAccountIdKey] as? String
+        let boundaryEpoch = Int64(userInfo[Self.notificationBoundaryEpochKey] as? String ?? "") ?? 0
+        NotificationBoundaryHelper.shared.validate(
+            accountId: accountId,
+            boundaryEpoch: boundaryEpoch
+        ) { [weak self] allowed in
+            guard allowed.boolValue,
+                  let self = self,
+                  let eventId = eventId,
+                  let accountId = accountId,
+                  !eventId.isEmpty,
+                  !accountId.isEmpty,
+                  boundaryEpoch > 0 else {
+                completionHandler()
+                return
+            }
+
+            self.removeDeliveredReminders(
+                for: eventId,
+                accountId: accountId,
+                boundaryEpoch: boundaryEpoch
+            )
             NotificationDeepLinkKt.publishNotificationDeepLinkEvent(
                 eventId: eventId,
                 occurrenceDeadlineUtcMillis: Int64(userInfo[Self.notificationOccurrenceDeadlineUtcKey] as? String ?? "") ?? 0,
                 notificationAtUtcMillis: Int64(userInfo[Self.notificationAtUtcKey] as? String ?? "") ?? 0,
-                semanticKey: userInfo[Self.notificationSemanticKey] as? String
+                semanticKey: userInfo[Self.notificationSemanticKey] as? String,
+                accountId: accountId,
+                boundaryEpoch: boundaryEpoch
             )
+            completionHandler()
         }
-        completionHandler()
     }
 
     private func handleSyncTask(_ task: BGAppRefreshTask) {
@@ -137,11 +197,45 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         notification.request.content.userInfo[Self.notificationEventIdKey] as? String
     }
 
-    private func removeDeliveredReminders(for eventId: String, keepingIdentifier: String? = nil) {
+    private func accountId(for notification: UNNotification) -> String? {
+        notification.request.content.userInfo[Self.notificationAccountIdKey] as? String
+    }
+
+    private func boundaryEpoch(for notification: UNNotification) -> Int64 {
+        Int64(notification.request.content.userInfo[Self.notificationBoundaryEpochKey] as? String ?? "") ?? 0
+    }
+
+    private func notificationBelongsToBoundary(
+        _ notification: UNNotification,
+        expectedEventId: String,
+        expectedAccountId: String,
+        expectedBoundaryEpoch: Int64
+    ) -> Bool {
+        NotificationDeepLinkKt.notificationOwnershipMatches(
+            eventId: eventId(for: notification),
+            accountId: accountId(for: notification),
+            boundaryEpoch: boundaryEpoch(for: notification),
+            expectedEventId: expectedEventId,
+            expectedAccountId: expectedAccountId,
+            expectedBoundaryEpoch: expectedBoundaryEpoch
+        )
+    }
+
+    private func removeDeliveredReminders(
+        for eventId: String,
+        accountId: String,
+        boundaryEpoch: Int64,
+        keepingIdentifier: String? = nil
+    ) {
         UNUserNotificationCenter.current().getDeliveredNotifications { [weak self] notifications in
             guard let self = self else { return }
             let identifiers = notifications.compactMap { notification -> String? in
-                guard self.eventId(for: notification) == eventId else { return nil }
+                guard self.notificationBelongsToBoundary(
+                    notification,
+                    expectedEventId: eventId,
+                    expectedAccountId: accountId,
+                    expectedBoundaryEpoch: boundaryEpoch
+                ) else { return nil }
                 guard notification.request.identifier != keepingIdentifier else { return nil }
                 return notification.request.identifier
             }
@@ -150,23 +244,34 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    private func removeOlderDeliveredRemindersPerEvent() {
+    private func removeOlderDeliveredRemindersPerEvent(accountId: String, boundaryEpoch: Int64) {
         UNUserNotificationCenter.current().getDeliveredNotifications { [weak self] notifications in
             guard let self = self else { return }
 
-            var newestByEventId: [String: UNNotification] = [:]
+            var newestByOwnership: [DeliveredReminderOwnership: UNNotification] = [:]
             var identifiersToRemove: [String] = []
 
             for notification in notifications {
                 guard let eventId = self.eventId(for: notification) else { continue }
-                guard let newest = newestByEventId[eventId] else {
-                    newestByEventId[eventId] = notification
+                guard self.notificationBelongsToBoundary(
+                    notification,
+                    expectedEventId: eventId,
+                    expectedAccountId: accountId,
+                    expectedBoundaryEpoch: boundaryEpoch
+                ) else { continue }
+                let ownership = DeliveredReminderOwnership(
+                    eventId: eventId,
+                    accountId: accountId,
+                    boundaryEpoch: boundaryEpoch
+                )
+                guard let newest = newestByOwnership[ownership] else {
+                    newestByOwnership[ownership] = notification
                     continue
                 }
 
                 if notification.date > newest.date {
                     identifiersToRemove.append(newest.request.identifier)
-                    newestByEventId[eventId] = notification
+                    newestByOwnership[ownership] = notification
                 } else {
                     identifiersToRemove.append(notification.request.identifier)
                 }
@@ -176,6 +281,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiersToRemove)
         }
     }
+}
+
+private struct DeliveredReminderOwnership: Hashable {
+    let eventId: String
+    let accountId: String
+    let boundaryEpoch: Int64
 }
 
 @main

@@ -6,6 +6,7 @@ import androidx.glance.GlanceId
 import androidx.glance.action.ActionParameters
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.action.ActionCallback
+import com.udnahc.opentasks.data.auth.WidgetAccountGate
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,6 +22,7 @@ private val log = logging("WidgetRefreshCallbacks")
 class TaskRefreshCallback : ActionCallback, KoinComponent {
 
     private val triggerSyncAction: TriggerSyncAction by inject()
+    private val widgetAccountGate: WidgetAccountGate by inject()
 
     override suspend fun onAction(
         context: Context,
@@ -28,14 +30,17 @@ class TaskRefreshCallback : ActionCallback, KoinComponent {
         parameters: ActionParameters,
     ) {
         log.d { "Task widget refresh triggered" }
-        withContext(Dispatchers.Main) {
-            Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
-        }
         try {
-            triggerSyncAction()
-            val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
-            TaskWidget.refreshWidget(context, appWidgetId)
-            log.d { "Task widget refreshed" }
+            val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
+                }
+                triggerSyncAction()
+                val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
+                TaskWidget.refreshWidgetWithinBoundary(context, appWidgetId, boundary)
+                log.d { "Task widget refreshed" }
+            }
+            if (refreshed == null) log.d { "Skipped task widget action without an authenticated boundary" }
         } catch (e: Exception) {
             log.e(e) { "Task widget refresh failed" }
         }
@@ -45,6 +50,7 @@ class TaskRefreshCallback : ActionCallback, KoinComponent {
 class CalendarRefreshCallback : ActionCallback, KoinComponent {
 
     private val triggerSyncAction: TriggerSyncAction by inject()
+    private val widgetAccountGate: WidgetAccountGate by inject()
 
     override suspend fun onAction(
         context: Context,
@@ -52,14 +58,17 @@ class CalendarRefreshCallback : ActionCallback, KoinComponent {
         parameters: ActionParameters,
     ) {
         log.d { "Calendar widget refresh triggered" }
-        withContext(Dispatchers.Main) {
-            Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
-        }
         try {
-            triggerSyncAction()
-            val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
-            CalendarWidget.refreshWidget(context, appWidgetId)
-            log.d { "Calendar widget refreshed" }
+            val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
+                }
+                triggerSyncAction()
+                val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
+                CalendarWidget.refreshWidgetWithinBoundary(context, appWidgetId, boundary)
+                log.d { "Calendar widget refreshed" }
+            }
+            if (refreshed == null) log.d { "Skipped calendar widget action without an authenticated boundary" }
         } catch (e: Exception) {
             log.e(e) { "Calendar widget refresh failed" }
         }
@@ -69,6 +78,7 @@ class CalendarRefreshCallback : ActionCallback, KoinComponent {
 class WeekRefreshCallback : ActionCallback, KoinComponent {
 
     private val triggerSyncAction: TriggerSyncAction by inject()
+    private val widgetAccountGate: WidgetAccountGate by inject()
 
     override suspend fun onAction(
         context: Context,
@@ -76,14 +86,17 @@ class WeekRefreshCallback : ActionCallback, KoinComponent {
         parameters: ActionParameters,
     ) {
         log.d { "Week widget refresh triggered" }
-        withContext(Dispatchers.Main) {
-            Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
-        }
         try {
-            triggerSyncAction()
-            val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
-            WeekWidget.refreshWidget(context, appWidgetId)
-            log.d { "Week widget refreshed" }
+            val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
+                }
+                triggerSyncAction()
+                val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
+                WeekWidget.refreshWidgetWithinBoundary(context, appWidgetId, boundary)
+                log.d { "Week widget refreshed" }
+            }
+            if (refreshed == null) log.d { "Skipped week widget action without an authenticated boundary" }
         } catch (e: Exception) {
             log.e(e) { "Week widget refresh failed" }
         }

@@ -1,0 +1,81 @@
+{
+  "adaptation_slots": [
+    {
+      "id": "trip-1-plan/SKILL.md#1",
+      "marker": "[ADAPT_TO_PROJECT: Replace the items below with concerns relevant to this\nspecific codebase \u2014 patterns from ARCHI.md, layering rules, platform impact,\nstate management, security, performance. trip-init fills this in.]",
+      "occurrence": 1,
+      "path": "trip-1-plan/SKILL.md"
+    },
+    {
+      "id": "trip-1-plan/SKILL.md#2",
+      "marker": "[ADAPT_TO_PROJECT: Guidance Sections]",
+      "occurrence": 2,
+      "path": "trip-1-plan/SKILL.md"
+    },
+    {
+      "id": "trip-2-implement/SKILL.md#1",
+      "marker": "[ADAPT_TO_PROJECT: Integration Impact]",
+      "occurrence": 1,
+      "path": "trip-2-implement/SKILL.md"
+    },
+    {
+      "id": "trip-review/checklist.md#1",
+      "marker": "[ADAPT_TO_PROJECT]",
+      "occurrence": 1,
+      "path": "trip-review/checklist.md"
+    },
+    {
+      "id": "trip-review/cr-template.md#1",
+      "marker": "[ADAPT_TO_PROJECT]",
+      "occurrence": 1,
+      "path": "trip-review/cr-template.md"
+    },
+    {
+      "id": "trip-test/SKILL.md#1",
+      "marker": "[ADAPT_TO_PROJECT]",
+      "occurrence": 1,
+      "path": "trip-test/SKILL.md"
+    },
+    {
+      "id": "trip-test/SKILL.md#2",
+      "marker": "[ADAPT_TO_PROJECT]",
+      "occurrence": 2,
+      "path": "trip-test/SKILL.md"
+    }
+  ],
+  "exploration": {
+    "files_inspected": [
+      "AGENTS.md",
+      "docs/ARCHI.md",
+      "docs/ai/architecture.md",
+      "docs/ai/data-sync-time.md",
+      "settings.gradle.kts",
+      "gradle/libs.versions.toml",
+      "composeApp/build.gradle.kts",
+      "androidApp/build.gradle.kts",
+      "composeApp/src/commonMain/kotlin/com/udnahc/opentasks/App.kt",
+      "composeApp/src/commonMain/kotlin/com/udnahc/opentasks/di/AppModule.kt",
+      "composeApp/src/commonMain/kotlin/com/udnahc/opentasks/data/database/AppDatabase.kt",
+      "composeApp/src/commonMain/kotlin/com/udnahc/opentasks/data/sync/SyncService.kt",
+      "androidApp/src/main/AndroidManifest.xml",
+      "iosApp/Configuration/Config.xcconfig"
+    ],
+    "project_type": "Cross-platform mobile application with a first-class JVM desktop target and native Android/iOS integrations",
+    "summary": "OpenTasks is a shared-first Kotlin Multiplatform task manager. composeApp owns shared Compose UI, ViewModels, domain UseCases/Actions, Room schema 12, repositories, Koin DI, PocketBase sync, and Android/iOS/JVM actual implementations; androidApp and iosApp are native application hosts with widgets, reminders, background work, and share/deep-link integration."
+  },
+  "initialized_at": "2026-07-17T18:54:25.195809+00:00",
+  "project": "OpenTasks",
+  "values": {
+    "LINT_COMMAND": "./gradlew :androidApp:lintDebug",
+    "MAIN_BRANCH": "main",
+    "PROJECT_NAME": "OpenTasks",
+    "TEST_COMMAND": "./gradlew :composeApp:jvmTest :androidApp:testDebugUnitTest",
+    "TEST_COMMAND_ALL": "./gradlew :composeApp:jvmTest :androidApp:testDebugUnitTest",
+    "TEST_COMMAND_COVERAGE": "./gradlew :composeApp:koverHtmlReport",
+    "TEST_COMMAND_SINGLE": "./gradlew :composeApp:jvmTest --tests 'fully.qualified.TestClass.testName'",
+    "TYPECHECK_COMMAND": "./gradlew :composeApp:compileKotlinJvm :composeApp:compileKotlinIosArm64 :composeApp:compileKotlinIosSimulatorArm64 :androidApp:assembleDebug",
+    "VERSION_FILE": "androidApp/build.gradle.kts, iosApp/Configuration/Config.xcconfig, and composeApp/build.gradle.kts",
+    "WEEK_ANCHOR_DATE": "2026-07-13",
+    "WEEK_ANCHOR_EPOCH": "1783900800"
+  }
+}

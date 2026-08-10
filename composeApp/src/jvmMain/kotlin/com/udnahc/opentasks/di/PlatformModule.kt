@@ -3,6 +3,8 @@ package com.udnahc.opentasks.di
 import androidx.room.RoomDatabase
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.database.getDatabaseBuilder
+import com.udnahc.opentasks.data.auth.AuthTokenStore
+import com.udnahc.opentasks.data.auth.JvmAuthTokenStore
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.attachment.PlatformAttachmentFileStorage
 import com.udnahc.opentasks.data.calendar.CalendarProvider
@@ -19,4 +21,5 @@ actual val platformModule = module {
     single { NotificationScheduler() }
     single { NotificationPermissionChecker() }
     single<AttachmentFileStorage> { PlatformAttachmentFileStorage() }
+    single<AuthTokenStore> { JvmAuthTokenStore() }
 }

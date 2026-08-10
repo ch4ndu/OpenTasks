@@ -3,6 +3,7 @@ package com.udnahc.opentasks.domain.action.attachment
 import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.attachment.PickedImage
+import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.ATTACHMENT_KIND_IMAGE
 import com.udnahc.opentasks.data.model.ATTACHMENT_OWNER_TASK
@@ -13,8 +14,14 @@ import com.udnahc.opentasks.data.repository.AttachmentRepository
 class AddTaskImageAction(
     private val repository: AttachmentRepository,
     private val fileStorage: AttachmentFileStorage,
+    private val mutationGate: AccountMutationGate,
 ) {
-    suspend operator fun invoke(taskId: String, image: PickedImage): Attachment {
+    suspend operator fun invoke(taskId: String, image: PickedImage): Attachment =
+        mutationGate.withExclusive {
+            addWithinMutation(taskId, image)
+        }
+
+    private suspend fun addWithinMutation(taskId: String, image: PickedImage): Attachment {
         val stored = fileStorage.storePickedImage(image)
         try {
             require(stored.fileSizeBytes <= AttachmentFilePolicy.MAX_UPLOAD_BYTES) {

@@ -17,6 +17,20 @@ import com.udnahc.opentasks.data.database.MIGRATION_9_10
 import com.udnahc.opentasks.data.database.MIGRATION_10_11
 import com.udnahc.opentasks.data.database.MIGRATION_11_12
 import com.udnahc.opentasks.data.model.AppConstants
+import com.udnahc.opentasks.data.auth.AccountCacheInspector
+import com.udnahc.opentasks.data.auth.AccountCacheInspectorContract
+import com.udnahc.opentasks.data.auth.AccountCacheResetter
+import com.udnahc.opentasks.data.auth.AccountCacheResetterContract
+import com.udnahc.opentasks.data.auth.AccountAuthenticator
+import com.udnahc.opentasks.data.auth.AccountMutationGate
+import com.udnahc.opentasks.data.auth.AccountBoundaryGuard
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.AccountRepository
+import com.udnahc.opentasks.data.auth.AccountRepositoryImpl
+import com.udnahc.opentasks.data.auth.AccountSyncCoordinator
+import com.udnahc.opentasks.data.auth.AuthTokenStore
+import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
+import com.udnahc.opentasks.data.auth.PocketBaseAccountAuthenticator
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.notification.LocalizedReminderTextProvider
@@ -35,6 +49,8 @@ import com.udnahc.opentasks.data.repository.TagRepository
 import com.udnahc.opentasks.data.repository.TagRepositoryImpl
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.data.repository.TaskRepositoryImpl
+import com.udnahc.opentasks.data.settings.AccountStateStore
+import com.udnahc.opentasks.data.settings.RoomAccountStateStore
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.PocketBaseConnectionVerifier
 import com.udnahc.opentasks.data.sync.ServerMigrationCoordinator
@@ -49,6 +65,11 @@ import com.udnahc.opentasks.data.sync.adapters.TagSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.TaskSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.TaskTagSyncAdapter
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
+import com.udnahc.opentasks.domain.action.account.LoginAccountAction
+import com.udnahc.opentasks.domain.action.account.LogoutAccountAction
+import com.udnahc.opentasks.domain.action.account.ReauthenticateAccountAction
+import com.udnahc.opentasks.domain.action.account.RestoreSessionAction
+import com.udnahc.opentasks.domain.action.account.SwitchAccountAction
 import com.udnahc.opentasks.domain.action.attachment.AddTaskImageAction
 import com.udnahc.opentasks.domain.action.attachment.RemoveTaskImageAction
 import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
@@ -87,6 +108,7 @@ import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
+import com.udnahc.opentasks.domain.usecase.account.ObserveAccountSessionUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImagesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
@@ -117,6 +139,7 @@ import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import com.udnahc.opentasks.domain.usecase.task.LocalizedTaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.viewmodel.AppViewModel
+import com.udnahc.opentasks.viewmodel.AuthViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
 import com.udnahc.opentasks.viewmodel.CountdownViewModel
@@ -136,6 +159,7 @@ import org.koin.dsl.module
 expect val platformModule: Module
 
 val sharedModule = module {
+    single<AccountMutationGate> { MutexAccountMutationGate() }
     single<ReminderTextProvider> { LocalizedReminderTextProvider() }
     single<TaskDueTextProvider> { LocalizedTaskDueTextProvider() }
     single<AppDatabase> {
@@ -168,18 +192,37 @@ val sharedModule = module {
     single { get<AppDatabase>().taskDao() }
     single { get<AppDatabase>().categoryDao() }
     single { get<AppDatabase>().noteDao() }
-    single<TaskRepository> { TaskRepositoryImpl(get(), get(), get()) }
-    single<CategoryRepository> { CategoryRepositoryImpl(get(), get()) }
-    single<NoteRepository> { NoteRepositoryImpl(get(), get()) }
+    single<TaskRepository> { TaskRepositoryImpl(get(), get(), get(), mutationGate = get()) }
+    single<CategoryRepository> { CategoryRepositoryImpl(get(), get(), mutationGate = get()) }
+    single<NoteRepository> { NoteRepositoryImpl(get(), get(), mutationGate = get()) }
     single { get<AppDatabase>().tagDao() }
     single { get<AppDatabase>().appSettingsDao() }
     single { get<AppDatabase>().countdownDao() }
     single { get<AppDatabase>().attachmentDao() }
     single { PendingTaskImageHandoff() }
-    single<CountdownRepository> { CountdownRepositoryImpl(get(), get()) }
-    single<TagRepository> { TagRepositoryImpl(get(), get()) }
+    single<CountdownRepository> { CountdownRepositoryImpl(get(), get(), mutationGate = get()) }
+    single<TagRepository> { TagRepositoryImpl(get(), get(), mutationGate = get()) }
     single<AppSettingsRepository> { AppSettingsRepositoryImpl(get()) }
-    single<AttachmentRepository> { AttachmentRepositoryImpl(get(), get()) }
+    single<AttachmentRepository> { AttachmentRepositoryImpl(get(), get(), mutationGate = get()) }
+    single<AccountStateStore> { RoomAccountStateStore(get()) }
+    single { AccountBoundaryGuard(get()) }
+    single<AccountBoundaryExecutor> { AccountBoundaryExecutor(get(), get(), get()) }
+    single<AccountAuthenticator> { PocketBaseAccountAuthenticator(get()) }
+    single<AccountCacheInspectorContract> { AccountCacheInspector(get()) }
+    single<AccountCacheResetterContract> { AccountCacheResetter(get(), get(), get(), get(), get()) }
+    single<AccountRepository> {
+        AccountRepositoryImpl(
+            get<AuthTokenStore>(),
+            get<AccountStateStore>(),
+            get<AccountAuthenticator>(),
+            get<AccountCacheInspectorContract>(),
+            get<AccountCacheResetterContract>(),
+            get<AccountMutationGate>(),
+            get<PocketBaseClientProvider>(),
+            get<SyncService>(),
+            get<NotificationScheduler>(),
+        )
+    }
     single { AllDayNotificationDismissalStore(get()) }
 
     // UseCases
@@ -197,6 +240,7 @@ val sharedModule = module {
     factory { ObserveTagsForTaskUseCase(get()) }
     factory { ObserveTaskByIdUseCase(get()) }
     single { ObservePocketBaseUrlUseCase(get()) }
+    single { ObserveAccountSessionUseCase(get()) }
     single { LocalDaySignal() }
     single { ObserveTodayTasksUseCase(get(), get()) }
     single { ObserveTaskSortOptionUseCase(get()) }
@@ -214,43 +258,56 @@ val sharedModule = module {
     single { GenerateIcsExportUseCase(get()) }
 
     // Actions
-    single { AddTaskAction(get(), get(), get()) }
-    single { UpdateTaskAction(get(), get(), get()) }
-    single { DeleteTaskAction(get(), get(), get(), get()) }
-    single { AddTaskImageAction(get(), get()) }
-    single { RemoveTaskImageAction(get(), get()) }
-    single { ToggleTaskCompleteAction(get(), get(), get()) }
+    single { AddTaskAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
+    single { UpdateTaskAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
+    single {
+        DeleteTaskAction(
+            get(), get(), get(), get(), get<AccountMutationGate>(), get<AccountBoundaryExecutor>(),
+        )
+    }
+    single { AddTaskImageAction(get(), get(), get()) }
+    single { RemoveTaskImageAction(get(), get(), get()) }
+    single { ToggleTaskCompleteAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
     single { MarkTaskNotificationDoneAction(get()) }
     single { DismissTaskNotificationAction(get(), get(), get<NotificationScheduler>()) }
     single { ToggleTaskStarredAction(get()) }
     single { AddCategoryAction(get()) }
     single { AddNoteAction(get()) }
-    single { AddCountdownAction(get(), get(), get()) }
-    single { UpdateCountdownAction(get(), get(), get()) }
-    single { DeleteCountdownAction(get(), get(), get()) }
+    single { AddCountdownAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
+    single { UpdateCountdownAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
+    single { DeleteCountdownAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
     single { UpdateNoteAction(get()) }
     single { DeleteNoteAction(get()) }
     single { AddTagAction(get()) }
     single { TagTaskAction(get()) }
-    single { ImportCalendarEventsAction(get(), get(), get(), get(), get(), get()) }
-    single { ImportCsvTasksAction(get(), get(), get(), get()) }
+    single {
+        ImportCalendarEventsAction(
+            get(), get(), get(), get(), get(), get(), get<AccountBoundaryExecutor>(),
+        )
+    }
+    single { ImportCsvTasksAction(get(), get(), get(), get(), get<AccountBoundaryExecutor>()) }
     single { ScheduleTaskRemindersAction(get<NotificationScheduler>(), get(), get(), get()) }
     single { ScheduleCountdownRemindersAction(get<NotificationScheduler>(), get(), get()) }
-    single { RebuildReminderQueueAction(get(), get(), get(), get(), get()) }
+    single { RebuildReminderQueueAction(get(), get(), get(), get(), get<NotificationScheduler>()) }
+    single { RestoreSessionAction(get()) }
+    single { LoginAccountAction(get()) }
+    single { ReauthenticateAccountAction(get()) }
+    single { SwitchAccountAction(get()) }
+    single { LogoutAccountAction(get()) }
     single { SavePocketBaseUrlAction(get(), get(), get(), get(), get()) }
     single { ClearPocketBaseUrlAction(get(), get()) }
     single { TriggerSyncAction(get(), get()) }
     single<SyncTrigger> { get<TriggerSyncAction>() }
     single { ConfigurePocketBaseUrlAction(get(), get()) }
-    single { InitializeSyncAction(get(), get(), get()) }
+    single { InitializeSyncAction(get()) }
     single { SaveTaskSortOptionAction(get()) }
     single { SaveTaskListViewModeAction(get()) }
-    single { UpdateTaskStatusAction(get(), get(), get()) }
+    single { UpdateTaskStatusAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
     single { SaveThemePreferenceAction(get()) }
     single { SaveTextSizePreferenceAction(get()) }
     single { SaveCalendarViewPreferenceAction(get()) }
     single { SaveCalendarListDisplayModePreferenceAction(get()) }
-    single { ClearLocalDataAction(get(), get(), get(), get()) }
+    single { ClearLocalDataAction(get(), get(), get(), get(), get()) }
 
     // Sync
     single { PocketBaseClientProvider() }
@@ -270,6 +327,7 @@ val sharedModule = module {
                 get<AttachmentSyncAdapter>(), get<TaskTagSyncAdapter>(), get<NoteSyncAdapter>(),
                 get<CountdownSyncAdapter>(),
             ),
+            accountStateStore = get<AccountStateStore>(),
         )
     }
     single {
@@ -299,12 +357,20 @@ val sharedModule = module {
                 get<CountdownSyncAdapter>(),
             ),
             get(),
+            get(),
+            get<AccountStateStore>(),
         )
     }
+    single<AccountSyncCoordinator> { get<SyncService>() }
 
     // ViewModels
+    viewModel { AuthViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
-    viewModel { TaskNotificationViewModel(get(), get(), get()) }
+    viewModel {
+        TaskNotificationViewModel(
+            get(), get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
     viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel {
         TaskListViewModel(
@@ -326,10 +392,22 @@ val sharedModule = module {
         )
     }
     viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
-    viewModel { NoteViewModel(get(), get(), get(), get(), get()) }
-    viewModel { ImportCalendarViewModel(get(), get(), get()) }
-    viewModel { ImportIcsViewModel(get(), get()) }
-    viewModel { ImportCsvViewModel(get(), get()) }
+    viewModel {
+        NoteViewModel(
+            get(), get(), get(), get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
+    viewModel {
+        ImportCalendarViewModel(
+            get(), get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
+    viewModel {
+        ImportIcsViewModel(get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>())
+    }
+    viewModel {
+        ImportCsvViewModel(get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>())
+    }
     viewModel { CountdownViewModel(get(), get(), get()) }
     viewModel { CountdownFormViewModel(get(), get(), get(), get(), get()) }
     viewModel {
@@ -349,5 +427,5 @@ val sharedModule = module {
             get()
         )
     }
-    viewModel { AppViewModel(get()) }
+    viewModel { AppViewModel(get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>()) }
 }

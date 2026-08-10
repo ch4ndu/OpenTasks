@@ -56,6 +56,18 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 
 ## Sync
 
+- Account endpoints require HTTPS for public hosts. HTTP is accepted only for
+  loopback and RFC1918 private IPv4 addresses; Android permits cleartext at the
+  manifest boundary so this shared validation remains the authoritative gate.
+  Operators using private-LAN HTTP accept that credentials, tokens, and task
+  data are not transport-encrypted.
+- Normal sync requires an authenticated `PocketBaseClientProvider` binding. Detached clients may be used only for health, authentication, capability, and owner-scoped inventory checks; they must never mutate Room or remote records.
+- Every production sync request goes through the structured owner-scoped gateway. It injects the active account into JSON/multipart writes, includes the owner in list/local-ID filters, and rejects missing or mismatched raw owners before model decoding or DAO writes.
+- One process-wide `AccountMutationGate` serializes account transitions, sync mutations, repository writes, task graph/attachment writes, and local-clear operations. Reentrant calls reuse the held gate; production code must not create per-repository gates.
+- The single Room cache is authorized by `CacheBinding`. A durable transition marker gates UI/sync during switch or logout; cache content and the next binding/marker are replaced in one Room writer transaction.
+- Switch/logout first refresh and sync the source account online and verify all seven unsynced queries are empty. There is no discard-data path. After the cache transaction, the destination binding is authoritative for crash recovery.
+- Account-bound reminders, notification actions/taps, widgets, and background work carry account ID plus boundary epoch and fail closed before DAO access when stale or while a transition exists.
+- Work launched from an already-authenticated foreground screen or account-state callback must use `withForegroundBoundary`. Independent background entry points use `withAuthenticatedBoundary`, which reuses a valid live authenticated session and restores only when no live session exists.
 - Repositories trigger sync automatically on inserts, updates, and deletes.
 - Clear Local Data must enter the exclusive sync-reset boundary before cleanup: reject new sync requests, cancel pending debounce work, disconnect PocketBase, wait for any active pass, and keep the provider disconnected if cleanup fails.
 - Clear Local Data deletes every Room entity in one writer transaction, recreates Inbox in that transaction, and clears attachment files before leaving the exclusive reset boundary.

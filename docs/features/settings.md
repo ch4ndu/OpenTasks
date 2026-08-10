@@ -2,13 +2,14 @@
 
 ## Overview
 
-Settings centralizes app preferences, sync configuration, permissions, import/export entry points, and local data reset.
+Settings centralizes account controls, app preferences, sync status, permissions, and import/export entry points.
 
 ## User Flow
 
 Users can:
 
-- Configure the PocketBase URL or clear the saved URL.
+- View the authenticated account and read-only PocketBase endpoint.
+- Switch to the other pre-created account or log out.
 - Trigger manual sync.
 - Change theme mode.
 - Change text size.
@@ -16,15 +17,14 @@ Users can:
 - Check calendar permission status.
 - Start calendar, ICS, or CSV imports.
 - Export tasks to CSV or ICS.
-- Clear local app data.
 
 ## Technical Design
 
-`SettingsViewModel` observes settings through settings use cases and writes through actions such as `SavePocketBaseUrlAction`, `ClearPocketBaseUrlAction`, `TriggerSyncAction`, `SaveThemePreferenceAction`, `SaveTextSizePreferenceAction`, and `ClearLocalDataAction`.
+`SettingsViewModel` observes installation preferences through settings use cases and writes through Actions such as `TriggerSyncAction`, `SaveThemePreferenceAction`, and `SaveTextSizePreferenceAction`. Account identity, switching, and logout are supplied by `AuthViewModel`, which uses account UseCases and Actions rather than repositories.
 
-Settings values are stored in the `app_settings` Room table as key/value rows. Sync connection state is derived from the stored PocketBase URL and the `PocketBaseClientProvider`.
+Installation settings are stored in the `app_settings` Room table as key/value rows. The authenticated cache binding and transition marker are durable account-state records; the PocketBase token is stored through the platform secure-token implementation, never in Room.
 
-Saving a PocketBase URL is transactional from the user's perspective: the app creates a client, verifies server health, verifies all required collections, runs an initial sync, then saves the URL and swaps the active client. If verification or initial sync fails, the new URL is not persisted.
+The endpoint is entered on the signed-out account screen and is read-only in Settings. A detached client authenticates and validates capability plus owner-scoped inventory before activation. Changing servers requires logout.
 
 Import dialogs are opened from Settings but handled by dedicated import ViewModels and actions. Export uses `GenerateCsvExportAction`, `GenerateIcsExportAction`, and platform `FileSaver` implementations.
 
@@ -36,4 +36,4 @@ Import dialogs are opened from Settings but handled by dedicated import ViewMode
 
 ## Current Limitations
 
-PocketBase sync uses public collection rules and is intended for trusted app instances against a self-hosted server. The app does not currently provide account-based multi-user auth.
+Account creation, invitations, password reset, account administration, shared tasks, and a discard-pending-data switch path are not part of the first multi-user release. Accounts must be created by the PocketBase operator.

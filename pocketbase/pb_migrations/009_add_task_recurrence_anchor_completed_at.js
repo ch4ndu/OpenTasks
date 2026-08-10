@@ -4,8 +4,8 @@
 migrate(
     (app) => {
         const tasks = app.findCollectionByNameOrId("tasks")
-        tasks.fields.add({ name: "recurrenceAnchorDay", type: "number" })
-        tasks.fields.add({ name: "completedAt", type: "number" })
+        tasks.fields.add(new NumberField({ name: "recurrenceAnchorDay" }))
+        tasks.fields.add(new NumberField({ name: "completedAt" }))
         app.save(tasks)
     },
     (app) => {

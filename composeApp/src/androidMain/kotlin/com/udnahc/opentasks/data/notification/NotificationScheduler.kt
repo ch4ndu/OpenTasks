@@ -10,6 +10,8 @@ import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.udnahc.opentasks.data.auth.AccountBoundary
+import com.udnahc.opentasks.data.auth.AccountBoundaryGuard
 import org.lighthousegames.logging.logging
 
 private val log = logging("NotificationScheduler")
@@ -19,7 +21,10 @@ private const val NOTIFICATION_RECEIVER_CLASS = "com.udnahc.opentasks.data.notif
 private const val NOTIFICATION_ACTION_RECEIVER_CLASS =
     "com.udnahc.opentasks.data.notification.NotificationActionReceiver"
 
-actual class NotificationScheduler(private val context: Context) : ReminderScheduler {
+actual class NotificationScheduler(
+    private val context: Context,
+    private val boundaryGuard: AccountBoundaryGuard,
+) : ReminderScheduler {
 
     private val keyStore = AndroidReminderKeyStore(context)
 
@@ -49,6 +54,8 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
     }
 
     actual override suspend fun schedule(request: ReminderRequest) {
+        val boundary = boundaryGuard.activeBoundary()
+            ?: throw IllegalStateException("Cannot schedule a reminder without an active account boundary")
         cleanupLegacyOnce(request.eventId)
         val allocation = keyStore.allocatePending(request.identity)
         cancelPlatform(allocation, removeFromStore = false)
@@ -66,6 +73,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, request.occurrenceUtcMillis)
             putExtra(EXTRA_ALLOW_MARK_DONE, request.allowMarkDone)
             putExtra(EXTRA_RESCHEDULE_AFTER_FIRE, request.rescheduleAfterFire)
+            putBoundary(boundary)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -110,10 +118,12 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
     }
 
     actual override suspend fun startOngoing(identity: ReminderIdentity, title: String) {
+        val boundary = boundaryGuard.activeBoundary()
+            ?: throw IllegalStateException("Cannot start a reminder without an active account boundary")
         cleanupLegacyOnce(identity.eventId)
         stopOngoing(identity.eventId)
         val allocation = keyStore.allocatePending(identity)
-        val notification = buildOngoingNotification(identity, title, allocation.notificationId)
+        val notification = buildOngoingNotification(identity, title, allocation.notificationId, boundary)
         try {
             NotificationManagerCompat.from(context).notify(allocation.notificationId, notification)
             keyStore.markDisplayed(identity.semanticKey)
@@ -127,6 +137,13 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         keyStore.recordsForEvent(eventId)
             .filter { it.kind == ReminderKind.ONGOING }
             .forEach { allocation -> cancelPlatform(allocation, removeFromStore = true) }
+    }
+
+    actual override suspend fun cancelAllAccountReminders() {
+        keyStore.allRecords().forEach { allocation ->
+            cancelPlatform(allocation, removeFromStore = true)
+        }
+        NotificationManagerCompat.from(context).cancelAll()
     }
 
     actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
@@ -200,6 +217,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         identity: ReminderIdentity,
         title: String,
         notificationId: Int,
+        boundary: AccountBoundary,
     ): android.app.Notification {
         val tapIntent = context.appComponentIntent(MAIN_ACTIVITY_CLASS).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -208,6 +226,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             putExtra(EXTRA_SEMANTIC_KEY, identity.semanticKey)
             putExtra(EXTRA_NOTIFICATION_AT_UTC, System.currentTimeMillis())
             putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, identity.occurrenceUtcMillis)
+            putBoundary(boundary)
         }
         val tapPendingIntent = PendingIntent.getActivity(
             context,
@@ -220,6 +239,7 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             data = pendingIntentUri(identity.semanticKey, ROLE_GOT_IT)
             putExtra(EXTRA_TASK_ID, identity.eventId)
             putExtra(EXTRA_SEMANTIC_KEY, identity.semanticKey)
+            putBoundary(boundary)
         }
         val gotItPendingIntent = PendingIntent.getBroadcast(
             context,
@@ -237,7 +257,15 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             .addAction(
                 0,
                 context.appString("notification_action_mark_done"),
-                markDonePendingIntent(context, identity.eventId, identity.semanticKey, notificationId, identity.occurrenceUtcMillis),
+                markDonePendingIntent(
+                    context,
+                    identity.eventId,
+                    identity.semanticKey,
+                    notificationId,
+                    identity.occurrenceUtcMillis,
+                    boundary.accountId,
+                    boundary.boundaryEpoch,
+                ),
             )
             .addAction(0, context.appString("notification_action_got_it"), gotItPendingIntent)
             .build()
@@ -255,6 +283,8 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         const val EXTRA_NOTIFICATION_AT_UTC = "notification_at_utc"
         const val EXTRA_ALLOW_MARK_DONE = "allow_mark_done"
         const val EXTRA_RESCHEDULE_AFTER_FIRE = "reschedule_after_fire"
+        const val EXTRA_ACCOUNT_ID = "account_id"
+        const val EXTRA_BOUNDARY_EPOCH = "boundary_epoch"
         const val ACTION_MARK_DONE = "com.udnahc.opentasks.ACTION_MARK_DONE"
         const val ACTION_GOT_IT = "com.udnahc.opentasks.ACTION_GOT_IT"
 
@@ -271,6 +301,8 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
             semanticKey: String,
             notificationId: Int,
             occurrenceDeadlineUtcMillis: Long,
+            accountId: String,
+            boundaryEpoch: Long,
         ): PendingIntent {
             val intent = context.appComponentIntent(NOTIFICATION_ACTION_RECEIVER_CLASS).apply {
                 action = ACTION_MARK_DONE
@@ -279,6 +311,8 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
                 putExtra(EXTRA_SEMANTIC_KEY, semanticKey)
                 putExtra(EXTRA_NOTIFICATION_ID, notificationId)
                 putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, occurrenceDeadlineUtcMillis)
+                putExtra(EXTRA_ACCOUNT_ID, accountId)
+                putExtra(EXTRA_BOUNDARY_EPOCH, boundaryEpoch)
             }
             return PendingIntent.getBroadcast(
                 context,
@@ -299,6 +333,11 @@ actual class NotificationScheduler(private val context: Context) : ReminderSched
         private fun legacyNotificationId(eventId: String, slot: Int): Int =
             "$eventId:$slot".hashCode().and(0x7FFFFFFF)
     }
+}
+
+private fun Intent.putBoundary(boundary: AccountBoundary) {
+    putExtra(NotificationScheduler.EXTRA_ACCOUNT_ID, boundary.accountId)
+    putExtra(NotificationScheduler.EXTRA_BOUNDARY_EPOCH, boundary.boundaryEpoch)
 }
 
 private fun Context.appComponentIntent(className: String): Intent =

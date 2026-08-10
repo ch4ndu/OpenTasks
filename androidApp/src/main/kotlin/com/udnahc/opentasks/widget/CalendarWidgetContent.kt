@@ -36,6 +36,8 @@ import com.udnahc.opentasks.EXTRA_WIDGET_ACTION
 import com.udnahc.opentasks.EXTRA_WIDGET_CALENDAR_DAY
 import com.udnahc.opentasks.EXTRA_WIDGET_CALENDAR_MONTH
 import com.udnahc.opentasks.EXTRA_WIDGET_CALENDAR_YEAR
+import com.udnahc.opentasks.EXTRA_ACCOUNT_ID
+import com.udnahc.opentasks.EXTRA_BOUNDARY_EPOCH
 
 private const val PKG = "com.udnahc.opentasks"
 private const val MAIN_ACTIVITY = "$PKG.MainActivity"
@@ -50,7 +52,9 @@ internal fun widgetResourceColor(colorRes: Int): ColorProvider = ColorProvider(c
 private fun calendarDayIntent(
     year: Int,
     month: Int,
-    day: Int
+    day: Int,
+    accountId: String? = null,
+    boundaryEpoch: Long = 0L,
 ): Intent =
     Intent().apply {
         component = ComponentName(PKG, MAIN_ACTIVITY)
@@ -58,6 +62,8 @@ private fun calendarDayIntent(
         putExtra(EXTRA_WIDGET_CALENDAR_YEAR, year)
         putExtra(EXTRA_WIDGET_CALENDAR_MONTH, month)
         putExtra(EXTRA_WIDGET_CALENDAR_DAY, day)
+        if (accountId != null) putExtra(EXTRA_ACCOUNT_ID, accountId)
+        putExtra(EXTRA_BOUNDARY_EPOCH, boundaryEpoch)
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
 
@@ -90,6 +96,8 @@ fun CalendarWidgetContent(
     todayDay: Int,
     prefs: CalendarWidgetPreferences,
     appWidgetId: Int,
+    accountId: String? = null,
+    boundaryEpoch: Long = 0L,
 ) {
     val themeColors = widgetThemeColors(prefs.theme)
     val bgColor = widgetResourceColor(themeColors.background)
@@ -155,7 +163,9 @@ fun CalendarWidgetContent(
                         textAlign = TextAlign.Center,
                     ),
                     modifier = GlanceModifier
-                        .clickable(actionStartActivity(calendarDayIntent(year, month, 1))),
+                        .clickable(
+                            actionStartActivity(calendarDayIntent(year, month, 1, accountId, boundaryEpoch))
+                        ),
                 )
                 Text(
                     text = "\u25B8",
@@ -224,7 +234,9 @@ fun CalendarWidgetContent(
                                         calendarDayIntent(
                                             year,
                                             month,
-                                            day
+                                            day,
+                                            accountId,
+                                            boundaryEpoch,
                                         )
                                     )
                                 ),

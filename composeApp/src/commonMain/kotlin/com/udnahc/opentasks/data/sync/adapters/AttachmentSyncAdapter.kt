@@ -22,16 +22,13 @@ import com.udnahc.opentasks.data.sync.records.AttachmentRecord
 import com.udnahc.opentasks.data.sync.records.toAttachment
 import com.udnahc.opentasks.data.sync.records.toAttachmentRecord
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
-import io.ktor.client.request.get
-import io.ktor.client.request.url
-import io.ktor.client.statement.bodyAsBytes
-import io.ktor.http.path
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.coroutines.cancellation.CancellationException
 import org.lighthousegames.logging.logging
 
 private val log = logging("AttachmentSyncAdapter")
@@ -58,8 +55,8 @@ open class AttachmentSyncAdapter(
     override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
     override suspend fun hardDeleteLocalNeverSynced(entity: Attachment) {
         dao.delete(entity)
-        runCatching { fileStorage.delete(entity.localPath) }
-        runCatching { fileStorage.delete(entity.thumbnailPath) }
+        deleteFileBestEffort(entity.localPath)
+        deleteFileBestEffort(entity.thumbnailPath)
     }
 
     override suspend fun upsert(entity: Attachment) = dao.upsert(entity)
@@ -95,7 +92,12 @@ open class AttachmentSyncAdapter(
         throw SyncAdapterException("Attachment lookup must use the structured guarded gateway")
 
     override suspend fun pullAll(client: PocketbaseClient) {
-        val remoteRecords = fetchAllRecords(client)
+        val remoteRecords = if (allowsTestOnlyLegacySdkWrites()) {
+            fetchAllRecords(client)
+        } else {
+            fetchAllRecordsThroughGateway(client)
+        }
+        val gateway = if (allowsTestOnlyLegacySdkWrites()) null else recordGateway(client)
         val localSnapshot = getAllOnce()
         val localById = localSnapshot.associateBy { it.id }
         for (record in remoteRecords) {
@@ -125,16 +127,17 @@ open class AttachmentSyncAdapter(
             }
             runCatching {
                 val recordId = record.id ?: throw SyncAdapterException("Attachment ${record.localId} missing remote id")
-                val response = client.httpClient.get {
-                    url { path("api", "files", collectionName, recordId, record.file) }
+                val bytes = if (gateway != null) {
+                    val response = gateway.downloadProtectedFile(recordId, record.file)
+                    if (!response.isSuccess) throw AttachmentFileDownloadException(response.status.value)
+                    response.body ?: throw AttachmentFileDownloadException(response.status.value)
+                } else {
+                    throw SyncAdapterException("Protected attachment downloads require the owner-scoped gateway")
                 }
-                if (response.status.value !in 200..299) {
-                    throw AttachmentFileDownloadException(response.status.value)
-                }
-                val bytes = response.bodyAsBytes()
                 val stored = fileStorage.storeRemoteImage(record.file, bytes)
                 upsertRemoteDownloadSuccess(incoming, stored, local)
             }.onFailure {
+                if (it is CancellationException) throw it
                 log.e(it) { "Failed to download attachment ${record.localId}" }
                 upsertRemoteDownloadFailure(incoming, it, local)
             }
@@ -209,26 +212,33 @@ open class AttachmentSyncAdapter(
     }
 
     private suspend fun deleteLocalFilesFor(attachment: Attachment) {
-        if (attachment.localPath.isNotBlank()) {
-            runCatching { fileStorage.delete(attachment.localPath) }
-        }
-        if (attachment.thumbnailPath.isNotBlank()) {
-            runCatching { fileStorage.delete(attachment.thumbnailPath) }
-        }
+        deleteFileBestEffort(attachment.localPath)
+        deleteFileBestEffort(attachment.thumbnailPath)
     }
 
     private suspend fun deleteSupersededLocalFiles(previous: Attachment, replacement: Attachment) {
         if (previous.localPath.isNotBlank() && previous.localPath != replacement.localPath) {
-            runCatching { fileStorage.delete(previous.localPath) }
+            deleteFileBestEffort(previous.localPath)
         }
         if (previous.thumbnailPath.isNotBlank() && previous.thumbnailPath != replacement.thumbnailPath) {
-            runCatching { fileStorage.delete(previous.thumbnailPath) }
+            deleteFileBestEffort(previous.thumbnailPath)
         }
     }
 
     private suspend fun deleteDownloadedFiles(attachment: Attachment) {
-        if (attachment.localPath.isNotBlank()) runCatching { fileStorage.delete(attachment.localPath) }
-        if (attachment.thumbnailPath.isNotBlank()) runCatching { fileStorage.delete(attachment.thumbnailPath) }
+        deleteFileBestEffort(attachment.localPath)
+        deleteFileBestEffort(attachment.thumbnailPath)
+    }
+
+    private suspend fun deleteFileBestEffort(path: String) {
+        if (path.isBlank()) return
+        try {
+            fileStorage.delete(path)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Local cleanup is best effort after the Room decision is durable.
+        }
     }
 
     override suspend fun pushAll(client: PocketbaseClient) {
@@ -255,6 +265,7 @@ open class AttachmentSyncAdapter(
             try {
                 pushOne(client, attachment)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 log.e(e) { "Failed to push attachment ${attachment.id}" }
                 failures += e
                 dao.markSyncFailed(attachment.id, AttachmentSyncState.FAILED.name, "sync_failed")

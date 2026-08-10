@@ -3,6 +3,7 @@ package com.udnahc.opentasks.viewmodel
 import app.cash.turbine.test
 import app.cash.turbine.ReceiveTurbine
 import com.udnahc.opentasks.NotificationDeepLinkEvent
+import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_HOUR
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.localToUtc
@@ -481,7 +482,10 @@ class SharedViewModelTest : MainDispatcherRule() {
     @Test
     fun appRefreshUsesOneConcurrentSyncPass() = runTest(dispatcher) {
         val provider = PocketBaseClientProvider()
-        val trigger = TriggerSyncAction(provider, SyncService(provider, emptyList()))
+        val trigger = TriggerSyncAction(
+            provider,
+            SyncService(provider, emptyList(), accountMutationGate = MutexAccountMutationGate()),
+        )
         val gate = CompletableDeferred<Unit>()
         var syncCount = 0
         val viewModel = AppViewModel(

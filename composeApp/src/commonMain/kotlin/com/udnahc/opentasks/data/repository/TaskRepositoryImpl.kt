@@ -11,6 +11,7 @@ import com.udnahc.opentasks.data.extensions.utcNow
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.ATTACHMENT_OWNER_TASK
+import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,7 @@ class TaskRepositoryImpl(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     /** Test-only failure point proving the cross-DAO writer transaction rolls back as one unit. */
     internal val beforeTaskGraphParentTombstone: (() -> Unit)? = null,
+    private val mutationGate: AccountMutationGate,
 ) : TaskRepository {
 
     override fun getAllTasks(): Flow<List<Task>> =
@@ -51,19 +53,19 @@ class TaskRepositoryImpl(
     override suspend fun getTaskByExternalId(externalId: String): Task? =
         withContext(ioDispatcher) { taskDao.getTaskByExternalId(externalId)?.withLocalTimestamps() }
 
-    override suspend fun insert(task: Task): Long {
+    override suspend fun insert(task: Task): Long = mutationGate.withExclusive {
         log.v { "Inserting task: ${task.id}" }
         val result = withContext(ioDispatcher) {
             taskDao.insert(task.withDefaultTimestamps().withUtcTimestamps())
         }
         syncTrigger.triggerSync()
-        return result
+        result
     }
 
     override suspend fun mutateExisting(
         id: String,
         transform: (Task) -> Task?,
-    ): TaskMutationResult {
+    ): TaskMutationResult = mutationGate.withExclusive {
         val result = withContext(ioDispatcher) {
             taskDao.mutateActive(id) { stored ->
                 transform(stored.withLocalTimestamps())
@@ -79,10 +81,10 @@ class TaskRepositoryImpl(
             )
         }
         if (mapped is TaskMutationResult.Existing && mapped.next != null) syncTrigger.triggerSync()
-        return mapped
+        mapped
     }
 
-    override suspend fun deleteGraph(id: String): TaskGraphDeletionResult {
+    override suspend fun deleteGraph(id: String): TaskGraphDeletionResult = mutationGate.withExclusive {
         val nowUtc = utcNow()
         val result = withContext(ioDispatcher) {
             database.useWriterConnection { connection ->
@@ -116,7 +118,7 @@ class TaskRepositoryImpl(
             }
         }
         if (result is TaskGraphDeletionResult.Deleted) syncTrigger.triggerSync()
-        return result
+        result
     }
 
     /** Returns tasks with raw UTC timestamps (no local conversion) for notification scheduling.

@@ -1,5 +1,7 @@
 package com.udnahc.opentasks
 
+import com.udnahc.opentasks.data.auth.CacheBinding
+
 /**
  * A widget launch request. [id] must increase for every received Android intent so an
  * identical widget action is still handled as a new navigation event.
@@ -9,6 +11,8 @@ data class WidgetNavigationEvent(
     val action: WidgetNavigationAction,
     val taskId: String? = null,
     val calendarDate: WidgetCalendarDate? = null,
+    val accountId: String? = null,
+    val boundaryEpoch: Long = 0L,
 )
 
 enum class WidgetNavigationAction {
@@ -35,6 +39,8 @@ class WidgetNavigationEventPublisher {
         action: WidgetNavigationAction,
         taskId: String? = null,
         calendarDate: WidgetCalendarDate? = null,
+        accountId: String? = null,
+        boundaryEpoch: Long = 0L,
     ): WidgetNavigationEvent? {
         val normalizedTaskId = taskId?.takeIf { it.isNotBlank() }
         val normalizedDate = calendarDate?.takeIf { it.isValid }
@@ -46,6 +52,8 @@ class WidgetNavigationEventPublisher {
             action = action,
             taskId = normalizedTaskId,
             calendarDate = normalizedDate,
+            accountId = accountId,
+            boundaryEpoch = boundaryEpoch,
         )
     }
 }
@@ -56,3 +64,6 @@ internal fun consumeCalendarNavigationEvent(
     consumedEventId: Long,
 ): WidgetNavigationEvent? =
     current?.takeUnless { it.id == consumedEventId }
+
+fun WidgetNavigationEvent.matches(binding: CacheBinding): Boolean =
+    accountId == binding.accountId && boundaryEpoch == binding.boundaryEpoch

@@ -79,6 +79,7 @@ private class FakeScheduler : ReminderScheduler {
     override suspend fun cancelPendingReminders(eventId: String) = Unit
     override suspend fun cancelReminders(eventId: String) = Unit
     override suspend fun cancelAll(eventId: String) = Unit
+    override suspend fun cancelAllAccountReminders() = Unit
     override suspend fun startOngoing(
         identity: com.udnahc.opentasks.data.notification.ReminderIdentity,
         title: String,

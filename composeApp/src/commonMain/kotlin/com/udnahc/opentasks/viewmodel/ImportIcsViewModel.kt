@@ -2,6 +2,8 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import kotlinx.coroutines.CancellationException
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
@@ -27,6 +29,7 @@ data class ImportIcsUiState(
 class ImportIcsViewModel(
     private val parseIcs: ParseIcsUseCase,
     private val importAction: ImportCalendarEventsAction,
+    private val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
@@ -38,6 +41,8 @@ class ImportIcsViewModel(
         fileName: String,
         content: String
     ) {
+        val expectedBoundary = accountBoundaryExecutor?.captureForegroundBoundary()
+        if (accountBoundaryExecutor != null && expectedBoundary == null) return
         if (!importInProgress.compareAndSet(expect = false, update = true)) return
         log.d { "Importing ICS events" }
         viewModelScope.launch(ioDispatcher) {
@@ -60,7 +65,9 @@ class ImportIcsViewModel(
                     }
                     return@launch
                 }
-                val count = importAction(events)
+                val count = accountBoundaryExecutor.withForegroundActionBoundary(expectedBoundary) {
+                    importAction(events)
+                }
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: CancellationException) {
                 throw e

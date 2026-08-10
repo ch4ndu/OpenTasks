@@ -7,6 +7,7 @@ import androidx.sqlite.execSQL
 import app.cash.turbine.test
 import com.udnahc.opentasks.data.attachment.AttachmentImageDecodeException
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
+import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.AttachmentSyncState
@@ -54,6 +55,7 @@ import kotlin.test.assertTrue
 class PersistenceTest {
     private lateinit var databaseFile: File
     private lateinit var database: AppDatabase
+    private lateinit var mutationGate: MutexAccountMutationGate
 
     private object NoOpSyncTrigger : SyncTrigger {
         override suspend fun triggerSync() = Unit
@@ -61,6 +63,7 @@ class PersistenceTest {
 
     @BeforeTest
     fun createDatabase() {
+        mutationGate = MutexAccountMutationGate()
         databaseFile = File.createTempFile("opentasks-test", ".db")
         database = Room.databaseBuilder<AppDatabase>(name = databaseFile.absolutePath)
             .setDriver(BundledSQLiteDriver())
@@ -230,6 +233,7 @@ class PersistenceTest {
             taskDao = database.taskDao(),
             syncTrigger = NoOpSyncTrigger,
             database = database,
+            mutationGate = mutationGate,
         )
         val localDeadline = 1_778_000_000_000L
         val task = testTask(id = "task", deadline = localDeadline, createdAt = localDeadline, updatedAt = localDeadline)
@@ -268,7 +272,7 @@ class PersistenceTest {
         database.tagDao().insertTag(tag)
         database.tagDao().insertTaskTag(testTaskTag(taskId = task.id, tagId = tag.id, pbId = "pb-task-tag", updatedAt = 20L))
         database.attachmentDao().insert(attachment)
-        val repository = TaskRepositoryImpl(database.taskDao(), NoOpSyncTrigger, database)
+        val repository = TaskRepositoryImpl(database.taskDao(), NoOpSyncTrigger, database, mutationGate = mutationGate)
 
         val result = repository.deleteGraph(task.id)
 
@@ -296,6 +300,7 @@ class PersistenceTest {
             NoOpSyncTrigger,
             database,
             beforeTaskGraphParentTombstone = { error("simulated transaction failure") },
+            mutationGate = mutationGate,
         )
 
         assertFailsWith<IllegalStateException> { repository.deleteGraph(task.id) }
@@ -316,7 +321,7 @@ class PersistenceTest {
         )
         database.taskDao().insert(task)
         database.attachmentDao().insert(attachment)
-        val repository = TaskRepositoryImpl(database.taskDao(), NoOpSyncTrigger, database)
+        val repository = TaskRepositoryImpl(database.taskDao(), NoOpSyncTrigger, database, mutationGate = mutationGate)
         val storage = object : AttachmentFileStorage by FakeAttachmentFileStorage() {
             override suspend fun delete(path: String) = error("simulated file cleanup failure")
         }
@@ -325,6 +330,7 @@ class PersistenceTest {
             repository,
             storage,
             ScheduleTaskRemindersAction(NotificationScheduler(), repository),
+            mutationGate = MutexAccountMutationGate(),
         )(task.id)
 
         assertTrue(database.taskDao().findTaskByIdAnyState(task.id)?.isDeleted == true)
@@ -376,7 +382,7 @@ class PersistenceTest {
         database.tagDao().insertTaskTag(
             testTaskTag(taskId = task.id, tagId = tag.id, createdAt = 100L, updatedAt = 100L),
         )
-        val repository = TagRepositoryImpl(database.tagDao(), NoOpSyncTrigger)
+        val repository = TagRepositoryImpl(database.tagDao(), NoOpSyncTrigger, mutationGate = mutationGate)
 
         repository.insertTaskTag(
             testTaskTag(taskId = task.id, tagId = tag.id, createdAt = 500L, updatedAt = 500L),
@@ -438,6 +444,7 @@ class PersistenceTest {
         val repository = CategoryRepositoryImpl(
             categoryDao = database.categoryDao(),
             syncTrigger = NoOpSyncTrigger,
+            mutationGate = mutationGate,
         )
         val first = testCategory(id = "first", name = "First", sortOrder = 2, createdAt = 1_000L, updatedAt = 1_000L)
         val second = testCategory(id = "second", name = "Second", sortOrder = 1, createdAt = 2_000L, updatedAt = 2_000L)
@@ -462,6 +469,7 @@ class PersistenceTest {
         val repository = AttachmentRepositoryImpl(
             dao = database.attachmentDao(),
             syncTrigger = NoOpSyncTrigger,
+            mutationGate = mutationGate,
         )
         database.attachmentDao().insert(
             testAttachment(
@@ -527,7 +535,7 @@ class PersistenceTest {
             addFile("/tmp/attachment-clear_thumb.jpg")
         }
         val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
-        val service = SyncService(provider, emptyList())
+        val service = SyncService(provider, emptyList(), accountMutationGate = mutationGate)
         val trigger = TriggerSyncAction(provider, service)
         val action = clearLocalDataAction(storage, service, trigger)
 
@@ -550,7 +558,7 @@ class PersistenceTest {
     @Test
     fun clearLocalDataFailureLeavesPocketBaseDisconnected() = runTest {
         val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
-        val service = SyncService(provider, emptyList())
+        val service = SyncService(provider, emptyList(), accountMutationGate = mutationGate)
         val trigger = TriggerSyncAction(provider, service)
         val failingStorage = object : AttachmentFileStorage by FakeAttachmentFileStorage() {
             override suspend fun clearAll() {
@@ -568,10 +576,10 @@ class PersistenceTest {
     @Test
     fun repositoryWriteAfterResetDoesNotReconnectPocketBase() = runTest {
         val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
-        val service = SyncService(provider, emptyList())
+        val service = SyncService(provider, emptyList(), accountMutationGate = mutationGate)
         val trigger = TriggerSyncAction(provider, service)
         clearLocalDataAction(FakeAttachmentFileStorage(), service, trigger)()
-        val repository = TaskRepositoryImpl(database.taskDao(), trigger, database)
+        val repository = TaskRepositoryImpl(database.taskDao(), trigger, database, mutationGate = mutationGate)
 
         repository.insert(testTask(id = "post-reset"))
 
@@ -588,6 +596,7 @@ class PersistenceTest {
         attachmentFileStorage = storage,
         syncService = service,
         triggerSyncAction = trigger,
+        mutationGate = MutexAccountMutationGate(),
     )
 
     @Test

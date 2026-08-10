@@ -3,6 +3,9 @@ package com.udnahc.opentasks
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import com.udnahc.opentasks.data.auth.CacheBinding
 
 class WidgetNavigationEventTest {
 
@@ -42,5 +45,23 @@ class WidgetNavigationEventTest {
 
         assertNull(consumeCalendarNavigationEvent(first, first.id))
         assertEquals(second, consumeCalendarNavigationEvent(second, first.id))
+    }
+
+    @Test
+    fun widgetAndNotificationEventsRequireTheCurrentAccountEpoch() {
+        val binding = CacheBinding(
+            canonicalEndpoint = "https://tasks.example.com",
+            serverInstanceId = "server",
+            accountId = "account-a",
+            capabilityVersion = 2,
+            boundaryEpoch = 7,
+        )
+
+        assertTrue(WidgetNavigationEvent(1, WidgetNavigationAction.VIEW_LIST, accountId = "account-a", boundaryEpoch = 7).matches(binding))
+        assertFalse(WidgetNavigationEvent(2, WidgetNavigationAction.VIEW_LIST, accountId = "account-b", boundaryEpoch = 7).matches(binding))
+        assertFalse(WidgetNavigationEvent(3, WidgetNavigationAction.VIEW_LIST, accountId = "account-a", boundaryEpoch = 6).matches(binding))
+        assertTrue(NotificationDeepLinkEvent("task", accountId = "account-a", boundaryEpoch = 7).matches(binding))
+        assertFalse(NotificationDeepLinkEvent("task", accountId = "account-a", boundaryEpoch = 6).matches(binding))
+        assertFalse(NotificationDeepLinkEvent("task").matches(binding))
     }
 }

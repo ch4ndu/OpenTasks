@@ -2,6 +2,8 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
 import kotlinx.coroutines.CancellationException
 import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
@@ -27,6 +29,7 @@ data class ImportCsvUiState(
 class ImportCsvViewModel(
     private val parseCsv: ParseCsvUseCase,
     private val importAction: ImportCsvTasksAction,
+    private val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
@@ -38,6 +41,8 @@ class ImportCsvViewModel(
         fileName: String,
         content: String
     ) {
+        val expectedBoundary = accountBoundaryExecutor?.captureForegroundBoundary()
+        if (accountBoundaryExecutor != null && expectedBoundary == null) return
         if (!importInProgress.compareAndSet(expect = false, update = true)) return
         log.d { "Importing CSV tasks" }
         viewModelScope.launch(ioDispatcher) {
@@ -60,7 +65,9 @@ class ImportCsvViewModel(
                     }
                     return@launch
                 }
-                val count = importAction(tasks)
+                val count = accountBoundaryExecutor.withForegroundActionBoundary(expectedBoundary) {
+                    importAction(tasks)
+                }
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: CancellationException) {
                 throw e

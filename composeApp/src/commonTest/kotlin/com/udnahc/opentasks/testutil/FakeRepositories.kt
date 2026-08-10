@@ -37,6 +37,11 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
     var graphDeletionError: Throwable? = null
     var mutationError: Throwable? = null
     var allTasksSubscriptionCount = 0
+    var getTaskByIdCalls = 0
+    var getTaskByIdUtcCalls = 0
+    var getTaskByExternalIdCalls = 0
+    var mutateExistingCalls = 0
+    var deleteGraphCalls = 0
 
     val tasks: List<Task>
         get() = tasksFlow.value
@@ -47,14 +52,18 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
 
     override fun getAllTasks(): Flow<List<Task>> = tasksFlow.onStart { allTasksSubscriptionCount += 1 }
 
-    override suspend fun getTaskById(id: String): Task? =
-        tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }
+    override suspend fun getTaskById(id: String): Task? {
+        getTaskByIdCalls++
+        return tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }
+    }
 
     override fun observeTaskById(id: String): Flow<Task?> =
         tasksFlow.map { tasks -> tasks.firstOrNull { it.id == id && !it.isDeleted } }
 
-    override suspend fun getTaskByExternalId(externalId: String): Task? =
-        tasksFlow.value.firstOrNull { it.sourceExternalId == externalId && !it.isDeleted }
+    override suspend fun getTaskByExternalId(externalId: String): Task? {
+        getTaskByExternalIdCalls++
+        return tasksFlow.value.firstOrNull { it.sourceExternalId == externalId && !it.isDeleted }
+    }
 
     override suspend fun insert(task: Task): Long {
         inserted.add(task)
@@ -66,6 +75,7 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
         id: String,
         transform: (Task) -> Task?,
     ): com.udnahc.opentasks.data.repository.TaskMutationResult = writerMutex.withLock {
+        mutateExistingCalls++
         mutationError?.let { throw it }
         val previous = tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }
             ?: return@withLock com.udnahc.opentasks.data.repository.TaskMutationResult.Missing
@@ -78,6 +88,7 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
     }
 
     override suspend fun deleteGraph(id: String): TaskGraphDeletionResult = writerMutex.withLock {
+        deleteGraphCalls++
         val previous = tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }
             ?: return@withLock TaskGraphDeletionResult.Missing
         graphDeletionError?.let { throw it }
@@ -90,7 +101,10 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
     override suspend fun getTasksWithDeadlines(): List<Task> =
         tasksFlow.value.filter { !it.isDeleted && it.deadline != null }
 
-    override suspend fun getTaskByIdUtc(id: String): Task? = getTaskById(id)
+    override suspend fun getTaskByIdUtc(id: String): Task? {
+        getTaskByIdUtcCalls++
+        return tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }
+    }
 
     override suspend fun getAllTasksOnce(): List<Task> =
         tasksFlow.value.filterNot { it.isDeleted }
@@ -309,6 +323,8 @@ class FakeCountdownRepository(initialCountdowns: List<Countdown> = emptyList()) 
     val inserted = mutableListOf<Countdown>()
     val updated = mutableListOf<Countdown>()
     val deleted = mutableListOf<Countdown>()
+    var getCountdownByIdCalls = 0
+    var getCountdownByIdUtcCalls = 0
 
     val countdowns: List<Countdown>
         get() = countdownsFlow.value
@@ -318,10 +334,15 @@ class FakeCountdownRepository(initialCountdowns: List<Countdown> = emptyList()) 
     override fun observeCountdownById(id: String): Flow<Countdown?> =
         countdownsFlow.map { countdowns -> countdowns.firstOrNull { it.id == id && !it.isDeleted } }
 
-    override suspend fun getCountdownById(id: String): Countdown? =
-        countdownsFlow.value.firstOrNull { it.id == id && !it.isDeleted }
+    override suspend fun getCountdownById(id: String): Countdown? {
+        getCountdownByIdCalls++
+        return countdownsFlow.value.firstOrNull { it.id == id && !it.isDeleted }
+    }
 
-    override suspend fun getCountdownByIdUtc(id: String): Countdown? = getCountdownById(id)
+    override suspend fun getCountdownByIdUtc(id: String): Countdown? {
+        getCountdownByIdUtcCalls++
+        return countdownsFlow.value.firstOrNull { it.id == id && !it.isDeleted }
+    }
 
     override suspend fun getAllCountdownsForReminderReconciliationUtc(): List<Countdown> =
         countdownsFlow.value.filterNot { it.isDeleted }

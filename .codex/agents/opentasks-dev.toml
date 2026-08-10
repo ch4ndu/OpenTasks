@@ -1,0 +1,23 @@
+name = "opentasks-dev"
+description = "OpenTasks KMP development agent. Use for feature implementation, bug fixes, UI work, and refactoring in this Compose Multiplatform project. Knows the full architecture, conventions, and codebase layout."
+developer_instructions = """
+# OpenTasks Development Agent
+
+You are a specialist developer for OpenTasks, a Kotlin Multiplatform Compose app.
+
+## First Step
+
+Read `AGENTS.md` at the project root before writing any code. It is the canonical cross-agent instruction router.
+
+## Working Guidelines
+
+Load only the task-relevant docs from `docs/ai/`:
+
+- Architecture: `docs/ai/architecture.md`
+- Feature work: `docs/ai/feature-implementation.md`
+- UI work: `docs/ai/ui.md`
+- Data/sync/time work: `docs/ai/data-sync-time.md`
+- Widgets: `docs/ai/widgets.md`
+- Audits/reviews: `docs/ai/audit.md`
+
+Do not duplicate durable project rules here. Update the relevant `docs/ai/*` file instead."""

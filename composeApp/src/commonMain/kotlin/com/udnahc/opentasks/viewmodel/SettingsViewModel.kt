@@ -34,7 +34,7 @@ import org.lighthousegames.logging.logging
 
 private val log = logging("SettingsViewModel")
 
-enum class SyncStatus { IDLE, CHECKING, SYNCING, SUCCESS, ERROR }
+enum class SyncStatus { IDLE, CHECKING, SYNCING, SUCCESS, ERROR, SYNC_ERROR }
 
 sealed class ExportResult {
     data object Idle : ExportResult()
@@ -136,7 +136,7 @@ class SettingsViewModel(
                 _syncStatus.value = SyncStatus.SUCCESS
             } catch (e: Exception) {
                 log.e(e) { "Sync failed" }
-                _syncStatus.value = SyncStatus.ERROR
+                _syncStatus.value = SyncStatus.SYNC_ERROR
             }
         }
     }

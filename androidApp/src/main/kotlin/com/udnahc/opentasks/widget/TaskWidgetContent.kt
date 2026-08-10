@@ -32,16 +32,25 @@ import com.udnahc.opentasks.ACTION_VIEW_LIST
 import com.udnahc.opentasks.ACTION_VIEW_TASK
 import com.udnahc.opentasks.EXTRA_WIDGET_ACTION
 import com.udnahc.opentasks.EXTRA_WIDGET_TASK_ID
+import com.udnahc.opentasks.EXTRA_ACCOUNT_ID
+import com.udnahc.opentasks.EXTRA_BOUNDARY_EPOCH
 import com.udnahc.opentasks.R
 
 private const val PKG = "com.udnahc.opentasks"
 private const val MAIN_ACTIVITY = "$PKG.MainActivity"
 
-private fun mainIntent(action: String, taskId: String? = null): Intent =
+private fun mainIntent(
+    action: String,
+    taskId: String? = null,
+    accountId: String? = null,
+    boundaryEpoch: Long = 0L,
+): Intent =
     Intent().apply {
         component = ComponentName(PKG, MAIN_ACTIVITY)
         putExtra(EXTRA_WIDGET_ACTION, action)
         if (taskId != null) putExtra(EXTRA_WIDGET_TASK_ID, taskId)
+        if (accountId != null) putExtra(EXTRA_ACCOUNT_ID, accountId)
+        putExtra(EXTRA_BOUNDARY_EPOCH, boundaryEpoch)
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
 
@@ -66,6 +75,8 @@ fun TaskWidgetContent(
     prefs: WidgetPreferences,
     appWidgetId: Int,
     emptyMessage: String?,
+    accountId: String? = null,
+    boundaryEpoch: Long = 0L,
 ) {
     val themeColors = widgetThemeColors(prefs.theme)
     val bgColor = widgetResourceColor(themeColors.background)
@@ -109,7 +120,7 @@ fun TaskWidgetContent(
                 style = TextStyle(color = textColor, fontSize = 20.sp, fontWeight = FontWeight.Bold),
                 modifier = GlanceModifier
                     .padding(horizontal = 8.dp)
-                    .clickable(actionStartActivity(mainIntent(ACTION_CREATE_TASK))),
+                    .clickable(actionStartActivity(mainIntent(ACTION_CREATE_TASK, accountId = accountId, boundaryEpoch = boundaryEpoch))),
             )
             Text(
                 text = "\u21BB",
@@ -144,9 +155,9 @@ fun TaskWidgetContent(
             LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
                 items(tasks, itemId = { it.id.hashCode().toLong() }) { task ->
                     val clickAction = if (prefs.onClickAction == WidgetClickAction.OPEN_TASK) {
-                        actionStartActivity(mainIntent(ACTION_VIEW_TASK, task.id))
+                        actionStartActivity(mainIntent(ACTION_VIEW_TASK, task.id, accountId, boundaryEpoch))
                     } else {
-                        actionStartActivity(mainIntent(ACTION_VIEW_LIST))
+                        actionStartActivity(mainIntent(ACTION_VIEW_LIST, accountId = accountId, boundaryEpoch = boundaryEpoch))
                     }
                     Row(
                         modifier = GlanceModifier

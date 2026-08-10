@@ -4,6 +4,7 @@ import androidx.room.immediateTransaction
 import androidx.room.useWriterConnection
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.AppSettings
+import com.udnahc.opentasks.data.settings.AccountStateStore
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 
 /**
@@ -19,6 +20,7 @@ class ServerSeedExecutor(
     private val inventoryReader: suspend (PocketbaseClient) -> PocketBaseServerInventory = { client ->
         PocketBaseServerInventoryReader(PocketBaseRecordGatewayFactory().create(client)).read()
     },
+    private val accountStateStore: AccountStateStore? = null,
 ) {
     suspend fun isPending(): Boolean =
         database.appSettingsDao().getValue(SyncSettingsKeys.MODE) == SyncMode.EMPTY_SERVER_SEED_PENDING.name
@@ -26,9 +28,14 @@ class ServerSeedExecutor(
     suspend fun resume(client: PocketbaseClient) {
         if (!isPending()) return
         val inventory = inventoryReader(client)
-        val expectedIdentity = database.appSettingsDao().getValue(SyncSettingsKeys.SERVER_INSTANCE_ID)
+        val expectedIdentity = accountStateStore?.readCacheBinding()?.serverInstanceId
+            ?: database.appSettingsDao().getValue(SyncSettingsKeys.SERVER_INSTANCE_ID)
         if (expectedIdentity.isNullOrBlank() || expectedIdentity != inventory.serverInstanceId) {
             throw SyncAdapterException("Seed resume rejected: PocketBase identity changed")
+        }
+        val activeBinding = PocketBaseClientProvider.bindingFor(client)
+        if (activeBinding != null && inventory.accountId != activeBinding.accountId) {
+            throw SyncAdapterException("Seed resume rejected: PocketBase account boundary changed")
         }
 
         val ordered = adapters.sortedBy { it.order }
@@ -42,7 +49,9 @@ class ServerSeedExecutor(
         ordered.forEach { it.seedAll(client) }
 
         val finalInventory = inventoryReader(client)
-        if (finalInventory.serverInstanceId != expectedIdentity) {
+        if (finalInventory.serverInstanceId != expectedIdentity ||
+            (activeBinding != null && finalInventory.accountId != activeBinding.accountId)
+        ) {
             throw SyncAdapterException("Seed completion rejected: PocketBase identity changed")
         }
         database.useWriterConnection { connection ->

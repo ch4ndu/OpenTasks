@@ -171,6 +171,7 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(libs.logback.classic)
+            implementation(libs.java.keyring)
         }
     }
 }
@@ -235,10 +236,10 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "OpenTasks"
-            packageVersion = "1.0.0"
+            packageVersion = "1.1.0"
             macOS {
                 bundleID = "com.udnahc.opentasks"
-                iconFile.set(project.file("src/jvmMain/resources/ic_launcher.png"))
+                iconFile.set(project.file("src/jvmMain/resources/opentasks-macos.icns"))
             }
             windows {
                 iconFile.set(project.file("src/jvmMain/resources/ic_launcher.png"))

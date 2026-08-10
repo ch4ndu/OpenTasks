@@ -3,6 +3,9 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.NotificationDeepLinkEvent
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
+import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import com.udnahc.opentasks.data.extensions.utcToLocal
@@ -24,6 +27,9 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.lighthousegames.logging.logging
+
+private val log = logging("TaskNotificationViewModel")
 
 data class TaskNotificationUiState(
     val event: NotificationDeepLinkEvent? = null,
@@ -38,6 +44,7 @@ class TaskNotificationViewModel(
     private val observeTaskById: ObserveTaskByIdUseCase,
     private val markTaskNotificationDoneAction: MarkTaskNotificationDoneAction,
     private val dismissTaskNotificationAction: DismissTaskNotificationAction,
+    private val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
@@ -76,16 +83,22 @@ class TaskNotificationViewModel(
     fun markDone(onComplete: () -> Unit) {
         val event = _event.value ?: return
         if (_isBusy.value) return
+        val expectedBoundary = accountBoundaryExecutor?.captureForegroundBoundary()
+        if (accountBoundaryExecutor != null && expectedBoundary == null) return
         viewModelScope.launch {
             _isBusy.value = true
             try {
                 withContext(ioDispatcher) {
-                    markTaskNotificationDoneAction(
-                        taskId = event.eventId,
-                        occurrenceDeadlineUtcMillis = event.occurrenceDeadlineUtcMillis,
-                    )
+                    accountBoundaryExecutor.withForegroundActionBoundary(expectedBoundary) {
+                        markTaskNotificationDoneAction(
+                            taskId = event.eventId,
+                            occurrenceDeadlineUtcMillis = event.occurrenceDeadlineUtcMillis,
+                        )
+                    }
                 }
                 onComplete()
+            } catch (_: AccountBoundaryRejectedException) {
+                log.w { "Notification action skipped because the foreground account boundary changed" }
             } finally {
                 _isBusy.value = false
             }
@@ -95,13 +108,19 @@ class TaskNotificationViewModel(
     fun gotIt(onComplete: () -> Unit) {
         val event = _event.value ?: return
         if (_isBusy.value) return
+        val expectedBoundary = accountBoundaryExecutor?.captureForegroundBoundary()
+        if (accountBoundaryExecutor != null && expectedBoundary == null) return
         viewModelScope.launch {
             _isBusy.value = true
             try {
                 withContext(ioDispatcher) {
-                    dismissTaskNotificationAction(event.eventId, event.semanticKey)
+                    accountBoundaryExecutor.withForegroundActionBoundary(expectedBoundary) {
+                        dismissTaskNotificationAction(event.eventId, event.semanticKey)
+                    }
                 }
                 onComplete()
+            } catch (_: AccountBoundaryRejectedException) {
+                log.w { "Notification action skipped because the foreground account boundary changed" }
             } finally {
                 _isBusy.value = false
             }

@@ -11,10 +11,9 @@ import kotlinx.coroutines.sync.withLock
  * a receiver process can restore pending and displayed reminders immediately.
  */
 internal class AndroidReminderKeyStore(context: Context) {
+    private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val registry = ReminderKeyRegistry(
-        SharedPreferencesReminderKeyStorage(
-            context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE),
-        )
+        SharedPreferencesReminderKeyStorage(preferences)
     )
 
     suspend fun allocatePending(identity: ReminderIdentity): ReminderKeyRecord =
@@ -35,8 +34,18 @@ internal class AndroidReminderKeyStore(context: Context) {
     suspend fun cleanupLegacyOnce(eventId: String, cleanup: () -> Unit) =
         processMutex.withLock { registry.legacyCleanupOnce(eventId, cleanup) }
 
+    suspend fun allRecords(): List<ReminderKeyRecord> {
+        val keys = processMutex.withLock {
+            preferences.all.keys
+                .filter { it.startsWith(KEY_ID_PREFIX) }
+                .map { it.removePrefix(KEY_ID_PREFIX) }
+        }
+        return keys.mapNotNull { registry.record(it) }
+    }
+
     private companion object {
         const val PREFERENCES_NAME = "opentasks_reminder_key_store"
+        const val KEY_ID_PREFIX = "reminder.key.id."
         val processMutex = Mutex()
     }
 }

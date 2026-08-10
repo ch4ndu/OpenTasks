@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlin.coroutines.cancellation.CancellationException
 import org.lighthousegames.logging.logging
 
 private val log = logging("SyncAdapter")
@@ -89,7 +90,13 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
 
     /** Production clients always have a canonical endpoint and therefore use guarded HTTP writes. */
     open fun recordGateway(client: PocketbaseClient): PocketBaseRecordGateway =
-        PocketBaseRecordGatewayFactory().create(client)
+        PocketBaseRecordGatewayFactory().create(
+            client,
+            PocketBaseClientProvider.endpointFor(client)
+                ?: error("PocketBase client has no canonical endpoint"),
+            PocketBaseClientProvider.bindingFor(client)
+                ?: error("PocketBase client has no active authenticated account"),
+        )
 
     /** Only in-memory test adapters may opt into the legacy SDK fake seam. */
     protected open fun allowsTestOnlyLegacySdkWrites(): Boolean = false
@@ -108,6 +115,42 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
 
     /** Serialize entity to JSON body string for PocketBase. */
     abstract fun toJsonBody(entity: Entity): String
+
+    /**
+     * Production pulls use the same owner-scoped gateway as writes.  The
+     * legacy SDK fetch remains available only to isolated fake adapters.
+     */
+    protected suspend fun fetchAllRecordsThroughGateway(client: PocketbaseClient): List<Record> {
+        val gateway = recordGateway(client)
+        val rows = mutableListOf<Record>()
+        var page = 1
+        var totalPages: Int
+        do {
+            val response = gateway.getRecords(collectionName, page, PAGE_SIZE)
+            val result = response.body
+                ?: throw SyncAdapterException(
+                    "Unable to fetch $collectionName through the owner-scoped gateway (HTTP ${response.status.value})",
+                )
+            rows += result.items.map { recordFromJson(it) }
+            totalPages = result.totalPages
+            page += 1
+        } while (page <= totalPages)
+        return rows
+    }
+
+    protected suspend fun verifyCollectionThroughGateway(client: PocketbaseClient) {
+        val response = recordGateway(client).getRecords(collectionName, 1, 1)
+        if (!response.isSuccess) {
+            throw SyncAdapterException(
+                "Unable to verify $collectionName through the owner-scoped gateway (HTTP ${response.status.value})",
+            )
+        }
+    }
+
+    /** Used by connection checks after a client has been activated. */
+    suspend fun verifyCollectionForActiveBoundary(client: PocketbaseClient) {
+        verifyCollectionThroughGateway(client)
+    }
 
     /** Push all unsynced entities to server. */
     open suspend fun pushAll(client: PocketbaseClient) {
@@ -146,6 +189,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                     }
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 log.e(e) { "Failed to push $collectionName ${localId(entity)}" }
                 failures += e
             }
@@ -173,6 +217,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 } ?: createOrRecover(client, id, timestamp, body)
                 if (resolution == PushResolution.Pushed) markSyncedAfterPush(id, timestamp, deleted)
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 failures += error
             }
         }
@@ -207,7 +252,11 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     /** Pull all records from server and merge locally. */
     open suspend fun pullAll(client: PocketbaseClient) {
         try {
-            val remoteRecords = fetchAllRecords(client)
+            val remoteRecords = if (allowsTestOnlyLegacySdkWrites()) {
+                fetchAllRecords(client)
+            } else {
+                fetchAllRecordsThroughGateway(client)
+            }
             log.d { "Pulled ${remoteRecords.size} $collectionName" }
 
             val localSnapshot = getAllOnce()
@@ -258,6 +307,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                             log.w { "Recovering missing $collectionName ${localId(local)}: server row absent, marking unsynced for recreation" }
                             markUnsynced(localId(local))
                         } catch (e: Exception) {
+                            if (e is CancellationException) throw e
                             log.e(e) { "Failed to mark missing $collectionName ${localId(local)} unsynced" }
                         }
                     }
@@ -267,6 +317,8 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 throw SyncDegradedException(degradedMessages.joinToString("; "))
             }
         } catch (e: SyncDegradedException) {
+            throw e
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             log.e(e) { "Failed to pull $collectionName" }
@@ -305,6 +357,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     ): PushResolution {
         val existing = runCatching { findRecordByLocalId(client, localId) }
             .onFailure { lookupError ->
+                if (lookupError is CancellationException) throw lookupError
                 log.e(lookupError) { "Test-only localId lookup failed for $collectionName $localId" }
             }
             .getOrNull()
@@ -328,6 +381,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             recordUpdatedAt(existing) < localUpdatedAt -> runCatching {
                 updateRecord(client, recoveredPbId, body)
             }.onFailure { retryError ->
+                if (retryError is CancellationException) throw retryError
                 log.e(retryError) { "Test-only recovered update failed for $collectionName $localId" }
             }.fold(
                 onSuccess = {
@@ -367,7 +421,10 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         }
         log.w { "Create failed for $collectionName $localId; looking up existing server row by localId" }
         val existing = runCatching { findRecordByLocalId(client, localId) }
-            .onFailure { log.e(it) { "Failed localId lookup after create failure for $collectionName $localId" } }
+            .onFailure {
+                if (it is CancellationException) throw it
+                log.e(it) { "Failed localId lookup after create failure for $collectionName $localId" }
+            }
             .getOrNull()
             ?: return PushResolution.Failed
         val serverId = existing.id ?: return PushResolution.Failed
@@ -383,6 +440,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             recordUpdatedAt(existing) < updatedAt -> runCatching {
                 updateRecord(client, serverId, body)
             }.onFailure {
+                if (it is CancellationException) throw it
                 log.e(it) { "Test-only SDK update failed for $collectionName $localId after create conflict" }
             }.fold(
                 onSuccess = {
@@ -457,6 +515,10 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         body: JsonObject,
         rejected: GatewayResponse<JsonObject>,
     ): PushResolution {
+        log.w {
+            "Guarded $collectionName update rejected with HTTP ${rejected.status.value}; " +
+                safePocketBaseFailureSummary(rejected.rawBody)
+        }
         val lookup = gateway.findByLocalId(collectionName, localId)
         val existing = lookup.body ?: return if (lookup.isSuccess) {
             guardedCreateOrRecover(gateway, localId, body["localUpdatedAt"]?.toString()?.trim('"')?.toLongOrNull() ?: 0L, body.toString())
@@ -474,6 +536,21 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             recordUpdatedAt(record) == localUpdatedAt && canonicalPayloadEquals(body, existing) -> {
                 existing["id"]?.toString()?.trim('"')?.let { updatePbIdSafely(localId, it) }
                 PushResolution.Pushed
+            }
+            recordUpdatedAt(record) < localUpdatedAt -> {
+                val recoveredPbId = existing["id"]?.toString()?.trim('"')
+                    ?: return PushResolution.Failed
+                val updated = gateway.updateJson(collectionName, recoveredPbId, body)
+                if (updated.isSuccess) {
+                    updatePbIdSafely(localId, recoveredPbId)
+                    PushResolution.Pushed
+                } else {
+                    log.w {
+                        "Recovered $collectionName update rejected with HTTP ${updated.status.value}; " +
+                            safePocketBaseFailureSummary(updated.rawBody)
+                    }
+                    PushResolution.Failed
+                }
             }
             else -> PushResolution.Failed
         }
@@ -529,6 +606,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 log.w { "Skipped markSynced for $collectionName $localId: local row changed during push" }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             log.w(e) { "Failed to markSynced for $collectionName $localId (will retry)" }
         }
     }
@@ -540,9 +618,14 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         try {
             updatePbId(localId, pbId)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             log.e(e) { "Failed to save pbId for $collectionName $localId" }
         }
     }
 
     private enum class PushResolution { Pushed, RemoteWon, Failed }
+
+    private companion object {
+        const val PAGE_SIZE = 200
+    }
 }

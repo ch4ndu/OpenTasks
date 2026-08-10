@@ -1,5 +1,7 @@
 package com.udnahc.opentasks.domain.action.task
 
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import com.udnahc.opentasks.data.extensions.localNow
@@ -28,74 +30,77 @@ class ImportCalendarEventsAction(
     private val addTagAction: AddTagAction,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
+    internal val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) {
     private val taskWriteCoordinator = TaskWriteCoordinator(taskRepository)
 
-    suspend operator fun invoke(events: List<CalendarEvent>): Int {
-        log.d { "Importing ${events.size} calendar events" }
-        if (events.isEmpty()) return 0
+    suspend operator fun invoke(events: List<CalendarEvent>): Int =
+        accountBoundaryExecutor.withForegroundActionBoundary {
+            log.d { "Importing ${events.size} calendar events" }
+            if (events.isEmpty()) return@withForegroundActionBoundary 0
 
-        // Find or create "Calendar Imports" category
-        val category = categoryRepository.getCategoryByName(CATEGORY_NAME)
-            ?: run {
-                val now = localNow()
-                val newCategory = Category(name = CATEGORY_NAME, icon = "calendar", createdAt = now)
-                categoryRepository.insert(newCategory)
-                newCategory
+            // Find or create "Calendar Imports" category
+            val category = categoryRepository.getCategoryByName(CATEGORY_NAME)
+                ?: run {
+                    val now = localNow()
+                    val newCategory = Category(name = CATEGORY_NAME, icon = "calendar", createdAt = now)
+                    categoryRepository.insert(newCategory)
+                    newCategory
+                }
+
+            // Find or create "Imported" tag
+            val tag = tagRepository.getTagByName(TAG_NAME)
+                ?: run {
+                    val tagId = addTagAction(TAG_NAME)
+                    tagRepository.getTagById(tagId)
+                        ?: return@withForegroundActionBoundary 0
+                }
+
+            val now = localNow()
+            var importedCount = 0
+            val importedTaskIds = mutableListOf<String>()
+
+            for (event in events) {
+                // Skip duplicates
+                if (taskRepository.getTaskByExternalId(event.externalId) != null) {
+                    log.v { "Skipping duplicate: ${event.externalId}" }
+                    continue
+                }
+
+                // Build content with time range (format from local millis already available)
+                val content = buildEventContent(event)
+
+                // Convert external UTC timestamps to local millis for repository
+                val task = Task(
+                    title = event.title,
+                    content = content,
+                    deadline = utcToLocal(event.startTimeUtcMillis),
+                    endDeadline = event.endTimeUtcMillis?.let { utcToLocal(it) },
+                    isAllDay = event.isAllDay,
+                    sourceExternalId = event.externalId,
+                    categoryId = category.id,
+                    location = event.location,
+                    url = event.url,
+                    organizer = event.organizer,
+                    eventStatus = event.status,
+                    attendees = event.attendees.joinToString(", "),
+                    createdAt = now,
+                    updatedAt = now,
+                )
+                taskWriteCoordinator.create(task)
+                importedTaskIds += task.id
+
+                // Tag the task
+                tagRepository.insertTaskTag(TaskTag(taskId = task.id, tagId = tag.id))
+                importedCount++
             }
 
-        // Find or create "Imported" tag
-        val tag = tagRepository.getTagByName(TAG_NAME)
-            ?: run {
-                val tagId = addTagAction(TAG_NAME)
-                tagRepository.getTagById(tagId) ?: return 0
-            }
-
-        val now = localNow()
-        var importedCount = 0
-        val importedTaskIds = mutableListOf<String>()
-
-        for (event in events) {
-            // Skip duplicates
-            if (taskRepository.getTaskByExternalId(event.externalId) != null) {
-                log.v { "Skipping duplicate: ${event.externalId}" }
-                continue
-            }
-
-            // Build content with time range (format from local millis already available)
-            val content = buildEventContent(event)
-
-            // Convert external UTC timestamps to local millis for repository
-            val task = Task(
-                title = event.title,
-                content = content,
-                deadline = utcToLocal(event.startTimeUtcMillis),
-                endDeadline = event.endTimeUtcMillis?.let { utcToLocal(it) },
-                isAllDay = event.isAllDay,
-                sourceExternalId = event.externalId,
-                categoryId = category.id,
-                location = event.location,
-                url = event.url,
-                organizer = event.organizer,
-                eventStatus = event.status,
-                attendees = event.attendees.joinToString(", "),
-                createdAt = now,
-                updatedAt = now,
-            )
-            taskWriteCoordinator.create(task)
-            importedTaskIds += task.id
-
-            // Tag the task
-            tagRepository.insertTaskTag(TaskTag(taskId = task.id, tagId = tag.id))
-            importedCount++
+            rebuildReminderQueueAction?.afterRecordChange {
+                importedTaskIds.forEach { scheduleTaskRemindersAction(it) }
+            } ?: importedTaskIds.forEach { scheduleTaskRemindersAction(it) }
+            log.d { "Imported $importedCount calendar events" }
+            importedCount
         }
-
-        rebuildReminderQueueAction?.afterRecordChange {
-            importedTaskIds.forEach { scheduleTaskRemindersAction(it) }
-        } ?: importedTaskIds.forEach { scheduleTaskRemindersAction(it) }
-        log.d { "Imported $importedCount calendar events" }
-        return importedCount
-    }
 
     private suspend fun buildEventContent(event: CalendarEvent): String {
         val parts = mutableListOf<String>()

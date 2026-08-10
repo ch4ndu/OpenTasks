@@ -40,6 +40,8 @@ import com.udnahc.opentasks.EXTRA_WIDGET_ACTION
 import com.udnahc.opentasks.EXTRA_WIDGET_CALENDAR_DAY
 import com.udnahc.opentasks.EXTRA_WIDGET_CALENDAR_MONTH
 import com.udnahc.opentasks.EXTRA_WIDGET_CALENDAR_YEAR
+import com.udnahc.opentasks.EXTRA_ACCOUNT_ID
+import com.udnahc.opentasks.EXTRA_BOUNDARY_EPOCH
 import com.udnahc.opentasks.R
 import android.content.Context as AndroidContext
 
@@ -49,7 +51,9 @@ private const val MAIN_ACTIVITY = "$PKG.MainActivity"
 private fun weekDayIntent(
     year: Int,
     month: Int,
-    day: Int
+    day: Int,
+    accountId: String? = null,
+    boundaryEpoch: Long = 0L,
 ): Intent =
     Intent().apply {
         component = ComponentName(PKG, MAIN_ACTIVITY)
@@ -57,6 +61,8 @@ private fun weekDayIntent(
         putExtra(EXTRA_WIDGET_CALENDAR_YEAR, year)
         putExtra(EXTRA_WIDGET_CALENDAR_MONTH, month)
         putExtra(EXTRA_WIDGET_CALENDAR_DAY, day)
+        if (accountId != null) putExtra(EXTRA_ACCOUNT_ID, accountId)
+        putExtra(EXTRA_BOUNDARY_EPOCH, boundaryEpoch)
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
     }
 
@@ -98,6 +104,8 @@ fun WeekWidgetContent(
     todayMonth: Int,
     prefs: CalendarWidgetPreferences,
     appWidgetId: Int,
+    accountId: String? = null,
+    boundaryEpoch: Long = 0L,
 ) {
     val themeColors = widgetThemeColors(prefs.theme)
     val bgColor = widgetResourceColor(themeColors.background)
@@ -211,7 +219,9 @@ fun WeekWidgetContent(
                                 weekDayIntent(
                                     day.year,
                                     day.month,
-                                    day.dayOfMonth
+                                    day.dayOfMonth,
+                                    accountId,
+                                    boundaryEpoch,
                                 )
                             )
                         ),

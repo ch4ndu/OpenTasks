@@ -2,6 +2,8 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
 import com.udnahc.opentasks.data.extensions.nowUtcMillis
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
@@ -43,6 +45,7 @@ class ImportCalendarViewModel(
     private val fetchCalendarEvents: FetchCalendarEventsUseCase,
     private val checkCalendarPermission: CheckCalendarPermissionUseCase,
     private val importAction: ImportCalendarEventsAction,
+    private val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val nowUtcMillisProvider: () -> Long = ::nowUtcMillis,
 ) : ViewModel() {
@@ -78,6 +81,8 @@ class ImportCalendarViewModel(
     }
 
     fun importEvents() {
+        val expectedBoundary = accountBoundaryExecutor?.captureForegroundBoundary()
+        if (accountBoundaryExecutor != null && expectedBoundary == null) return
         if (!importInProgress.compareAndSet(expect = false, update = true)) return
         val selectedEvents = _uiState.value
         log.d { "Importing ${selectedEvents.rangeValue} ${selectedEvents.rangeUnit} of calendar events" }
@@ -91,7 +96,9 @@ class ImportCalendarViewModel(
                     unit = _uiState.value.rangeUnit,
                 )
                 val events = fetchCalendarEvents(startUtcMillis, endUtcMillis)
-                val count = importAction(events)
+                val count = accountBoundaryExecutor.withForegroundActionBoundary(expectedBoundary) {
+                    importAction(events)
+                }
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: CancellationException) {
                 throw e

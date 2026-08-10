@@ -8,5 +8,6 @@ actual class NotificationScheduler : ReminderScheduler {
     actual override suspend fun cancelAll(eventId: String) = Unit
     actual override suspend fun startOngoing(identity: ReminderIdentity, title: String) = Unit
     actual override suspend fun stopOngoing(eventId: String) = Unit
+    actual override suspend fun cancelAllAccountReminders() = Unit
     actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) = Unit
 }

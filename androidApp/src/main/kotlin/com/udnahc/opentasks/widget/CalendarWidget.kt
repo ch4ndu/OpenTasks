@@ -15,6 +15,10 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.udnahc.opentasks.data.extensions.daysInMonth
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.extensions.todayLocal
+import com.udnahc.opentasks.data.auth.AccountBoundary
+import com.udnahc.opentasks.data.auth.WidgetAccountGate
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import org.lighthousegames.logging.logging
 
 private val log = logging("CalendarWidget")
@@ -39,6 +43,7 @@ private sealed class CalendarWidgetData {
         val tasksByDay: Map<Int, List<CalendarDayTask>>,
         val todayDay: Int,
         val prefs: CalendarWidgetPreferences,
+        val boundary: AccountBoundary,
     ) : CalendarWidgetData()
 }
 
@@ -46,66 +51,115 @@ class CalendarWidget : GlanceAppWidget() {
 
     override val stateDefinition = PreferencesGlanceStateDefinition
 
-    companion object {
+    companion object : KoinComponent {
         val instance = CalendarWidget()
+        private val widgetAccountGate: WidgetAccountGate by inject()
 
         suspend fun refreshWidget(context: Context, appWidgetId: Int) {
             try {
-                val manager = GlanceAppWidgetManager(context)
-                val glanceId = manager.getGlanceIds(CalendarWidget::class.java)
-                    .firstOrNull { manager.getAppWidgetId(it) == appWidgetId } ?: return
-                updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-                    prefs.toMutablePreferences().apply {
-                        this[CAL_REFRESH_TRIGGER_KEY] = System.currentTimeMillis()
-                    }
+                val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                    refreshWidgetWithinBoundary(context, appWidgetId, boundary)
                 }
-                instance.update(context, glanceId)
+                if (refreshed == null) log.d { "Skipped calendar widget refresh without an authenticated boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to refresh calendar widget $appWidgetId" }
             }
         }
 
+        internal suspend fun refreshWidgetWithinBoundary(
+            context: Context,
+            appWidgetId: Int,
+            boundary: AccountBoundary,
+        ) {
+            val manager = GlanceAppWidgetManager(context)
+            val glanceId = manager.getGlanceIds(CalendarWidget::class.java)
+                .firstOrNull { manager.getAppWidgetId(it) == appWidgetId } ?: return
+            updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                prefs.toMutablePreferences().apply {
+                    WidgetBoundaryMarker.write(this, boundary)
+                    this[CAL_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
+                        this[CAL_REFRESH_TRIGGER_KEY] ?: 0L,
+                        System.currentTimeMillis(),
+                    )
+                }
+            }
+            instance.update(context, glanceId)
+        }
+
         suspend fun refreshAllWidgets(context: Context) {
             try {
-                val manager = GlanceAppWidgetManager(context)
-                manager.getGlanceIds(CalendarWidget::class.java).forEach { glanceId ->
-                    updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-                        prefs.toMutablePreferences().apply {
-                            this[CAL_REFRESH_TRIGGER_KEY] = System.currentTimeMillis()
-                        }
-                    }
-                    instance.update(context, glanceId)
+                val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                    refreshAllWidgetsWithinBoundary(context, boundary)
                 }
+                if (refreshed == null) log.d { "Skipped calendar widget refresh without an authenticated boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to refresh all calendar widgets" }
             }
         }
 
-        suspend fun navigateMonth(context: Context, appWidgetId: Int, delta: Int) {
-            try {
-                val manager = GlanceAppWidgetManager(context)
-                val glanceId = manager.getGlanceIds(CalendarWidget::class.java)
-                    .firstOrNull { manager.getAppWidgetId(it) == appWidgetId } ?: return
+        internal suspend fun refreshAllWidgetsWithinBoundary(
+            context: Context,
+            boundary: AccountBoundary,
+        ) {
+            val manager = GlanceAppWidgetManager(context)
+            manager.getGlanceIds(CalendarWidget::class.java).forEach { glanceId ->
                 updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-                    val today = todayLocal()
-                    val currentYear = prefs[CAL_DISPLAYED_YEAR_KEY] ?: today.year
-                    val currentMonth = prefs[CAL_DISPLAYED_MONTH_KEY] ?: today.monthNumber
-                    var newMonth = currentMonth + delta
-                    var newYear = currentYear
-                    if (newMonth < 1) {
-                        newMonth = 12
-                        newYear--
-                    } else if (newMonth > 12) {
-                        newMonth = 1
-                        newYear++
-                    }
                     prefs.toMutablePreferences().apply {
-                        this[CAL_DISPLAYED_YEAR_KEY] = newYear
-                        this[CAL_DISPLAYED_MONTH_KEY] = newMonth
-                        this[CAL_REFRESH_TRIGGER_KEY] = System.currentTimeMillis()
+                        WidgetBoundaryMarker.write(this, boundary)
+                        this[CAL_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
+                            this[CAL_REFRESH_TRIGGER_KEY] ?: 0L,
+                            System.currentTimeMillis(),
+                        )
                     }
                 }
                 instance.update(context, glanceId)
+            }
+        }
+
+        internal suspend fun blankAllWidgets(context: Context) {
+            val manager = GlanceAppWidgetManager(context)
+            manager.getGlanceIds(CalendarWidget::class.java).forEach { glanceId ->
+                updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                    prefs.toMutablePreferences().apply {
+                        WidgetBoundaryMarker.clear(this)
+                        this[CAL_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
+                            this[CAL_REFRESH_TRIGGER_KEY] ?: 0L,
+                            System.currentTimeMillis(),
+                        )
+                    }
+                }
+                instance.update(context, glanceId)
+            }
+        }
+
+        suspend fun navigateMonth(context: Context, appWidgetId: Int, delta: Int) {
+            try {
+                val navigated = widgetAccountGate.withAuthenticatedBoundary {
+                    val manager = GlanceAppWidgetManager(context)
+                    val glanceId = manager.getGlanceIds(CalendarWidget::class.java)
+                        .firstOrNull { manager.getAppWidgetId(it) == appWidgetId } ?: return@withAuthenticatedBoundary
+                    updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                        val today = todayLocal()
+                        val currentYear = prefs[CAL_DISPLAYED_YEAR_KEY] ?: today.year
+                        val currentMonth = prefs[CAL_DISPLAYED_MONTH_KEY] ?: today.monthNumber
+                        var newMonth = currentMonth + delta
+                        var newYear = currentYear
+                        if (newMonth < 1) {
+                            newMonth = 12
+                            newYear--
+                        } else if (newMonth > 12) {
+                            newMonth = 1
+                            newYear++
+                        }
+                        prefs.toMutablePreferences().apply {
+                            this[CAL_DISPLAYED_YEAR_KEY] = newYear
+                            this[CAL_DISPLAYED_MONTH_KEY] = newMonth
+                            this[CAL_REFRESH_TRIGGER_KEY] = System.currentTimeMillis()
+                        }
+                    }
+                    instance.update(context, glanceId)
+                }
+                if (navigated == null) log.d { "Skipped calendar navigation without an authenticated boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to navigate month for widget $appWidgetId" }
             }
@@ -123,53 +177,56 @@ class CalendarWidget : GlanceAppWidget() {
         provideContent {
             val glancePrefs = currentState<Preferences>()
             val refreshTrigger = glancePrefs[CAL_REFRESH_TRIGGER_KEY] ?: 0L
+            val marker = WidgetBoundaryMarker.read(glancePrefs)
             val today = todayLocal()
             val displayedYear = glancePrefs[CAL_DISPLAYED_YEAR_KEY] ?: today.year
             val displayedMonth = glancePrefs[CAL_DISPLAYED_MONTH_KEY] ?: today.monthNumber
 
             val data = produceState<CalendarWidgetData>(
                 CalendarWidgetData.Loading,
-                refreshTrigger, displayedYear, displayedMonth,
+                refreshTrigger,
+                marker.accountId,
+                marker.boundaryEpoch,
+                displayedYear,
+                displayedMonth,
             ) {
-                value = try {
-                    val prefs = CalendarWidgetPreferences.load(context, appWidgetId)
-                    val provider = WidgetDataProvider()
-                    val tasksByDay = provider.getTasksByDayForMonth(displayedYear, displayedMonth)
-                    val days = daysInMonth(displayedYear, displayedMonth)
-                    val firstDayOffset = dayOfWeekIndex(displayedYear, displayedMonth, 1)
-                    val monthLabel = "${MONTH_NAMES_FULL[displayedMonth - 1]} $displayedYear"
-                    val todayDay = if (displayedYear == today.year && displayedMonth == today.monthNumber) {
-                        today.dayOfMonth
-                    } else {
-                        0
+                value = if (marker.accountId.isNullOrBlank() || marker.boundaryEpoch == null) {
+                    CalendarWidgetData.Loading
+                } else {
+                    try {
+                        val provider = WidgetDataProvider()
+                        provider.withAuthenticatedBoundary { boundary ->
+                            val prefs = CalendarWidgetPreferences.load(context, appWidgetId)
+                            val tasksByDay = provider.getTasksByDayForMonthWithinBoundary(
+                                displayedYear,
+                                displayedMonth,
+                                WidgetDataProvider.MAX_TASKS_PER_DAY,
+                            )
+                            val days = daysInMonth(displayedYear, displayedMonth)
+                            val firstDayOffset = dayOfWeekIndex(displayedYear, displayedMonth, 1)
+                            val monthLabel = "${MONTH_NAMES_FULL[displayedMonth - 1]} $displayedYear"
+                            val todayDay = if (displayedYear == today.year && displayedMonth == today.monthNumber) {
+                                today.dayOfMonth
+                            } else {
+                                0
+                            }
+                            log.v { "Calendar widget $appWidgetId: $monthLabel, ${tasksByDay.size} days with tasks" }
+                            CalendarWidgetData.Ready(
+                                year = displayedYear,
+                                month = displayedMonth,
+                                monthLabel = monthLabel,
+                                daysInMonth = days,
+                                firstDayOfWeekOffset = firstDayOffset,
+                                tasksByDay = tasksByDay,
+                                todayDay = todayDay,
+                                prefs = prefs,
+                                boundary = boundary,
+                            )
+                        } ?: CalendarWidgetData.Loading
+                    } catch (e: Exception) {
+                        log.e(e) { "Calendar widget data fetch failed" }
+                        CalendarWidgetData.Loading
                     }
-                    log.v { "Calendar widget $appWidgetId: $monthLabel, ${tasksByDay.size} days with tasks" }
-                    CalendarWidgetData.Ready(
-                        year = displayedYear,
-                        month = displayedMonth,
-                        monthLabel = monthLabel,
-                        daysInMonth = days,
-                        firstDayOfWeekOffset = firstDayOffset,
-                        tasksByDay = tasksByDay,
-                        todayDay = todayDay,
-                        prefs = prefs,
-                    )
-                } catch (e: Exception) {
-                    log.e(e) { "Calendar widget data fetch failed" }
-                    val prefs = CalendarWidgetPreferences(appWidgetId)
-                    val days = daysInMonth(displayedYear, displayedMonth)
-                    val firstDayOffset = dayOfWeekIndex(displayedYear, displayedMonth, 1)
-                    val monthLabel = "${MONTH_NAMES_FULL[displayedMonth - 1]} $displayedYear"
-                    CalendarWidgetData.Ready(
-                        year = displayedYear,
-                        month = displayedMonth,
-                        monthLabel = monthLabel,
-                        daysInMonth = days,
-                        firstDayOfWeekOffset = firstDayOffset,
-                        tasksByDay = emptyMap(),
-                        todayDay = 0,
-                        prefs = prefs,
-                    )
                 }
             }
 
@@ -191,17 +248,37 @@ class CalendarWidget : GlanceAppWidget() {
                         appWidgetId = appWidgetId,
                     )
                 }
-                is CalendarWidgetData.Ready -> CalendarWidgetContent(
-                    year = d.year,
-                    month = d.month,
-                    monthLabel = d.monthLabel,
-                    daysInMonth = d.daysInMonth,
-                    firstDayOfWeekOffset = d.firstDayOfWeekOffset,
-                    tasksByDay = d.tasksByDay,
-                    todayDay = d.todayDay,
-                    prefs = d.prefs,
-                    appWidgetId = appWidgetId,
-                )
+                is CalendarWidgetData.Ready -> if (WidgetBoundaryMarker.matches(marker, d.boundary)) {
+                    CalendarWidgetContent(
+                        year = d.year,
+                        month = d.month,
+                        monthLabel = d.monthLabel,
+                        daysInMonth = d.daysInMonth,
+                        firstDayOfWeekOffset = d.firstDayOfWeekOffset,
+                        tasksByDay = d.tasksByDay,
+                        todayDay = d.todayDay,
+                        prefs = d.prefs,
+                        appWidgetId = appWidgetId,
+                        accountId = d.boundary.accountId,
+                        boundaryEpoch = d.boundary.boundaryEpoch,
+                    )
+                } else {
+                    val prefs = CalendarWidgetPreferences(appWidgetId)
+                    val days = daysInMonth(displayedYear, displayedMonth)
+                    val firstDayOffset = dayOfWeekIndex(displayedYear, displayedMonth, 1)
+                    val monthLabel = "${MONTH_NAMES_FULL[displayedMonth - 1]} $displayedYear"
+                    CalendarWidgetContent(
+                        year = displayedYear,
+                        month = displayedMonth,
+                        monthLabel = monthLabel,
+                        daysInMonth = days,
+                        firstDayOfWeekOffset = firstDayOffset,
+                        tasksByDay = emptyMap(),
+                        todayDay = 0,
+                        prefs = prefs,
+                        appWidgetId = appWidgetId,
+                    )
+                }
             }
         }
     }

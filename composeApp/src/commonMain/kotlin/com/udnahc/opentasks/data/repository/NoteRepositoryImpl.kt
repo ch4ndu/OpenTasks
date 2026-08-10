@@ -5,6 +5,7 @@ import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Note
+import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,7 @@ class NoteRepositoryImpl(
     private val noteDao: NoteDao,
     private val syncTrigger: SyncTrigger,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mutationGate: AccountMutationGate,
 ) : NoteRepository {
 
     override fun getAllNotes(): Flow<List<Note>> =
@@ -39,7 +41,7 @@ class NoteRepositoryImpl(
             .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
-    override suspend fun insert(note: Note) {
+    override suspend fun insert(note: Note) = mutationGate.withExclusive {
         log.v { "Inserting note: ${note.id}" }
         withContext(ioDispatcher) {
             noteDao.insert(note.withDefaultTimestamps().withUtcTimestamps())
@@ -47,7 +49,7 @@ class NoteRepositoryImpl(
         syncTrigger.triggerSync()
     }
 
-    override suspend fun update(note: Note) {
+    override suspend fun update(note: Note) = mutationGate.withExclusive {
         log.v { "Updating note: ${note.id}, content has newlines=${'\n' in note.content}" }
         withContext(ioDispatcher) {
             noteDao.update(note.withUtcTimestamps().copy(isSynced = false))
@@ -55,7 +57,7 @@ class NoteRepositoryImpl(
         syncTrigger.triggerSync()
     }
 
-    override suspend fun delete(note: Note) {
+    override suspend fun delete(note: Note) = mutationGate.withExclusive {
         log.v { "Soft-deleting note: ${note.id}" }
         withContext(ioDispatcher) {
             noteDao.update(

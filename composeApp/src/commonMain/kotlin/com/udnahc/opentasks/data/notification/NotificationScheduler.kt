@@ -14,6 +14,7 @@ interface ReminderScheduler {
     )
 
     suspend fun stopOngoing(eventId: String)
+    suspend fun cancelAllAccountReminders()
 
     suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
         for (request in requests) {
@@ -36,5 +37,6 @@ expect class NotificationScheduler : ReminderScheduler {
     )
 
     override suspend fun stopOngoing(eventId: String)
+    override suspend fun cancelAllAccountReminders()
     override suspend fun replacePendingReminders(requests: List<ReminderRequest>)
 }

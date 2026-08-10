@@ -52,10 +52,10 @@ class ServerSeedExecutorTest {
             }
         }
         var inventoryReads = 0
-        val executor = ServerSeedExecutor(database, adapters) {
+        val executor = ServerSeedExecutor(database, adapters, inventoryReader = {
             inventoryReads += 1
             if (inventoryReads == 1) inventory(emptyMap()) else inventory(adapters.associate { it.collectionName to it.remoteRows() })
-        }
+        })
 
         executor.resume(client())
 
@@ -76,7 +76,11 @@ class ServerSeedExecutorTest {
             row("local", false, 1, value = "divergent"),
         )
         variants.forEach { invalid ->
-            val executor = ServerSeedExecutor(database, listOf(adapter)) { inventory(mapOf("categories" to listOf(invalid))) }
+            val executor = ServerSeedExecutor(
+                database,
+                listOf(adapter),
+                inventoryReader = { inventory(mapOf("categories" to listOf(invalid))) },
+            )
 
             assertFailsWith<SyncAdapterException> { executor.resume(client()) }
             assertEquals(0, adapter.seedCalls)
@@ -91,7 +95,11 @@ class ServerSeedExecutorTest {
             rows += SeedRow("local", deleted = false)
             complete = false
         }
-        val executor = ServerSeedExecutor(database, listOf(adapter)) { inventory(mapOf("categories" to emptyList())) }
+        val executor = ServerSeedExecutor(
+            database,
+            listOf(adapter),
+            inventoryReader = { inventory(mapOf("categories" to emptyList())) },
+        )
 
         assertFailsWith<SyncAdapterException> { executor.resume(client()) }
 
@@ -103,7 +111,11 @@ class ServerSeedExecutorTest {
     fun `identity change rejects resume before adapter writes`() = runTest {
         setPending(identity = "expected")
         val adapter = SeedAdapter("categories", 0, mutableListOf())
-        val executor = ServerSeedExecutor(database, listOf(adapter)) { inventory(emptyMap(), identity = "different") }
+        val executor = ServerSeedExecutor(
+            database,
+            listOf(adapter),
+            inventoryReader = { inventory(emptyMap(), identity = "different") },
+        )
 
         assertFailsWith<SyncAdapterException> { executor.resume(client()) }
 

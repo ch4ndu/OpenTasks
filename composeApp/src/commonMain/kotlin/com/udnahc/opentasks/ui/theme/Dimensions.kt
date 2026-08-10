@@ -100,6 +100,7 @@ data class OpenTasksDimensions(
     // ── Kanban board ─────────────────────────────────────────────────────
     val kanbanColumnMinWidth: Dp,       // 200.dp (min phone column width)
     val kanbanAutoScrollAmount: Dp,     // 150.dp (edge-drag auto-scroll step)
+    val authPanelMaxWidth: Dp,          // 520.dp (adaptive account/session panel)
 )
 
 fun compactDimensions() = OpenTasksDimensions(
@@ -180,6 +181,7 @@ fun compactDimensions() = OpenTasksDimensions(
     // Kanban
     kanbanColumnMinWidth = 200.dp,
     kanbanAutoScrollAmount = 150.dp,
+    authPanelMaxWidth = 520.dp,
 )
 
 fun mediumDimensions() = OpenTasksDimensions(
@@ -260,6 +262,7 @@ fun mediumDimensions() = OpenTasksDimensions(
     // Kanban
     kanbanColumnMinWidth = 240.dp,
     kanbanAutoScrollAmount = 180.dp,
+    authPanelMaxWidth = 520.dp,
 )
 
 fun expandedDimensions() = OpenTasksDimensions(
@@ -340,6 +343,7 @@ fun expandedDimensions() = OpenTasksDimensions(
     // Kanban
     kanbanColumnMinWidth = 280.dp,
     kanbanAutoScrollAmount = 200.dp,
+    authPanelMaxWidth = 520.dp,
 )
 
 val LocalOpenTasksDimensions = staticCompositionLocalOf { compactDimensions() }

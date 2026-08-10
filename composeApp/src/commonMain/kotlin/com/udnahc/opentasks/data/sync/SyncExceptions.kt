@@ -1,5 +1,7 @@
 package com.udnahc.opentasks.data.sync
 
+import com.udnahc.opentasks.data.auth.AccountBoundary
+
 class SyncAdapterException(
     message: String,
     cause: Throwable? = null,
@@ -14,10 +16,12 @@ data class SyncCollectionFailure(
     val collectionName: String,
     val operation: String,
     val cause: Throwable,
+    val boundary: AccountBoundary? = null,
 )
 
 class SyncException(
     val failures: List<SyncCollectionFailure>,
+    val boundary: AccountBoundary? = failures.firstOrNull()?.boundary,
 ) : Exception(
     failures.joinToString(
         prefix = "Sync failed: ",
@@ -30,3 +34,5 @@ class PocketBaseConnectionException(
     message: String,
     cause: Throwable? = null,
 ) : Exception(message, cause)
+
+class PocketBaseOwnerMismatchException(message: String) : IllegalStateException(message)

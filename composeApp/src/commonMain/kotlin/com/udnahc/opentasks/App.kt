@@ -25,10 +25,12 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -46,6 +49,9 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
+import com.udnahc.opentasks.data.auth.AccountSessionState
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
@@ -65,6 +71,11 @@ import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import com.udnahc.opentasks.navigation.AppNavController
 import com.udnahc.opentasks.navigation.Screen
 import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
+import com.udnahc.opentasks.ui.screens.AccountSessionEntryMode
+import com.udnahc.opentasks.ui.screens.AccountSessionRoute
+import com.udnahc.opentasks.ui.screens.AccountSessionScreen
+import com.udnahc.opentasks.ui.screens.AccountSessionStatusScreen
+import com.udnahc.opentasks.ui.screens.AccountTransitionScreen
 import com.udnahc.opentasks.ui.screens.CreateNoteBottomSheet
 import com.udnahc.opentasks.ui.screens.CreateTaskScreen
 import com.udnahc.opentasks.ui.screens.EisenhowerMatrixScreen
@@ -80,6 +91,7 @@ import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
 import com.udnahc.opentasks.ui.screens.countdown.CountdownDetailScreen
 import com.udnahc.opentasks.ui.screens.countdown.CountdownScreen
 import com.udnahc.opentasks.ui.screens.countdown.CreateCountdownScreen
+import com.udnahc.opentasks.ui.screens.accountSessionRoute
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.util.FileImportResult
@@ -87,6 +99,7 @@ import com.udnahc.opentasks.ui.util.ImportFileType
 import com.udnahc.opentasks.ui.util.rememberFileImportLauncher
 import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
 import com.udnahc.opentasks.viewmodel.AppViewModel
+import com.udnahc.opentasks.viewmodel.AuthViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
 import com.udnahc.opentasks.viewmodel.CountdownViewModel
@@ -100,6 +113,7 @@ import com.udnahc.opentasks.viewmodel.TaskFormSaveEvent
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.viewmodel.TaskNotificationViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
@@ -136,103 +150,228 @@ private val log = logging("App")
 @Composable
 fun App(
     deepLinkNotificationEvent: NotificationDeepLinkEvent? = null,
-    deepLinkCountdownId: String = "",
     widgetNavigationEvent: WidgetNavigationEvent? = null,
+    onNotificationDeepLinkEventConsumed: (NotificationDeepLinkEvent) -> Unit = {},
+    onAccountBoundaryChanged: suspend (com.udnahc.opentasks.data.auth.CacheBinding?) -> Unit = {},
+    onSystemBarIconAppearanceChanged: (useDarkIcons: Boolean) -> Unit = {},
 ) {
     val settingsViewModel: SettingsViewModel = koinViewModel()
+    val authViewModel: AuthViewModel = koinViewModel()
     val themeMode by settingsViewModel.themePreference.collectAsState()
     val textSizePreference by settingsViewModel.textSizePreference.collectAsState()
+    val sessionState by authViewModel.sessionState.collectAsState()
+    val accountOperation by authViewModel.operation.collectAsState()
+    val accountError by authViewModel.error.collectAsState()
+    val savedEndpoint by authViewModel.savedEndpoint.collectAsState()
     OpenTasksTheme(
         themeMode = themeMode,
         textSizePreference = textSizePreference,
     ) {
-        val backStack = remember { NavBackStack<NavKey>(Screen.Matrix) }
-        val navController = remember { AppNavController(backStack) }
-        var taskNotificationEvent by remember { mutableStateOf<NotificationDeepLinkEvent?>(null) }
-        val initializeSyncAction = koinInject<InitializeSyncAction>()
-        val rebuildReminderQueueAction = koinInject<RebuildReminderQueueAction>()
-        val triggerSyncAction = koinInject<TriggerSyncAction>()
-        val localDaySignal = koinInject<LocalDaySignal>()
-        val currentDate by localDaySignal.dates.collectAsState(initial = localDaySignal.snapshot())
-        val isSyncInitialized = remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            withContext(Dispatchers.IO) {
-                try {
-                    initializeSyncAction()
-                } catch (e: Exception) {
-                    log.e(e) { "Initial sync failed" }
-                }
-                try {
-                    rebuildReminderQueueAction()
-                } catch (e: Exception) {
-                    log.e(e) { "Initial reminder queue rebuild failed" }
+        val useDarkSystemBarIcons = MaterialTheme.colorScheme.background.luminance() > 0.5f
+        SideEffect {
+            onSystemBarIconAppearanceChanged(useDarkSystemBarIcons)
+        }
+        LaunchedEffect(authViewModel) { authViewModel.restoreSession() }
+        LaunchedEffect(sessionState) {
+            onAccountBoundaryChanged(
+                (sessionState as? AccountSessionState.Authenticated)?.binding,
+            )
+        }
+        when (accountSessionRoute(sessionState)) {
+            AccountSessionRoute.RESTORING -> AccountSessionStatusScreen(
+                operation = accountOperation,
+                error = accountError,
+                onRetry = authViewModel::restoreSession,
+                onClearError = authViewModel::clearError,
+            )
+
+            AccountSessionRoute.SIGN_IN -> {
+                val reauthenticationState = sessionState as? AccountSessionState.ReauthenticationRequired
+                AccountSessionScreen(
+                    mode = AccountSessionEntryMode.SIGN_IN,
+                    account = reauthenticationState?.account,
+                    endpoint = reauthenticationState?.canonicalEndpoint ?: savedEndpoint,
+                    operation = accountOperation,
+                    error = accountError,
+                    storageWarning = authViewModel.storageWarning,
+                    reauthenticationReason = reauthenticationState?.reason,
+                    onSignIn = authViewModel::login,
+                    onReauthenticate = { _, _ -> },
+                    onClearError = authViewModel::clearError,
+                )
+
+            }
+
+            AccountSessionRoute.REAUTHENTICATE -> {
+                val reauthenticationState = sessionState as AccountSessionState.ReauthenticationRequired
+                AccountSessionScreen(
+                    mode = AccountSessionEntryMode.REAUTHENTICATE,
+                    account = reauthenticationState.account,
+                    endpoint = reauthenticationState.canonicalEndpoint ?: savedEndpoint,
+                    operation = accountOperation,
+                    error = accountError,
+                    storageWarning = authViewModel.storageWarning,
+                    reauthenticationReason = reauthenticationState.reason,
+                    onSignIn = authViewModel::login,
+                    onReauthenticate = authViewModel::reauthenticate,
+                    onClearError = authViewModel::clearError,
+                )
+            }
+
+            AccountSessionRoute.TRANSITIONING -> {
+                val transitioningState = sessionState as AccountSessionState.Transitioning
+                AccountTransitionScreen(
+                    transition = transitioningState.transition,
+                    operation = accountOperation,
+                    error = accountError,
+                    onRetry = authViewModel::restoreSession,
+                    onClearError = authViewModel::clearError,
+                )
+            }
+
+            AccountSessionRoute.AUTHENTICATED -> {
+                val authenticatedState = sessionState as AccountSessionState.Authenticated
+                key(authenticatedState.binding.boundaryEpoch) {
+                    AuthenticatedAppContent(
+                        accountState = authenticatedState,
+                        authViewModel = authViewModel,
+                        deepLinkNotificationEvent = deepLinkNotificationEvent,
+                        widgetNavigationEvent = widgetNavigationEvent,
+                        onNotificationDeepLinkEventConsumed = onNotificationDeepLinkEventConsumed,
+                    )
                 }
             }
-            isSyncInitialized.value = true
         }
-        val syncScope = rememberCoroutineScope()
-        LifecycleResumeEffect(isSyncInitialized.value) {
-            localDaySignal.refresh()
-            if (isSyncInitialized.value) {
-                syncScope.launch(Dispatchers.IO) {
+    }
+}
+
+@Composable
+private fun AuthenticatedAppContent(
+    accountState: AccountSessionState.Authenticated,
+    authViewModel: AuthViewModel,
+    deepLinkNotificationEvent: NotificationDeepLinkEvent?,
+    widgetNavigationEvent: WidgetNavigationEvent?,
+    onNotificationDeepLinkEventConsumed: (NotificationDeepLinkEvent) -> Unit,
+) {
+    val backStack = remember { NavBackStack<NavKey>(Screen.Matrix) }
+    val navController = remember { AppNavController(backStack) }
+    var taskNotificationEvent by remember { mutableStateOf<NotificationDeepLinkEvent?>(null) }
+    val initializeSyncAction = koinInject<InitializeSyncAction>()
+    val rebuildReminderQueueAction = koinInject<RebuildReminderQueueAction>()
+    val triggerSyncAction = koinInject<TriggerSyncAction>()
+    val accountBoundaryExecutor = koinInject<AccountBoundaryExecutor>()
+    val localDaySignal = koinInject<LocalDaySignal>()
+    val currentDate by localDaySignal.dates.collectAsState(initial = localDaySignal.snapshot())
+    val isSyncInitialized = remember { mutableStateOf(false) }
+    LaunchedEffect(accountState.binding.boundaryEpoch) {
+        val accepted = try {
+            withContext(Dispatchers.IO) {
+                accountBoundaryExecutor.withForegroundBoundary { boundary ->
+                    if (!boundary.matches(accountState.binding)) {
+                        return@withForegroundBoundary false
+                    }
                     try {
-                        triggerSyncAction.syncNow()
+                        initializeSyncAction()
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        log.e(e) { "Resume sync failed" }
+                        log.e(e) { "Initial sync failed for authenticated account" }
                     }
                     try {
                         rebuildReminderQueueAction()
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        log.e(e) { "Resume reminder queue rebuild failed" }
+                        log.e(e) { "Initial reminder queue rebuild failed for authenticated account" }
                     }
+                    true
                 }
             }
-            onPauseOrDispose { }
+        } catch (_: AccountBoundaryRejectedException) {
+            false
         }
-        fun handleNotificationEvent(event: NotificationDeepLinkEvent) {
-            if (event.eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
-                navController.navigate(Screen.CountdownDetail(event.eventId.removePrefix(COUNTDOWN_ID_PREFIX)))
-            } else {
-                navController.navigateToTab(Screen.Matrix)
-                taskNotificationEvent = event
-            }
-        }
-        if (deepLinkNotificationEvent != null) {
-            LaunchedEffect(deepLinkNotificationEvent) {
-                handleNotificationEvent(deepLinkNotificationEvent)
-            }
-        }
-        if (deepLinkCountdownId.isNotEmpty()) {
-            LaunchedEffect(deepLinkCountdownId) {
-                navController.navigate(Screen.CountdownDetail(deepLinkCountdownId))
-            }
-        }
-        LaunchedEffect(navController) {
-            notificationDeepLinkEvent.collect { event ->
-                if (event != null) {
-                    handleNotificationEvent(event)
-                    clearNotificationDeepLinkEvent(event)
-                }
-            }
-        }
-        var calendarNavigationEvent by remember { mutableStateOf<WidgetNavigationEvent?>(null) }
-        LaunchedEffect(widgetNavigationEvent?.id) {
-            val event = widgetNavigationEvent ?: return@LaunchedEffect
-            when (event.action) {
-                WidgetNavigationAction.CREATE_TASK -> navController.navigate(Screen.CreateTask())
-                WidgetNavigationAction.VIEW_LIST -> navController.navigateToTab(Screen.TaskList)
-                WidgetNavigationAction.VIEW_TASK -> {
-                    event.taskId?.takeIf { it.isNotBlank() }?.let { taskId ->
-                        navController.navigate(Screen.EditTask(taskId))
+        isSyncInitialized.value = accepted
+    }
+    val syncScope = rememberCoroutineScope()
+    LifecycleResumeEffect(isSyncInitialized.value) {
+        localDaySignal.refresh()
+        if (isSyncInitialized.value) {
+            syncScope.launch(Dispatchers.IO) {
+                try {
+                    accountBoundaryExecutor.withForegroundBoundary { boundary ->
+                        if (!boundary.matches(accountState.binding)) {
+                            return@withForegroundBoundary
+                        }
+                        try {
+                            triggerSyncAction.syncNow()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            log.e(e) { "Resume sync failed for authenticated account" }
+                        }
+                        try {
+                            rebuildReminderQueueAction()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            log.e(e) { "Resume reminder queue rebuild failed for authenticated account" }
+                        }
                     }
-                }
-                WidgetNavigationAction.VIEW_CALENDAR -> {
-                    val date = event.calendarDate?.takeIf { it.isValid } ?: return@LaunchedEffect
-                    calendarNavigationEvent = event.copy(calendarDate = date)
-                    navController.navigateToTab(Screen.Calendar)
+                } catch (_: AccountBoundaryRejectedException) {
+                    log.w { "Resume maintenance skipped because the foreground account boundary changed" }
                 }
             }
         }
+        onPauseOrDispose { }
+    }
+    fun handleNotificationEvent(event: NotificationDeepLinkEvent) {
+        if (event.eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
+            event.countdownIdIfMatches(accountState.binding)?.let { countdownId ->
+                navController.navigate(Screen.CountdownDetail(countdownId))
+            }
+            return
+        }
+        if (!event.matches(accountState.binding)) return
+        navController.navigateToTab(Screen.Matrix)
+        taskNotificationEvent = event
+    }
+    deepLinkNotificationEvent?.let { event ->
+        LaunchedEffect(event) {
+            try {
+                handleNotificationEvent(event)
+            } finally {
+                onNotificationDeepLinkEventConsumed(event)
+            }
+        }
+    }
+    LaunchedEffect(navController) {
+        notificationDeepLinkEvent.collect { event ->
+            if (event != null) {
+                if (event.matches(accountState.binding)) handleNotificationEvent(event)
+                clearNotificationDeepLinkEvent(event)
+            }
+        }
+    }
+    var calendarNavigationEvent by remember { mutableStateOf<WidgetNavigationEvent?>(null) }
+    LaunchedEffect(widgetNavigationEvent?.id) {
+        val event = widgetNavigationEvent ?: return@LaunchedEffect
+        if (!event.matches(accountState.binding)) return@LaunchedEffect
+        when (event.action) {
+            WidgetNavigationAction.CREATE_TASK -> navController.navigate(Screen.CreateTask())
+            WidgetNavigationAction.VIEW_LIST -> navController.navigateToTab(Screen.TaskList)
+            WidgetNavigationAction.VIEW_TASK -> {
+                event.taskId?.takeIf { it.isNotBlank() }?.let { taskId ->
+                    navController.navigate(Screen.EditTask(taskId))
+                }
+            }
+            WidgetNavigationAction.VIEW_CALENDAR -> {
+                val date = event.calendarDate?.takeIf { it.isValid } ?: return@LaunchedEffect
+                calendarNavigationEvent = event.copy(calendarDate = date)
+                navController.navigateToTab(Screen.Calendar)
+            }
+        }
+    }
+    AccountEpochViewModelStoreProvider(accountState.binding.boundaryEpoch) {
         MainScreen(
             navController = navController,
             backStack = backStack,
@@ -244,6 +383,8 @@ fun App(
             },
             taskNotificationEvent = taskNotificationEvent,
             onTaskNotificationDismiss = { taskNotificationEvent = null },
+            accountState = accountState,
+            authViewModel = authViewModel,
         )
     }
 }
@@ -293,10 +434,14 @@ private fun MainScreen(
     onCalendarNavigationConsumed: (Long) -> Unit,
     taskNotificationEvent: NotificationDeepLinkEvent?,
     onTaskNotificationDismiss: () -> Unit,
+    accountState: AccountSessionState.Authenticated,
+    authViewModel: AuthViewModel,
 ) {
     val noteViewModel: NoteViewModel = koinViewModel()
     val taskNotificationViewModel: TaskNotificationViewModel = koinViewModel()
     val appViewModel: AppViewModel = koinViewModel()
+    val accountOperation by authViewModel.operation.collectAsState()
+    val accountError by authViewModel.error.collectAsState()
     val isRefreshing by appViewModel.isRefreshing.collectAsState()
     val onPullToRefresh = remember(appViewModel) { { appViewModel.triggerSync() } }
     var selectedListId by rememberSaveable { mutableStateOf(AppConstants.DEFAULT_INBOX_ID) }
@@ -494,7 +639,15 @@ private fun MainScreen(
                         onImportCalendar = { showImportCalendar = true },
                         onImportIcs = { showImportIcs = true },
                         onImportCsv = { showImportCsv = true },
-                        onLogout = { navController.navigateToTab(Screen.Matrix) },
+                        currentAccount = accountState.account,
+                        currentEndpoint = accountState.binding.canonicalEndpoint,
+                        accountOperation = accountOperation,
+                        accountError = accountError,
+                        onSwitchAccount = { email, password ->
+                            authViewModel.switchAccount(email, password)
+                        },
+                        onClearAccountError = authViewModel::clearError,
+                        onLogout = authViewModel::logout,
                     )
                 }
 

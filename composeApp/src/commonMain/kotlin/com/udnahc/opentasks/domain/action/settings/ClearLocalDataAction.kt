@@ -3,6 +3,7 @@ package com.udnahc.opentasks.domain.action.settings
 import androidx.room.immediateTransaction
 import androidx.room.useWriterConnection
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
+import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.AppConstants
@@ -16,8 +17,9 @@ class ClearLocalDataAction(
     private val attachmentFileStorage: AttachmentFileStorage,
     private val syncService: SyncService,
     private val triggerSyncAction: TriggerSyncAction,
+    private val mutationGate: AccountMutationGate,
 ) {
-    suspend operator fun invoke() {
+    suspend operator fun invoke() = mutationGate.withExclusive {
         log.d { "Clearing all local data" }
         syncService.runExclusiveReset(
             cancelPendingSync = triggerSyncAction::cancelPendingSync,

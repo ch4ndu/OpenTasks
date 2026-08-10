@@ -9,6 +9,7 @@ import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.notification.NotificationScheduler
+import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.attachment.AddTaskImageAction
 import com.udnahc.opentasks.domain.action.attachment.RemoveTaskImageAction
@@ -60,10 +61,10 @@ class FormViewModelTest : MainDispatcherRule() {
             observeAllCategories = ObserveAllCategoriesUseCase(categoryRepository),
             addTaskAction = AddTaskAction(taskRepository, scheduler),
             updateTaskAction = UpdateTaskAction(taskRepository, scheduler),
-            deleteTaskAction = DeleteTaskAction(taskRepository, attachmentFileStorage, scheduler),
+            deleteTaskAction = DeleteTaskAction(taskRepository, attachmentFileStorage, scheduler, mutationGate = MutexAccountMutationGate()),
             observeTaskImagesUseCase = ObserveTaskImagesUseCase(attachmentRepository),
-            addTaskImageAction = AddTaskImageAction(attachmentRepository, attachmentFileStorage),
-            removeTaskImageAction = RemoveTaskImageAction(attachmentRepository, attachmentFileStorage),
+            addTaskImageAction = AddTaskImageAction(attachmentRepository, attachmentFileStorage, MutexAccountMutationGate()),
+            removeTaskImageAction = RemoveTaskImageAction(attachmentRepository, attachmentFileStorage, MutexAccountMutationGate()),
             addCategoryAction = AddCategoryAction(categoryRepository),
             ioDispatcher = dispatcher,
         )
@@ -540,10 +541,10 @@ class FormViewModelTest : MainDispatcherRule() {
             observeAllCategories = ObserveAllCategoriesUseCase(categoryRepository),
             addTaskAction = AddTaskAction(taskRepository, scheduler),
             updateTaskAction = UpdateTaskAction(taskRepository, scheduler),
-            deleteTaskAction = DeleteTaskAction(taskRepository, attachmentFileStorage, scheduler),
+            deleteTaskAction = DeleteTaskAction(taskRepository, attachmentFileStorage, scheduler, mutationGate = MutexAccountMutationGate()),
             observeTaskImagesUseCase = ObserveTaskImagesUseCase(attachmentRepository),
-            addTaskImageAction = AddTaskImageAction(attachmentRepository, attachmentFileStorage),
-            removeTaskImageAction = RemoveTaskImageAction(attachmentRepository, attachmentFileStorage),
+            addTaskImageAction = AddTaskImageAction(attachmentRepository, attachmentFileStorage, MutexAccountMutationGate()),
+            removeTaskImageAction = RemoveTaskImageAction(attachmentRepository, attachmentFileStorage, MutexAccountMutationGate()),
             addCategoryAction = AddCategoryAction(categoryRepository),
             pendingTaskImageHandoff = pendingTaskImageHandoff,
             ioDispatcher = dispatcher,

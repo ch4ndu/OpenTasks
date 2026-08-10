@@ -2,6 +2,9 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
+import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -17,6 +20,7 @@ private val log = logging("AppViewModel")
 
 class AppViewModel(
     triggerSyncAction: TriggerSyncAction,
+    private val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
     private val syncNow: suspend () -> Unit = { triggerSyncAction.syncNow() },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -25,12 +29,18 @@ class AppViewModel(
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     fun triggerSync() {
+        val expectedBoundary = accountBoundaryExecutor?.captureForegroundBoundary()
+        if (accountBoundaryExecutor != null && expectedBoundary == null) return
         if (!_isRefreshing.compareAndSet(expect = false, update = true)) return
         viewModelScope.launch(ioDispatcher) {
             try {
-                syncNow()
+                accountBoundaryExecutor.withForegroundActionBoundary(expectedBoundary) {
+                    syncNow()
+                }
             } catch (e: CancellationException) {
                 throw e
+            } catch (_: AccountBoundaryRejectedException) {
+                log.w { "Pull-to-refresh skipped because the foreground account boundary changed" }
             } catch (e: Exception) {
                 log.e(e) { "Pull-to-refresh sync failed" }
             } finally {

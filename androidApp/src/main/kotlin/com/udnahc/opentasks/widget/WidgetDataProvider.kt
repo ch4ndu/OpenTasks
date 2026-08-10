@@ -26,6 +26,8 @@ import opentasks.composeapp.generated.resources.widget_filter_tomorrow
 import org.jetbrains.compose.resources.getString
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import com.udnahc.opentasks.data.auth.AccountBoundary
+import com.udnahc.opentasks.data.auth.WidgetAccountGate
 
 data class WidgetTask(
     val id: String,
@@ -43,11 +45,30 @@ class WidgetDataProvider : KoinComponent {
     private val taskDao: TaskDao by inject()
     private val categoryDao: CategoryDao by inject()
     private val countdownDao: CountdownDao by inject()
+    private val widgetAccountGate: WidgetAccountGate by inject()
+
+    suspend fun activeBoundary(): AccountBoundary =
+        widgetAccountGate.currentBoundary()
+            ?: throw IllegalStateException("Widget data requires an active account boundary")
+
+    suspend fun <T> withAuthenticatedBoundary(
+        block: suspend (AccountBoundary) -> T,
+    ): T? = widgetAccountGate.withAuthenticatedBoundary(block)
 
     suspend fun getCategories(): List<Category> =
+        widgetAccountGate.withAuthenticatedBoundary {
+            getCategoriesWithinBoundary()
+        }.orEmpty()
+
+    suspend fun getWidgetTasks(prefs: WidgetPreferences): List<WidgetTask> =
+        widgetAccountGate.withAuthenticatedBoundary {
+            getWidgetTasksWithinBoundary(prefs)
+        }.orEmpty()
+
+    internal suspend fun getCategoriesWithinBoundary(): List<Category> =
         categoryDao.getAllCategoriesOnce().filter { !it.isDeleted }
 
-    suspend fun getWidgetTasks(prefs: WidgetPreferences): List<WidgetTask> {
+    internal suspend fun getWidgetTasksWithinBoundary(prefs: WidgetPreferences): List<WidgetTask> {
         val tasks = fetchTasks(prefs)
         val sorted = sortTasks(tasks, prefs.sortBy)
         val todayLabel = getString(Res.string.today)
@@ -63,7 +84,9 @@ class WidgetDataProvider : KoinComponent {
             WidgetFilterType.NEXT_7_DAYS -> getTasksForDayRange(0, 7)
             WidgetFilterType.CATEGORY -> {
                 val catId = prefs.filterCategoryId ?: return taskDao.getIncompleteTasksOnce()
-                if (getCategories().none { it.id == catId }) return taskDao.getIncompleteTasksOnce()
+                if (getCategoriesWithinBoundary().none { it.id == catId }) {
+                    return taskDao.getIncompleteTasksOnce()
+                }
                 taskDao.getIncompleteTasksOnce().filter { it.categoryId == catId }
             }
         }
@@ -99,6 +122,15 @@ class WidgetDataProvider : KoinComponent {
         year: Int,
         month: Int,
         maxPerDay: Int = MAX_TASKS_PER_DAY,
+    ): Map<Int, List<CalendarDayTask>> =
+        widgetAccountGate.withAuthenticatedBoundary {
+            getTasksByDayForMonthWithinBoundary(year, month, maxPerDay)
+        }.orEmpty()
+
+    internal suspend fun getTasksByDayForMonthWithinBoundary(
+        year: Int,
+        month: Int,
+        maxPerDay: Int,
     ): Map<Int, List<CalendarDayTask>> {
         val startLocalMillis = startOfDayLocalMillis(year, month, 1)
         val endDate = LocalDate(year, month, 1).plus(1, DateTimeUnit.MONTH)
@@ -133,6 +165,14 @@ class WidgetDataProvider : KoinComponent {
     suspend fun getTasksByDayForWeek(
         weekStartLocalMillis: Long,
         maxPerDay: Int = MAX_TASKS_PER_WEEK_DAY,
+    ): Map<Int, List<CalendarDayTask>> =
+        widgetAccountGate.withAuthenticatedBoundary {
+            getTasksByDayForWeekWithinBoundary(weekStartLocalMillis, maxPerDay)
+        }.orEmpty()
+
+    internal suspend fun getTasksByDayForWeekWithinBoundary(
+        weekStartLocalMillis: Long,
+        maxPerDay: Int,
     ): Map<Int, List<CalendarDayTask>> {
         val endLocalMillis = weekStartLocalMillis + 7 * MILLIS_PER_DAY
         val startUtc = localMillisToUtcMillis(weekStartLocalMillis)

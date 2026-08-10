@@ -1,5 +1,7 @@
 package com.udnahc.opentasks.domain.action.task
 
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
@@ -16,6 +18,7 @@ class AddTaskAction(
     private val repository: TaskRepository,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
+    internal val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) {
     private val coordinator = TaskWriteCoordinator(repository)
 
@@ -42,7 +45,7 @@ class AddTaskAction(
         attendees: String = "",
         durationReminders: String = "",
         dateReminders: String = "",
-    ): Task {
+    ): Task = accountBoundaryExecutor.withForegroundActionBoundary {
         log.d { "Adding task: '$title'" }
         val now = localNow()
         val task = Task(
@@ -75,6 +78,6 @@ class AddTaskAction(
         log.v { "Task created: id=${task.id}" }
         rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(persisted.id) }
             ?: scheduleTaskRemindersAction(persisted.id)
-        return persisted
+        persisted
     }
 }

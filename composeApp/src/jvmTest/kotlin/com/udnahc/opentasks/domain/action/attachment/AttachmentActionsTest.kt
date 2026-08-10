@@ -3,6 +3,7 @@ package com.udnahc.opentasks.domain.action.attachment
 import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
 import com.udnahc.opentasks.data.attachment.AttachmentImageDecodeException
 import com.udnahc.opentasks.data.attachment.PickedImage
+import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
 import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.testutil.FakeAttachmentFileStorage
 import com.udnahc.opentasks.testutil.FakeAttachmentRepository
@@ -20,7 +21,7 @@ class AttachmentActionsTest {
     fun addTaskImageDeletesStoredFilesWhenValidationFails() = runTest {
         val repository = FakeAttachmentRepository()
         val storage = FakeAttachmentFileStorage()
-        val action = AddTaskImageAction(repository, storage)
+        val action = AddTaskImageAction(repository, storage, MutexAccountMutationGate())
         val fileName = "large.jpg"
 
         assertFailsWith<IllegalArgumentException> {
@@ -41,7 +42,7 @@ class AttachmentActionsTest {
             insertError = IllegalStateException("insert failed")
         }
         val storage = FakeAttachmentFileStorage()
-        val action = AddTaskImageAction(repository, storage)
+        val action = AddTaskImageAction(repository, storage, MutexAccountMutationGate())
         val fileName = "image.jpg"
 
         assertFailsWith<IllegalStateException> {
@@ -59,7 +60,7 @@ class AttachmentActionsTest {
         val storage = FakeAttachmentFileStorage().apply {
             storePickedImageError = AttachmentImageDecodeException()
         }
-        val action = AddTaskImageAction(repository, storage)
+        val action = AddTaskImageAction(repository, storage, MutexAccountMutationGate())
 
         assertFailsWith<AttachmentImageDecodeException> {
             action(taskId = "task", image = PickedImage("corrupt.jpg", ByteArray(16)))
@@ -83,7 +84,7 @@ class AttachmentActionsTest {
             addFile(attachment.localPath)
             addFile(attachment.thumbnailPath)
         }
-        val action = RemoveTaskImageAction(repository, storage)
+        val action = RemoveTaskImageAction(repository, storage, MutexAccountMutationGate())
 
         action(attachment)
 

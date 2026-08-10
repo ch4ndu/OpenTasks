@@ -29,6 +29,7 @@ koin-bom = "4.2.1"
 kmlog = "2.0.3"
 slf4jApi = "2.0.18"
 logback = "1.5.38"
+javaKeyring = "1.0.4"
 
 nav3Core = "1.1.4"
 multiplatform-nav3-ui = "1.1.1"
@@ -96,6 +97,7 @@ richeditor-compose = { module = "com.mohamedrejeb.richeditor:richeditor-compose"
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4jApi" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4jApi" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+java-keyring = { module = "com.github.javakeyring:java-keyring", version.ref = "javaKeyring" }
 kmlog = { module = "org.lighthousegames:logging", version.ref = "kmlog" }
 
 pocketbase = { module = "io.github.agrevster:pocketbase-kotlin", version.ref = "pocketbase" }

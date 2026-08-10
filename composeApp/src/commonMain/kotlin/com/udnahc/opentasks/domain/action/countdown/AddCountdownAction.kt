@@ -1,5 +1,7 @@
 package com.udnahc.opentasks.domain.action.countdown
 
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.repository.CountdownRepository
@@ -12,8 +14,9 @@ class AddCountdownAction(
     private val repository: CountdownRepository,
     private val scheduleCountdownRemindersAction: ScheduleCountdownRemindersAction,
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
+    internal val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) {
-    suspend operator fun invoke(countdown: Countdown) {
+    suspend operator fun invoke(countdown: Countdown) = accountBoundaryExecutor.withForegroundActionBoundary {
         log.d { "Adding countdown: '${countdown.title}'" }
         val now = localNow()
         val created = countdown.copy(createdAt = now, updatedAt = now)

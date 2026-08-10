@@ -26,6 +26,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>OpenTasks uses the camera to attach photos to tasks.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>OpenTasks connects to your PocketBase server on the local network.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>OpenTasks uses your photo library to attach images to tasks.</string>
 	<key>UIBackgroundModes</key>

@@ -1,6 +1,6 @@
 package com.udnahc.opentasks.domain.action.reminder
 
-import com.udnahc.opentasks.data.notification.NotificationScheduler
+import com.udnahc.opentasks.data.notification.ReminderScheduler
 import com.udnahc.opentasks.data.notification.pendingReminderQueueLimit
 import com.udnahc.opentasks.data.notification.selectFairReminderQueue
 import com.udnahc.opentasks.data.repository.CountdownRepository
@@ -17,16 +17,17 @@ class RebuildReminderQueueAction(
     private val countdownRepository: CountdownRepository,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
     private val scheduleCountdownRemindersAction: ScheduleCountdownRemindersAction,
-    private val scheduler: NotificationScheduler,
+    private val scheduler: ReminderScheduler,
+    private val pendingQueueLimit: () -> Int? = ::pendingReminderQueueLimit,
 ) {
     suspend fun afterRecordChange(scheduleDirectly: suspend () -> Unit) {
-        if (pendingReminderQueueLimit() == null) scheduleDirectly() else invoke()
+        if (pendingQueueLimit() == null) scheduleDirectly() else invoke()
     }
 
     suspend operator fun invoke() {
         val tasks = taskRepository.getTasksWithDeadlines()
         val countdowns = countdownRepository.getAllCountdownsForReminderReconciliationUtc()
-        val limit = pendingReminderQueueLimit()
+        val limit = pendingQueueLimit()
         if (limit == null) {
             log.d { "Rebuilding reminders for ${tasks.size} tasks and ${countdowns.size} countdowns" }
             tasks.forEach { scheduleTaskRemindersAction.invokeWithUtcTask(it) }

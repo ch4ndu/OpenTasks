@@ -1,6 +1,7 @@
 package com.udnahc.opentasks
 
 import android.app.Application
+import com.udnahc.opentasks.data.auth.WidgetAccountGate
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.di.initKoin
 import com.udnahc.opentasks.widget.CalendarWidget
@@ -22,11 +23,20 @@ class OpenTasksApplication : Application() {
         }
         // Pre-warm Room database and refresh widgets on background thread
         CoroutineScope(Dispatchers.IO).launch {
-            get<AppDatabase>(AppDatabase::class.java)
-            // Refresh all widget types after reinstall/process restart
-            TaskWidget.refreshAllWidgets(this@OpenTasksApplication)
-            CalendarWidget.refreshAllWidgets(this@OpenTasksApplication)
-            WeekWidget.refreshAllWidgets(this@OpenTasksApplication)
+            val widgetAccountGate = get<WidgetAccountGate>(WidgetAccountGate::class.java)
+            val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                get<AppDatabase>(AppDatabase::class.java)
+                // Refresh all widget types after reinstall/process restart
+                TaskWidget.refreshAllWidgetsWithinBoundary(this@OpenTasksApplication, boundary)
+                CalendarWidget.refreshAllWidgetsWithinBoundary(this@OpenTasksApplication, boundary)
+                WeekWidget.refreshAllWidgetsWithinBoundary(this@OpenTasksApplication, boundary)
+                true
+            }
+            if (refreshed != true) {
+                TaskWidget.blankAllWidgets(this@OpenTasksApplication)
+                CalendarWidget.blankAllWidgets(this@OpenTasksApplication)
+                WeekWidget.blankAllWidgets(this@OpenTasksApplication)
+            }
         }
     }
 }

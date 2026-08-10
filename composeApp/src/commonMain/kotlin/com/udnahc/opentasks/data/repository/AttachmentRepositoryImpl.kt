@@ -8,6 +8,7 @@ import com.udnahc.opentasks.data.model.Attachment
 import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.model.withSyncState
+import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,7 @@ class AttachmentRepositoryImpl(
     private val dao: AttachmentDao,
     private val syncTrigger: SyncTrigger,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mutationGate: AccountMutationGate,
 ) : AttachmentRepository {
 
     override fun observeForOwner(ownerType: String, ownerId: String, kind: String): Flow<List<Attachment>> =
@@ -59,15 +61,15 @@ class AttachmentRepositoryImpl(
     override suspend fun nextSortOrder(ownerType: String, ownerId: String, kind: String): Int =
         withContext(ioDispatcher) { dao.maxSortOrder(ownerType, ownerId, kind) + 1 }
 
-    override suspend fun insert(attachment: Attachment): Long {
+    override suspend fun insert(attachment: Attachment): Long = mutationGate.withExclusive {
         val result = withContext(ioDispatcher) {
             dao.insert(attachment.withDefaultTimestamps().enforceSyncInvariant().withUtcTimestamps())
         }
         syncTrigger.triggerSync()
-        return result
+        result
     }
 
-    override suspend fun update(attachment: Attachment) {
+    override suspend fun update(attachment: Attachment) = mutationGate.withExclusive {
         withContext(ioDispatcher) {
             dao.update(attachment.enforceSyncInvariant().withUtcTimestamps())
         }
@@ -82,14 +84,14 @@ class AttachmentRepositoryImpl(
         update(deleted)
     }
 
-    override suspend fun hardDelete(attachment: Attachment) {
+    override suspend fun hardDelete(attachment: Attachment) = mutationGate.withExclusive {
         require(attachment.pbId == null) { "Cannot hard-delete a remotely identified attachment" }
         withContext(ioDispatcher) {
             dao.delete(attachment.withUtcTimestamps())
         }
     }
 
-    override suspend fun tombstoneActiveForOwner(ownerType: String, ownerId: String) {
+    override suspend fun tombstoneActiveForOwner(ownerType: String, ownerId: String) = mutationGate.withExclusive {
         withContext(ioDispatcher) {
             dao.tombstoneActiveForOwner(ownerType, ownerId, localToUtc(localNow()))
         }

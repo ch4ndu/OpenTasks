@@ -393,6 +393,8 @@ private class FakeReminderScheduler : ReminderScheduler {
 
     override suspend fun cancel(semanticKey: String) = Unit
 
+    override suspend fun cancelAllAccountReminders() = Unit
+
     override suspend fun cancelPendingReminders(eventId: String) = Unit
 
     override suspend fun cancelReminders(eventId: String) {

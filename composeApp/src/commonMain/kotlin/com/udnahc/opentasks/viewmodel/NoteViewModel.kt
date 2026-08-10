@@ -2,6 +2,9 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
+import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.Note
@@ -10,6 +13,7 @@ import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
 import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveNoteByIdUseCase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
@@ -22,6 +26,9 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.lighthousegames.logging.logging
+
+private val log = logging("NoteViewModel")
 
 data class NoteListItem(
     val note: Note,
@@ -35,6 +42,7 @@ class NoteViewModel(
     private val addNoteAction: AddNoteAction,
     private val updateNoteAction: UpdateNoteAction,
     private val deleteNoteAction: DeleteNoteAction,
+    private val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) : ViewModel() {
 
     private val _selectedNoteId = MutableStateFlow<String?>(null)
@@ -58,15 +66,29 @@ class NoteViewModel(
         title: String,
         content: String
     ) {
-        viewModelScope.launch(Dispatchers.IO) { addNoteAction(title, content) }
+        launchMutation { addNoteAction(title, content) }
     }
 
     fun updateNote(note: Note) {
-        viewModelScope.launch(Dispatchers.IO) { updateNoteAction(note) }
+        launchMutation { updateNoteAction(note) }
     }
 
     fun deleteNote(note: Note) {
-        viewModelScope.launch(Dispatchers.IO) { deleteNoteAction(note) }
+        launchMutation { deleteNoteAction(note) }
+    }
+
+    private fun launchMutation(block: suspend () -> Unit) {
+        val expectedBoundary = accountBoundaryExecutor?.captureForegroundBoundary()
+        if (accountBoundaryExecutor != null && expectedBoundary == null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                accountBoundaryExecutor.withForegroundActionBoundary(expectedBoundary, block)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: AccountBoundaryRejectedException) {
+                log.w { "Note mutation skipped because the foreground account boundary changed" }
+            }
+        }
     }
 }
 

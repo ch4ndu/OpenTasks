@@ -60,11 +60,16 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 
 ## PocketBase Sync
 
-- Sync is designed for a few trusted app instances against one self-hosted PocketBase server with public collection rules.
+- PocketBase uses pre-created `users` accounts. Task UI is mounted only for `AccountSessionState.Authenticated` after a durable `CacheBinding` proves the single Room cache belongs to that endpoint, server instance, account, capability version, and epoch.
+- All seven sync collections require an owner relation. PocketBase rules enforce owner-only access, and the structured gateway scopes every query/mutation and rejects raw cross-owner responses before DAO writes.
+- `AccountMutationGate` is the process-wide boundary for user writes, sync mutation, account switch/logout, and one-cache replacement. Do not construct independent production gates.
+- Switch/logout require an online source refresh, successful final sync, and zero unsynced rows. A durable transition marker makes crash recovery fail closed; task UI remains unmounted until the authoritative cache is activated and initially pulled.
+- Authentication rejection requires same-account reauthentication. A connectivity-only refresh failure may enter offline mode only when an existing binding proves cache ownership.
+- Account-bound delayed callbacks carry `accountId` and `boundaryEpoch`; receivers, workers, and widgets reject stale payloads before reading or mutating task data.
 - Repositories soft-delete durable rows and trigger sync; `SyncService` and adapters use DAOs directly to avoid sync loops during pull.
 - Collections sync in dependency order: categories, tags, tasks, attachments, task_tags, notes, countdowns.
 - Each collection pulls before pushing and uses last-write-wins by local database `updatedAt` / server `localUpdatedAt`.
-- Remote rows with newer timestamps overwrite local rows, including older unsynced local edits; unsynced local rows with newer or equal timestamps push.
+- Remote rows with newer timestamps overwrite local rows, including older unsynced local edits; unsynced local rows push only when newer. Equal timestamps succeed only when canonical payloads match.
 - App deletes are server tombstones (`isDeleted = true`) retained indefinitely, not PocketBase hard deletes. Never-synced local tombstones without `pbId` may be hard-deleted locally.
 - After a successful full fetch, synced active local rows missing from the server are marked unsynced so push recreates them.
 - Task-tag assignments are synced as `task_tags` records with `localId = "$taskId:$tagId"` while keeping `(taskId, tagId)` as the local Room primary key.

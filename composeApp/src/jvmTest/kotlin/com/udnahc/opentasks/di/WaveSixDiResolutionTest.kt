@@ -2,8 +2,19 @@ package com.udnahc.opentasks.di
 
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.domain.attachment.PendingTaskImageHandoff
+import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
+import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
+import com.udnahc.opentasks.domain.action.countdown.UpdateCountdownAction
+import com.udnahc.opentasks.domain.action.task.AddTaskAction
+import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
+import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
+import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
+import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
+import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
+import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.domain.usecase.task.GenerateCsvExportUseCase
 import com.udnahc.opentasks.domain.usecase.task.GenerateIcsExportUseCase
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
@@ -26,6 +37,7 @@ import org.koin.dsl.module
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertSame
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WaveSixDiResolutionTest {
@@ -72,6 +84,18 @@ class WaveSixDiResolutionTest {
                 get<ImportCalendarViewModel>()
                 get<SettingsViewModel>()
                 get<AppViewModel>()
+
+                val foregroundExecutor = get<AccountBoundaryExecutor>()
+                assertSame(foregroundExecutor, get<AddTaskAction>().accountBoundaryExecutor)
+                assertSame(foregroundExecutor, get<UpdateTaskAction>().accountBoundaryExecutor)
+                assertSame(foregroundExecutor, get<ToggleTaskCompleteAction>().accountBoundaryExecutor)
+                assertSame(foregroundExecutor, get<UpdateTaskStatusAction>().accountBoundaryExecutor)
+                assertSame(foregroundExecutor, get<DeleteTaskAction>().accountBoundaryExecutor)
+                assertSame(foregroundExecutor, get<ImportCsvTasksAction>().accountBoundaryExecutor)
+                assertSame(foregroundExecutor, get<ImportCalendarEventsAction>().accountBoundaryExecutor)
+                assertSame(foregroundExecutor, get<AddCountdownAction>().accountBoundaryExecutor)
+                assertSame(foregroundExecutor, get<UpdateCountdownAction>().accountBoundaryExecutor)
+                assertSame(foregroundExecutor, get<DeleteCountdownAction>().accountBoundaryExecutor)
             }
         } finally {
             database?.close()

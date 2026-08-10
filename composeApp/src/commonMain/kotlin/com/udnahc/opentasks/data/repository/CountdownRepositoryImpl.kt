@@ -5,6 +5,7 @@ import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Countdown
+import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,7 @@ class CountdownRepositoryImpl(
     private val countdownDao: CountdownDao,
     private val syncTrigger: SyncTrigger,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val mutationGate: AccountMutationGate,
 ) : CountdownRepository {
 
     override fun getAllCountdowns(): Flow<List<Countdown>> =
@@ -45,7 +47,7 @@ class CountdownRepositoryImpl(
     override suspend fun getAllCountdownsForReminderReconciliationUtc(): List<Countdown> =
         withContext(ioDispatcher) { countdownDao.getAllCountdownsForReminderReconciliationUtc() }
 
-    override suspend fun insert(countdown: Countdown) {
+    override suspend fun insert(countdown: Countdown) = mutationGate.withExclusive {
         log.v { "Inserting countdown: ${countdown.id}" }
         withContext(ioDispatcher) {
             countdownDao.insert(countdown.withDefaultTimestamps().withUtcTimestamps())
@@ -53,7 +55,7 @@ class CountdownRepositoryImpl(
         syncTrigger.triggerSync()
     }
 
-    override suspend fun update(countdown: Countdown) {
+    override suspend fun update(countdown: Countdown) = mutationGate.withExclusive {
         log.v { "Updating countdown: ${countdown.id}" }
         withContext(ioDispatcher) {
             countdownDao.update(countdown.withUtcTimestamps().copy(isSynced = false))
@@ -61,7 +63,7 @@ class CountdownRepositoryImpl(
         syncTrigger.triggerSync()
     }
 
-    override suspend fun delete(countdown: Countdown) {
+    override suspend fun delete(countdown: Countdown) = mutationGate.withExclusive {
         log.v { "Soft-deleting countdown: ${countdown.id}" }
         withContext(ioDispatcher) {
             countdownDao.update(

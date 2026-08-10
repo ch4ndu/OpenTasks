@@ -1,5 +1,7 @@
 package com.udnahc.opentasks.domain.action.task
 
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import org.lighthousegames.logging.logging
@@ -10,6 +12,7 @@ class ToggleTaskCompleteAction(
     private val repository: TaskRepository,
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
+    internal val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) {
     private val coordinator = TaskWriteCoordinator(repository)
 
@@ -17,7 +20,7 @@ class ToggleTaskCompleteAction(
         taskId: String,
         completeSeries: Boolean = false,
         occurrenceDeadlineLocalMillis: Long? = null,
-    ): TaskWriteResult {
+    ): TaskWriteResult = accountBoundaryExecutor.withForegroundActionBoundary {
         val intent = when {
             completeSeries -> TaskWriteIntent.CompleteSeries(occurrenceDeadlineLocalMillis)
             occurrenceDeadlineLocalMillis != null -> TaskWriteIntent.CompleteOccurrence(occurrenceDeadlineLocalMillis)
@@ -28,6 +31,6 @@ class ToggleTaskCompleteAction(
             rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(taskId) }
                 ?: scheduleTaskRemindersAction(taskId)
         }
-        return result
+        result
     }
 }

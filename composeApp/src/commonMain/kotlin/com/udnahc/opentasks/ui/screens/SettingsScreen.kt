@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -28,8 +31,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.udnahc.opentasks.data.auth.AuthenticatedAccount
 import com.udnahc.opentasks.data.model.TextSizePreference
 import com.udnahc.opentasks.data.model.ThemeMode
 import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
@@ -39,11 +48,22 @@ import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
 import com.udnahc.opentasks.ui.util.rememberFileExportLauncher
 import com.udnahc.opentasks.ui.util.rememberNotificationPermissionLauncher
 import com.udnahc.opentasks.viewmodel.ClearLocalDataStatus
+import com.udnahc.opentasks.viewmodel.AccountOperation
+import com.udnahc.opentasks.viewmodel.AccountUiError
 import com.udnahc.opentasks.viewmodel.ExportResult
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.SyncStatus
+import com.udnahc.opentasks.viewmodel.displayLabel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.account
+import opentasks.composeapp.generated.resources.account_current
+import opentasks.composeapp.generated.resources.account_email
+import opentasks.composeapp.generated.resources.account_endpoint
+import opentasks.composeapp.generated.resources.account_endpoint_read_only_value
+import opentasks.composeapp.generated.resources.account_endpoint_read_only
+import opentasks.composeapp.generated.resources.account_password
+import opentasks.composeapp.generated.resources.account_switch
+import opentasks.composeapp.generated.resources.account_switch_description
 import opentasks.composeapp.generated.resources.appearance
 import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.calendar_access
@@ -54,6 +74,7 @@ import opentasks.composeapp.generated.resources.clear_local_data_error
 import opentasks.composeapp.generated.resources.configured
 import opentasks.composeapp.generated.resources.connected
 import opentasks.composeapp.generated.resources.connection_failed
+import opentasks.composeapp.generated.resources.sync_failed
 import opentasks.composeapp.generated.resources.exact_reminder_available
 import opentasks.composeapp.generated.resources.exact_reminder_not_required
 import opentasks.composeapp.generated.resources.exact_reminder_permission_needed
@@ -71,6 +92,7 @@ import opentasks.composeapp.generated.resources.logout
 import opentasks.composeapp.generated.resources.logout_confirm_message
 import opentasks.composeapp.generated.resources.logout_confirm_title
 import opentasks.composeapp.generated.resources.logout_description
+import opentasks.composeapp.generated.resources.loading
 import opentasks.composeapp.generated.resources.not_configured
 import opentasks.composeapp.generated.resources.notifications
 import opentasks.composeapp.generated.resources.permission_granted
@@ -100,6 +122,12 @@ fun SettingsScreen(
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
     onImportCsv: () -> Unit = {},
+    currentAccount: AuthenticatedAccount? = null,
+    currentEndpoint: String? = null,
+    accountOperation: AccountOperation? = null,
+    accountError: AccountUiError? = null,
+    onSwitchAccount: (email: String, password: String) -> Unit = { _, _ -> },
+    onClearAccountError: () -> Unit = {},
     onLogout: () -> Unit = {},
 ) {
     val viewModel: SettingsViewModel = koinViewModel()
@@ -131,7 +159,7 @@ fun SettingsScreen(
     }
 
     SettingsContent(
-        currentUrl = currentUrl,
+        currentUrl = currentEndpoint ?: currentUrl,
         syncStatus = syncStatus,
         themePreference = themePreference,
         textSizePreference = textSizePreference,
@@ -141,6 +169,9 @@ fun SettingsScreen(
         exportResult = exportResult,
         exportInProgress = exportInProgress,
         clearLocalDataStatus = clearLocalDataStatus,
+        currentAccount = currentAccount,
+        accountOperation = accountOperation,
+        accountError = accountError,
         onBack = onBack,
         onSaveUrl = { viewModel.savePocketBaseUrl(it) },
         onClearUrl = { viewModel.clearPocketBaseUrl() },
@@ -163,7 +194,9 @@ fun SettingsScreen(
         },
         onClearExportResult = { viewModel.clearExportResult() },
         onClearLocalDataErrorShown = { viewModel.clearLocalDataErrorShown() },
-        onLogout = { viewModel.clearLocalData(onLogout) },
+        onSwitchAccount = onSwitchAccount,
+        onClearAccountError = onClearAccountError,
+        onLogout = onLogout,
     )
 }
 
@@ -180,6 +213,9 @@ internal fun SettingsContent(
     exportResult: ExportResult = ExportResult.Idle,
     exportInProgress: Boolean = false,
     clearLocalDataStatus: ClearLocalDataStatus = ClearLocalDataStatus.IDLE,
+    currentAccount: AuthenticatedAccount? = null,
+    accountOperation: AccountOperation? = null,
+    accountError: AccountUiError? = null,
     onBack: () -> Unit,
     onSaveUrl: (String) -> Unit,
     onClearUrl: () -> Unit,
@@ -196,14 +232,18 @@ internal fun SettingsContent(
     onExportIcs: () -> Unit = {},
     onClearExportResult: () -> Unit = {},
     onClearLocalDataErrorShown: () -> Unit = {},
+    onSwitchAccount: (email: String, password: String) -> Unit = { _, _ -> },
+    onClearAccountError: () -> Unit = {},
     onLogout: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     var showUrlDialog by remember { mutableStateOf(false) }
+    var showSwitchAccount by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showTextSizeDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val accountControls = accountControlAvailability(currentAccount, accountOperation)
 
     LaunchedEffect(exportResult) {
         when (val result = exportResult) {
@@ -313,11 +353,19 @@ internal fun SettingsContent(
                 SettingsCategoryHeader(stringResource(Res.string.sync))
             }
             item(key = "pocketbase_url") {
-                val summary = currentUrl ?: stringResource(Res.string.not_configured)
+                val summary = if (currentAccount != null) {
+                    stringResource(
+                        Res.string.account_endpoint_read_only_value,
+                        currentUrl ?: stringResource(Res.string.not_configured),
+                    )
+                } else {
+                    currentUrl ?: stringResource(Res.string.not_configured)
+                }
                 SettingsRow(
                     title = stringResource(Res.string.pocketbase_url),
                     summary = summary,
-                    onClick = { showUrlDialog = true },
+                    onClick = { if (currentAccount == null) showUrlDialog = true },
+                    enabled = currentAccount == null,
                 )
             }
             if (currentUrl != null) {
@@ -326,6 +374,7 @@ internal fun SettingsContent(
                         SyncStatus.SYNCING -> stringResource(Res.string.syncing)
                         SyncStatus.CHECKING -> stringResource(Res.string.checking_connection)
                         SyncStatus.ERROR -> stringResource(Res.string.connection_failed)
+                        SyncStatus.SYNC_ERROR -> stringResource(Res.string.sync_failed)
                         SyncStatus.SUCCESS -> stringResource(Res.string.connected)
                         SyncStatus.IDLE -> stringResource(Res.string.configured)
                     }
@@ -383,11 +432,38 @@ internal fun SettingsContent(
             item(key = "account_header") {
                 SettingsCategoryHeader(stringResource(Res.string.account))
             }
+            if (currentAccount != null) {
+                item(key = "current_account") {
+                    SettingsRow(
+                        title = stringResource(Res.string.account_current),
+                        summary = currentAccount.displayLabel(),
+                        onClick = {},
+                        enabled = false,
+                    )
+                }
+                item(key = "switch_account") {
+                    SettingsRow(
+                        title = stringResource(Res.string.account_switch),
+                        summary = stringResource(Res.string.account_switch_description),
+                        onClick = { showSwitchAccount = true },
+                        enabled = accountControls.canSwitchAccount,
+                    )
+                }
+                if (accountError != null) {
+                    item(key = "account_error") {
+                        AccountErrorMessage(
+                            error = accountError,
+                            onClear = onClearAccountError,
+                        )
+                    }
+                }
+            }
             item(key = "logout") {
                 SettingsRow(
                     title = stringResource(Res.string.logout),
                     summary = stringResource(Res.string.logout_description),
                     onClick = { showLogoutConfirm = true },
+                    enabled = accountControls.canLogout,
                 )
             }
         }
@@ -415,6 +491,18 @@ internal fun SettingsContent(
                     Text(stringResource(Res.string.cancel))
                 }
             },
+        )
+    }
+
+    if (showSwitchAccount) {
+        AccountSwitchDialog(
+            endpoint = currentUrl,
+            isBusy = accountOperation == AccountOperation.SWITCHING,
+            onSubmit = { email, password ->
+                showSwitchAccount = false
+                onSwitchAccount(email, password)
+            },
+            onDismiss = { showSwitchAccount = false },
         )
     }
 
@@ -551,6 +639,117 @@ private fun PocketBaseUrlDialog(
                 TextButton(onClick = onDismiss) {
                     Text(stringResource(Res.string.back))
                 }
+            }
+        },
+    )
+}
+
+@Composable
+private fun AccountSwitchDialog(
+    endpoint: String?,
+    isBusy: Boolean,
+    onSubmit: (email: String, password: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var emailInput by rememberSaveable(endpoint) { mutableStateOf("") }
+    // Password deliberately remains ephemeral and is cleared before the action starts.
+    var passwordInput by remember { mutableStateOf("") }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+
+    fun submit() {
+        val result = submitAccountSession(
+            mode = AccountSessionEntryMode.REAUTHENTICATE,
+            endpointInput = endpoint.orEmpty(),
+            emailInput = emailInput,
+            passwordInput = passwordInput,
+            isBusy = isBusy,
+        )
+        passwordInput = result.passwordInput
+        result.submission?.let { submission ->
+            onSubmit(submission.email, submission.password)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(Res.string.account_switch)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(OpenTasksTheme.dimens.spacerLarge)) {
+                Text(stringResource(Res.string.account_switch_description))
+                if (!endpoint.isNullOrBlank()) {
+                    OutlinedTextField(
+                        value = endpoint,
+                        onValueChange = {},
+                        label = { Text(stringResource(Res.string.account_endpoint)) },
+                        supportingText = {
+                            Text(stringResource(Res.string.account_endpoint_read_only))
+                        },
+                        enabled = false,
+                        singleLine = true,
+                        colors = accountTextFieldColors(),
+                    )
+                }
+                OutlinedTextField(
+                    value = emailInput,
+                    onValueChange = { emailInput = it },
+                    label = { Text(stringResource(Res.string.account_email)) },
+                    enabled = !isBusy,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction = ImeAction.Next,
+                    ),
+                    colors = accountTextFieldColors(),
+                )
+                OutlinedTextField(
+                    value = passwordInput,
+                    onValueChange = { passwordInput = it },
+                    label = { Text(stringResource(Res.string.account_password)) },
+                    enabled = !isBusy,
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = {
+                            focusManager.clearFocus()
+                            submit()
+                        },
+                    ),
+                    colors = accountTextFieldColors(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = ::submit,
+                enabled = canSubmitAccountSession(
+                    mode = AccountSessionEntryMode.REAUTHENTICATE,
+                    endpointInput = endpoint.orEmpty(),
+                    emailInput = emailInput,
+                    passwordInput = passwordInput,
+                    isBusy = isBusy,
+                ),
+            ) {
+                if (isBusy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.width(OpenTasksTheme.dimens.iconDefault),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = OpenTasksTheme.dimens.dividerThick,
+                    )
+                    Spacer(Modifier.width(OpenTasksTheme.dimens.spacerLarge))
+                }
+                Text(
+                    if (isBusy) stringResource(Res.string.loading)
+                    else stringResource(Res.string.account_switch)
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isBusy) {
+                Text(stringResource(Res.string.cancel))
             }
         },
     )

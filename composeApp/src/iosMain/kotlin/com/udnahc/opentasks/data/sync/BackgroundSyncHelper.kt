@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.sync
 
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,14 +26,20 @@ object BackgroundSyncHelper : KoinComponent {
 
     private val syncService: SyncService by inject()
     private val rebuildReminderQueueAction: RebuildReminderQueueAction by inject()
+    private val accountBoundaryExecutor: AccountBoundaryExecutor by inject()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun performSync(completion: (Boolean) -> Unit): BackgroundSyncHandle {
         log.d { "Background sync starting" }
         val job = scope.launch {
             try {
-                syncService.syncAll()
-                rebuildReminderQueueAction()
+                val completed = accountBoundaryExecutor.withAuthenticatedBoundary {
+                    syncService.syncAll()
+                    rebuildReminderQueueAction()
+                }
+                if (completed == null) {
+                    log.d { "Background sync skipped without an authenticated account boundary" }
+                }
             } catch (e: CancellationException) {
                 log.d { "Background sync cancelled" }
                 throw e

@@ -11,6 +11,7 @@ import com.udnahc.opentasks.data.repository.TaskAttachmentFilePaths
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.notification.ReminderScheduler
+import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
 import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
 import com.udnahc.opentasks.testutil.FakeAttachmentFileStorage
 import com.udnahc.opentasks.testutil.FakeAttachmentRepository
@@ -87,7 +88,7 @@ class TaskActionsTest {
         assertNotEquals(1L, updated.updatedAt)
         assertFalse(updated.isDeleted)
 
-        DeleteTaskAction(repository, FakeAttachmentFileStorage(), scheduler)(updated.id)
+        DeleteTaskAction(repository, FakeAttachmentFileStorage(), scheduler, mutationGate = MutexAccountMutationGate())(updated.id)
         val deleted = repository.updated.last()
         assertTrue(deleted.isDeleted)
         assertTrue(deleted.updatedAt >= updated.updatedAt)
@@ -122,7 +123,7 @@ class TaskActionsTest {
         }
         val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
 
-        DeleteTaskAction(taskRepository, storage, scheduler)(task.id)
+        DeleteTaskAction(taskRepository, storage, scheduler, mutationGate = MutexAccountMutationGate())(task.id)
 
         assertFalse(storage.exists(localOnly.localPath))
         assertFalse(storage.exists(localOnly.thumbnailPath))
@@ -483,7 +484,12 @@ class TaskActionsTest {
         val task = testTask(id = "delete-race", deadline = startOfDayLocalMillis(2026, 5, 1))
         val repository = FakeTaskRepository(listOf(task))
         val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), repository)
-        val delete = DeleteTaskAction(repository, FakeAttachmentFileStorage(), scheduler)
+        val delete = DeleteTaskAction(
+            repository,
+            FakeAttachmentFileStorage(),
+            scheduler,
+            mutationGate = MutexAccountMutationGate(),
+        )
         val star = ToggleTaskStarredAction(repository)
 
         awaitAll(
@@ -506,6 +512,7 @@ private class RecordingReminderScheduler : ReminderScheduler {
     override suspend fun cancelPendingReminders(eventId: String) = Unit
     override suspend fun cancelReminders(eventId: String) = Unit
     override suspend fun cancelAll(eventId: String) = Unit
+    override suspend fun cancelAllAccountReminders() = Unit
     override suspend fun startOngoing(
         identity: com.udnahc.opentasks.data.notification.ReminderIdentity,
         title: String,

@@ -4,6 +4,10 @@ import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_EVENT_ID_KEY
 import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_NOTIFICATION_AT_UTC_KEY
 import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_OCCURRENCE_DEADLINE_UTC_KEY
 import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_SEMANTIC_KEY
+import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_ACCOUNT_ID_KEY
+import com.udnahc.opentasks.NOTIFICATION_DEEP_LINK_BOUNDARY_EPOCH_KEY
+import com.udnahc.opentasks.data.auth.AccountBoundary
+import com.udnahc.opentasks.data.auth.AccountBoundaryGuard
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSDate
 import platform.Foundation.timeIntervalSince1970
@@ -16,17 +20,21 @@ import platform.UserNotifications.UNUserNotificationCenter
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-actual class NotificationScheduler : ReminderScheduler {
+actual class NotificationScheduler(
+    private val boundaryGuard: AccountBoundaryGuard,
+) : ReminderScheduler {
 
     private val center = UNUserNotificationCenter.currentNotificationCenter()
 
     actual override suspend fun schedule(request: ReminderRequest) {
+        val boundary = boundaryGuard.activeBoundary()
+            ?: throw IllegalStateException("Cannot schedule a reminder without an active account boundary")
         val identifier = request.requestId
         center.removePendingNotificationRequestsWithIdentifiers(listOf(identifier))
         center.removeDeliveredNotificationsWithIdentifiers(listOf(identifier))
         val reminderIds = pendingReminderIds()
         if (identifier in reminderIds || reminderIds.size < IOS_PENDING_REMINDER_LIMIT) {
-            addNotificationRequestAwait(notificationRequest(identifier, request))
+            addNotificationRequestAwait(notificationRequest(identifier, request, boundary))
         }
     }
 
@@ -57,7 +65,16 @@ actual class NotificationScheduler : ReminderScheduler {
 
     actual override suspend fun stopOngoing(eventId: String) = Unit
 
+    actual override suspend fun cancelAllAccountReminders() {
+        val pendingIds = pendingReminderIds()
+        if (pendingIds.isNotEmpty()) center.removePendingNotificationRequestsWithIdentifiers(pendingIds)
+        val deliveredIds = deliveredReminderIds()
+        if (deliveredIds.isNotEmpty()) center.removeDeliveredNotificationsWithIdentifiers(deliveredIds)
+    }
+
     actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
+        val boundary = boundaryGuard.activeBoundary()
+            ?: throw IllegalStateException("Cannot schedule reminders without an active account boundary")
         val pendingIds = pendingReminderIds()
         if (pendingIds.isNotEmpty()) {
             center.removePendingNotificationRequestsWithIdentifiers(pendingIds)
@@ -74,7 +91,7 @@ actual class NotificationScheduler : ReminderScheduler {
         val selectedIds = selected.map(ReminderRequest::requestId)
         try {
             selected.forEach { request ->
-                addNotificationRequestAwait(notificationRequest(request.requestId, request))
+                addNotificationRequestAwait(notificationRequest(request.requestId, request, boundary))
             }
         } catch (e: Exception) {
             center.removePendingNotificationRequestsWithIdentifiers(selectedIds)
@@ -128,12 +145,15 @@ actual class NotificationScheduler : ReminderScheduler {
     private fun notificationRequest(
         identifier: String,
         request: ReminderRequest,
+        boundary: AccountBoundary,
     ): UNNotificationRequest {
         val userInfo = mutableMapOf<Any?, String>(
             NOTIFICATION_DEEP_LINK_EVENT_ID_KEY to request.eventId,
             NOTIFICATION_DEEP_LINK_NOTIFICATION_AT_UTC_KEY to request.triggerAtUtcMillis.toString(),
             NOTIFICATION_DEEP_LINK_SEMANTIC_KEY to request.identity.semanticKey,
             NOTIFICATION_DEEP_LINK_OCCURRENCE_DEADLINE_UTC_KEY to request.occurrenceUtcMillis.toString(),
+            NOTIFICATION_DEEP_LINK_ACCOUNT_ID_KEY to boundary.accountId,
+            NOTIFICATION_DEEP_LINK_BOUNDARY_EPOCH_KEY to boundary.boundaryEpoch.toString(),
         )
         val content = UNMutableNotificationContent().apply {
             setTitle(request.title)
