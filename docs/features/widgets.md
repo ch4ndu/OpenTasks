@@ -20,6 +20,8 @@ Widget code lives in `androidApp/src/main/kotlin/.../widget/`. `WidgetDataProvid
 
 Widgets use Glance state for preferences and refresh triggers. `WidgetRefreshCallbacks` integrates app writes and sync events with widget refresh behavior. Widget click actions launch app activities or navigation targets through Android intents.
 
+Widget reads, configuration, refresh, and click actions validate the durable active-cache owner and boundary epoch before DAO access. They work in both Local only and PocketBase modes; callbacks from a previous local/remote epoch are rejected after clear, conversion, logout, or account switch.
+
 Calendar and week widgets merge task dates and countdown dates into compact day summaries. To keep widgets readable, they cap the number of displayed items per day.
 
 ## Shared Capabilities

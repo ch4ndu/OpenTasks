@@ -52,6 +52,9 @@ import androidx.navigation3.ui.NavDisplay
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
 import com.udnahc.opentasks.data.auth.AccountSessionState
+import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.auth.activeBindingOrNull
+import com.udnahc.opentasks.data.auth.authenticatedAccountOrNull
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
@@ -68,8 +71,10 @@ import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
+import com.udnahc.opentasks.domain.usecase.task.QuickTaskCreationContext
 import com.udnahc.opentasks.navigation.AppNavController
 import com.udnahc.opentasks.navigation.Screen
+import com.udnahc.opentasks.navigation.asQuickAddTask
 import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
 import com.udnahc.opentasks.ui.screens.AccountSessionEntryMode
 import com.udnahc.opentasks.ui.screens.AccountSessionRoute
@@ -84,7 +89,9 @@ import com.udnahc.opentasks.ui.screens.ImportCsvDialog
 import com.udnahc.opentasks.ui.screens.ImportIcsDialog
 import com.udnahc.opentasks.ui.screens.NotesScreen
 import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
+import com.udnahc.opentasks.ui.screens.QuickAddTaskScreen
 import com.udnahc.opentasks.ui.screens.SettingsScreen
+import com.udnahc.opentasks.ui.screens.TaskCreationChoiceBottomSheet
 import com.udnahc.opentasks.ui.screens.TaskListScreen
 import com.udnahc.opentasks.ui.screens.TaskNotificationBottomSheet
 import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
@@ -108,6 +115,8 @@ import com.udnahc.opentasks.viewmodel.ImportCsvViewModel
 import com.udnahc.opentasks.viewmodel.ImportIcsViewModel
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import com.udnahc.opentasks.viewmodel.NoteViewModel
+import com.udnahc.opentasks.viewmodel.QuickAddTaskSaveEvent
+import com.udnahc.opentasks.viewmodel.QuickAddTaskViewModel
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormSaveEvent
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
@@ -142,6 +151,7 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 import org.lighthousegames.logging.logging
 import kotlinx.datetime.LocalDate
 
@@ -174,7 +184,7 @@ fun App(
         LaunchedEffect(authViewModel) { authViewModel.restoreSession() }
         LaunchedEffect(sessionState) {
             onAccountBoundaryChanged(
-                (sessionState as? AccountSessionState.Authenticated)?.binding,
+                sessionState.activeBindingOrNull(),
             )
         }
         when (accountSessionRoute(sessionState)) {
@@ -195,8 +205,10 @@ fun App(
                     error = accountError,
                     storageWarning = authViewModel.storageWarning,
                     reauthenticationReason = reauthenticationState?.reason,
+                    allowLocalOnly = sessionState == AccountSessionState.SignedOut,
                     onSignIn = authViewModel::login,
                     onReauthenticate = { _, _ -> },
+                    onUseWithoutSync = authViewModel::startLocalOnly,
                     onClearError = authViewModel::clearError,
                 )
 
@@ -212,8 +224,10 @@ fun App(
                     error = accountError,
                     storageWarning = authViewModel.storageWarning,
                     reauthenticationReason = reauthenticationState.reason,
+                    allowLocalOnly = false,
                     onSignIn = authViewModel::login,
                     onReauthenticate = authViewModel::reauthenticate,
+                    onUseWithoutSync = {},
                     onClearError = authViewModel::clearError,
                 )
             }
@@ -229,11 +243,12 @@ fun App(
                 )
             }
 
-            AccountSessionRoute.AUTHENTICATED -> {
-                val authenticatedState = sessionState as AccountSessionState.Authenticated
-                key(authenticatedState.binding.boundaryEpoch) {
-                    AuthenticatedAppContent(
-                        accountState = authenticatedState,
+            AccountSessionRoute.ACTIVE -> {
+                val binding = sessionState.activeBindingOrNull()
+                    ?: error("Active session route requires a cache binding")
+                key(binding.boundaryEpoch) {
+                    ActiveAppContent(
+                        sessionState = sessionState,
                         authViewModel = authViewModel,
                         deepLinkNotificationEvent = deepLinkNotificationEvent,
                         widgetNavigationEvent = widgetNavigationEvent,
@@ -246,13 +261,15 @@ fun App(
 }
 
 @Composable
-private fun AuthenticatedAppContent(
-    accountState: AccountSessionState.Authenticated,
+private fun ActiveAppContent(
+    sessionState: AccountSessionState,
     authViewModel: AuthViewModel,
     deepLinkNotificationEvent: NotificationDeepLinkEvent?,
     widgetNavigationEvent: WidgetNavigationEvent?,
     onNotificationDeepLinkEventConsumed: (NotificationDeepLinkEvent) -> Unit,
 ) {
+    val binding = sessionState.activeBindingOrNull() ?: return
+    val isRemoteSyncEnabled = sessionState is AccountSessionState.Authenticated
     val backStack = remember { NavBackStack<NavKey>(Screen.Matrix) }
     val navController = remember { AppNavController(backStack) }
     var taskNotificationEvent by remember { mutableStateOf<NotificationDeepLinkEvent?>(null) }
@@ -262,27 +279,29 @@ private fun AuthenticatedAppContent(
     val accountBoundaryExecutor = koinInject<AccountBoundaryExecutor>()
     val localDaySignal = koinInject<LocalDaySignal>()
     val currentDate by localDaySignal.dates.collectAsState(initial = localDaySignal.snapshot())
-    val isSyncInitialized = remember { mutableStateOf(false) }
-    LaunchedEffect(accountState.binding.boundaryEpoch) {
+    val isMaintenanceInitialized = remember { mutableStateOf(false) }
+    LaunchedEffect(binding.boundaryEpoch) {
         val accepted = try {
             withContext(Dispatchers.IO) {
                 accountBoundaryExecutor.withForegroundBoundary { boundary ->
-                    if (!boundary.matches(accountState.binding)) {
+                    if (!boundary.matches(binding)) {
                         return@withForegroundBoundary false
                     }
-                    try {
-                        initializeSyncAction()
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        log.e(e) { "Initial sync failed for authenticated account" }
+                    if (isRemoteSyncEnabled) {
+                        try {
+                            initializeSyncAction()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            log.e(e) { "Initial sync failed for authenticated account" }
+                        }
                     }
                     try {
                         rebuildReminderQueueAction()
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        log.e(e) { "Initial reminder queue rebuild failed for authenticated account" }
+                        log.e(e) { "Initial reminder queue rebuild failed for active cache" }
                     }
                     true
                 }
@@ -290,31 +309,33 @@ private fun AuthenticatedAppContent(
         } catch (_: AccountBoundaryRejectedException) {
             false
         }
-        isSyncInitialized.value = accepted
+        isMaintenanceInitialized.value = accepted
     }
     val syncScope = rememberCoroutineScope()
-    LifecycleResumeEffect(isSyncInitialized.value) {
+    LifecycleResumeEffect(isMaintenanceInitialized.value) {
         localDaySignal.refresh()
-        if (isSyncInitialized.value) {
+        if (isMaintenanceInitialized.value) {
             syncScope.launch(Dispatchers.IO) {
                 try {
                     accountBoundaryExecutor.withForegroundBoundary { boundary ->
-                        if (!boundary.matches(accountState.binding)) {
+                        if (!boundary.matches(binding)) {
                             return@withForegroundBoundary
                         }
-                        try {
-                            triggerSyncAction.syncNow()
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            log.e(e) { "Resume sync failed for authenticated account" }
+                        if (isRemoteSyncEnabled) {
+                            try {
+                                triggerSyncAction.syncNow()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                log.e(e) { "Resume sync failed for authenticated account" }
+                            }
                         }
                         try {
                             rebuildReminderQueueAction()
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            log.e(e) { "Resume reminder queue rebuild failed for authenticated account" }
+                            log.e(e) { "Resume reminder queue rebuild failed for active cache" }
                         }
                     }
                 } catch (_: AccountBoundaryRejectedException) {
@@ -326,12 +347,12 @@ private fun AuthenticatedAppContent(
     }
     fun handleNotificationEvent(event: NotificationDeepLinkEvent) {
         if (event.eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
-            event.countdownIdIfMatches(accountState.binding)?.let { countdownId ->
+            event.countdownIdIfMatches(binding)?.let { countdownId ->
                 navController.navigate(Screen.CountdownDetail(countdownId))
             }
             return
         }
-        if (!event.matches(accountState.binding)) return
+        if (!event.matches(binding)) return
         navController.navigateToTab(Screen.Matrix)
         taskNotificationEvent = event
     }
@@ -347,7 +368,7 @@ private fun AuthenticatedAppContent(
     LaunchedEffect(navController) {
         notificationDeepLinkEvent.collect { event ->
             if (event != null) {
-                if (event.matches(accountState.binding)) handleNotificationEvent(event)
+                if (event.matches(binding)) handleNotificationEvent(event)
                 clearNotificationDeepLinkEvent(event)
             }
         }
@@ -355,7 +376,7 @@ private fun AuthenticatedAppContent(
     var calendarNavigationEvent by remember { mutableStateOf<WidgetNavigationEvent?>(null) }
     LaunchedEffect(widgetNavigationEvent?.id) {
         val event = widgetNavigationEvent ?: return@LaunchedEffect
-        if (!event.matches(accountState.binding)) return@LaunchedEffect
+        if (!event.matches(binding)) return@LaunchedEffect
         when (event.action) {
             WidgetNavigationAction.CREATE_TASK -> navController.navigate(Screen.CreateTask())
             WidgetNavigationAction.VIEW_LIST -> navController.navigateToTab(Screen.TaskList)
@@ -371,11 +392,11 @@ private fun AuthenticatedAppContent(
             }
         }
     }
-    AccountEpochViewModelStoreProvider(accountState.binding.boundaryEpoch) {
+    AccountEpochViewModelStoreProvider(binding.boundaryEpoch) {
         MainScreen(
             navController = navController,
             backStack = backStack,
-            calendarTodayDay = currentDate.dayOfMonth,
+            calendarTodayDay = currentDate.day,
             currentDate = currentDate,
             calendarNavigationEvent = calendarNavigationEvent,
             onCalendarNavigationConsumed = { eventId ->
@@ -383,7 +404,9 @@ private fun AuthenticatedAppContent(
             },
             taskNotificationEvent = taskNotificationEvent,
             onTaskNotificationDismiss = { taskNotificationEvent = null },
-            accountState = accountState,
+            binding = binding,
+            currentAccount = sessionState.authenticatedAccountOrNull(),
+            isRemoteSyncEnabled = isRemoteSyncEnabled,
             authViewModel = authViewModel,
         )
     }
@@ -405,6 +428,32 @@ internal fun taskFormViewModelKey(screen: Screen): String = when (screen) {
     is Screen.EditTask -> "edit:${screen.taskId}"
     else -> error("TaskFormViewModel is only valid for task-form navigation entries")
 }
+
+internal fun quickAddTaskViewModelKey(screen: Screen.QuickAddTask): String =
+    "quick:${screen.priorityOrdinal}:${screen.categoryId}:${screen.day}:${screen.month}:${screen.year}"
+
+internal fun Screen.QuickAddTask.creationContext(): QuickTaskCreationContext = QuickTaskCreationContext(
+    categoryId = categoryId,
+    priority = TaskPriority.entries.getOrElse(priorityOrdinal) { TaskPriority.NONE },
+    fallbackDate = if (day > 0 && month > 0 && year > 0) {
+        runCatching { LocalDate(year, month, day) }.getOrNull()
+    } else {
+        null
+    },
+)
+
+internal fun taskFabCreationScreen(
+    selectedTab: Int,
+    selectedListId: String,
+    calendarDay: Int,
+    calendarMonth: Int,
+    calendarYear: Int,
+): Screen.CreateTask = Screen.CreateTask(
+    categoryId = if (selectedTab == 1) selectedListId else AppConstants.DEFAULT_INBOX_ID,
+    day = if (selectedTab == 2) calendarDay else 0,
+    month = if (selectedTab == 2) calendarMonth else 0,
+    year = if (selectedTab == 2) calendarYear else 0,
+)
 
 /** Keeps a departing form from unregistering the handler that replaced it. */
 internal class TaskFormBackHandlerRegistry {
@@ -434,7 +483,9 @@ private fun MainScreen(
     onCalendarNavigationConsumed: (Long) -> Unit,
     taskNotificationEvent: NotificationDeepLinkEvent?,
     onTaskNotificationDismiss: () -> Unit,
-    accountState: AccountSessionState.Authenticated,
+    binding: CacheBinding,
+    currentAccount: com.udnahc.opentasks.data.auth.AuthenticatedAccount?,
+    isRemoteSyncEnabled: Boolean,
     authViewModel: AuthViewModel,
 ) {
     val noteViewModel: NoteViewModel = koinViewModel()
@@ -442,8 +493,11 @@ private fun MainScreen(
     val appViewModel: AppViewModel = koinViewModel()
     val accountOperation by authViewModel.operation.collectAsState()
     val accountError by authViewModel.error.collectAsState()
+    val replacementPreview by authViewModel.replacementPreview.collectAsState()
     val isRefreshing by appViewModel.isRefreshing.collectAsState()
-    val onPullToRefresh = remember(appViewModel) { { appViewModel.triggerSync() } }
+    val onPullToRefresh = remember(appViewModel, isRemoteSyncEnabled) {
+        if (isRemoteSyncEnabled) ({ appViewModel.triggerSync() }) else ({})
+    }
     var selectedListId by rememberSaveable { mutableStateOf(AppConstants.DEFAULT_INBOX_ID) }
     var calendarSelectedYear by remember { mutableIntStateOf(0) }
     var calendarSelectedMonth by remember { mutableIntStateOf(0) }
@@ -453,6 +507,7 @@ private fun MainScreen(
     var showImportCalendar by remember { mutableStateOf(false) }
     var showImportIcs by remember { mutableStateOf(false) }
     var showImportCsv by remember { mutableStateOf(false) }
+    var pendingTaskCreation by remember { mutableStateOf<Screen.CreateTask?>(null) }
     val taskFormBackHandlerRegistry = remember { TaskFormBackHandlerRegistry() }
     val snackbarHostState = remember { SnackbarHostState() }
     val checkNotificationPermissionUseCase = koinInject<CheckNotificationPermissionUseCase>()
@@ -503,6 +558,7 @@ private fun MainScreen(
     }
     val showBottomNav = currentScreen !is Screen.QuadrantDetail
             && currentScreen !is Screen.CreateTask
+            && currentScreen !is Screen.QuickAddTask
             && currentScreen !is Screen.EditTask
             && currentScreen !is Screen.Settings
             && currentScreen !is Screen.CreateCountdown
@@ -579,6 +635,7 @@ private fun MainScreen(
                         },
                         onSettingsClick = onSettingsClick,
                         isRefreshing = isRefreshing,
+                        syncEnabled = isRemoteSyncEnabled,
                         onRefresh = onPullToRefresh,
                     )
                 }
@@ -594,6 +651,7 @@ private fun MainScreen(
                         },
                         onSettingsClick = onSettingsClick,
                         isRefreshing = isRefreshing,
+                        syncEnabled = isRemoteSyncEnabled,
                         onRefresh = onPullToRefresh,
                     )
                 }
@@ -619,6 +677,7 @@ private fun MainScreen(
                         },
                         onSettingsClick = onSettingsClick,
                         isRefreshing = isRefreshing,
+                        syncEnabled = isRemoteSyncEnabled,
                         onRefresh = onPullToRefresh,
                     )
                 }
@@ -629,6 +688,7 @@ private fun MainScreen(
                         onNoteClick = { note -> editNoteId = note.id },
                         onSettingsClick = onSettingsClick,
                         isRefreshing = isRefreshing,
+                        syncEnabled = isRemoteSyncEnabled,
                         onRefresh = onPullToRefresh,
                     )
                 }
@@ -639,8 +699,9 @@ private fun MainScreen(
                         onImportCalendar = { showImportCalendar = true },
                         onImportIcs = { showImportIcs = true },
                         onImportCsv = { showImportCsv = true },
-                        currentAccount = accountState.account,
-                        currentEndpoint = accountState.binding.canonicalEndpoint,
+                        currentAccount = currentAccount,
+                        currentEndpoint = binding.canonicalEndpoint.takeIf { isRemoteSyncEnabled },
+                        isLocalOnly = !isRemoteSyncEnabled,
                         accountOperation = accountOperation,
                         accountError = accountError,
                         onSwitchAccount = { email, password ->
@@ -648,6 +709,11 @@ private fun MainScreen(
                         },
                         onClearAccountError = authViewModel::clearError,
                         onLogout = authViewModel::logout,
+                        onClearLocalData = authViewModel::clearLocalData,
+                        replacementPreview = replacementPreview,
+                        onPrepareReplacement = authViewModel::prepareLocalServerReplacement,
+                        onConfirmReplacement = authViewModel::confirmLocalServerReplacement,
+                        onCancelReplacementPreparation = authViewModel::cancelLocalServerReplacementPreparation,
                     )
                 }
 
@@ -664,10 +730,35 @@ private fun MainScreen(
                             navController.navigate(Screen.EditTask(task.id))
                         },
                         onCreateTask = { taskPriority ->
-                            navController.navigate(
-                                Screen.CreateTask(priorityOrdinal = taskPriority.ordinal)
-                            )
+                            pendingTaskCreation = Screen.CreateTask(priorityOrdinal = taskPriority.ordinal)
                         },
+                    )
+                }
+
+                entry<Screen.QuickAddTask> { screen ->
+                    val quickAddViewModel: QuickAddTaskViewModel = koinViewModel(
+                        key = quickAddTaskViewModelKey(screen),
+                        parameters = { parametersOf(screen.creationContext()) },
+                    )
+                    val state by quickAddViewModel.uiState.collectAsState()
+                    LaunchedEffect(quickAddViewModel, screen) {
+                        quickAddViewModel.saveEvent.collect { event ->
+                            val saveEvent = event ?: return@collect
+                            if (!quickAddViewModel.consumeSaveEvent(saveEvent)) return@collect
+                            when (saveEvent) {
+                                is QuickAddTaskSaveEvent.Saved -> {
+                                    if (backStack.lastOrNull() == screen) navController.popBackStack()
+                                }
+                            }
+                        }
+                    }
+                    QuickAddTaskScreen(
+                        state = state,
+                        onInputChanged = quickAddViewModel::onInputChanged,
+                        onDismissToken = quickAddViewModel::dismissToken,
+                        onBack = { navController.popBackStack() },
+                        onAdd = quickAddViewModel::save,
+                        onErrorShown = quickAddViewModel::clearError,
                     )
                 }
 
@@ -987,18 +1078,33 @@ private fun MainScreen(
                     } else if (selectedTab == 3) {
                         showCreateNote = true
                     } else {
-                        navController.navigate(
-                            Screen.CreateTask(
-                                categoryId = if (selectedTab == 1) selectedListId else AppConstants.DEFAULT_INBOX_ID,
-                                day = if (selectedTab == 2) calendarSelectedDay else 0,
-                                month = if (selectedTab == 2) calendarSelectedMonth else 0,
-                                year = if (selectedTab == 2) calendarSelectedYear else 0,
-                            )
+                        pendingTaskCreation = taskFabCreationScreen(
+                            selectedTab = selectedTab,
+                            selectedListId = selectedListId,
+                            calendarDay = calendarSelectedDay,
+                            calendarMonth = calendarSelectedMonth,
+                            calendarYear = calendarSelectedYear,
                         )
                     }
                 },
             )
         }
+    }
+
+    pendingTaskCreation?.let { creation ->
+        val taskCreationSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        TaskCreationChoiceBottomSheet(
+            sheetState = taskCreationSheetState,
+            onDismiss = { pendingTaskCreation = null },
+            onQuickAdd = {
+                pendingTaskCreation = null
+                navController.navigate(creation.asQuickAddTask())
+            },
+            onFullTask = {
+                pendingTaskCreation = null
+                navController.navigate(creation)
+            },
+        )
     }
 
     // Create note bottom sheet

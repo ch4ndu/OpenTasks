@@ -68,6 +68,7 @@ fun EisenhowerMatrixScreen(
     onQuadrantClick: (TaskPriority) -> Unit,
     onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
+    syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
     val priorityProjections by viewModel.priorityProjections.collectAsState()
@@ -84,6 +85,7 @@ fun EisenhowerMatrixScreen(
         onQuadrantClick = onQuadrantClick,
         onSettingsClick = onSettingsClick,
         isRefreshing = isRefreshing,
+        syncEnabled = syncEnabled,
         onRefresh = onRefresh,
     )
 
@@ -106,10 +108,12 @@ internal fun EisenhowerMatrixContent(
     onQuadrantClick: (TaskPriority) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
+    syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
     SyncPullToRefresh(
         isRefreshing = isRefreshing,
+        enabled = syncEnabled,
         onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
     ) {

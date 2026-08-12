@@ -6,6 +6,10 @@ import com.udnahc.opentasks.data.notification.ReminderScheduler
 import com.udnahc.opentasks.data.settings.AccountStateStore
 import com.udnahc.opentasks.data.settings.LegacyCacheIdentity
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
+import com.udnahc.opentasks.data.sync.AuthoritativeServerReplaceContract
+import com.udnahc.opentasks.data.sync.AuthoritativeLocalSeedSourceException
+import com.udnahc.opentasks.data.sync.PocketBaseServerInventory
+import com.udnahc.opentasks.data.sync.PocketBaseServerInventoryReader
 import com.udnahc.opentasks.data.sync.canonicalUrl
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import kotlinx.coroutines.CompletableDeferred
@@ -14,6 +18,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -22,6 +28,354 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AccountRepositoryImplTest {
+    @Test
+    fun replacementPreflightReturnsOnlySanitizedCountsAndKeepsLocalSessionActive() = runTest {
+        val inventory = replacementInventory(
+            tasks = listOf(
+                replacementRow("task-active", deleted = false, title = "private title"),
+                replacementRow("task-deleted", deleted = true, title = "deleted private title"),
+            ),
+            attachments = listOf(replacementRow("attachment", deleted = false, title = "secret.jpg")),
+        )
+        val fixture = fixture(
+            binding = localBinding(),
+            loginCredential = credential(
+                accountId = "account-a",
+                token = "secret-token",
+                authoritativeReplaceVersion = 1,
+                inventory = inventory,
+            ),
+        )
+        fixture.repository.restoreSession()
+
+        val preview = fixture.repository.prepareLocalServerReplacement(
+            "https://tasks.example.com",
+            "account-a@example.com",
+            "secret-password",
+        )
+
+        assertTrue(fixture.repository.sessionState.value is AccountSessionState.LocalOnly)
+        assertEquals(1, preview.collectionCounts.first { it.collection == "tasks" }.active)
+        assertEquals(1, preview.collectionCounts.first { it.collection == "tasks" }.tombstones)
+        assertEquals(1, preview.attachmentCount)
+        assertFalse(preview.toString().contains("private title"))
+        assertFalse(preview.toString().contains("secret.jpg"))
+        assertFalse(preview.toString().contains("secret-token"))
+        assertFalse(preview.toString().contains("secret-password"))
+        assertNull(fixture.tokens.pending)
+        assertNull(fixture.state.transition)
+    }
+
+    @Test
+    fun replacementPreflightFailsClosedWithoutVersionOneAndPreparationCanBeCancelled() = runTest {
+        val unsupported = fixture(
+            binding = localBinding(),
+            loginCredential = credential(
+                "account-a",
+                "token",
+                authoritativeReplaceVersion = 0,
+                inventory = replacementInventory(),
+            ),
+        )
+        unsupported.repository.restoreSession()
+        assertFailsWith<AccountCapabilityRejectedException> {
+            unsupported.repository.prepareLocalServerReplacement(
+                "https://tasks.example.com",
+                "account-a@example.com",
+                "password",
+            )
+        }
+        assertEquals(CacheMode.LOCAL_ONLY, unsupported.state.binding?.mode)
+
+        val supported = fixture(
+            binding = localBinding(),
+            loginCredential = credential(
+                "account-a",
+                "token",
+                authoritativeReplaceVersion = 1,
+                inventory = replacementInventory(),
+            ),
+        )
+        supported.repository.restoreSession()
+        supported.repository.prepareLocalServerReplacement(
+            "https://tasks.example.com",
+            "account-a@example.com",
+            "password",
+        )
+        supported.repository.cancelLocalServerReplacementPreparation()
+
+        assertFailsWith<AccountTransitionBlockedException> {
+            supported.repository.confirmLocalServerReplacement()
+        }
+        assertNull(supported.state.transition)
+        assertNull(supported.tokens.pending)
+        assertEquals(CacheMode.LOCAL_ONLY, supported.state.binding?.mode)
+    }
+
+    @Test
+    fun confirmationReturnsRefreshedPreviewForPayloadOnlyRemoteChangeBeforeDurableMutation() = runTest {
+        val initial = replacementInventory(
+            tasks = listOf(replacementRow("task-a", false, title = "Before")),
+        )
+        val changed = replacementInventory(
+            tasks = listOf(replacementRow("task-a", false, title = "After")),
+        )
+        val replacement = FakeAuthoritativeReplaceExecutor(mutableListOf()).apply {
+            localFingerprint = "local-before"
+        }
+        val fixture = fixture(
+            binding = localBinding(),
+            loginCredential = credential(
+                "account-a",
+                "token",
+                authoritativeReplaceVersion = 1,
+                inventory = initial,
+            ),
+            replacementExecutor = replacement,
+            inventoryResponses = mutableListOf(changed),
+        )
+        fixture.repository.restoreSession()
+        fixture.repository.prepareLocalServerReplacement(
+            "https://tasks.example.com",
+            "account-a@example.com",
+            "password",
+        )
+
+        val result = fixture.repository.confirmLocalServerReplacement()
+
+        assertTrue(result is LocalServerReplacementConfirmation.PreviewChanged)
+        assertEquals(CacheMode.LOCAL_ONLY, fixture.state.binding?.mode)
+        assertNull(fixture.state.transition)
+        assertNull(fixture.tokens.pending)
+        assertEquals(0, replacement.persistCalls)
+        assertEquals(0, replacement.resumeCalls)
+    }
+
+    @Test
+    fun localSeedValidationFailureRejectsConfirmationBeforeAnyDurableOrRemoteMutation() = runTest {
+        val inventory = replacementInventory(tasks = listOf(replacementRow("task", false)))
+        val replacement = FakeAuthoritativeReplaceExecutor(mutableListOf()).apply {
+            validationFailure = AuthoritativeLocalSeedSourceException()
+        }
+        val fixture = fixture(
+            binding = localBinding(),
+            loginCredential = credential(
+                "account-a",
+                "destination-token",
+                authoritativeReplaceVersion = 1,
+                inventory = inventory,
+            ),
+            replacementExecutor = replacement,
+            inventoryResponses = mutableListOf(inventory, inventory),
+        )
+        fixture.repository.restoreSession()
+        fixture.repository.prepareLocalServerReplacement(
+            "https://tasks.example.com",
+            "account-a@example.com",
+            "password",
+        )
+
+        assertFailsWith<AuthoritativeLocalSeedSourceException> {
+            fixture.repository.confirmLocalServerReplacement()
+        }
+
+        assertTrue(fixture.repository.sessionState.value is AccountSessionState.LocalOnly)
+        assertEquals(CacheMode.LOCAL_ONLY, fixture.state.binding?.mode)
+        assertNull(fixture.state.transition)
+        assertNull(fixture.tokens.pending)
+        assertEquals(1, replacement.validationCalls)
+        assertEquals(0, replacement.persistCalls)
+        assertEquals(0, replacement.resumeCalls)
+
+        replacement.validationFailure = null
+        assertEquals(
+            LocalServerReplacementConfirmation.Started,
+            fixture.repository.confirmLocalServerReplacement(),
+        )
+    }
+
+    @Test
+    fun confirmedReplacementPersistsBoundaryBeforeRemoteMutationThenActivatesExactDestination() = runTest {
+        val events = mutableListOf<String>()
+        val inventory = replacementInventory(tasks = listOf(replacementRow("task", false)))
+        val replacement = FakeAuthoritativeReplaceExecutor(events)
+        val fixture = fixture(
+            events = events,
+            binding = localBinding(boundaryEpoch = 7),
+            loginCredential = credential(
+                "account-a",
+                "destination-token",
+                authoritativeReplaceVersion = 1,
+                inventory = inventory,
+            ),
+            replacementExecutor = replacement,
+            inventoryResponses = mutableListOf(inventory),
+        )
+        fixture.repository.restoreSession()
+        fixture.repository.prepareLocalServerReplacement(
+            "https://tasks.example.com",
+            "account-a@example.com",
+            "password",
+        )
+
+        val result = fixture.repository.confirmLocalServerReplacement()
+
+        assertEquals(LocalServerReplacementConfirmation.Started, result)
+        assertTrue(fixture.repository.sessionState.value is AccountSessionState.Authenticated)
+        assertEquals(8, fixture.state.binding?.boundaryEpoch)
+        assertNull(fixture.state.transition)
+        assertEquals("destination-token", fixture.tokens.active)
+        assertNull(fixture.tokens.pending)
+        assertTrue(events.indexOf("write-pending:destination-token") < events.indexOf("replacement-persist"))
+        assertTrue(events.indexOf("replacement-persist") < events.indexOf("replacement-resume"))
+        assertEquals(1, fixture.scheduler.cancelAllCalls)
+    }
+
+    @Test
+    fun confirmedReplacementProcessDeathRecoveryUsesPendingTokenAndNeverPublishesLocalTaskUi() = runTest {
+        val events = mutableListOf<String>()
+        val binding = bindingFor("account-a", boundaryEpoch = 9)
+        val transition = authoritativeTransition(binding, AccountTransitionPhase.EXACT_SEED_PENDING)
+        val refreshed = credential(
+            "account-a",
+            "refreshed-token",
+            authoritativeReplaceVersion = 1,
+            inventory = replacementInventory(),
+        )
+        val replacement = FakeAuthoritativeReplaceExecutor(events)
+        val fixture = fixture(
+            events = events,
+            binding = binding,
+            transition = transition,
+            pendingToken = "pending-token",
+            refreshResponses = mapOf("pending-token" to refreshed),
+            replacementExecutor = replacement,
+        )
+
+        val result = fixture.repository.restoreSession()
+
+        assertTrue(result is AccountSessionState.Authenticated)
+        assertTrue(fixture.repository.sessionState.value !is AccountSessionState.LocalOnly)
+        assertEquals("refreshed-token", fixture.tokens.active)
+        assertEquals(1, replacement.resumeCalls)
+    }
+
+    @Test
+    fun startLocalOnlyAdoptsTheExistingUnboundCacheWithoutAuthenticationOrReset() = runTest {
+        val fixture = fixture(
+            activeToken = "stray-token",
+            snapshot = LegacyCacheSnapshot(unsyncedRowCount = 3, isPristineInboxOnly = false),
+        )
+
+        val result = fixture.repository.startLocalOnly()
+
+        val local = result as AccountSessionState.LocalOnly
+        assertEquals(CacheMode.LOCAL_ONLY, local.binding.mode)
+        assertEquals(LOCAL_CACHE_OWNER_ID, local.binding.accountId)
+        assertEquals(1L, local.binding.boundaryEpoch)
+        assertEquals(0, fixture.resetter.resetCalls)
+        assertNull(fixture.tokens.active)
+        assertNull(fixture.provider.activeBinding)
+    }
+
+    @Test
+    fun restoreLocalOnlyDoesNotReadPocketBaseAndReusesTheDurableBoundary() = runTest {
+        val binding = localBinding(boundaryEpoch = 4L)
+        val events = mutableListOf<String>()
+        val fixture = fixture(events = events, binding = binding)
+
+        val first = fixture.repository.restoreSession()
+        val second = fixture.repository.restoreSession()
+
+        assertEquals(AccountSessionState.LocalOnly(binding), first)
+        assertEquals(first, second)
+        assertTrue(events.none { it.startsWith("refresh:") || it.startsWith("authenticate:") })
+        assertNull(fixture.provider.client)
+    }
+
+    @Test
+    fun mixedLocalBindingAndRemoteTokenFailsClosedWithoutClearingTheCache() = runTest {
+        val binding = localBinding()
+        val fixture = fixture(
+            binding = binding,
+            activeToken = "remote-token",
+            pendingToken = "pending-remote-token",
+        )
+
+        val result = fixture.repository.restoreSession()
+
+        assertEquals(
+            AccountReauthenticationReason.PERSISTED_STATE_INVALID,
+            (result as AccountSessionState.ReauthenticationRequired).reason,
+        )
+        assertEquals(binding, fixture.state.binding)
+        assertNull(fixture.tokens.active)
+        assertNull(fixture.tokens.pending)
+        assertEquals(0, fixture.resetter.replaceCalls)
+    }
+
+    @Test
+    fun clearLocalDataPersistsBothRecoveryPhasesAndConvergesToSignedOut() = runTest {
+        val events = mutableListOf<String>()
+        val fixture = fixture(events = events, binding = localBinding(boundaryEpoch = 3L))
+
+        val result = fixture.repository.clearLocalData()
+
+        assertEquals(AccountSessionState.SignedOut, result)
+        assertNull(fixture.state.binding)
+        assertNull(fixture.state.transition)
+        assertEquals(1, fixture.scheduler.cancelAllCalls)
+        assertTrue(events.indexOf("write-transition-PRE_RESET") < events.indexOf("replace"))
+        assertTrue(events.indexOf("replace") < events.indexOf("clear-files"))
+        assertTrue(fixture.resetter.clearedInstallationSettings)
+    }
+
+    @Test
+    fun preResetRecoveryRetriesTheRoomResetAfterAnUncommittedFailure() = runTest {
+        val binding = localBinding(boundaryEpoch = 3L)
+        val transition = localClearTransition(AccountTransitionPhase.PRE_RESET, boundaryEpoch = 4L)
+        val fixture = fixture(
+            binding = binding,
+            transition = transition,
+            replaceFailure = IllegalStateException("crash before Room commit"),
+        )
+
+        assertFailsWith<IllegalStateException> { fixture.repository.restoreSession() }
+        assertEquals(AccountTransitionPhase.PRE_RESET, fixture.state.transition?.phase)
+        assertEquals(binding, fixture.state.binding)
+        assertEquals(1, fixture.scheduler.cancelAllCalls)
+
+        fixture.resetter.replaceFailure = null
+        val result = fixture.repository.restoreSession()
+
+        assertEquals(AccountSessionState.SignedOut, result)
+        assertEquals(2, fixture.resetter.replaceCalls)
+        assertEquals(1, fixture.resetter.clearAttachmentCalls)
+        assertEquals(2, fixture.scheduler.cancelAllCalls)
+    }
+
+    @Test
+    fun filesPendingRecoveryRetriesOnlyAttachmentCleanup() = runTest {
+        val transition = localClearTransition(AccountTransitionPhase.FILES_PENDING, boundaryEpoch = 4L)
+        val fixture = fixture(
+            transition = transition,
+            clearFilesFailure = IllegalStateException("files unavailable"),
+        )
+
+        assertFailsWith<IllegalStateException> { fixture.repository.restoreSession() }
+        assertEquals(AccountTransitionPhase.FILES_PENDING, fixture.state.transition?.phase)
+        assertEquals(0, fixture.resetter.replaceCalls)
+        assertEquals(1, fixture.scheduler.cancelAllCalls)
+
+        fixture.resetter.clearAttachmentFailure = null
+        val result = fixture.repository.restoreSession()
+
+        assertEquals(AccountSessionState.SignedOut, result)
+        assertEquals(0, fixture.resetter.replaceCalls)
+        assertEquals(2, fixture.resetter.clearAttachmentCalls)
+        assertEquals(2, fixture.scheduler.cancelAllCalls)
+    }
+
     @Test
     fun loginPersistsBindingBeforePromotingTokenAndDoesNotPersistPassword() = runTest {
         val events = mutableListOf<String>()
@@ -434,12 +788,26 @@ class AccountRepositoryImplTest {
         refreshFailures: Map<String, Throwable> = emptyMap(),
         snapshot: LegacyCacheSnapshot = LegacyCacheSnapshot(0, true),
         legacyIdentity: LegacyCacheIdentity = LegacyCacheIdentity(null, null),
+        replaceFailure: Throwable? = null,
+        clearFilesFailure: Throwable? = null,
+        replacementExecutor: FakeAuthoritativeReplaceExecutor = FakeAuthoritativeReplaceExecutor(events),
+        inventoryResponses: MutableList<PocketBaseServerInventory> = mutableListOf(),
     ): Fixture {
         val state = InMemoryAccountStateStore(binding, transition, legacyIdentity, events)
+        replacementExecutor.attach(state)
         val tokens = FakeAuthTokenStore(activeToken, pendingToken, events)
-        val authenticator = FakeAccountAuthenticator(loginCredential, refreshResponses, refreshFailures, events)
+        val authenticator = FakeAccountAuthenticator(
+            loginCredential,
+            refreshResponses,
+            refreshFailures,
+            events,
+            inventoryResponses,
+        )
         val inspector = FakeAccountCacheInspector(snapshot)
-        val resetter = FakeAccountCacheResetter(state, events)
+        val resetter = FakeAccountCacheResetter(state, events).apply {
+            this.replaceFailure = replaceFailure
+            clearAttachmentFailure = clearFilesFailure
+        }
         val sync = FakeAccountSyncCoordinator(events)
         val scheduler = FakeReminderScheduler()
         val provider = PocketBaseClientProvider()
@@ -463,6 +831,7 @@ class AccountRepositoryImplTest {
                 pbProvider = provider,
                 syncService = sync,
                 reminderScheduler = scheduler,
+                replacementExecutor = replacementExecutor,
             ),
         )
     }
@@ -492,6 +861,66 @@ private fun bindingFor(
     boundaryEpoch = boundaryEpoch,
 )
 
+private fun localBinding(boundaryEpoch: Long = 1L): CacheBinding = CacheBinding(
+    canonicalEndpoint = "",
+    serverInstanceId = "",
+    accountId = LOCAL_CACHE_OWNER_ID,
+    capabilityVersion = 0,
+    boundaryEpoch = boundaryEpoch,
+    mode = CacheMode.LOCAL_ONLY,
+)
+
+private fun localClearTransition(
+    phase: AccountTransitionPhase,
+    boundaryEpoch: Long,
+): AccountTransition = AccountTransition(
+    sourceAccountId = LOCAL_CACHE_OWNER_ID,
+    destinationAccountId = "",
+    canonicalEndpoint = "",
+    serverInstanceId = "",
+    capabilityVersion = 0,
+    boundaryEpoch = boundaryEpoch,
+    phase = phase,
+    purpose = AccountTransitionPurpose.LOCAL_CLEAR,
+)
+
+private fun authoritativeTransition(
+    binding: CacheBinding,
+    phase: AccountTransitionPhase,
+) = AccountTransition(
+    sourceAccountId = LOCAL_CACHE_OWNER_ID,
+    destinationAccountId = binding.accountId,
+    canonicalEndpoint = binding.canonicalEndpoint,
+    serverInstanceId = binding.serverInstanceId,
+    capabilityVersion = binding.capabilityVersion,
+    boundaryEpoch = binding.boundaryEpoch,
+    phase = phase,
+    purpose = AccountTransitionPurpose.LOCAL_AUTHORITATIVE_REPLACEMENT,
+)
+
+private fun replacementRow(id: String, deleted: Boolean, title: String = "") = buildJsonObject {
+    put("id", "remote-$id")
+    put("localId", id)
+    put("account", "account-a")
+    put("isDeleted", deleted)
+    put("title", title)
+}
+
+private fun replacementInventory(
+    tasks: List<kotlinx.serialization.json.JsonObject> = emptyList(),
+    attachments: List<kotlinx.serialization.json.JsonObject> = emptyList(),
+) = PocketBaseServerInventory(
+    serverInstanceId = "server",
+    accountId = "account-a",
+    recordsByCollection = PocketBaseServerInventoryReader.COLLECTIONS.associateWith { collection ->
+        when (collection) {
+            "tasks" -> tasks
+            "attachments" -> attachments
+            else -> emptyList()
+        }
+    },
+)
+
 private fun credential(
     accountId: String,
     token: String,
@@ -499,6 +928,8 @@ private fun credential(
     serverInstanceId: String = "server",
     capabilityVersion: Int = 2,
     legacyOwnerAccount: String = accountId,
+    authoritativeReplaceVersion: Int = 0,
+    inventory: PocketBaseServerInventory? = null,
 ): AccountCredential {
     val canonicalEndpoint = canonicalizeAccountEndpoint(endpoint)
     return AccountCredential(
@@ -511,6 +942,8 @@ private fun credential(
             legacyOwnerAccount = legacyOwnerAccount,
             legacyEndpoint = canonicalEndpoint.canonicalUrl,
             scopedRecordCounts = emptyMap(),
+            authoritativeReplaceVersion = authoritativeReplaceVersion,
+            ownerInventory = inventory,
         ),
     )
 }
@@ -628,11 +1061,54 @@ private class FakeAuthTokenStore(
     }
 }
 
+private class FakeAuthoritativeReplaceExecutor(
+    private val events: MutableList<String>,
+) : AuthoritativeServerReplaceContract {
+    var localFingerprint: String = "local-fingerprint"
+    var persistCalls: Int = 0
+    var resumeCalls: Int = 0
+    var validationCalls: Int = 0
+    var validationFailure: Throwable? = null
+    private var stateStore: InMemoryAccountStateStore? = null
+
+    fun attach(stateStore: InMemoryAccountStateStore) {
+        this.stateStore = stateStore
+    }
+
+    override suspend fun persistConfirmedBoundary(binding: CacheBinding, transition: AccountTransition) {
+        persistCalls += 1
+        events += "replacement-persist"
+        stateStore?.persistBindingAndTransition(binding, transition)
+            ?: error("Fake replacement executor has no state store")
+    }
+
+    override suspend fun localInventoryFingerprint(): String = localFingerprint
+
+    override suspend fun validateLocalSeedSource() {
+        validationCalls += 1
+        validationFailure?.let { throw it }
+    }
+
+    override suspend fun resume(
+        client: PocketbaseClient,
+        binding: CacheBinding,
+        initialTransition: AccountTransition,
+    ): AccountTransition {
+        resumeCalls += 1
+        events += "replacement-resume"
+        val needsActivation = initialTransition.copy(phase = AccountTransitionPhase.NEEDS_ACTIVATION)
+        stateStore?.persistBindingAndTransition(binding, needsActivation)
+            ?: error("Fake replacement executor has no state store")
+        return needsActivation
+    }
+}
+
 private class FakeAccountAuthenticator(
     private val loginCredential: AccountCredential,
     private val refreshResponses: Map<String, AccountCredential>,
     private val refreshFailures: Map<String, Throwable>,
     private val events: MutableList<String>,
+    private val inventoryResponses: MutableList<PocketBaseServerInventory> = mutableListOf(),
 ) : AccountAuthenticator {
     override suspend fun authenticate(
         endpoint: com.udnahc.opentasks.data.sync.PocketBaseEndpoint,
@@ -651,6 +1127,16 @@ private class FakeAccountAuthenticator(
         refreshFailures[token]?.let { throw it }
         return refreshResponses[token] ?: error("No refresh response for token $token")
     }
+
+    override suspend fun readOwnerInventory(credential: AccountCredential): PocketBaseServerInventory {
+        events += "inventory"
+        return if (inventoryResponses.isNotEmpty()) {
+            inventoryResponses.removeAt(0)
+        } else {
+            credential.capability.ownerInventory
+                ?: error("No owner inventory response")
+        }
+    }
 }
 
 private class FakeAccountCacheInspector(
@@ -666,6 +1152,9 @@ private class FakeAccountCacheResetter(
     var resetCalls = 0
     var replaceCalls = 0
     var clearAttachmentCalls = 0
+    var replaceFailure: Throwable? = null
+    var clearAttachmentFailure: Throwable? = null
+    var clearedInstallationSettings = false
 
     override suspend fun resetWithinMutation() {
         resetCalls += 1
@@ -675,15 +1164,19 @@ private class FakeAccountCacheResetter(
     override suspend fun replaceCacheWithinMutation(
         binding: CacheBinding?,
         transition: AccountTransition?,
+        clearInstallationSettings: Boolean,
     ) {
         replaceCalls += 1
         events += "replace"
+        replaceFailure?.let { throw it }
+        clearedInstallationSettings = clearInstallationSettings
         state.persistBindingAndTransition(binding, transition)
     }
 
     override suspend fun clearAttachmentFilesWithinMutation() {
         clearAttachmentCalls += 1
         events += "clear-files"
+        clearAttachmentFailure?.let { throw it }
     }
 }
 

@@ -83,6 +83,7 @@ fun TaskListScreen(
     onTaskClick: (Task) -> Unit,
     onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
+    syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
     // Sync parent's selectedCategoryId into ViewModel for the derived flow
@@ -160,6 +161,7 @@ fun TaskListScreen(
                 viewMode = viewMode,
                 onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.BOARD) },
                 isRefreshing = isRefreshing,
+                syncEnabled = syncEnabled,
                 onRefresh = onRefresh,
             )
         }
@@ -172,6 +174,7 @@ fun TaskListScreen(
             ) {
                 SyncPullToRefresh(
                     isRefreshing = isRefreshing,
+                    enabled = syncEnabled,
                     onRefresh = onRefresh,
                     modifier = Modifier.fillMaxSize(),
                 ) {
@@ -269,6 +272,7 @@ internal fun TaskListContent(
     viewMode: TaskListViewMode = TaskListViewMode.LIST,
     onViewModeToggle: () -> Unit = {},
     isRefreshing: Boolean = false,
+    syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -289,6 +293,7 @@ internal fun TaskListContent(
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         SyncPullToRefresh(
             isRefreshing = isRefreshing,
+            enabled = syncEnabled,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize(),
         ) {

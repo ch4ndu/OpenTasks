@@ -35,6 +35,7 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
     val updated = mutableListOf<Task>()
     var graphDeletionFiles: List<TaskAttachmentFilePaths> = emptyList()
     var graphDeletionError: Throwable? = null
+    var insertError: Throwable? = null
     var mutationError: Throwable? = null
     var allTasksSubscriptionCount = 0
     var getTaskByIdCalls = 0
@@ -66,6 +67,7 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
     }
 
     override suspend fun insert(task: Task): Long {
+        insertError?.let { throw it }
         inserted.add(task)
         tasksFlow.update { tasks -> tasks.filterNot { it.id == task.id } + task }
         return inserted.size.toLong()

@@ -4,6 +4,8 @@ import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlin.coroutines.cancellation.CancellationException
@@ -116,6 +118,18 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     /** Serialize entity to JSON body string for PocketBase. */
     abstract fun toJsonBody(entity: Entity): String
 
+    /** Complete deterministic local snapshot projection used only for destructive reconfirmation. */
+    suspend fun localInventoryFingerprintRows(): List<String> = getAllOnce()
+        .map { entity ->
+            val body = runCatching { Json.parseToJsonElement(stripId(toJsonBody(entity))) }
+                .getOrElse { throw SyncAdapterException("Unable to fingerprint local $collectionName inventory", it) }
+            "${localId(entity)}|${isDeleted(entity)}|${body.canonicalFingerprintText()}"
+        }
+        .sorted()
+
+    /** Read-only preflight for rows that must be seedable before authoritative deletion begins. */
+    open suspend fun validateLocalSeedSource() = Unit
+
     /**
      * Production pulls use the same owner-scoped gateway as writes.  The
      * legacy SDK fetch remains available only to isolated fake adapters.
@@ -205,6 +219,15 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
      * normal no-pbId local hard-delete shortcut.
      */
     open suspend fun seedAll(client: PocketbaseClient) {
+        seedAllInternal(client, allowRemoteMerge = true)
+    }
+
+    /** Authoritative replacement treats any remote winner as a conflict and never merges it locally. */
+    open suspend fun seedAllAuthoritative(client: PocketbaseClient) {
+        seedAllInternal(client, allowRemoteMerge = false)
+    }
+
+    private suspend fun seedAllInternal(client: PocketbaseClient, allowRemoteMerge: Boolean) {
         val failures = mutableListOf<Throwable>()
         for (entity in getUnsynced()) {
             try {
@@ -213,11 +236,12 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 val deleted = isDeleted(entity)
                 val body = stripId(toJsonBody(entity))
                 val resolution = pbId(entity)?.let {
-                    updateByPbIdOrRecover(client, id, it, body)
-                } ?: createOrRecover(client, id, timestamp, body)
+                    updateByPbIdOrRecover(client, id, it, body, allowRemoteMerge)
+                } ?: createOrRecover(client, id, timestamp, body, allowRemoteMerge)
                 if (resolution == PushResolution.Pushed) markSyncedAfterPush(id, timestamp, deleted)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
+                if (error is AuthoritativeSeedConflictException) throw error
                 failures += error
             }
         }
@@ -339,12 +363,13 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         localId: String,
         pbId: String,
         body: String,
+        allowRemoteMerge: Boolean = true,
     ): PushResolution {
         if (allowsTestOnlyLegacySdkWrites()) {
-            return testOnlyUpdateByPbIdOrRecover(client, localId, pbId, body)
+            return testOnlyUpdateByPbIdOrRecover(client, localId, pbId, body, allowRemoteMerge)
         }
         val gateway = runCatching { recordGateway(client) }.getOrNull()
-        if (gateway != null) return guardedUpdateByPbIdOrRecover(gateway, localId, pbId, body)
+        if (gateway != null) return guardedUpdateByPbIdOrRecover(gateway, localId, pbId, body, allowRemoteMerge)
         throw SyncAdapterException("$collectionName requires a canonical guarded PocketBase gateway")
     }
 
@@ -354,6 +379,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         localId: String,
         pbId: String,
         body: String,
+        allowRemoteMerge: Boolean,
     ): PushResolution {
         val existing = runCatching { findRecordByLocalId(client, localId) }
             .onFailure { lookupError ->
@@ -371,8 +397,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         val recoveredPbId = existing.id ?: return PushResolution.Failed
         return when {
             recordUpdatedAt(existing) > localUpdatedAt -> {
-                mergeRemoteIfNewer(toEntity(existing))
-                PushResolution.RemoteWon
+                resolveRemoteWinner(existing, allowRemoteMerge)
             }
             recordUpdatedAt(existing) == localUpdatedAt && testOnlyCanonicalPayloadEquals(body, existing) -> {
                 updatePbIdSafely(localId, recoveredPbId)
@@ -390,7 +415,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 },
                 onFailure = { PushResolution.Failed },
             )
-            else -> PushResolution.Failed
+            else -> divergentRemoteResolution(allowRemoteMerge)
         }
     }
 
@@ -399,12 +424,13 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         localId: String,
         updatedAt: Long,
         body: String,
+        allowRemoteMerge: Boolean = true,
     ): PushResolution {
         if (allowsTestOnlyLegacySdkWrites()) {
-            return testOnlyCreateOrRecover(client, localId, updatedAt, body)
+            return testOnlyCreateOrRecover(client, localId, updatedAt, body, allowRemoteMerge)
         }
         val gateway = runCatching { recordGateway(client) }.getOrNull()
-        if (gateway != null) return guardedCreateOrRecover(gateway, localId, updatedAt, body)
+        if (gateway != null) return guardedCreateOrRecover(gateway, localId, updatedAt, body, allowRemoteMerge)
         throw SyncAdapterException("$collectionName requires a canonical guarded PocketBase gateway")
     }
 
@@ -413,6 +439,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         localId: String,
         updatedAt: Long,
         body: String,
+        allowRemoteMerge: Boolean,
     ): PushResolution {
         val created = runCatching { createRecord(client, body) }
         if (created.isSuccess) {
@@ -430,8 +457,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         val serverId = existing.id ?: return PushResolution.Failed
         return when {
             recordUpdatedAt(existing) > updatedAt -> {
-                mergeRemoteIfNewer(toEntity(existing))
-                PushResolution.RemoteWon
+                resolveRemoteWinner(existing, allowRemoteMerge)
             }
             recordUpdatedAt(existing) == updatedAt && testOnlyCanonicalPayloadEquals(body, existing) -> {
                 updatePbIdSafely(localId, serverId)
@@ -449,7 +475,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 },
                 onFailure = { PushResolution.Failed },
             )
-            else -> PushResolution.Failed
+            else -> divergentRemoteResolution(allowRemoteMerge)
         }
     }
 
@@ -458,6 +484,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         localId: String,
         pbId: String,
         body: String,
+        allowRemoteMerge: Boolean,
     ): PushResolution {
         val bodyObject = Json.parseToJsonElement(body) as? JsonObject ?: return PushResolution.Failed
         val preflight = gateway.getRecord(collectionName, pbId)
@@ -468,8 +495,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 ?: return PushResolution.Failed
             return when {
                 recordUpdatedAt(record) > localUpdatedAt -> {
-                    mergeRemoteIfNewer(toEntity(record))
-                    PushResolution.RemoteWon
+                    resolveRemoteWinner(record, allowRemoteMerge)
                 }
                 recordUpdatedAt(record) == localUpdatedAt && canonicalPayloadEquals(bodyObject, existing) -> {
                     existing["id"]?.toString()?.trim('"')?.let { updatePbIdSafely(localId, it) }
@@ -481,14 +507,14 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                         updated.body?.get("id")?.let { updatePbIdSafely(localId, it.toString().trim('"')) }
                         PushResolution.Pushed
                     } else {
-                        resolveRejectedGuardedWrite(gateway, localId, bodyObject, updated)
+                        resolveRejectedGuardedWrite(gateway, localId, bodyObject, updated, allowRemoteMerge)
                     }
                 }
-                else -> PushResolution.Failed
+                else -> divergentRemoteResolution(allowRemoteMerge)
             }
         }
         if (!preflight.isNotFound) return PushResolution.Failed
-        return resolveRejectedGuardedWrite(gateway, localId, bodyObject, preflight)
+        return resolveRejectedGuardedWrite(gateway, localId, bodyObject, preflight, allowRemoteMerge)
     }
 
     private suspend fun guardedCreateOrRecover(
@@ -496,6 +522,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         localId: String,
         updatedAt: Long,
         body: String,
+        allowRemoteMerge: Boolean,
     ): PushResolution {
         val bodyObject = Json.parseToJsonElement(body) as? JsonObject ?: return PushResolution.Failed
         val created = gateway.createJson(collectionName, bodyObject)
@@ -506,7 +533,9 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         val lookup = gateway.findByLocalId(collectionName, localId)
         val existing = lookup.body ?: return PushResolution.Failed
         val record = recordFromJson(existing)
-        return resolveExistingAfterCreateConflict(gateway, localId, updatedAt, bodyObject, existing, record)
+        return resolveExistingAfterCreateConflict(
+            gateway, localId, updatedAt, bodyObject, existing, record, allowRemoteMerge,
+        )
     }
 
     private suspend fun resolveRejectedGuardedWrite(
@@ -514,6 +543,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         localId: String,
         body: JsonObject,
         rejected: GatewayResponse<JsonObject>,
+        allowRemoteMerge: Boolean,
     ): PushResolution {
         log.w {
             "Guarded $collectionName update rejected with HTTP ${rejected.status.value}; " +
@@ -521,7 +551,13 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         }
         val lookup = gateway.findByLocalId(collectionName, localId)
         val existing = lookup.body ?: return if (lookup.isSuccess) {
-            guardedCreateOrRecover(gateway, localId, body["localUpdatedAt"]?.toString()?.trim('"')?.toLongOrNull() ?: 0L, body.toString())
+            guardedCreateOrRecover(
+                gateway,
+                localId,
+                body["localUpdatedAt"]?.toString()?.trim('"')?.toLongOrNull() ?: 0L,
+                body.toString(),
+                allowRemoteMerge,
+            )
         } else {
             log.w { "Guarded $collectionName update rejected with HTTP ${rejected.status.value}; lookup failed with HTTP ${lookup.status.value}" }
             PushResolution.Failed
@@ -530,8 +566,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         val localUpdatedAt = body["localUpdatedAt"]?.toString()?.trim('"')?.toLongOrNull() ?: 0L
         return when {
             recordUpdatedAt(record) > localUpdatedAt -> {
-                mergeRemoteIfNewer(toEntity(record))
-                PushResolution.RemoteWon
+                resolveRemoteWinner(record, allowRemoteMerge)
             }
             recordUpdatedAt(record) == localUpdatedAt && canonicalPayloadEquals(body, existing) -> {
                 existing["id"]?.toString()?.trim('"')?.let { updatePbIdSafely(localId, it) }
@@ -552,7 +587,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                     PushResolution.Failed
                 }
             }
-            else -> PushResolution.Failed
+            else -> divergentRemoteResolution(allowRemoteMerge)
         }
     }
 
@@ -563,10 +598,10 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         body: JsonObject,
         existingJson: JsonObject,
         existing: Record,
+        allowRemoteMerge: Boolean,
     ): PushResolution = when {
         recordUpdatedAt(existing) > updatedAt -> {
-            mergeRemoteIfNewer(toEntity(existing))
-            PushResolution.RemoteWon
+            resolveRemoteWinner(existing, allowRemoteMerge)
         }
         recordUpdatedAt(existing) == updatedAt && canonicalPayloadEquals(body, existingJson) -> {
             existingJson["id"]?.toString()?.trim('"')?.let { updatePbIdSafely(localId, it) }
@@ -582,7 +617,29 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 PushResolution.Failed
             }
         }
-        else -> PushResolution.Failed
+        else -> divergentRemoteResolution(allowRemoteMerge)
+    }
+
+    private suspend fun resolveRemoteWinner(
+        record: Record,
+        allowRemoteMerge: Boolean,
+    ): PushResolution {
+        if (!allowRemoteMerge) {
+            throw AuthoritativeSeedConflictException(
+                "Authoritative seed rejected a newer remote $collectionName row",
+            )
+        }
+        mergeRemoteIfNewer(toEntity(record))
+        return PushResolution.RemoteWon
+    }
+
+    private fun divergentRemoteResolution(allowRemoteMerge: Boolean): PushResolution {
+        if (!allowRemoteMerge) {
+            throw AuthoritativeSeedConflictException(
+                "Authoritative seed found an equal-timestamp divergent $collectionName row",
+            )
+        }
+        return PushResolution.Failed
     }
 
     protected fun canonicalPayloadEquals(local: JsonObject, remote: JsonObject): Boolean =
@@ -628,4 +685,13 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     private companion object {
         const val PAGE_SIZE = 200
     }
+}
+
+internal fun JsonElement.canonicalFingerprintText(): String = when (this) {
+    is JsonObject -> entries.sortedBy { it.key }
+        .joinToString(prefix = "{", postfix = "}") { (key, value) ->
+            "$key:${value.canonicalFingerprintText()}"
+        }
+    is JsonArray -> joinToString(prefix = "[", postfix = "]") { it.canonicalFingerprintText() }
+    else -> toString()
 }

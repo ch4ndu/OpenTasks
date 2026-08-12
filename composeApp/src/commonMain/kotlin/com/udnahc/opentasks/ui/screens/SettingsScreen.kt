@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.udnahc.opentasks.data.auth.AuthenticatedAccount
+import com.udnahc.opentasks.data.auth.LocalServerReplacementPreview
 import com.udnahc.opentasks.data.model.TextSizePreference
 import com.udnahc.opentasks.data.model.ThemeMode
 import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
@@ -71,6 +72,10 @@ import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.checking_connection
 import opentasks.composeapp.generated.resources.clear
 import opentasks.composeapp.generated.resources.clear_local_data_error
+import opentasks.composeapp.generated.resources.clear_local_data
+import opentasks.composeapp.generated.resources.clear_local_data_description
+import opentasks.composeapp.generated.resources.clear_local_data_confirm_title
+import opentasks.composeapp.generated.resources.clear_local_data_confirm_message
 import opentasks.composeapp.generated.resources.configured
 import opentasks.composeapp.generated.resources.connected
 import opentasks.composeapp.generated.resources.connection_failed
@@ -92,6 +97,23 @@ import opentasks.composeapp.generated.resources.logout
 import opentasks.composeapp.generated.resources.logout_confirm_message
 import opentasks.composeapp.generated.resources.logout_confirm_title
 import opentasks.composeapp.generated.resources.logout_description
+import opentasks.composeapp.generated.resources.local_only
+import opentasks.composeapp.generated.resources.local_only_description
+import opentasks.composeapp.generated.resources.connect_pocketbase
+import opentasks.composeapp.generated.resources.connect_pocketbase_description
+import opentasks.composeapp.generated.resources.replacement_sign_in_title
+import opentasks.composeapp.generated.resources.replacement_sign_in_message
+import opentasks.composeapp.generated.resources.replacement_confirm_title
+import opentasks.composeapp.generated.resources.replacement_confirm_message
+import opentasks.composeapp.generated.resources.replacement_collection_count
+import opentasks.composeapp.generated.resources.replacement_collection_categories
+import opentasks.composeapp.generated.resources.replacement_collection_tasks
+import opentasks.composeapp.generated.resources.replacement_collection_attachments
+import opentasks.composeapp.generated.resources.replacement_collection_task_tags
+import opentasks.composeapp.generated.resources.replacement_collection_countdowns
+import opentasks.composeapp.generated.resources.replacement_attachment_count
+import opentasks.composeapp.generated.resources.replacement_confirm_action
+import opentasks.composeapp.generated.resources.replacement_preview_changed
 import opentasks.composeapp.generated.resources.loading
 import opentasks.composeapp.generated.resources.not_configured
 import opentasks.composeapp.generated.resources.notifications
@@ -112,6 +134,8 @@ import opentasks.composeapp.generated.resources.theme
 import opentasks.composeapp.generated.resources.theme_dark
 import opentasks.composeapp.generated.resources.theme_light
 import opentasks.composeapp.generated.resources.theme_system
+import opentasks.composeapp.generated.resources.tags
+import opentasks.composeapp.generated.resources.notes
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
@@ -124,11 +148,17 @@ fun SettingsScreen(
     onImportCsv: () -> Unit = {},
     currentAccount: AuthenticatedAccount? = null,
     currentEndpoint: String? = null,
+    isLocalOnly: Boolean = false,
     accountOperation: AccountOperation? = null,
     accountError: AccountUiError? = null,
     onSwitchAccount: (email: String, password: String) -> Unit = { _, _ -> },
     onClearAccountError: () -> Unit = {},
     onLogout: () -> Unit = {},
+    onClearLocalData: (() -> Unit)? = null,
+    replacementPreview: LocalServerReplacementPreview? = null,
+    onPrepareReplacement: (endpoint: String, email: String, password: String) -> Unit = { _, _, _ -> },
+    onConfirmReplacement: () -> Unit = {},
+    onCancelReplacementPreparation: () -> Unit = {},
 ) {
     val viewModel: SettingsViewModel = koinViewModel()
     val currentUrl by viewModel.pocketBaseUrl.collectAsState()
@@ -170,6 +200,7 @@ fun SettingsScreen(
         exportInProgress = exportInProgress,
         clearLocalDataStatus = clearLocalDataStatus,
         currentAccount = currentAccount,
+        isLocalOnly = isLocalOnly,
         accountOperation = accountOperation,
         accountError = accountError,
         onBack = onBack,
@@ -194,9 +225,14 @@ fun SettingsScreen(
         },
         onClearExportResult = { viewModel.clearExportResult() },
         onClearLocalDataErrorShown = { viewModel.clearLocalDataErrorShown() },
+        onClearLocalData = onClearLocalData ?: viewModel::clearLocalData,
         onSwitchAccount = onSwitchAccount,
         onClearAccountError = onClearAccountError,
         onLogout = onLogout,
+        replacementPreview = replacementPreview,
+        onPrepareReplacement = onPrepareReplacement,
+        onConfirmReplacement = onConfirmReplacement,
+        onCancelReplacementPreparation = onCancelReplacementPreparation,
     )
 }
 
@@ -214,6 +250,7 @@ internal fun SettingsContent(
     exportInProgress: Boolean = false,
     clearLocalDataStatus: ClearLocalDataStatus = ClearLocalDataStatus.IDLE,
     currentAccount: AuthenticatedAccount? = null,
+    isLocalOnly: Boolean = false,
     accountOperation: AccountOperation? = null,
     accountError: AccountUiError? = null,
     onBack: () -> Unit,
@@ -232,9 +269,14 @@ internal fun SettingsContent(
     onExportIcs: () -> Unit = {},
     onClearExportResult: () -> Unit = {},
     onClearLocalDataErrorShown: () -> Unit = {},
+    onClearLocalData: () -> Unit = {},
     onSwitchAccount: (email: String, password: String) -> Unit = { _, _ -> },
     onClearAccountError: () -> Unit = {},
     onLogout: () -> Unit = {},
+    replacementPreview: LocalServerReplacementPreview? = null,
+    onPrepareReplacement: (endpoint: String, email: String, password: String) -> Unit = { _, _, _ -> },
+    onConfirmReplacement: () -> Unit = {},
+    onCancelReplacementPreparation: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     var showUrlDialog by remember { mutableStateOf(false) }
@@ -242,8 +284,14 @@ internal fun SettingsContent(
     var showThemeDialog by remember { mutableStateOf(false) }
     var showTextSizeDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    var showClearLocalDataConfirm by remember { mutableStateOf(false) }
+    var showConnectToPocketBase by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
-    val accountControls = accountControlAvailability(currentAccount, accountOperation)
+    val accountControls = accountControlAvailability(currentAccount, isLocalOnly, accountOperation)
+
+    LaunchedEffect(replacementPreview) {
+        if (replacementPreview != null) showConnectToPocketBase = false
+    }
 
     LaunchedEffect(exportResult) {
         when (val result = exportResult) {
@@ -348,27 +396,28 @@ internal fun SettingsContent(
                 )
             }
 
-            // ── Sync ──
-            item(key = "sync_header") {
-                SettingsCategoryHeader(stringResource(Res.string.sync))
-            }
-            item(key = "pocketbase_url") {
-                val summary = if (currentAccount != null) {
-                    stringResource(
-                        Res.string.account_endpoint_read_only_value,
-                        currentUrl ?: stringResource(Res.string.not_configured),
-                    )
-                } else {
-                    currentUrl ?: stringResource(Res.string.not_configured)
+            if (!isLocalOnly) {
+                item(key = "sync_header") {
+                    SettingsCategoryHeader(stringResource(Res.string.sync))
                 }
-                SettingsRow(
-                    title = stringResource(Res.string.pocketbase_url),
-                    summary = summary,
-                    onClick = { if (currentAccount == null) showUrlDialog = true },
-                    enabled = currentAccount == null,
-                )
+                item(key = "pocketbase_url") {
+                    val summary = if (currentAccount != null) {
+                        stringResource(
+                            Res.string.account_endpoint_read_only_value,
+                            currentUrl ?: stringResource(Res.string.not_configured),
+                        )
+                    } else {
+                        currentUrl ?: stringResource(Res.string.not_configured)
+                    }
+                    SettingsRow(
+                        title = stringResource(Res.string.pocketbase_url),
+                        summary = summary,
+                        onClick = { if (currentAccount == null) showUrlDialog = true },
+                        enabled = currentAccount == null,
+                    )
+                }
             }
-            if (currentUrl != null) {
+            if (!isLocalOnly && currentUrl != null) {
                 item(key = "sync_now") {
                     val summary = when (syncStatus) {
                         SyncStatus.SYNCING -> stringResource(Res.string.syncing)
@@ -458,13 +507,45 @@ internal fun SettingsContent(
                     }
                 }
             }
-            item(key = "logout") {
-                SettingsRow(
-                    title = stringResource(Res.string.logout),
-                    summary = stringResource(Res.string.logout_description),
-                    onClick = { showLogoutConfirm = true },
-                    enabled = accountControls.canLogout,
-                )
+            if (isLocalOnly) {
+                item(key = "local_only") {
+                    SettingsRow(
+                        title = stringResource(Res.string.local_only),
+                        summary = stringResource(Res.string.local_only_description),
+                        onClick = {},
+                        enabled = false,
+                    )
+                }
+                item(key = "connect_pocketbase") {
+                    SettingsRow(
+                        title = stringResource(Res.string.connect_pocketbase),
+                        summary = stringResource(Res.string.connect_pocketbase_description),
+                        onClick = { showConnectToPocketBase = true },
+                        enabled = accountControls.canConnectPocketBase && replacementPreview == null,
+                    )
+                }
+                item(key = "clear_local_data") {
+                    SettingsRow(
+                        title = stringResource(Res.string.clear_local_data),
+                        summary = stringResource(Res.string.clear_local_data_description),
+                        onClick = { showClearLocalDataConfirm = true },
+                        enabled = accountControls.canClearLocalData,
+                    )
+                }
+                if (accountError != null) {
+                    item(key = "local_account_error") {
+                        AccountErrorMessage(error = accountError, onClear = onClearAccountError)
+                    }
+                }
+            } else {
+                item(key = "logout") {
+                    SettingsRow(
+                        title = stringResource(Res.string.logout),
+                        summary = stringResource(Res.string.logout_description),
+                        onClick = { showLogoutConfirm = true },
+                        enabled = accountControls.canLogout,
+                    )
+                }
             }
         }
     }
@@ -491,6 +572,53 @@ internal fun SettingsContent(
                     Text(stringResource(Res.string.cancel))
                 }
             },
+        )
+    }
+
+    if (showClearLocalDataConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearLocalDataConfirm = false },
+            title = { Text(stringResource(Res.string.clear_local_data_confirm_title)) },
+            text = { Text(stringResource(Res.string.clear_local_data_confirm_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearLocalDataConfirm = false
+                    onClearLocalData()
+                }) {
+                    Text(
+                        stringResource(Res.string.clear_local_data),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearLocalDataConfirm = false }) {
+                    Text(stringResource(Res.string.cancel))
+                }
+            },
+        )
+    }
+
+    if (showConnectToPocketBase) {
+        LocalServerReplacementCredentialDialog(
+            isBusy = accountOperation == AccountOperation.PREPARING_REPLACEMENT,
+            error = accountError,
+            onClearError = onClearAccountError,
+            onSubmit = onPrepareReplacement,
+            onDismiss = {
+                showConnectToPocketBase = false
+                onCancelReplacementPreparation()
+            },
+        )
+    }
+
+    replacementPreview?.let { preview ->
+        LocalServerReplacementConfirmationDialog(
+            preview = preview,
+            isBusy = accountOperation == AccountOperation.REPLACING_SERVER_DATA,
+            previewChanged = accountError == AccountUiError.REPLACEMENT_PREVIEW_CHANGED,
+            onConfirm = onConfirmReplacement,
+            onDismiss = onCancelReplacementPreparation,
         )
     }
 
@@ -548,6 +676,150 @@ internal fun SettingsContent(
 }
 
 // ── Reusable settings composables ────────────────────────────────────────────
+
+@Composable
+private fun LocalServerReplacementCredentialDialog(
+    isBusy: Boolean,
+    error: AccountUiError?,
+    onClearError: () -> Unit,
+    onSubmit: (endpoint: String, email: String, password: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var endpointInput by rememberSaveable { mutableStateOf("") }
+    var emailInput by rememberSaveable { mutableStateOf("") }
+    // Password is request-local and deliberately never saveable or ViewModel state.
+    var passwordInput by remember { mutableStateOf("") }
+
+    fun submit() {
+        if (isBusy || endpointInput.isBlank() || emailInput.isBlank() || passwordInput.isBlank()) return
+        val password = passwordInput
+        passwordInput = ""
+        onSubmit(endpointInput, emailInput, password)
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!isBusy) onDismiss() },
+        title = { Text(stringResource(Res.string.replacement_sign_in_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(OpenTasksTheme.dimens.spacerLarge)) {
+                Text(stringResource(Res.string.replacement_sign_in_message))
+                if (error != null) {
+                    AccountErrorMessage(error = error, onClear = onClearError)
+                }
+                OutlinedTextField(
+                    value = endpointInput,
+                    onValueChange = { endpointInput = it },
+                    label = { Text(stringResource(Res.string.account_endpoint)) },
+                    placeholder = { Text(stringResource(Res.string.pocketbase_url_hint)) },
+                    enabled = !isBusy,
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = emailInput,
+                    onValueChange = { emailInput = it },
+                    label = { Text(stringResource(Res.string.account_email)) },
+                    enabled = !isBusy,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                )
+                OutlinedTextField(
+                    value = passwordInput,
+                    onValueChange = { passwordInput = it },
+                    label = { Text(stringResource(Res.string.account_password)) },
+                    enabled = !isBusy,
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submit() }),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = ::submit,
+                enabled = !isBusy && endpointInput.isNotBlank() && emailInput.isNotBlank() && passwordInput.isNotBlank(),
+            ) {
+                if (isBusy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.width(OpenTasksTheme.dimens.iconDefault),
+                        strokeWidth = OpenTasksTheme.dimens.dividerThick,
+                    )
+                    Spacer(Modifier.width(OpenTasksTheme.dimens.spacerSmall))
+                }
+                Text(stringResource(Res.string.connect_pocketbase))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isBusy) {
+                Text(stringResource(Res.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun LocalServerReplacementConfirmationDialog(
+    preview: LocalServerReplacementPreview,
+    isBusy: Boolean,
+    previewChanged: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isBusy) onDismiss() },
+        title = { Text(stringResource(Res.string.replacement_confirm_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(OpenTasksTheme.dimens.spacerSmall)) {
+                Text(
+                    stringResource(
+                        Res.string.replacement_confirm_message,
+                        preview.account.displayLabel(),
+                        preview.canonicalEndpoint,
+                    )
+                )
+                if (previewChanged) {
+                    Text(
+                        stringResource(Res.string.replacement_preview_changed),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                preview.collectionCounts.forEach { count ->
+                    Text(
+                        stringResource(
+                            Res.string.replacement_collection_count,
+                            replacementCollectionLabel(count.collection),
+                            count.active,
+                            count.tombstones,
+                        )
+                    )
+                }
+                Text(stringResource(Res.string.replacement_attachment_count, preview.attachmentCount))
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm, enabled = !isBusy) {
+                Text(stringResource(Res.string.replacement_confirm_action))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isBusy) {
+                Text(stringResource(Res.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun replacementCollectionLabel(collection: String): String = when (collection) {
+    "categories" -> stringResource(Res.string.replacement_collection_categories)
+    "tags" -> stringResource(Res.string.tags)
+    "tasks" -> stringResource(Res.string.replacement_collection_tasks)
+    "attachments" -> stringResource(Res.string.replacement_collection_attachments)
+    "task_tags" -> stringResource(Res.string.replacement_collection_task_tags)
+    "notes" -> stringResource(Res.string.notes)
+    "countdowns" -> stringResource(Res.string.replacement_collection_countdowns)
+    else -> error("Unknown replacement collection: $collection")
+}
 
 @Composable
 internal fun SettingsCategoryHeader(title: String) {

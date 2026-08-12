@@ -16,6 +16,14 @@ data class AuthenticatedAccount(
     val displayName: String? = null,
 )
 
+@Serializable
+enum class CacheMode {
+    POCKETBASE,
+    LOCAL_ONLY,
+}
+
+const val LOCAL_CACHE_OWNER_ID = "__opentasks_local__"
+
 /** The durable proof that the one local cache belongs to one account boundary. */
 @Serializable
 data class CacheBinding(
@@ -24,6 +32,7 @@ data class CacheBinding(
     val accountId: String,
     val capabilityVersion: Int,
     val boundaryEpoch: Long,
+    val mode: CacheMode = CacheMode.POCKETBASE,
 )
 
 /**
@@ -38,13 +47,15 @@ data class AccountBoundary(
     val accountId: String,
     val capabilityVersion: Int,
     val boundaryEpoch: Long,
+    val mode: CacheMode = CacheMode.POCKETBASE,
 ) {
     fun matches(binding: CacheBinding): Boolean =
         canonicalEndpoint == binding.canonicalEndpoint &&
             serverInstanceId == binding.serverInstanceId &&
             accountId == binding.accountId &&
             capabilityVersion == binding.capabilityVersion &&
-            boundaryEpoch == binding.boundaryEpoch
+            boundaryEpoch == binding.boundaryEpoch &&
+            mode == binding.mode
 }
 
 fun CacheBinding.asAccountBoundary(): AccountBoundary = AccountBoundary(
@@ -53,12 +64,44 @@ fun CacheBinding.asAccountBoundary(): AccountBoundary = AccountBoundary(
     accountId = accountId,
     capabilityVersion = capabilityVersion,
     boundaryEpoch = boundaryEpoch,
+    mode = mode,
 )
+
+fun CacheBinding.isValidLocalBinding(): Boolean =
+    mode == CacheMode.LOCAL_ONLY &&
+        canonicalEndpoint.isEmpty() &&
+        serverInstanceId.isEmpty() &&
+        accountId == LOCAL_CACHE_OWNER_ID &&
+        capabilityVersion == 0 &&
+        boundaryEpoch > 0L
+
+fun CacheBinding.isValidPocketBaseBinding(): Boolean =
+    mode == CacheMode.POCKETBASE &&
+        canonicalEndpoint.isNotBlank() &&
+        serverInstanceId.isNotBlank() &&
+        accountId.isNotBlank() &&
+        accountId != LOCAL_CACHE_OWNER_ID &&
+        capabilityVersion > 0 &&
+        boundaryEpoch > 0L
+
+fun CacheBinding.isValidActiveBinding(): Boolean =
+    isValidLocalBinding() || isValidPocketBaseBinding()
+
+@Serializable
+enum class AccountTransitionPurpose {
+    ACCOUNT_CHANGE,
+    LOCAL_CLEAR,
+    LOCAL_AUTHORITATIVE_REPLACEMENT,
+}
 
 @Serializable
 enum class AccountTransitionPhase {
     PREPARED,
     NEEDS_ACTIVATION,
+    PRE_RESET,
+    FILES_PENDING,
+    REMOTE_DELETE_PENDING,
+    EXACT_SEED_PENDING,
 }
 
 /** Durable crash-recovery marker. The marker is never allowed to authorize task UI. */
@@ -71,6 +114,7 @@ data class AccountTransition(
     val capabilityVersion: Int,
     val boundaryEpoch: Long,
     val phase: AccountTransitionPhase,
+    val purpose: AccountTransitionPurpose = AccountTransitionPurpose.ACCOUNT_CHANGE,
 )
 
 enum class AccountSessionFreshness {
@@ -99,6 +143,10 @@ sealed interface AccountSessionState {
         val freshness: AccountSessionFreshness,
     ) : AccountSessionState
 
+    data class LocalOnly(
+        val binding: CacheBinding,
+    ) : AccountSessionState
+
     data class Transitioning(val transition: AccountTransition) : AccountSessionState
 
     data class ReauthenticationRequired(
@@ -107,6 +155,15 @@ sealed interface AccountSessionState {
         val canonicalEndpoint: String? = null,
     ) : AccountSessionState
 }
+
+fun AccountSessionState.activeBindingOrNull(): CacheBinding? = when (this) {
+    is AccountSessionState.Authenticated -> binding
+    is AccountSessionState.LocalOnly -> binding
+    else -> null
+}
+
+fun AccountSessionState.authenticatedAccountOrNull(): AuthenticatedAccount? =
+    (this as? AccountSessionState.Authenticated)?.account
 
 /**
  * Stores only PocketBase auth tokens. Passwords are never represented by this

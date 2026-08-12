@@ -24,5 +24,6 @@ Load this for Android widget changes under `androidMain`.
 - Use `updateAppWidgetState` to bump a refresh trigger, then call `update()` to trigger a fresh fetch.
 - Use `TaskWidget.refreshWidget()` or `refreshAllWidgets()`.
 - Do not call `instance.update()` directly outside widget-owned refresh helpers. The helpers may call `instance.update()` after `updateAppWidgetState`.
-- `SyncWorker` skips only the network pass when no PocketBase URL is configured; it still rebuilds reminders and refreshes all widgets.
+- Widget reads/actions, notification-driven refreshes, and `SyncWorker` maintenance use the validated active-cache owner/epoch, so they work in both local-only and PocketBase modes and reject stale callbacks before DAO access.
+- `SyncWorker` skips the network pass in local-only mode; it still rebuilds reminders and refreshes all widgets.
 - Periodic `SyncWorker` work intentionally has no WorkManager network constraint so offline runs still perform those local reminder and widget-maintenance steps.

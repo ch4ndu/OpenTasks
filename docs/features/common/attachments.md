@@ -50,13 +50,13 @@ Sync states:
 - `FAILED`: retryable sync or download failure.
 - `BLOCKED`: non-retryable policy or decode failure.
 
-Deletes are tombstones. Deleting an image marks the attachment deleted and removes local files where practical; sync clears or updates the remote file record rather than treating normal app deletion as a hard server delete.
+Normal deletes are tombstones. Deleting an image marks the attachment deleted and removes local files where practical; sync clears or updates the remote file record rather than treating normal app deletion as a hard server delete. The sole remote hard-delete exception is a confirmed local-authoritative account replacement: the owner-scoped executor deletes the destination attachment record/file, preserves the local attachment bytes, then uploads them during exact reseeding.
 
 ## PocketBase
 
 PocketBase requires the `attachments` collection created by `pocketbase/pb_migrations/008_create_attachments.js`. The collection contains owner fields, metadata fields, local timestamps, and a single `file` field with a 5 MB max size and image MIME type allowlist.
 
-Migration `011` adds the required account owner relation and protects the file field. Collection rules and the client gateway restrict metadata and file access to the active owner; cross-account raw responses are rejected before local persistence.
+Migration `011` adds the required account owner relation and protects the file field. Migration `012` permits hard deletion by the authenticated stored owner for the replacement protocol while keeping anonymous and cross-owner requests hidden. Collection rules and the client gateway restrict metadata and file access to the active owner; cross-account raw responses are rejected before local persistence.
 
 ## Related Docs
 

@@ -8,14 +8,14 @@ Paths are relative to the repository root. The most important boundary is the sp
 
 ## 2. Overview and Classification
 
-OpenTasks is an offline-capable task-management application built around Eisenhower Matrix prioritization. It supports tasks, categories, tags, notes, countdowns, reminders, calendar views and import/export, attachments, authenticated PocketBase synchronization, and Android home-screen widgets.
+OpenTasks is an offline-capable task-management application built around Eisenhower Matrix prioritization. It supports tasks, categories, tags, notes, countdowns, reminders, calendar views and import/export, attachments, optional authenticated PocketBase synchronization, deterministic Quick Add, and Android home-screen widgets.
 
 - **Primary type:** cross-platform mobile application. Android and iOS host the shared Compose Multiplatform UI and domain/data layers.
 - **Secondary type:** JVM desktop application. The same shared app is packaged for macOS, Windows, and Linux.
 - **Platform extensions:** Android widgets, alarms, receivers, and WorkManager; iOS notification/background-task integration and a share extension.
 - **Domain-specific concerns:** offline persistence, cross-device conflict handling, local/UTC time boundaries, recurring events, reminder identity, attachment lifecycle, and platform parity.
 
-The application is local-first: normal UI reads and writes go through the local Room database. The current two-account release requires a configured PocketBase deployment and an authenticated account to enter task UI; after a binding is validated, Room remains the offline-capable local cache rather than PocketBase becoming the UI's direct data source.
+The application is local-first: normal UI reads and writes go through the local Room database. A fresh installation can adopt its cache into durable Local only mode without configuring PocketBase. PocketBase mode adds authenticated two-account synchronization, but Room remains the UI's direct source of truth in either mode.
 
 ## 3. Technology Stack
 
@@ -78,7 +78,7 @@ Generated files and build outputs live below module `build/` directories. Local 
 3. **Read/write separation.** Read operations are small UseCase classes, normally returning `Flow`. Mutations are Action classes with suspend entrypoints and own cross-cutting write behavior such as timestamps, reminders, or sync triggers.
 4. **Room is the local source of truth.** Screens observe local flows. Optional remote synchronization updates Room through sync adapters rather than bypassing the local model.
 5. **Explicit time boundaries.** UI/domain state uses local epoch milliseconds; persistence stores UTC epoch milliseconds. Repository and system-boundary code performs conversion.
-6. **Durable deletion.** Synced records use soft-delete tombstones. Hard deletion is restricted to records that have never acquired remote identity or to explicit local-reset transactions.
+6. **Durable deletion.** Normal synced deletes use soft-delete tombstones. Hard deletion is restricted to records that have never acquired remote identity, explicit local reset, or the confirmed owner-scoped local-authoritative replacement protocol.
 7. **Project patterns over new abstractions.** Reuse established UseCases, Actions, ViewModels, platform contracts, resources, and Koin wiring before adding new layers.
 
 ## 6. Build System and Toolchain
@@ -114,14 +114,14 @@ iOS application builds run through the `iosApp` Xcode scheme, which invokes Grad
 
 ### Runtime configuration
 
-PocketBase is required to enter task UI in the current two-account release. The build-generated `LocalSyncDefaults.POCKETBASE_URL` selects the first available value from:
+PocketBase configuration is optional for Local only mode. When a user signs in or connects local data to PocketBase, the build-generated `LocalSyncDefaults.POCKETBASE_URL` supplies the initial endpoint from the first available value:
 
 1. `opentasks.pocketbase.url` in the untracked root `local.properties` file;
 2. Gradle property `opentasks.pocketbase.url`;
 3. environment variable `OPENTASKS_POCKETBASE_URL`;
 4. an empty default.
 
-Signed-out users enter the server URL on the account screen. The endpoint is read-only while authenticated and may change only after logout. Detached authentication and capability validation occur before the active client or persisted cache identity changes.
+Signed-out users may choose Use without sync or enter a server URL and sign in. The endpoint is read-only while authenticated and may change only after logout. Detached authentication and capability validation occur before a normal client activation. Local-only connect uses a detached, count-only replacement preflight and does not change the active cache until explicit confirmation succeeds under the mutation gate.
 
 The iOS host reads product identity and versions from `iosApp/Configuration/Config.xcconfig`; Xcode project and plist files declare notification, background refresh, URL handling, and share-extension capabilities. Android permissions and exported components are declared in `androidApp/src/main/AndroidManifest.xml`.
 
@@ -133,23 +133,23 @@ The project currently has multiple explicit version locations:
 - iOS: `iosApp/Configuration/Config.xcconfig` uses `CURRENT_PROJECT_VERSION=2` and `MARKETING_VERSION=1.1.0`.
 - Desktop packages: `composeApp/build.gradle.kts` uses `packageVersion = "1.1.0"`.
 
-Release work must update and verify every platform surface in scope. Version 1.1.0 is the coordinated Android, iOS, and desktop release for two-account PocketBase isolation.
+Release work must update and verify every platform surface in scope. Version 1.1.0 is the currently configured coordinated Android, iOS, and desktop release; the local-only, authoritative-connect, and Quick Add architecture documented here is present in development source but does not itself change those release surfaces.
 
 ## 8. UI, State, and Navigation
 
-`composeApp/src/commonMain/.../App.kt` is the shared composition root. It installs `OpenTasksTheme` and restores account state before constructing task navigation or task-scoped ViewModels. Restoring, signed-out, transitioning, and reauthentication states render account-only UI. The authenticated subtree owns Navigation 3 and an account-epoch `ViewModelStore`; changing `CacheBinding.boundaryEpoch` clears the departing store so account-owned ViewModel state and coroutines cannot survive a switch. Asynchronous foreground mutations capture their originating account/epoch before dispatch and revalidate it after entering the shared mutation gate.
+`composeApp/src/commonMain/.../App.kt` is the shared composition root. It installs `OpenTasksTheme` and restores account state before constructing task navigation or task-scoped ViewModels. Restoring, signed-out, transitioning, and reauthentication states render account-only UI. Valid `LocalOnly` and `Authenticated` states mount the same active-cache Navigation 3 subtree and epoch-keyed `ViewModelStore`; changing `CacheBinding.boundaryEpoch` clears the departing store so account-owned ViewModel state and coroutines cannot survive a local-to-remote conversion or account switch. Asynchronous foreground mutations capture their originating owner/epoch before dispatch and revalidate it after entering the shared mutation gate.
 
-Navigation keys are serializable `Screen` types. `AppNavController` wraps back-stack mutation and tab-root replacement. Navigation 3 entry decorators retain saveable state and entry-scoped ViewModel stores.
+Navigation keys are serializable `Screen` types. `AppNavController` wraps back-stack mutation and tab-root replacement. Navigation 3 entry decorators retain saveable state and entry-scoped ViewModel stores. Matrix, Task List, Calendar, and Quadrant Detail task FABs open one shared creation chooser; Quick Add and the full editor receive the same category, priority, and optional Calendar civil-date context.
 
 Screen ViewModels expose `StateFlow` values derived from UseCase flows. Expensive filtering, grouping, formatting maps, and calendar projections run outside composables, commonly on `Dispatchers.Default`, and use `SharingStarted.WhileSubscribed(5000)`. Composables render state and forward user intent; they do not call repositories or DAOs.
 
-The shared Material 3 UI adapts across compact, medium, and expanded layouts. Shared Compose resources hold strings and drawables. Platform-specific previews are kept in `androidMain` because the IDE preview tooling is Android-based, even when the composable itself is shared.
+The shared Material 3 UI adapts across compact, medium, and expanded layouts. Shared Compose resources hold strings and drawables. Platform-specific previews are kept in `androidMain` because the IDE preview tooling is Android-based, even when the composable itself is shared. Network pull-to-refresh and sync-result presentation exist only in authenticated PocketBase mode; local-only screens render the underlying content without a no-op refresh wrapper.
 
 ## 9. Domain and Dependency Injection
 
 The domain layer distinguishes:
 
-- **UseCases:** focused reads and transformations such as observing tasks, categories, notes, countdowns, preferences, and attachment summaries, or parsing/generating import/export formats.
+- **UseCases:** focused reads and transformations such as observing tasks, categories, notes, countdowns, preferences, and attachment summaries, parsing bounded Quick Add input, or parsing/generating import/export formats.
 - **Actions:** mutations and workflows such as task/category/note/countdown writes, reminder scheduling, sync configuration, imports, local reset, and attachment operations.
 
 ViewModels inject UseCases and Actions, never repository implementations. Cross-record writes use explicit coordinators or Room writer transactions where atomicity matters.
@@ -174,13 +174,13 @@ DAOs expose observable reads and suspend writes. Repository implementations:
 - trigger debounced synchronization after normal writes;
 - coordinate attachment files with their Room metadata.
 
-User-visible queries normally exclude tombstones. Some reminder reconciliation and sync paths intentionally use tombstone-inclusive or raw-UTC DAO queries; these are documented boundary exceptions, not general shortcuts around repositories.
+User-visible queries normally exclude tombstones. Some reminder reconciliation and sync paths intentionally use tombstone-inclusive or raw-UTC DAO queries; these are documented boundary exceptions, not general shortcuts around repositories. Cache mode, binding, transition purpose/phase, and sync recovery mode are serialized in `app_settings`; local-only support and authoritative replacement do not require a Room schema change.
 
 ## 11. PocketBase Synchronization
 
-PocketBase is the authenticated identity and synchronization service. Two pre-created `users` accounts are supported. Every synchronized record belongs to exactly one account through a required relation, server rules enforce owner-only access, and the structured client gateway independently rejects raw records whose owner differs from the active binding.
+PocketBase is the optional authenticated identity and synchronization service. Two pre-created `users` accounts are supported. Every synchronized record belongs to exactly one account through a required relation, server rules enforce owner-only access, and the structured client gateway independently rejects raw records whose owner differs from the active binding.
 
-One installation has one active Room cache. `CacheBinding` proves its canonical endpoint, server instance, account, capability version, and boundary epoch. Task UI and normal sync remain unavailable until session restoration proves that binding. Connectivity-only refresh failures may use the proven cache offline; authentication rejection or missing/mismatched binding fails closed. Retryable account-service responses (`408`, `425`, `429`, and `5xx`) are classified as connectivity failures so a temporary server or rate-limit condition does not erase valid offline-session authority.
+One installation has one active Room cache. A mode-specific `CacheBinding` proves either the reserved local owner plus boundary epoch, or a canonical PocketBase endpoint/server/account/capability tuple plus epoch. Both valid modes authorize task UI and local foreground/background work; only `POCKETBASE` authorizes provider activation and network synchronization. A local binding paired with a remote token, a PocketBase binding without its required token, or any transition marker fails closed. Connectivity-only refresh failures may use a proven remote cache offline; authentication rejection or missing/mismatched binding keeps task UI hidden. Retryable account-service responses (`408`, `425`, `429`, and `5xx`) are classified as connectivity failures so a temporary server or rate-limit condition does not erase valid offline-session authority.
 
 Synchronization runs one collection at a time in dependency order:
 
@@ -192,7 +192,7 @@ Synchronization runs one collection at a time in dependency order:
 6. notes
 7. countdowns
 
-Each adapter pulls before it pushes. `AccountMutationGate` serializes user writes, sync mutations, switch/logout, and cache replacement. `SyncService` also serializes passes with a mutex and prevents sync from racing an exclusive local reset. Parent pull failures suppress dependent pulls and pushes. Repository writes trigger sync, while adapters use DAOs directly so remote merges do not recursively trigger new passes.
+Each adapter pulls before it pushes. The single process-wide `AccountMutationGate` serializes user writes, active-cache callbacks, sync mutations, local clear, switch/logout, and cache replacement. `SyncService` also serializes passes with a mutex and prevents sync from racing reset/replacement. Parent pull failures suppress dependent pulls and pushes. Repository writes trigger sync only when PocketBase is active, while adapters use DAOs directly so remote merges do not recursively trigger new passes.
 
 Conflict resolution is last-write-wins using app-managed UTC `updatedAt` and PocketBase `localUpdatedAt`:
 
@@ -206,6 +206,10 @@ Remote record updates use PocketBase's `PATCH` endpoint. If a locally stored Poc
 
 Account switching is restricted to the same canonical server/capability. It refreshes and fully synchronizes the source, requires zero unsynced rows, writes a durable transition, atomically replaces account-owned Room content and binding, activates the destination token, and performs an initial pull. Crash recovery treats the post-transaction destination binding as authoritative and never falls back to rendering the source cache. Logout uses the same source-sync safety gate.
 
+Local clear and local-to-PocketBase connect use separate typed durable transitions. Local clear records `PRE_RESET` before the Room reset and `FILES_PENDING` before attachment cleanup, then converges to signed out. Connect is an explicitly destructive local-authoritative replacement: detached preflight requires capability version 2 plus `authoritativeReplaceVersion = 1` and exposes only sanitized counts/identity. Confirmation recomputes opaque complete local and destination-owner inventory fingerprints under the mutation gate. A mismatch returns a refreshed preview before any durable transition or remote mutation.
+
+After confirmation, the durable destination binding and `REMOTE_DELETE_PENDING` marker are written before owner-scoped hard deletion. Records are deleted in reverse dependency order, the complete owner inventory must be empty, and one Room writer transaction resets all local PocketBase IDs/sync acknowledgements without deleting content or attachment files. `ServerSeedExecutor` then exact-seeds the preserved snapshot and verifies final active/tombstone inventory equality before token promotion and provider activation. Failure or process death resumes from the marker; a concurrent destination add/update/delete returns recovery to full delete/reset/reseed. Migration 012 grants hard delete only to the stored authenticated owner. Normal in-app deletion remains tombstone-based, and other owners never enter the inventory or delete requests.
+
 Tokens use Android Keystore, iOS Keychain, and the macOS login keychain. Windows/Linux use an owner-only app-private fallback and surface a weaker-storage warning. Passwords are request-local and are never persisted. Protected attachment downloads use short-lived file tokens and retry once only after confirmed token rejection.
 
 ## 12. Date, Recurrence, and Reminder Architecture
@@ -213,6 +217,8 @@ Tokens use Android Keystore, iOS Keychain, and the macOS login keychain. Windows
 The database stores UTC epoch milliseconds. UI, ViewModels, Actions, and most UseCases operate in local time. Repository conversions and explicitly documented scheduling/import boundaries prevent accidental double conversion.
 
 `LocalDaySignal` provides a shared local-date stream for date-relative projections and refreshes on application resume. Task and countdown recurrence logic derives effective occurrences without mutating the stored recurrence anchor merely to render a future occurrence.
+
+Quick Add uses a pure common parser with one screen-captured local `LocalDateTime`. It recognizes only the bounded, token-suffix English date/time/recurrence grammar documented in `docs/features/tasks.md` and performs civil-date arithmetic before converting the resolved value through `computeLocalMillis()`. The entry-scoped ViewModel owns recognition, removable-token suppression, duplicate-save protection, and active-cache boundary revalidation, then saves through `AddTaskAction`; no reminder is inferred.
 
 Reminder identity includes the event, occurrence UTC instant, reminder kind, and stable ordinal. This identity flows through queue construction, platform scheduling, delivery, user actions, and cancellation.
 
@@ -224,7 +230,7 @@ Reminder identity includes the event, occurrence UTC instant, reminder kind, and
 
 ### Android
 
-`androidApp` owns `OpenTasksApplication`, `MainActivity`, notification receivers, `SyncWorker`, and three Glance widget families (task list, calendar, and week). The application pre-warms Room and refreshes widgets after process start. WorkManager requests periodic maintenance approximately every two hours; the worker skips unavailable network sync while still allowing offline maintenance.
+`androidApp` owns `OpenTasksApplication`, `MainActivity`, notification receivers, `SyncWorker`, and three Glance widget families (task list, calendar, and week). The application pre-warms Room and refreshes widgets after process start. WorkManager requests periodic maintenance approximately every two hours; the worker validates either active cache mode, skips network sync in local-only mode, and still performs local reminder/widget maintenance.
 
 The activity converts Android intents into shared events for notifications, widgets, shared text, and ICS payloads. FileProvider, calendar, notification, exact-alarm, boot, and widget components are declared in the manifest.
 
@@ -303,8 +309,8 @@ Logging uses the multiplatform logging facade, with SLF4J/Logback on JVM and pla
 
 Tests are organized by source set:
 
-- `commonTest`: portable parsers, date/time utilities, reminder identity/queue logic, sync record logic, domain transformations, and ViewModel-adjacent contracts.
-- `jvmTest`: Room persistence and migrations, sync adapters and server seeding, DI resolution, Actions, ViewModels, and pure UI/navigation helpers.
+- `commonTest`: portable parsers, including Quick Add grammar/civil-date precedence, date/time utilities, reminder identity/queue logic, sync record logic, domain transformations, and ViewModel-adjacent contracts.
+- `jvmTest`: Room persistence and migrations, active-cache/account recovery, sync adapters, server replacement/seeding, DI resolution, Actions, ViewModels, and pure UI/navigation helpers.
 - `androidApp/src/test`: Android worker and widget data-provider unit tests.
 
 The shared JVM suite runs common and JVM tests through `./gradlew :composeApp:jvmTest`. Android shell tests run through `./gradlew :androidApp:testDebugUnitTest`. Kover can generate coverage reports and excludes generated code, DI wiring, platform shells, previews, resources, and UI packages; no minimum coverage threshold is configured.
@@ -332,7 +338,7 @@ There are no formal startup, frame-time, database-size, or sync-duration budgets
 
 OpenTasks stores task content and settings locally in an unencrypted Room/SQLite database and platform file storage. Platform backup behavior follows the host configuration; Android currently permits application backup.
 
-PocketBase mode supports exactly two pre-created users in this first release. The
+PocketBase mode supports exactly two pre-created users in this deployment model. The
 client authenticates each user through PocketBase's `users` collection, and every
 synchronized record has a required owner relation. Collection rules require an
 authenticated request and restrict reads and writes to the stored owner; creates
@@ -346,7 +352,7 @@ macOS login keychain; Windows/Linux use the documented owner-only app-private
 fallback and surface a weaker-storage warning. Passwords and file tokens are not
 persisted in application settings or logged.
 
-The local Room/SQLite database and platform attachment files remain unencrypted,
+Local-only mode stores no PocketBase credentials and performs no server requests. The local Room/SQLite database and platform attachment files remain unencrypted,
 and platform backup behavior follows the host configuration. PocketBase
 transport security depends on the configured endpoint, so deployments still
 require HTTPS, appropriate reverse-proxy/access-control hardening, and reliable
@@ -369,10 +375,9 @@ Application releases must preserve the stable identifiers and data locations use
 
 - Device clock skew can choose the wrong winner in last-write-wins synchronization.
 - Desktop native reminder delivery is not implemented.
-- The first release supports two pre-created PocketBase accounts; it has no public
+- PocketBase mode supports two pre-created accounts; it has no public
   signup, invitations, password reset, or account administration flow.
-- Fresh backend-free local-only startup is not supported. Offline continuation
-  requires a previously authenticated, durably bound cache.
+- Local only mode is single-installation storage, not a backup or multi-device merge. Connecting it to PocketBase replaces the authenticated destination owner's complete synchronized data after explicit confirmation.
 - Local Room/SQLite content and platform attachment files are unencrypted; HTTPS,
   deployment/access-control hardening, and backup/restore rehearsal remain
   operator responsibilities.
@@ -384,4 +389,4 @@ Changes that alter layering, module ownership, persistence/sync contracts, platf
 
 ## 22. Conclusion
 
-OpenTasks is a shared-first Kotlin Multiplatform application with thin native hosts, a layered UseCase/Action architecture, Room as the local source of truth, and required guarded PocketBase authentication/synchronization for the current two-account release. Its most important invariants are the `androidApp`/`composeApp` ownership split, ViewModel-to-domain dependency direction, explicit local/UTC boundaries, durable tombstones, dependency-ordered sync, and platform-specific verification for native behavior.
+OpenTasks is a shared-first Kotlin Multiplatform application with thin native hosts, a layered UseCase/Action architecture, Room as the local source of truth, durable local-only operation, and optional guarded PocketBase synchronization. Its most important invariants are the `androidApp`/`composeApp` ownership split, ViewModel-to-domain dependency direction, mode-specific active-cache boundaries, one process-wide mutation gate, explicit local/UTC boundaries, durable tombstones outside confirmed owner replacement, dependency-ordered sync/seed recovery, and platform-specific verification for native behavior.

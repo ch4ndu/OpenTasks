@@ -12,6 +12,7 @@ Feature ideas inspired by Todoist and Google Tasks, organized by implementation 
 
 ## Medium Effort
 
+- [x] **Optional local-only startup** — Run the complete local feature set without PocketBase, with durable active-cache boundaries and an explicitly destructive local-authoritative connect flow.
 - [x] **Sections within categories** — Simple `section: String?` field on Task, grouped display with section headers in TaskList
 - [x] **Rich text for task descriptions** — Reuses `richeditor-compose` (same as Notes) with shared formatting toolbar, HTML storage
 - ~~**Drag-to-reorder tasks**~~ — Won't do
@@ -22,7 +23,7 @@ Feature ideas inspired by Todoist and Google Tasks, organized by implementation 
 ## Higher Effort
 
 - [x] **Kanban/board view** — List/Board toggle in TaskList. 3 columns (To Do / In Progress / Done) with drag-and-drop. `isCompleted` replaced with `TaskStatus` enum across entire codebase.
-- [ ] **Natural language date parsing** — Parse dates from text input (e.g. "tomorrow at 3pm", "every Monday") during task creation
+- [x] **Bounded natural-language Quick Add** — Offline English date/time/recurrence parsing (for example, "tomorrow at 3pm" or "every Monday") with removable inference chips and contextual task defaults.
 - [ ] **Activity log / completion history** — Track completed tasks with timestamps for review and reflection
 - [ ] **Productivity stats** — Daily/weekly completion counts, streaks, simple graphs for motivation
 - [ ] **Nested categories (sub-projects)** — Support category hierarchies / sub-categories

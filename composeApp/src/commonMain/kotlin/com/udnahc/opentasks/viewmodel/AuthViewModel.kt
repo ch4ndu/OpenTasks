@@ -5,19 +5,27 @@ import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.auth.AccountAuthenticationRejectedException
 import com.udnahc.opentasks.data.auth.AccountCapabilityRejectedException
 import com.udnahc.opentasks.data.auth.AccountConnectivityException
-import com.udnahc.opentasks.data.auth.AccountRepository
 import com.udnahc.opentasks.data.auth.AccountSessionState
 import com.udnahc.opentasks.data.auth.AccountTransitionBlockedException
 import com.udnahc.opentasks.data.auth.AuthTokenStore
 import com.udnahc.opentasks.data.auth.LegacyCacheOwnershipException
+import com.udnahc.opentasks.data.auth.LocalServerReplacementConfirmation
+import com.udnahc.opentasks.data.auth.LocalServerReplacementPreview
 import com.udnahc.opentasks.data.auth.SecureTokenStoreException
 import com.udnahc.opentasks.data.sync.PocketBaseConnectionException
 import com.udnahc.opentasks.data.sync.SyncException
+import com.udnahc.opentasks.data.sync.AuthoritativeLocalSeedSourceException
+import com.udnahc.opentasks.data.sync.AuthoritativeReplacementConflictException
 import com.udnahc.opentasks.domain.action.account.LoginAccountAction
 import com.udnahc.opentasks.domain.action.account.LogoutAccountAction
 import com.udnahc.opentasks.domain.action.account.ReauthenticateAccountAction
 import com.udnahc.opentasks.domain.action.account.RestoreSessionAction
 import com.udnahc.opentasks.domain.action.account.SwitchAccountAction
+import com.udnahc.opentasks.domain.action.account.StartLocalOnlyAction
+import com.udnahc.opentasks.domain.action.account.PrepareLocalServerReplacementAction
+import com.udnahc.opentasks.domain.action.account.ConfirmLocalServerReplacementAction
+import com.udnahc.opentasks.domain.action.account.CancelLocalServerReplacementPreparationAction
+import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.usecase.account.ObserveAccountSessionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +45,11 @@ enum class AccountOperation {
     REAUTHENTICATING,
     SWITCHING,
     LOGGING_OUT,
+    STARTING_LOCAL,
+    CLEARING_LOCAL,
+    PREPARING_REPLACEMENT,
+    REPLACING_SERVER_DATA,
+    CANCELLING_REPLACEMENT,
 }
 
 enum class AccountUiError {
@@ -48,6 +61,9 @@ enum class AccountUiError {
     TRANSITION_BLOCKED,
     CREDENTIAL_STORAGE_UNAVAILABLE,
     SESSION_RESTORE_FAILED,
+    REPLACEMENT_CONFLICT,
+    LOCAL_SEED_SOURCE_INVALID,
+    REPLACEMENT_PREVIEW_CHANGED,
     GENERIC,
 }
 
@@ -59,7 +75,12 @@ class AuthViewModel(
     private val reauthenticateAccountAction: ReauthenticateAccountAction,
     private val switchAccountAction: SwitchAccountAction,
     private val logoutAccountAction: LogoutAccountAction,
+    private val startLocalOnlyAction: StartLocalOnlyAction,
+    private val clearLocalDataAction: ClearLocalDataAction,
     tokenStore: AuthTokenStore,
+    private val prepareLocalServerReplacementAction: PrepareLocalServerReplacementAction? = null,
+    private val confirmLocalServerReplacementAction: ConfirmLocalServerReplacementAction? = null,
+    private val cancelLocalServerReplacementPreparationAction: CancelLocalServerReplacementPreparationAction? = null,
 ) : ViewModel() {
     private val observedSessionState = observeAccountSession()
     private val _sessionState = MutableStateFlow(observedSessionState.value)
@@ -76,11 +97,19 @@ class AuthViewModel(
 
     val storageWarning: String? = tokenStore.storageWarning
 
+    private val _replacementPreview = MutableStateFlow<LocalServerReplacementPreview?>(null)
+    val replacementPreview: StateFlow<LocalServerReplacementPreview?> = _replacementPreview.asStateFlow()
+
     init {
         viewModelScope.launch {
             observedSessionState.collect { state ->
                 log.d { "Observed account session state=${state.diagnosticName()}" }
                 _sessionState.value = state
+                if (state is AccountSessionState.Transitioning &&
+                    state.transition.purpose == com.udnahc.opentasks.data.auth.AccountTransitionPurpose.LOCAL_AUTHORITATIVE_REPLACEMENT
+                ) {
+                    _replacementPreview.value = null
+                }
             }
         }
     }
@@ -92,7 +121,14 @@ class AuthViewModel(
         }
         runOperation(
             operation = AccountOperation.RESTORING,
-            mapError = { AccountUiError.SESSION_RESTORE_FAILED },
+            mapError = { error ->
+                val transition = (_sessionState.value as? AccountSessionState.Transitioning)?.transition
+                if (transition?.purpose == com.udnahc.opentasks.data.auth.AccountTransitionPurpose.LOCAL_AUTHORITATIVE_REPLACEMENT) {
+                    error.toAccountUiError()
+                } else {
+                    AccountUiError.SESSION_RESTORE_FAILED
+                }
+            },
         ) {
             restoreSessionAction()
         }
@@ -101,6 +137,49 @@ class AuthViewModel(
     fun login(endpoint: String, email: String, password: String) {
         runOperation(AccountOperation.SIGNING_IN) {
             loginAccountAction(endpoint, email, password)
+        }
+    }
+
+    fun startLocalOnly() {
+        runOperation(AccountOperation.STARTING_LOCAL) {
+            startLocalOnlyAction()
+        }
+    }
+
+    fun clearLocalData() {
+        runOperation(AccountOperation.CLEARING_LOCAL) {
+            clearLocalDataAction()
+        }
+    }
+
+    fun prepareLocalServerReplacement(endpoint: String, email: String, password: String) {
+        runOperation(AccountOperation.PREPARING_REPLACEMENT) {
+            val action = prepareLocalServerReplacementAction
+                ?: error("Authoritative replacement preparation is unavailable")
+            _replacementPreview.value = action(endpoint, email, password)
+        }
+    }
+
+    fun confirmLocalServerReplacement() {
+        runOperation(AccountOperation.REPLACING_SERVER_DATA) {
+            val action = confirmLocalServerReplacementAction
+                ?: error("Authoritative replacement confirmation is unavailable")
+            when (val result = action()) {
+                LocalServerReplacementConfirmation.Started -> _replacementPreview.value = null
+                is LocalServerReplacementConfirmation.PreviewChanged -> {
+                    _replacementPreview.value = result.preview
+                    _error.value = AccountUiError.REPLACEMENT_PREVIEW_CHANGED
+                }
+            }
+        }
+    }
+
+    fun cancelLocalServerReplacementPreparation() {
+        runOperation(AccountOperation.CANCELLING_REPLACEMENT) {
+            val action = cancelLocalServerReplacementPreparationAction
+                ?: error("Authoritative replacement cancellation is unavailable")
+            action()
+            _replacementPreview.value = null
         }
     }
 
@@ -168,6 +247,7 @@ private fun AccountSessionState.diagnosticName(): String = when (this) {
     AccountSessionState.Restoring -> "restoring"
     AccountSessionState.SignedOut -> "signed-out"
     is AccountSessionState.Authenticated -> "authenticated-${freshness.name.lowercase()}"
+    is AccountSessionState.LocalOnly -> "local-only"
     is AccountSessionState.ReauthenticationRequired -> "reauthentication-${reason.name.lowercase()}"
     is AccountSessionState.Transitioning -> "transitioning-${transition.phase.name.lowercase()}"
 }
@@ -180,6 +260,8 @@ private fun Throwable.toAccountUiError(): AccountUiError = when (this) {
     is AccountCapabilityRejectedException -> AccountUiError.SERVER_UNSUPPORTED
     is LegacyCacheOwnershipException -> AccountUiError.CACHE_OWNERSHIP_UNPROVEN
     is AccountTransitionBlockedException -> AccountUiError.TRANSITION_BLOCKED
+    is AuthoritativeReplacementConflictException -> AccountUiError.REPLACEMENT_CONFLICT
+    is AuthoritativeLocalSeedSourceException -> AccountUiError.LOCAL_SEED_SOURCE_INVALID
     is SecureTokenStoreException -> AccountUiError.CREDENTIAL_STORAGE_UNAVAILABLE
     is IllegalArgumentException -> AccountUiError.INVALID_INPUT
     else -> AccountUiError.GENERIC

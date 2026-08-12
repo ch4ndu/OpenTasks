@@ -2,6 +2,8 @@ package com.udnahc.opentasks.data.sync
 
 import androidx.work.NetworkType
 import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.auth.CacheMode
+import com.udnahc.opentasks.data.auth.LOCAL_CACHE_OWNER_ID
 import com.udnahc.opentasks.periodicSyncRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -104,5 +106,23 @@ class SyncWorkerTest {
         assertEquals(NetworkType.NOT_REQUIRED, request.workSpec.constraints.requiredNetworkType)
         assertEquals("account-a", request.workSpec.input.getString(SyncWorker.KEY_ACCOUNT_ID))
         assertEquals(7, request.workSpec.input.getLong(SyncWorker.KEY_BOUNDARY_EPOCH, 0))
+    }
+
+    @Test
+    fun localBoundarySchedulesTheSameMaintenanceContractWithoutNetworkConstraint() {
+        val binding = CacheBinding(
+            canonicalEndpoint = "",
+            serverInstanceId = "",
+            accountId = LOCAL_CACHE_OWNER_ID,
+            capabilityVersion = 0,
+            boundaryEpoch = 12L,
+            mode = CacheMode.LOCAL_ONLY,
+        )
+
+        val request = periodicSyncRequest(binding)
+
+        assertEquals(NetworkType.NOT_REQUIRED, request.workSpec.constraints.requiredNetworkType)
+        assertEquals(LOCAL_CACHE_OWNER_ID, request.workSpec.input.getString(SyncWorker.KEY_ACCOUNT_ID))
+        assertEquals(12L, request.workSpec.input.getLong(SyncWorker.KEY_BOUNDARY_EPOCH, 0L))
     }
 }

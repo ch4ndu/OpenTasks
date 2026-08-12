@@ -77,7 +77,7 @@ class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
         }
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val prefs = widgetAccountGate.withAuthenticatedBoundary {
+            val prefs = widgetAccountGate.withActiveCacheBoundary {
                 WidgetPreferences.load(this@WidgetFilterPickerActivity, appWidgetId)
             }
             withContext(Dispatchers.Main) {
@@ -220,7 +220,7 @@ class WidgetFilterPickerActivity : ComponentActivity(), KoinComponent {
 
     private fun saveSelectionAndFinish(prefs: WidgetPreferences, appWidgetId: Int) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val saved = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+            val saved = widgetAccountGate.withActiveCacheBoundary { boundary ->
                 WidgetPreferences.save(this@WidgetFilterPickerActivity, prefs)
                 log.d { "Prefs saved, updating widget $appWidgetId" }
                 log.d { "Refreshing widget $appWidgetId" }

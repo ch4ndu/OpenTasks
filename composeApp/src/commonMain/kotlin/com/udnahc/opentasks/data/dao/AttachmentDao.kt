@@ -166,7 +166,7 @@ interface AttachmentDao {
     suspend fun updatePbId(id: String, pbId: String)
 
     /** Keeps local file paths intact while moving an attachment to a new server. */
-    @Query("UPDATE attachments SET pbId = NULL, isSynced = 0, syncState = 'LOCAL_ONLY', lastSyncError = NULL")
+    @Query("UPDATE attachments SET pbId = NULL, remoteFileName = NULL, isSynced = 0, syncState = 'LOCAL_ONLY', lastSyncError = NULL")
     suspend fun resetSyncMetadataForServerSeed()
 
     @Query("UPDATE attachments SET remoteFileName = :remoteFileName WHERE id = :id")

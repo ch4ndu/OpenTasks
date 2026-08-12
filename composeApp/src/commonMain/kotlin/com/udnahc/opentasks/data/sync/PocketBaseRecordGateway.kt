@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.sync
 import com.udnahc.opentasks.data.auth.CacheBinding
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
+import io.ktor.client.request.delete
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -90,6 +91,34 @@ class PocketBaseRecordGateway(
             headers.append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
             setBody(ownedBody(body).toString())
         })
+
+    /**
+     * Deletes only a record obtained from this owner-scoped gateway. The
+     * structured inventory row is required so UI state can never supply an
+     * arbitrary unscoped record id.
+     */
+    suspend fun deleteOwnedInventoryRecord(
+        collection: String,
+        inventoryRecord: JsonObject,
+    ): GatewayResponse<Unit> {
+        if (ownerBinding == null) {
+            throw IllegalStateException("PocketBase hard deletion requires an authenticated owner boundary")
+        }
+        if (collection !in PocketBaseServerInventoryReader.COLLECTIONS) {
+            throw IllegalArgumentException("PocketBase hard deletion rejected an unknown sync collection")
+        }
+        val owned = requireOwnedRecord(inventoryRecord)
+        val recordId = owned["id"]?.jsonPrimitive?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("PocketBase inventory record has no id")
+        val response = client.delete("$baseUrl/api/collections/$collection/records/$recordId")
+        val rawBody = response.bodyAsText()
+        return GatewayResponse(
+            status = response.status,
+            body = Unit.takeIf { response.status.value in 200..299 },
+            rawBody = rawBody,
+        )
+    }
 
     /**
      * Guarded multipart create for an active attachment.  This intentionally
@@ -222,7 +251,7 @@ class PocketBaseRecordGateway(
         if (supplied != null && supplied !is JsonPrimitive) {
             throw PocketBaseOwnerMismatchException("PocketBase mutation owner is not a scalar account id")
         }
-        val suppliedId = (supplied as? JsonPrimitive)?.contentOrNull
+        val suppliedId = supplied?.contentOrNull
         if (suppliedId != null && suppliedId != binding.accountId) {
             throw PocketBaseOwnerMismatchException("PocketBase mutation owner does not match the active account")
         }
@@ -305,6 +334,7 @@ data class PocketBaseRecordPage<T>(val items: List<T> = emptyList(), val page: I
 @Serializable
 data class PocketBaseSyncMeta(
     val capabilityVersion: Int = 0,
+    val authoritativeReplaceVersion: Int = 0,
     val serverInstanceId: String = "",
     val legacyOwnerAccount: String? = null,
     val legacyEndpoint: String? = null,

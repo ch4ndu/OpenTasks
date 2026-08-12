@@ -28,6 +28,37 @@ class WidgetAccountGateTest {
         capabilityVersion = 2,
         boundaryEpoch = 7L,
     )
+    private val localBinding = CacheBinding(
+        canonicalEndpoint = "",
+        serverInstanceId = "",
+        accountId = LOCAL_CACHE_OWNER_ID,
+        capabilityVersion = 0,
+        boundaryEpoch = 11L,
+        mode = CacheMode.LOCAL_ONLY,
+    )
+
+    @Test
+    fun localActiveCachePermitsPlatformCallbacksButRejectsRemoteOnlyWork() = runTest {
+        val localState = AccountSessionState.LocalOnly(localBinding)
+        val fixture = fixture(
+            state = localState,
+            stateStore = WidgetFakeAccountStateStore(localBinding),
+        )
+        var callbackRuns = 0
+
+        val active = fixture.gate.withActiveCacheBoundary(
+            expectedAccountId = LOCAL_CACHE_OWNER_ID,
+            expectedBoundaryEpoch = localBinding.boundaryEpoch,
+        ) {
+            callbackRuns += 1
+            it
+        }
+        val remote = fixture.gate.withAuthenticatedBoundary { callbackRuns += 1 }
+
+        assertEquals(localBinding.asAccountBoundary(), active)
+        assertNull(remote)
+        assertEquals(1, callbackRuns)
+    }
 
     @Test
     fun authenticatedOnlineBoundaryPermitsTheOperation() = runTest {
@@ -573,6 +604,10 @@ internal class FakeAccountRepository(
         restoreCalls++
         state
     }
+
+    override suspend fun startLocalOnly(): AccountSessionState = error("not used")
+
+    override suspend fun clearLocalData(): AccountSessionState = error("not used")
 
     fun publishState(state: AccountSessionState) {
         this.state = state

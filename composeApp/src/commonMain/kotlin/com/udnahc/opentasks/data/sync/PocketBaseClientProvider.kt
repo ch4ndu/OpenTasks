@@ -2,6 +2,8 @@ package com.udnahc.opentasks.data.sync
 
 import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.auth.CacheMode
+import com.udnahc.opentasks.data.auth.isValidPocketBaseBinding
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.ktor.http.URLProtocol
 import org.lighthousegames.logging.logging
@@ -47,6 +49,31 @@ class PocketBaseClientProvider {
         }).also { knownEndpoints[it] = endpoint }
 
     /**
+     * Creates an authenticated, owner-bound candidate without publishing it as
+     * the active application client. Used while a durable replacement marker
+     * keeps task UI and ordinary sync disabled.
+     */
+    internal fun createDetachedBoundClient(
+        binding: CacheBinding,
+        token: String,
+    ): PocketbaseClient {
+        require(binding.isValidPocketBaseBinding()) {
+            "Detached PocketBase client requires a valid remote cache binding"
+        }
+        require(token.isNotBlank()) { "PocketBase auth token must not be blank" }
+        val client = createClient(parsePocketBaseEndpoint(binding.canonicalEndpoint))
+        client.authStore.save(token)
+        knownBindings[client] = binding
+        return client
+    }
+
+    internal fun releaseDetachedClient(client: PocketbaseClient) {
+        if (_client === client) return
+        knownEndpoints.remove(client)
+        knownBindings.remove(client)
+    }
+
+    /**
      * Activates a client only after detached authentication and capability
      * validation have produced a durable cache binding.  Tokens remain in the
      * PocketBase auth store and are never exposed by this boundary contract.
@@ -56,6 +83,9 @@ class PocketBaseClientProvider {
         token: String,
     ): PocketbaseClient {
         require(token.isNotBlank()) { "PocketBase auth token must not be blank" }
+        require(binding.mode == CacheMode.POCKETBASE && binding.isValidPocketBaseBinding()) {
+            "PocketBase activation requires a valid remote cache binding"
+        }
         val endpoint = parsePocketBaseEndpoint(binding.canonicalEndpoint)
         val client = createClient(endpoint)
         client.authStore.save(token)
@@ -77,6 +107,7 @@ class PocketBaseClientProvider {
             accountId = binding.accountId,
             capabilityVersion = binding.capabilityVersion,
             boundaryEpoch = binding.boundaryEpoch,
+            mode = binding.mode,
         )
     }
 

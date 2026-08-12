@@ -29,14 +29,14 @@ class SyncWorker(
         return try {
             val expectedAccountId = inputData.getString(KEY_ACCOUNT_ID)
             val expectedEpoch = inputData.getLong(KEY_BOUNDARY_EPOCH, 0L)
-            val maintained = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+            val maintained = widgetAccountGate.withActiveCacheBoundary { boundary ->
                 if (expectedAccountId.isNullOrBlank() ||
                     expectedEpoch <= 0L ||
                     expectedAccountId != boundary.accountId ||
                     expectedEpoch != boundary.boundaryEpoch
                 ) {
                     log.d { "SyncWorker skipped stale account boundary" }
-                    return@withAuthenticatedBoundary false
+                    return@withActiveCacheBoundary false
                 }
                 runScheduledSyncMaintenance(
                     syncNetwork = syncService::syncActiveClientWithinMutation,
@@ -50,7 +50,7 @@ class SyncWorker(
                 true
             }
             if (maintained != true) {
-                log.d { "SyncWorker skipped: no authenticated account boundary" }
+                log.d { "SyncWorker skipped: no active cache boundary" }
             }
             Result.success()
         } catch (e: CancellationException) {

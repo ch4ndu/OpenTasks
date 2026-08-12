@@ -24,7 +24,7 @@ class OpenTasksApplication : Application() {
         // Pre-warm Room database and refresh widgets on background thread
         CoroutineScope(Dispatchers.IO).launch {
             val widgetAccountGate = get<WidgetAccountGate>(WidgetAccountGate::class.java)
-            val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+            val refreshed = widgetAccountGate.withActiveCacheBoundary { boundary ->
                 get<AppDatabase>(AppDatabase::class.java)
                 // Refresh all widget types after reinstall/process restart
                 TaskWidget.refreshAllWidgetsWithinBoundary(this@OpenTasksApplication, boundary)

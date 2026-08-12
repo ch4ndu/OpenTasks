@@ -5,6 +5,7 @@ import com.udnahc.opentasks.data.sync.PocketBaseEndpoint
 import com.udnahc.opentasks.data.sync.PocketBaseOwnerMismatchException
 import com.udnahc.opentasks.data.sync.PocketBaseRecordGatewayFactory
 import com.udnahc.opentasks.data.sync.PocketBaseServerInventoryReader
+import com.udnahc.opentasks.data.sync.PocketBaseServerInventory
 import com.udnahc.opentasks.data.sync.canonicalUrl
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.ktor.client.request.header
@@ -31,6 +32,8 @@ data class AccountCapability(
     val legacyOwnerAccount: String,
     val legacyEndpoint: String,
     val scopedRecordCounts: Map<String, Int>,
+    val authoritativeReplaceVersion: Int = 0,
+    internal val ownerInventory: PocketBaseServerInventory? = null,
 )
 
 internal interface AccountAuthenticator {
@@ -44,6 +47,10 @@ internal interface AccountAuthenticator {
         endpoint: PocketBaseEndpoint,
         token: String,
     ): AccountCredential
+
+    suspend fun readOwnerInventory(credential: AccountCredential): PocketBaseServerInventory =
+        credential.capability.ownerInventory
+            ?: throw AccountCapabilityRejectedException("PocketBase owner inventory is unavailable")
 }
 
 internal class AccountCredential(
@@ -230,6 +237,7 @@ internal class PocketBaseAccountAuthenticator(
                 legacyOwnerAccount = "",
                 legacyEndpoint = "",
                 scopedRecordCounts = emptyMap(),
+                authoritativeReplaceVersion = 0,
             ),
         )
     }
@@ -273,7 +281,7 @@ internal class PocketBaseAccountAuthenticator(
                 boundaryEpoch = 0L,
             ),
         )
-        val counts = linkedMapOf<String, Int>()
+        val recordsByCollection = linkedMapOf<String, List<JsonObject>>()
         for (collection in PocketBaseServerInventoryReader.COLLECTIONS) {
             val rows = readAll(ownerGateway, collection)
             rows.forEach { row ->
@@ -283,16 +291,55 @@ internal class PocketBaseAccountAuthenticator(
                     throw AccountCapabilityRejectedException("PocketBase returned a row owned by another account")
                 }
             }
-            counts[collection] = rows.size
+            recordsByCollection[collection] = rows
             log.d { "PocketBase owner-scoped inventory validated: collection=$collection, rows=${rows.size}" }
         }
+        val inventory = PocketBaseServerInventory(
+            serverInstanceId = meta.serverInstanceId,
+            recordsByCollection = recordsByCollection,
+            accountId = accountId,
+        )
         return AccountCapability(
             capabilityVersion = meta.capabilityVersion,
             serverInstanceId = meta.serverInstanceId,
             legacyOwnerAccount = meta.legacyOwnerAccount,
             legacyEndpoint = meta.legacyEndpoint,
-            scopedRecordCounts = counts,
+            scopedRecordCounts = recordsByCollection.mapValues { it.value.size },
+            authoritativeReplaceVersion = meta.authoritativeReplaceVersion,
+            ownerInventory = inventory,
         )
+    }
+
+    override suspend fun readOwnerInventory(credential: AccountCredential): PocketBaseServerInventory {
+        val client = pbProvider.createClient(credential.endpoint)
+        client.authStore.save(credential.token)
+        val gateway = PocketBaseRecordGatewayFactory().create(
+            client,
+            credential.endpoint,
+            CacheBinding(
+                canonicalEndpoint = credential.endpoint.canonicalUrl,
+                serverInstanceId = credential.capability.serverInstanceId,
+                accountId = credential.account.accountId,
+                capabilityVersion = credential.capability.capabilityVersion,
+                boundaryEpoch = 0L,
+            ),
+        )
+        val inventory = try {
+            PocketBaseServerInventoryReader(gateway).read()
+        } catch (error: PocketBaseOwnerMismatchException) {
+            throw AccountCapabilityRejectedException(
+                "PocketBase returned a row outside the authenticated account boundary",
+            )
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            throw AccountConnectivityException(error)
+        }
+        if (inventory.serverInstanceId != credential.capability.serverInstanceId ||
+            inventory.accountId != credential.account.accountId
+        ) {
+            throw AccountCapabilityRejectedException("PocketBase owner inventory boundary changed")
+        }
+        return inventory
     }
 
     private suspend fun readAll(

@@ -61,10 +61,10 @@ class TaskWidget : GlanceAppWidget() {
 
         suspend fun refreshWidget(context: Context, appWidgetId: Int) {
             try {
-                val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                val refreshed = widgetAccountGate.withActiveCacheBoundary { boundary ->
                     refreshWidgetWithinBoundary(context, appWidgetId, boundary)
                 }
-                if (refreshed == null) log.d { "Skipped task widget refresh without an authenticated boundary" }
+                if (refreshed == null) log.d { "Skipped task widget refresh without an active cache boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to refresh widget $appWidgetId" }
             }
@@ -92,10 +92,10 @@ class TaskWidget : GlanceAppWidget() {
 
         suspend fun refreshAllWidgets(context: Context) {
             try {
-                val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                val refreshed = widgetAccountGate.withActiveCacheBoundary { boundary ->
                     refreshAllWidgetsWithinBoundary(context, boundary)
                 }
-                if (refreshed == null) log.d { "Skipped task widget refresh without an authenticated boundary" }
+                if (refreshed == null) log.d { "Skipped task widget refresh without an active cache boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to refresh all widgets" }
             }
@@ -161,7 +161,7 @@ class TaskWidget : GlanceAppWidget() {
                 } else {
                     try {
                         val provider = WidgetDataProvider()
-                        provider.withAuthenticatedBoundary { boundary ->
+                        provider.withActiveCacheBoundary { boundary ->
                             val prefs = WidgetPreferences.load(context, appWidgetId)
                             val tasks = provider.getWidgetTasksWithinBoundary(prefs)
                             val categories = provider.getCategoriesWithinBoundary()

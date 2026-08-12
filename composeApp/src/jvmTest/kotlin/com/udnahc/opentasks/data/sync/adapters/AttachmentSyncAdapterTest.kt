@@ -7,6 +7,7 @@ import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.PocketBaseRecordGateway
+import com.udnahc.opentasks.data.sync.AuthoritativeLocalSeedSourceException
 import com.udnahc.opentasks.data.sync.SyncAdapterException
 import com.udnahc.opentasks.data.sync.records.AttachmentRecord
 import com.udnahc.opentasks.testutil.FakeAttachmentFileStorage
@@ -479,6 +480,108 @@ class AttachmentSyncAdapterTest {
         assertTrue(stored.isSynced)
         assertEquals("remote-id", stored.pbId)
         assertTrue(requests.any { it.endsWith("attachments/records") })
+    }
+
+    @Test
+    fun authoritativeSourceValidationRejectsMissingBytesWithoutMutatingAttachment() = runTest {
+        val parent = testTask(id = "parent")
+        val attachment = testAttachment(id = "missing-bytes", ownerId = parent.id)
+        database.taskDao().insert(parent)
+        database.attachmentDao().insert(attachment)
+
+        assertFailsWith<AuthoritativeLocalSeedSourceException> {
+            createAdapter(FakeAttachmentFileStorage()).validateLocalSeedSource()
+        }
+
+        assertEquals(attachment, database.attachmentDao().findByIdAnyState(attachment.id))
+    }
+
+    @Test
+    fun authoritativeSourceValidationRejectsEveryNonUploadableActiveState() = runTest {
+        val parent = testTask(id = "parent")
+        database.taskDao().insert(parent)
+        val storage = FakeAttachmentFileStorage()
+        val invalidStates = listOf(
+            AttachmentSyncState.BLOCKED to null,
+            AttachmentSyncState.NEEDS_DOWNLOAD to null,
+            AttachmentSyncState.FAILED to "download_failed",
+            AttachmentSyncState.FAILED to "download_http_4xx",
+            AttachmentSyncState.FAILED to "download_http_5xx",
+        )
+
+        invalidStates.forEachIndexed { index, (state, error) ->
+            val attachment = testAttachment(
+                id = "invalid-$index",
+                ownerId = parent.id,
+                syncState = state,
+                lastSyncError = error,
+            )
+            storage.addFile(attachment.localPath)
+            database.attachmentDao().insert(attachment)
+
+            assertFailsWith<AuthoritativeLocalSeedSourceException>("$state/$error") {
+                createAdapter(storage).validateLocalSeedSource()
+            }
+
+            assertEquals(attachment, database.attachmentDao().findByIdAnyState(attachment.id))
+            database.attachmentDao().delete(attachment)
+        }
+    }
+
+    @Test
+    fun authoritativeSourceValidationRejectsActiveAttachmentWithoutLocalParent() = runTest {
+        val attachment = testAttachment(id = "orphan", ownerId = "missing-parent")
+        val storage = FakeAttachmentFileStorage().apply { addFile(attachment.localPath) }
+        database.attachmentDao().insert(attachment)
+
+        assertFailsWith<AuthoritativeLocalSeedSourceException> {
+            createAdapter(storage).validateLocalSeedSource()
+        }
+    }
+
+    @Test
+    fun authoritativeSourceValidationAcceptsLocalGraphWithoutRemoteIdsAndFilelessTombstone() = runTest {
+        val parent = testTask(id = "parent", pbId = null, isSynced = false)
+        val active = testAttachment(id = "active", ownerId = parent.id, pbId = null)
+        val tombstone = testAttachment(
+            id = "tombstone",
+            ownerId = "missing-parent",
+            localPath = "",
+            thumbnailPath = "",
+            isDeleted = true,
+            pbId = null,
+        )
+        val storage = FakeAttachmentFileStorage().apply { addFile(active.localPath) }
+        database.taskDao().insert(parent)
+        database.attachmentDao().insert(active)
+        database.attachmentDao().insert(tombstone)
+
+        createAdapter(storage).validateLocalSeedSource()
+
+        assertEquals(active, database.attachmentDao().findByIdAnyState(active.id))
+        assertEquals(tombstone, database.attachmentDao().findByIdAnyState(tombstone.id))
+    }
+
+    @Test
+    fun authoritativeSeedThrowsTypedLocalSourceErrorInsteadOfSkippingBlockedAttachment() = runTest {
+        val parent = testTask(id = "parent", pbId = "parent-remote", isSynced = true)
+        val blocked = testAttachment(
+            id = "blocked",
+            ownerId = parent.id,
+            syncState = AttachmentSyncState.BLOCKED,
+            isSynced = false,
+        )
+        val storage = FakeAttachmentFileStorage().apply { addFile(blocked.localPath) }
+        database.taskDao().insert(parent)
+        database.attachmentDao().insert(blocked)
+
+        assertFailsWith<AuthoritativeLocalSeedSourceException> {
+            createAdapter(storage).seedAllAuthoritative(
+                PocketBaseClientProvider().createClient("http://localhost:8090"),
+            )
+        }
+
+        assertEquals(blocked, database.attachmentDao().findByIdAnyState(blocked.id))
     }
 
     private fun createAdapter(storage: FakeAttachmentFileStorage) = AttachmentSyncAdapter(

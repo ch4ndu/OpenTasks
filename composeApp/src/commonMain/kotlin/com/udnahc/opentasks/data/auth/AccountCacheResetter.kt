@@ -71,6 +71,7 @@ internal interface AccountCacheResetterContract {
     suspend fun replaceCacheWithinMutation(
         binding: CacheBinding?,
         transition: AccountTransition?,
+        clearInstallationSettings: Boolean = false,
     )
 
     suspend fun clearAttachmentFilesWithinMutation()
@@ -83,6 +84,7 @@ internal class AccountCacheResetter(
     private val syncService: SyncService,
     private val mutationGate: AccountMutationGate,
     private val stateStore: AccountStateStore,
+    private val cancelPendingSync: suspend () -> Unit = {},
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AccountCacheResetterContract {
     suspend fun reset() {
@@ -90,7 +92,7 @@ internal class AccountCacheResetter(
     }
 
     override suspend fun resetWithinMutation() {
-        syncService.runExclusiveResetWithinAccountMutation {
+        syncService.runExclusiveResetWithinAccountMutation(cancelPendingSync) {
             withContext(ioDispatcher) {
                 // A legacy reset has no established source binding to recover.
                 // Clear files first so a later first login can never activate a
@@ -109,10 +111,11 @@ internal class AccountCacheResetter(
     override suspend fun replaceCacheWithinMutation(
         binding: CacheBinding?,
         transition: AccountTransition?,
+        clearInstallationSettings: Boolean,
     ) {
-        syncService.runExclusiveResetWithinAccountMutation {
+        syncService.runExclusiveResetWithinAccountMutation(cancelPendingSync) {
             withContext(ioDispatcher) {
-                replaceDatabaseAndPersist(binding, transition)
+                replaceDatabaseAndPersist(binding, transition, clearInstallationSettings)
             }
         }
     }
@@ -127,6 +130,7 @@ internal class AccountCacheResetter(
     private suspend fun replaceDatabaseAndPersist(
         binding: CacheBinding?,
         transition: AccountTransition?,
+        clearInstallationSettings: Boolean = false,
     ) {
         stateStore.replaceCacheAndPersist(binding, transition) {
             database.tagDao().deleteAllTaskTags()
@@ -136,6 +140,9 @@ internal class AccountCacheResetter(
             database.taskDao().deleteAll()
             database.noteDao().deleteAll()
             database.categoryDao().deleteAll()
+            if (clearInstallationSettings) {
+                database.appSettingsDao().deleteAll()
+            }
             database.categoryDao().insert(
                 Category(
                     id = AppConstants.DEFAULT_INBOX_ID,

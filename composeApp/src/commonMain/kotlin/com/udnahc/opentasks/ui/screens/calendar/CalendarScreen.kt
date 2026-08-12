@@ -161,6 +161,7 @@ fun CalendarScreen(
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
     onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
+    syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
     val tasksByDay by viewModel.tasksByDay.collectAsState()
@@ -192,6 +193,7 @@ fun CalendarScreen(
         onSelectedDateChanged = onSelectedDateChanged,
         onSettingsClick = onSettingsClick,
         isRefreshing = isRefreshing,
+        syncEnabled = syncEnabled,
         onRefresh = onRefresh,
     )
 
@@ -229,6 +231,7 @@ private fun CalendarContent(
     onSelectedDateChanged: (year: Int, month: Int, day: Int) -> Unit = { _, _, _ -> },
     onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
+    syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
     val density = LocalDensity.current
@@ -482,6 +485,7 @@ private fun CalendarContent(
         // ── Body ─────────────────────────────────────────────────────
         SyncPullToRefresh(
             isRefreshing = isRefreshing,
+            enabled = syncEnabled,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize(),
         ) {

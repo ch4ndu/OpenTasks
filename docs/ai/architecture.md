@@ -60,10 +60,14 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 
 ## PocketBase Sync
 
-- PocketBase uses pre-created `users` accounts. Task UI is mounted only for `AccountSessionState.Authenticated` after a durable `CacheBinding` proves the single Room cache belongs to that endpoint, server instance, account, capability version, and epoch.
+- A durable `CacheBinding` authorizes the single Room cache in either `LOCAL_ONLY` or `POCKETBASE` mode. Task UI is mounted for `AccountSessionState.LocalOnly` or `AccountSessionState.Authenticated`; restoring, transitions, and invalid mixed token/binding states keep it unmounted.
+- Local-only mode uses a reserved local owner plus boundary epoch and must not initialize PocketBase. PocketBase mode uses pre-created `users` accounts and proves endpoint, server instance, account, capability version, and epoch before activation.
 - All seven sync collections require an owner relation. PocketBase rules enforce owner-only access, and the structured gateway scopes every query/mutation and rejects raw cross-owner responses before DAO writes.
-- `AccountMutationGate` is the process-wide boundary for user writes, sync mutation, account switch/logout, and one-cache replacement. Do not construct independent production gates.
+- `AccountMutationGate` is the process-wide boundary for user writes, active-cache callbacks, sync mutation, local clear, account switch/logout, and one-cache replacement. Do not construct independent production gates.
+- Local foreground/background work uses active-cache boundaries. Provider activation, normal sync, manual/pull refresh, account switching, logout, and reauthentication remain PocketBase-only.
 - Switch/logout require an online source refresh, successful final sync, and zero unsynced rows. A durable transition marker makes crash recovery fail closed; task UI remains unmounted until the authoritative cache is activated and initially pulled.
+- Local clear persists `LOCAL_CLEAR/PRE_RESET` before resetting Room and `FILES_PENDING` before attachment cleanup; recovery resumes the indicated phase and converges to signed out.
+- Local-to-PocketBase connect is an explicitly confirmed authoritative replacement. Preflight is detached and count-only; confirmation revalidates opaque complete local/owner inventory fingerprints under the mutation gate, persists the transition before remote mutation, deletes only destination-owner rows, resets all local sync metadata without deleting content/files, exact-seeds, and activates only after final inventory equality. Any concurrent destination change retries through full delete/reset/reseed.
 - Authentication rejection requires same-account reauthentication. A connectivity-only refresh failure may enter offline mode only when an existing binding proves cache ownership.
 - Account-bound delayed callbacks carry `accountId` and `boundaryEpoch`; receivers, workers, and widgets reject stale payloads before reading or mutating task data.
 - Repositories soft-delete durable rows and trigger sync; `SyncService` and adapters use DAOs directly to avoid sync loops during pull.
@@ -71,9 +75,16 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 - Each collection pulls before pushing and uses last-write-wins by local database `updatedAt` / server `localUpdatedAt`.
 - Remote rows with newer timestamps overwrite local rows, including older unsynced local edits; unsynced local rows push only when newer. Equal timestamps succeed only when canonical payloads match.
 - App deletes are server tombstones (`isDeleted = true`) retained indefinitely, not PocketBase hard deletes. Never-synced local tombstones without `pbId` may be hard-deleted locally.
+- Owner hard deletion is permitted only inside a confirmed local-authoritative replacement against migration 012 capability `authoritativeReplaceVersion = 1`; it must never replace normal tombstone behavior.
 - After a successful full fetch, synced active local rows missing from the server are marked unsynced so push recreates them.
 - Task-tag assignments are synced as `task_tags` records with `localId = "$taskId:$tagId"` while keeping `(taskId, tagId)` as the local Room primary key.
 - Clock skew between devices can make the wrong edit win because there is no conflict UI or history.
+
+## Quick Add
+
+- Quick Add parsing is a pure common UseCase. The entry-scoped ViewModel owns the stable reference time, recognized/dismissed tokens, validation, save state, and captured active-cache boundary; composables never parse input.
+- The parser is offline, deterministic, English-only, suffix/token-bounded, and limited to the grammar documented in `docs/features/tasks.md`. Do not add fuzzy matching, AI/network parsing, categories, tags, priorities, reminders, or arbitrary recurrence intervals without a new approved contract.
+- Quick Add and the full task editor receive the same opening-surface category, priority, and optional Calendar civil date. Explicit parsed date/time/recurrence overrides only its corresponding inferred field. Persistence reuses `AddTaskAction`.
 
 ## Priority System
 

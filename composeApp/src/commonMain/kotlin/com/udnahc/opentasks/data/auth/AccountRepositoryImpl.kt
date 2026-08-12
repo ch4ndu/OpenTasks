@@ -3,6 +3,8 @@ package com.udnahc.opentasks.data.auth
 import com.udnahc.opentasks.LocalSyncDefaults
 import com.udnahc.opentasks.data.settings.AccountStateStore
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
+import com.udnahc.opentasks.data.sync.AuthoritativeServerReplaceContract
+import com.udnahc.opentasks.data.sync.PocketBaseServerInventory
 import com.udnahc.opentasks.data.sync.SyncService
 import com.udnahc.opentasks.data.sync.canonicalUrl
 import com.udnahc.opentasks.data.notification.ReminderScheduler
@@ -13,6 +15,12 @@ import kotlin.coroutines.cancellation.CancellationException
 import org.lighthousegames.logging.logging
 
 private val log = logging("AccountRepository")
+private const val AUTHORITATIVE_REPLACE_VERSION = 1
+
+private data class PreparedReplacement(
+    val credential: AccountCredential,
+    val preview: LocalServerReplacementPreview,
+)
 
 internal class AccountRepositoryImpl(
     private val tokenStore: AuthTokenStore,
@@ -25,18 +33,23 @@ internal class AccountRepositoryImpl(
     private val syncService: AccountSyncCoordinator,
     private val reminderScheduler: ReminderScheduler,
     private val buildTimePocketBaseUrl: String = LocalSyncDefaults.POCKETBASE_URL,
+    private val replacementExecutor: AuthoritativeServerReplaceContract? = null,
 ) : AccountRepository {
     private val _sessionState = MutableStateFlow<AccountSessionState>(AccountSessionState.Restoring)
 
     override val sessionState: StateFlow<AccountSessionState> = _sessionState.asStateFlow()
 
+    private var preparedReplacement: PreparedReplacement? = null
+
     override suspend fun restoreSession(): AccountSessionState {
         log.d { "Session restore waiting for the account mutation gate" }
         return mutationGate.withExclusive {
             log.d { "Session restore acquired the account mutation gate" }
-            val live = _sessionState.value as? AccountSessionState.Authenticated
+            val live = _sessionState.value.takeIf {
+                it.activeBindingOrNull()?.isValidActiveBinding() == true
+            }
             if (live != null) {
-                log.d { "Session restore reused the authenticated session published by an earlier caller" }
+                log.d { "Session restore reused the active-cache session published by an earlier caller" }
                 return@withExclusive live
             }
             publish(AccountSessionState.Restoring)
@@ -70,11 +83,157 @@ internal class AccountRepositoryImpl(
         }
     }
 
+    override suspend fun startLocalOnly(): AccountSessionState = mutationGate.withExclusive {
+        val transition = stateStore.readTransition()
+        if (transition != null) return@withExclusive publish(AccountSessionState.Transitioning(transition))
+
+        val existingBinding = stateStore.readCacheBinding()
+        if (existingBinding?.mode == CacheMode.POCKETBASE) {
+            throw AccountTransitionBlockedException(
+                "A PocketBase-bound cache cannot be relabeled as local-only",
+            )
+        }
+
+        tokenStore.clearAllTokens()
+        pbProvider.disconnect()
+        val localBinding = existingBinding?.takeIf { it.isValidLocalBinding() } ?: CacheBinding(
+            canonicalEndpoint = "",
+            serverInstanceId = "",
+            accountId = LOCAL_CACHE_OWNER_ID,
+            capabilityVersion = 0,
+            boundaryEpoch = nextBoundaryEpoch(0L),
+            mode = CacheMode.LOCAL_ONLY,
+        )
+        stateStore.writeCacheBinding(localBinding)
+        publish(AccountSessionState.LocalOnly(localBinding))
+    }
+
+    override suspend fun clearLocalData(): AccountSessionState = mutationGate.withExclusive {
+        val transition = stateStore.readTransition()
+        if (transition != null) return@withExclusive recoverTransitionWithinMutation(transition)
+
+        val binding = stateStore.readCacheBinding()
+            ?.takeIf { it.isValidLocalBinding() }
+            ?: throw AccountTransitionBlockedException("Clear Local Data requires an active local-only cache")
+        val preReset = AccountTransition(
+            sourceAccountId = binding.accountId,
+            destinationAccountId = "",
+            canonicalEndpoint = "",
+            serverInstanceId = "",
+            capabilityVersion = 0,
+            boundaryEpoch = nextBoundaryEpoch(binding.boundaryEpoch),
+            phase = AccountTransitionPhase.PRE_RESET,
+            purpose = AccountTransitionPurpose.LOCAL_CLEAR,
+        )
+        stateStore.writeTransition(preReset)
+        publish(AccountSessionState.Transitioning(preReset))
+        completeLocalClearWithinMutation(preReset)
+    }
+
+    override suspend fun prepareLocalServerReplacement(
+        endpoint: String,
+        email: String,
+        password: String,
+    ): LocalServerReplacementPreview {
+        val localBoundary = mutationGate.withExclusive {
+            requireLocalReplacementSource()
+        }
+        val credential = authenticator.authenticate(canonicalizeAccountEndpoint(endpoint), email, password)
+        if (credential.capability.authoritativeReplaceVersion != AUTHORITATIVE_REPLACE_VERSION) {
+            throw AccountCapabilityRejectedException(
+                "PocketBase authoritative replacement capability is unsupported",
+            )
+        }
+        val inventory = credential.capability.ownerInventory
+            ?: authenticator.readOwnerInventory(credential)
+        return mutationGate.withExclusive {
+            val current = requireLocalReplacementSource()
+            if (current != localBoundary) {
+                throw AccountTransitionBlockedException("The local cache boundary changed during replacement preflight")
+            }
+            val preview = replacementPreview(credential, inventory)
+            preparedReplacement = PreparedReplacement(credential, preview)
+            preview
+        }
+    }
+
+    override suspend fun confirmLocalServerReplacement(): LocalServerReplacementConfirmation =
+        mutationGate.withExclusive {
+            val prepared = preparedReplacement
+                ?: throw AccountTransitionBlockedException("No authoritative replacement is prepared")
+            val localBinding = requireLocalReplacementSource()
+            val freshInventory = authenticator.readOwnerInventory(prepared.credential)
+            val freshPreview = replacementPreview(prepared.credential, freshInventory)
+            if (freshPreview.ownerInventoryFingerprint != prepared.preview.ownerInventoryFingerprint ||
+                freshPreview.localInventoryFingerprint != prepared.preview.localInventoryFingerprint ||
+                freshPreview.canonicalEndpoint != prepared.preview.canonicalEndpoint ||
+                freshPreview.serverInstanceId != prepared.preview.serverInstanceId ||
+                freshPreview.account.accountId != prepared.preview.account.accountId
+            ) {
+                preparedReplacement = prepared.copy(preview = freshPreview)
+                return@withExclusive LocalServerReplacementConfirmation.PreviewChanged(freshPreview)
+            }
+
+            val executor = replacementExecutor
+                ?: error("Authoritative replacement executor is unavailable")
+            executor.validateLocalSeedSource()
+            val destinationBinding = CacheBinding(
+                canonicalEndpoint = prepared.credential.endpoint.canonicalUrl,
+                serverInstanceId = prepared.credential.capability.serverInstanceId,
+                accountId = prepared.credential.account.accountId,
+                capabilityVersion = prepared.credential.capability.capabilityVersion,
+                boundaryEpoch = nextBoundaryEpoch(localBinding.boundaryEpoch),
+            )
+            val transition = AccountTransition(
+                sourceAccountId = LOCAL_CACHE_OWNER_ID,
+                destinationAccountId = destinationBinding.accountId,
+                canonicalEndpoint = destinationBinding.canonicalEndpoint,
+                serverInstanceId = destinationBinding.serverInstanceId,
+                capabilityVersion = destinationBinding.capabilityVersion,
+                boundaryEpoch = destinationBinding.boundaryEpoch,
+                phase = AccountTransitionPhase.REMOTE_DELETE_PENDING,
+                purpose = AccountTransitionPurpose.LOCAL_AUTHORITATIVE_REPLACEMENT,
+            )
+
+            tokenStore.writePendingToken(prepared.credential.token)
+            try {
+                executor.persistConfirmedBoundary(destinationBinding, transition)
+            } catch (error: Throwable) {
+                tokenStore.clearPendingToken()
+                throw error
+            }
+            preparedReplacement = null
+            publish(AccountSessionState.Transitioning(transition))
+            reminderScheduler.cancelAllAccountReminders()
+            pbProvider.disconnect()
+            completeAuthoritativeReplacementWithinMutation(
+                binding = destinationBinding,
+                transition = transition,
+                credential = prepared.credential,
+            )
+            LocalServerReplacementConfirmation.Started
+        }
+
+    override suspend fun cancelLocalServerReplacementPreparation() {
+        mutationGate.withExclusive {
+            if (stateStore.readTransition()?.purpose == AccountTransitionPurpose.LOCAL_AUTHORITATIVE_REPLACEMENT) {
+                throw AccountTransitionBlockedException("A confirmed authoritative replacement cannot be cancelled")
+            }
+            preparedReplacement = null
+            tokenStore.clearPendingToken()
+        }
+    }
+
     override suspend fun login(
         endpoint: String,
         email: String,
         password: String,
     ): AccountSessionState = mutationGate.withExclusive {
+        if (stateStore.readCacheBinding()?.mode == CacheMode.LOCAL_ONLY) {
+            throw AccountTransitionBlockedException(
+                "Local-only data must use the confirmed authoritative replacement flow",
+            )
+        }
         val credential = authenticator.authenticate(canonicalizeAccountEndpoint(endpoint), email, password)
         applyCredentialWithinMutation(credential)
     }
@@ -84,6 +243,11 @@ internal class AccountRepositoryImpl(
         email: String,
         password: String,
     ): AccountSessionState = mutationGate.withExclusive {
+        if (stateStore.readCacheBinding()?.mode == CacheMode.LOCAL_ONLY) {
+            throw AccountTransitionBlockedException(
+                "Local-only data must use the confirmed authoritative replacement flow",
+            )
+        }
         val credential = authenticator.authenticate(canonicalizeAccountEndpoint(endpoint), email, password)
         val currentBinding = stateStore.readCacheBinding()
         if (currentBinding == null || currentBinding.accountId == credential.account.accountId) {
@@ -104,6 +268,9 @@ internal class AccountRepositoryImpl(
                     reason = AccountReauthenticationReason.CACHE_BINDING_MISSING,
                 )
             )
+        if (binding.mode != CacheMode.POCKETBASE) {
+            throw AccountTransitionBlockedException("Local-only caches do not support reauthentication")
+        }
         val transition = stateStore.readTransition()
         if (transition?.phase == AccountTransitionPhase.PREPARED) {
             return@withExclusive publish(AccountSessionState.Transitioning(transition))
@@ -128,6 +295,23 @@ internal class AccountRepositoryImpl(
                 )
             )
         }
+        if (transition?.purpose == AccountTransitionPurpose.LOCAL_AUTHORITATIVE_REPLACEMENT) {
+            if (credential.capability.authoritativeReplaceVersion != AUTHORITATIVE_REPLACE_VERSION) {
+                return@withExclusive publish(
+                    AccountSessionState.ReauthenticationRequired(
+                        account = credential.account,
+                        reason = AccountReauthenticationReason.CAPABILITY_MISMATCH,
+                        canonicalEndpoint = binding.canonicalEndpoint,
+                    )
+                )
+            }
+            tokenStore.writePendingToken(credential.token)
+            return@withExclusive completeAuthoritativeReplacementWithinMutation(
+                binding = binding,
+                transition = transition,
+                credential = credential,
+            )
+        }
         completeSameAccountCredentialWithinMutation(binding, credential, transition)
     }
 
@@ -142,6 +326,9 @@ internal class AccountRepositoryImpl(
             tokenStore.clearAllTokens()
             stateStore.clearTransition()
             return@withExclusive publish(AccountSessionState.SignedOut)
+        }
+        if (binding.mode != CacheMode.POCKETBASE) {
+            throw AccountTransitionBlockedException("Local-only caches do not support logout")
         }
 
         val activeClient = refreshSourceWithinMutation(binding, "Logout")
@@ -343,9 +530,10 @@ internal class AccountRepositoryImpl(
 
         val binding = stateStore.readCacheBinding()
         val activeToken = tokenStore.readActiveToken()
+        val pendingToken = tokenStore.readPendingToken()
         log.d {
             "Session restore loaded persisted state; binding=${binding != null}, " +
-                "activeToken=${activeToken != null}"
+                "activeToken=${activeToken != null}, pendingToken=${pendingToken != null}"
         }
         if (binding == null && activeToken == null) {
             log.d { "Session restore found no persisted account" }
@@ -363,6 +551,22 @@ internal class AccountRepositoryImpl(
                     reason = AccountReauthenticationReason.CACHE_BINDING_MISSING,
                 )
             )
+        }
+        if (binding.mode == CacheMode.LOCAL_ONLY) {
+            if (activeToken != null || pendingToken != null) {
+                log.w { "Session restore found remote credentials paired with a local-only cache" }
+                tokenStore.clearAllTokens()
+                pbProvider.disconnect()
+                return publish(
+                    AccountSessionState.ReauthenticationRequired(
+                        account = null,
+                        reason = AccountReauthenticationReason.PERSISTED_STATE_INVALID,
+                    )
+                )
+            }
+            tokenStore.clearPendingToken()
+            pbProvider.disconnect()
+            return publish(AccountSessionState.LocalOnly(binding))
         }
         if (activeToken == null) {
             log.w { "Session restore found a cache binding without an active token" }
@@ -460,6 +664,13 @@ internal class AccountRepositoryImpl(
     }
 
     private suspend fun recoverTransitionWithinMutation(transition: AccountTransition): AccountSessionState {
+        if (transition.purpose == AccountTransitionPurpose.LOCAL_CLEAR) {
+            publish(AccountSessionState.Transitioning(transition))
+            return completeLocalClearWithinMutation(transition)
+        }
+        if (transition.purpose == AccountTransitionPurpose.LOCAL_AUTHORITATIVE_REPLACEMENT) {
+            return recoverAuthoritativeReplacementWithinMutation(transition)
+        }
         if (transition.phase == AccountTransitionPhase.PREPARED) {
             tokenStore.clearPendingToken()
             stateStore.clearTransition()
@@ -571,6 +782,184 @@ internal class AccountRepositoryImpl(
         } catch (error: Throwable) {
             log.w { "Account transition recovery remains pending" }
             publish(AccountSessionState.Transitioning(transition))
+        }
+    }
+
+    private suspend fun recoverAuthoritativeReplacementWithinMutation(
+        transition: AccountTransition,
+    ): AccountSessionState {
+        pbProvider.disconnect()
+        publish(AccountSessionState.Transitioning(transition))
+        reminderScheduler.cancelAllAccountReminders()
+        val binding = stateStore.readCacheBinding()
+        if (binding == null ||
+            binding.accountId != transition.destinationAccountId ||
+            binding.canonicalEndpoint != transition.canonicalEndpoint ||
+            binding.serverInstanceId != transition.serverInstanceId ||
+            binding.capabilityVersion != transition.capabilityVersion ||
+            binding.boundaryEpoch != transition.boundaryEpoch ||
+            binding.mode != CacheMode.POCKETBASE
+        ) {
+            return publish(
+                AccountSessionState.ReauthenticationRequired(
+                    account = AuthenticatedAccount(transition.destinationAccountId),
+                    reason = AccountReauthenticationReason.CACHE_BINDING_MISMATCH,
+                    canonicalEndpoint = transition.canonicalEndpoint,
+                )
+            )
+        }
+        val token = tokenStore.readPendingToken() ?: tokenStore.readActiveToken()
+        if (token == null) {
+            return publish(
+                AccountSessionState.ReauthenticationRequired(
+                    account = AuthenticatedAccount(binding.accountId),
+                    reason = AccountReauthenticationReason.TOKEN_UNAVAILABLE,
+                    canonicalEndpoint = binding.canonicalEndpoint,
+                )
+            )
+        }
+        val credential = try {
+            authenticator.refresh(canonicalizeAccountEndpoint(binding.canonicalEndpoint), token)
+        } catch (error: AccountAuthenticationRejectedException) {
+            return publish(
+                AccountSessionState.ReauthenticationRequired(
+                    account = AuthenticatedAccount(binding.accountId),
+                    reason = AccountReauthenticationReason.AUTHENTICATION_REJECTED,
+                    canonicalEndpoint = binding.canonicalEndpoint,
+                )
+            )
+        } catch (error: AccountCapabilityRejectedException) {
+            return publish(
+                AccountSessionState.ReauthenticationRequired(
+                    account = AuthenticatedAccount(binding.accountId),
+                    reason = AccountReauthenticationReason.CAPABILITY_MISMATCH,
+                    canonicalEndpoint = binding.canonicalEndpoint,
+                )
+            )
+        }
+        if (!binding.matches(credential) ||
+            credential.capability.authoritativeReplaceVersion != AUTHORITATIVE_REPLACE_VERSION
+        ) {
+            return publish(
+                AccountSessionState.ReauthenticationRequired(
+                    account = credential.account,
+                    reason = AccountReauthenticationReason.CAPABILITY_MISMATCH,
+                    canonicalEndpoint = binding.canonicalEndpoint,
+                )
+            )
+        }
+        tokenStore.writePendingToken(credential.token)
+        return completeAuthoritativeReplacementWithinMutation(binding, transition, credential)
+    }
+
+    private suspend fun completeAuthoritativeReplacementWithinMutation(
+        binding: CacheBinding,
+        transition: AccountTransition,
+        credential: AccountCredential,
+    ): AccountSessionState {
+        val executor = replacementExecutor
+            ?: error("Authoritative replacement executor is unavailable")
+        val client = pbProvider.createDetachedBoundClient(binding, credential.token)
+        return try {
+            val needsActivation = executor.resume(client, binding, transition)
+            publish(AccountSessionState.Transitioning(needsActivation))
+            tokenStore.promotePendingToken()
+            val activeClient = pbProvider.activate(binding, credential.token)
+            check(PocketBaseClientProvider.bindingFor(activeClient) == binding) {
+                "PocketBase replacement activation lost its account boundary"
+            }
+            stateStore.clearTransition()
+            publish(
+                AccountSessionState.Authenticated(
+                    account = credential.account,
+                    binding = binding,
+                    freshness = AccountSessionFreshness.ONLINE,
+                )
+            )
+        } catch (error: CancellationException) {
+            pbProvider.disconnect()
+            stateStore.readTransition()?.let { publish(AccountSessionState.Transitioning(it)) }
+            throw error
+        } catch (error: Throwable) {
+            pbProvider.disconnect()
+            stateStore.readTransition()?.let { publish(AccountSessionState.Transitioning(it)) }
+            throw error
+        } finally {
+            pbProvider.releaseDetachedClient(client)
+        }
+    }
+
+    private suspend fun requireLocalReplacementSource(): CacheBinding {
+        if (stateStore.readTransition() != null) {
+            throw AccountTransitionBlockedException("Another account transition is already pending")
+        }
+        return stateStore.readCacheBinding()
+            ?.takeIf { it.isValidLocalBinding() }
+            ?: throw AccountTransitionBlockedException(
+                "Authoritative replacement requires an active local-only cache",
+            )
+    }
+
+    private suspend fun replacementPreview(
+        credential: AccountCredential,
+        inventory: PocketBaseServerInventory,
+    ): LocalServerReplacementPreview {
+        if (inventory.serverInstanceId != credential.capability.serverInstanceId ||
+            inventory.accountId != credential.account.accountId
+        ) {
+            throw AccountCapabilityRejectedException("PocketBase owner inventory boundary changed")
+        }
+        val counts = inventory.replacementCounts()
+        return LocalServerReplacementPreview(
+            canonicalEndpoint = credential.endpoint.canonicalUrl,
+            account = credential.account,
+            serverInstanceId = inventory.serverInstanceId,
+            authoritativeReplaceVersion = credential.capability.authoritativeReplaceVersion,
+            collectionCounts = counts,
+            attachmentCount = counts.firstOrNull { it.collection == "attachments" }?.active ?: 0,
+            ownerInventoryFingerprint = inventory.replacementFingerprint(
+                credential.endpoint.canonicalUrl,
+                credential.account.accountId,
+            ),
+            localInventoryFingerprint = replacementExecutor
+                ?.localInventoryFingerprint()
+                ?: error("Authoritative replacement executor is unavailable"),
+        )
+    }
+
+    private suspend fun completeLocalClearWithinMutation(
+        transition: AccountTransition,
+    ): AccountSessionState {
+        var durableTransition = transition
+        try {
+            reminderScheduler.cancelAllAccountReminders()
+            if (durableTransition.phase == AccountTransitionPhase.PRE_RESET) {
+                val filesPending = durableTransition.copy(phase = AccountTransitionPhase.FILES_PENDING)
+                cacheResetter.replaceCacheWithinMutation(
+                    binding = null,
+                    transition = filesPending,
+                    clearInstallationSettings = true,
+                )
+                durableTransition = filesPending
+                publish(AccountSessionState.Transitioning(durableTransition))
+            }
+            check(durableTransition.phase == AccountTransitionPhase.FILES_PENDING) {
+                "Local clear has an invalid recovery phase"
+            }
+            cacheResetter.clearAttachmentFilesWithinMutation()
+            tokenStore.clearAllTokens()
+            stateStore.clearCacheBinding()
+            stateStore.clearTransition()
+            pbProvider.disconnect()
+            return publish(AccountSessionState.SignedOut)
+        } catch (error: CancellationException) {
+            pbProvider.disconnect()
+            publish(AccountSessionState.Transitioning(durableTransition))
+            throw error
+        } catch (error: Throwable) {
+            pbProvider.disconnect()
+            publish(AccountSessionState.Transitioning(durableTransition))
+            throw error
         }
     }
 
@@ -689,6 +1078,7 @@ private fun AccountSessionState.diagnosticName(): String = when (this) {
     AccountSessionState.Restoring -> "restoring"
     AccountSessionState.SignedOut -> "signed-out"
     is AccountSessionState.Authenticated -> "authenticated-${freshness.name.lowercase()}"
+    is AccountSessionState.LocalOnly -> "local-only"
     is AccountSessionState.ReauthenticationRequired -> "reauthentication-${reason.name.lowercase()}"
     is AccountSessionState.Transitioning -> "transitioning-${transition.phase.name.lowercase()}"
 }

@@ -4,6 +4,11 @@ import androidx.room.immediateTransaction
 import androidx.room.useWriterConnection
 import com.udnahc.opentasks.data.auth.AccountTransition
 import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.auth.AccountTransitionPhase
+import com.udnahc.opentasks.data.auth.AccountTransitionPurpose
+import com.udnahc.opentasks.data.auth.CacheMode
+import com.udnahc.opentasks.data.auth.LOCAL_CACHE_OWNER_ID
+import com.udnahc.opentasks.data.auth.isValidActiveBinding
 import com.udnahc.opentasks.data.auth.SecureTokenStoreException
 import com.udnahc.opentasks.data.dao.AppSettingsDao
 import com.udnahc.opentasks.data.database.AppDatabase
@@ -68,7 +73,11 @@ class RoomAccountStateStore(
                             json.encodeToString(CacheBinding.serializer(), binding),
                         )
                     )
-                    settings.setValue(AppSettings(KEY_POCKETBASE_URL, binding.canonicalEndpoint))
+                    if (binding.mode == CacheMode.POCKETBASE) {
+                        settings.setValue(AppSettings(KEY_POCKETBASE_URL, binding.canonicalEndpoint))
+                    } else {
+                        settings.removeValue(KEY_POCKETBASE_URL)
+                    }
                     removeLegacyServerIdentity(settings)
                     updateLastBoundaryEpoch(settings, binding.boundaryEpoch)
                 }
@@ -155,23 +164,45 @@ class RoomAccountStateStore(
     }
 
     private fun CacheBinding.validateStored() {
-        if (canonicalEndpoint.isBlank() ||
-            serverInstanceId.isBlank() ||
-            accountId.isBlank() ||
-            capabilityVersion <= 0 ||
-            boundaryEpoch < 0L
-        ) {
+        if (!isValidActiveBinding()) {
             throw SecureTokenStoreException("Stored account cache binding is invalid")
         }
     }
 
     private fun AccountTransition.validateStored() {
-        if (sourceAccountId.isBlank() && destinationAccountId.isBlank() ||
-            canonicalEndpoint.isBlank() ||
-            serverInstanceId.isBlank() ||
-            capabilityVersion <= 0 ||
-            boundaryEpoch < 0L
-        ) {
+        val isValid = when (purpose) {
+            AccountTransitionPurpose.ACCOUNT_CHANGE ->
+                (sourceAccountId.isNotBlank() || destinationAccountId.isNotBlank()) &&
+                    canonicalEndpoint.isNotBlank() &&
+                    serverInstanceId.isNotBlank() &&
+                    capabilityVersion > 0 &&
+                    boundaryEpoch > 0L &&
+                    phase in setOf(AccountTransitionPhase.PREPARED, AccountTransitionPhase.NEEDS_ACTIVATION)
+
+            AccountTransitionPurpose.LOCAL_CLEAR ->
+                sourceAccountId == LOCAL_CACHE_OWNER_ID &&
+                    destinationAccountId.isBlank() &&
+                    canonicalEndpoint.isEmpty() &&
+                    serverInstanceId.isEmpty() &&
+                    capabilityVersion == 0 &&
+                    boundaryEpoch > 0L &&
+                    phase in setOf(AccountTransitionPhase.PRE_RESET, AccountTransitionPhase.FILES_PENDING)
+
+            AccountTransitionPurpose.LOCAL_AUTHORITATIVE_REPLACEMENT ->
+                sourceAccountId == LOCAL_CACHE_OWNER_ID &&
+                    destinationAccountId.isNotBlank() &&
+                    destinationAccountId != LOCAL_CACHE_OWNER_ID &&
+                    canonicalEndpoint.isNotBlank() &&
+                    serverInstanceId.isNotBlank() &&
+                    capabilityVersion > 0 &&
+                    boundaryEpoch > 0L &&
+                    phase in setOf(
+                        AccountTransitionPhase.REMOTE_DELETE_PENDING,
+                        AccountTransitionPhase.EXACT_SEED_PENDING,
+                        AccountTransitionPhase.NEEDS_ACTIVATION,
+                    )
+        }
+        if (!isValid) {
             throw SecureTokenStoreException("Stored account transition is invalid")
         }
     }
@@ -194,7 +225,11 @@ class RoomAccountStateStore(
                     json.encodeToString(CacheBinding.serializer(), binding),
                 )
             )
-            settings.setValue(AppSettings(KEY_POCKETBASE_URL, binding.canonicalEndpoint))
+            if (binding.mode == CacheMode.POCKETBASE) {
+                settings.setValue(AppSettings(KEY_POCKETBASE_URL, binding.canonicalEndpoint))
+            } else {
+                settings.removeValue(KEY_POCKETBASE_URL)
+            }
         }
         removeLegacyServerIdentity(settings)
         updateLastBoundaryEpoch(

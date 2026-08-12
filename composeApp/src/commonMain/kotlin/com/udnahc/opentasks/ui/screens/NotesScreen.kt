@@ -43,6 +43,7 @@ fun NotesScreen(
     onNoteClick: (Note) -> Unit,
     onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
+    syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
     val notes by viewModel.noteListItems.collectAsState()
@@ -51,6 +52,7 @@ fun NotesScreen(
         onNoteClick = onNoteClick,
         onSettingsClick = onSettingsClick,
         isRefreshing = isRefreshing,
+        syncEnabled = syncEnabled,
         onRefresh = onRefresh,
     )
 }
@@ -62,6 +64,7 @@ internal fun NotesContent(
     onNoteClick: (Note) -> Unit,
     onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
+    syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -77,6 +80,7 @@ internal fun NotesContent(
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         SyncPullToRefresh(
             isRefreshing = isRefreshing,
+            enabled = syncEnabled,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize(),
         ) {

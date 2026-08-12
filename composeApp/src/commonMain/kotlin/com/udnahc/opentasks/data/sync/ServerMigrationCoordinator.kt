@@ -5,6 +5,9 @@ import androidx.room.useWriterConnection
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.AppSettings
 import com.udnahc.opentasks.data.model.AppConstants
+import com.udnahc.opentasks.data.auth.AccountTransition
+import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.settings.AccountStateStore
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -13,6 +16,7 @@ import kotlinx.coroutines.withContext
 /** Owns the one-transaction handoff from the old server identity to a validated candidate. */
 class ServerMigrationCoordinator(
     private val database: AppDatabase,
+    private val accountStateStore: AccountStateStore? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     suspend fun classifyLocalStorage(): LocalStorageState = withContext(ioDispatcher) {
@@ -67,6 +71,33 @@ class ServerMigrationCoordinator(
             database.tagDao().getAllTaskTagsOnce().any { taskTag ->
                 remoteIdsByLocalId["${taskTag.taskId}:${taskTag.tagId}"] == taskTag.pbId
             }
+    }
+
+    /** Retains all content/files while resetting every sync acknowledgement in one Room transaction. */
+    suspend fun resetForAuthoritativeSeed(
+        binding: CacheBinding,
+        transition: AccountTransition,
+    ) = withContext(ioDispatcher) {
+        val stateStore = accountStateStore
+            ?: error("Authoritative replacement requires AccountStateStore")
+        stateStore.replaceCacheAndPersist(binding, transition) {
+            database.appSettingsDao().setValue(
+                AppSettings(SyncSettingsKeys.MODE, SyncMode.AUTHORITATIVE_REPLACE_PENDING.name),
+            )
+            resetForSeed()
+        }
+    }
+
+    suspend fun persistAuthoritativePhase(
+        binding: CacheBinding,
+        transition: AccountTransition,
+        mode: SyncMode = SyncMode.AUTHORITATIVE_REPLACE_PENDING,
+    ) = withContext(ioDispatcher) {
+        val stateStore = accountStateStore
+            ?: error("Authoritative replacement requires AccountStateStore")
+        stateStore.replaceCacheAndPersist(binding, transition) {
+            database.appSettingsDao().setValue(AppSettings(SyncSettingsKeys.MODE, mode.name))
+        }
     }
 
     private suspend fun resetForSeed() {

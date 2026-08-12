@@ -31,7 +31,7 @@ class TaskRefreshCallback : ActionCallback, KoinComponent {
     ) {
         log.d { "Task widget refresh triggered" }
         try {
-            val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+            val refreshed = widgetAccountGate.withActiveCacheBoundary { boundary ->
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
                 }
@@ -40,7 +40,7 @@ class TaskRefreshCallback : ActionCallback, KoinComponent {
                 TaskWidget.refreshWidgetWithinBoundary(context, appWidgetId, boundary)
                 log.d { "Task widget refreshed" }
             }
-            if (refreshed == null) log.d { "Skipped task widget action without an authenticated boundary" }
+            if (refreshed == null) log.d { "Skipped task widget action without an active cache boundary" }
         } catch (e: Exception) {
             log.e(e) { "Task widget refresh failed" }
         }
@@ -59,7 +59,7 @@ class CalendarRefreshCallback : ActionCallback, KoinComponent {
     ) {
         log.d { "Calendar widget refresh triggered" }
         try {
-            val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+            val refreshed = widgetAccountGate.withActiveCacheBoundary { boundary ->
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
                 }
@@ -68,7 +68,7 @@ class CalendarRefreshCallback : ActionCallback, KoinComponent {
                 CalendarWidget.refreshWidgetWithinBoundary(context, appWidgetId, boundary)
                 log.d { "Calendar widget refreshed" }
             }
-            if (refreshed == null) log.d { "Skipped calendar widget action without an authenticated boundary" }
+            if (refreshed == null) log.d { "Skipped calendar widget action without an active cache boundary" }
         } catch (e: Exception) {
             log.e(e) { "Calendar widget refresh failed" }
         }
@@ -87,7 +87,7 @@ class WeekRefreshCallback : ActionCallback, KoinComponent {
     ) {
         log.d { "Week widget refresh triggered" }
         try {
-            val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+            val refreshed = widgetAccountGate.withActiveCacheBoundary { boundary ->
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
                 }
@@ -96,7 +96,7 @@ class WeekRefreshCallback : ActionCallback, KoinComponent {
                 WeekWidget.refreshWidgetWithinBoundary(context, appWidgetId, boundary)
                 log.d { "Week widget refreshed" }
             }
-            if (refreshed == null) log.d { "Skipped week widget action without an authenticated boundary" }
+            if (refreshed == null) log.d { "Skipped week widget action without an active cache boundary" }
         } catch (e: Exception) {
             log.e(e) { "Week widget refresh failed" }
         }

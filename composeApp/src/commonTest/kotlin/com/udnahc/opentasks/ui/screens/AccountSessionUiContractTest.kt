@@ -7,6 +7,8 @@ import com.udnahc.opentasks.data.auth.AccountTransition
 import com.udnahc.opentasks.data.auth.AccountTransitionPhase
 import com.udnahc.opentasks.data.auth.AuthenticatedAccount
 import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.auth.CacheMode
+import com.udnahc.opentasks.data.auth.LOCAL_CACHE_OWNER_ID
 import com.udnahc.opentasks.ui.theme.WindowSizeCategory
 import com.udnahc.opentasks.viewmodel.AccountOperation
 import com.udnahc.opentasks.viewmodel.AccountUiError
@@ -59,7 +61,17 @@ class AccountSessionUiContractTest {
                 account = account,
                 binding = binding,
                 freshness = AccountSessionFreshness.ONLINE,
-            ) to AccountSessionRoute.AUTHENTICATED,
+            ) to AccountSessionRoute.ACTIVE,
+            AccountSessionState.LocalOnly(
+                CacheBinding(
+                    canonicalEndpoint = "",
+                    serverInstanceId = "",
+                    accountId = LOCAL_CACHE_OWNER_ID,
+                    capabilityVersion = 0,
+                    boundaryEpoch = 9L,
+                    mode = CacheMode.LOCAL_ONLY,
+                )
+            ) to AccountSessionRoute.ACTIVE,
         )
 
         routes.forEach { (state, expectedRoute) ->
@@ -131,17 +143,27 @@ class AccountSessionUiContractTest {
 
     @Test
     fun accountControlsExposeSameAccountActionsAndDisableThemDuringTransitions() {
-        val noAccount = accountControlAvailability(null, operation = null)
+        val noAccount = accountControlAvailability(null, isLocalOnly = false, operation = null)
         assertFalse(noAccount.canSwitchAccount)
-        assertTrue(noAccount.canLogout)
+        assertFalse(noAccount.canLogout)
+        assertFalse(noAccount.canClearLocalData)
+        assertFalse(noAccount.canConnectPocketBase)
 
-        val available = accountControlAvailability(account, operation = null)
+        val available = accountControlAvailability(account, isLocalOnly = false, operation = null)
         assertTrue(available.canSwitchAccount)
         assertTrue(available.canLogout)
+        assertFalse(available.canClearLocalData)
+        assertFalse(available.canConnectPocketBase)
 
-        val busy = accountControlAvailability(account, AccountOperation.SWITCHING)
+        val busy = accountControlAvailability(account, false, AccountOperation.SWITCHING)
         assertFalse(busy.canSwitchAccount)
         assertFalse(busy.canLogout)
+
+        val local = accountControlAvailability(null, isLocalOnly = true, operation = null)
+        assertFalse(local.canSwitchAccount)
+        assertFalse(local.canLogout)
+        assertTrue(local.canClearLocalData)
+        assertTrue(local.canConnectPocketBase)
     }
 
     @Test

@@ -47,7 +47,7 @@ class CalendarWidgetSettingsActivity : ComponentActivity(), KoinComponent {
         }
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val initialPrefs = widgetAccountGate.withAuthenticatedBoundary {
+            val initialPrefs = widgetAccountGate.withActiveCacheBoundary {
                 CalendarWidgetPreferences.load(this@CalendarWidgetSettingsActivity, appWidgetId)
             }
             withContext(Dispatchers.Main) {
@@ -70,7 +70,7 @@ class CalendarWidgetSettingsActivity : ComponentActivity(), KoinComponent {
 
     private fun saveAndFinish(prefs: CalendarWidgetPreferences, appWidgetId: Int) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val saved = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+            val saved = widgetAccountGate.withActiveCacheBoundary { boundary ->
                 CalendarWidgetPreferences.save(this@CalendarWidgetSettingsActivity, prefs)
                 CalendarWidget.refreshWidgetWithinBoundary(
                     this@CalendarWidgetSettingsActivity,

@@ -54,6 +54,8 @@ import com.udnahc.opentasks.data.settings.RoomAccountStateStore
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.PocketBaseConnectionVerifier
 import com.udnahc.opentasks.data.sync.ServerMigrationCoordinator
+import com.udnahc.opentasks.data.sync.AuthoritativeServerReplaceExecutor
+import com.udnahc.opentasks.data.sync.AuthoritativeServerReplaceContract
 import com.udnahc.opentasks.data.sync.ServerSeedExecutor
 import com.udnahc.opentasks.data.sync.SyncService
 import com.udnahc.opentasks.data.sync.SyncTrigger
@@ -70,6 +72,10 @@ import com.udnahc.opentasks.domain.action.account.LogoutAccountAction
 import com.udnahc.opentasks.domain.action.account.ReauthenticateAccountAction
 import com.udnahc.opentasks.domain.action.account.RestoreSessionAction
 import com.udnahc.opentasks.domain.action.account.SwitchAccountAction
+import com.udnahc.opentasks.domain.action.account.StartLocalOnlyAction
+import com.udnahc.opentasks.domain.action.account.PrepareLocalServerReplacementAction
+import com.udnahc.opentasks.domain.action.account.ConfirmLocalServerReplacementAction
+import com.udnahc.opentasks.domain.action.account.CancelLocalServerReplacementPreparationAction
 import com.udnahc.opentasks.domain.action.attachment.AddTaskImageAction
 import com.udnahc.opentasks.domain.action.attachment.RemoveTaskImageAction
 import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
@@ -136,6 +142,8 @@ import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
+import com.udnahc.opentasks.domain.usecase.task.ParseQuickTaskInputUseCase
+import com.udnahc.opentasks.domain.usecase.task.QuickTaskCreationContext
 import com.udnahc.opentasks.domain.usecase.task.LocalizedTaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.viewmodel.AppViewModel
@@ -148,6 +156,7 @@ import com.udnahc.opentasks.viewmodel.ImportCsvViewModel
 import com.udnahc.opentasks.viewmodel.ImportIcsViewModel
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import com.udnahc.opentasks.viewmodel.NoteViewModel
+import com.udnahc.opentasks.viewmodel.QuickAddTaskViewModel
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
@@ -209,7 +218,13 @@ val sharedModule = module {
     single<AccountBoundaryExecutor> { AccountBoundaryExecutor(get(), get(), get()) }
     single<AccountAuthenticator> { PocketBaseAccountAuthenticator(get()) }
     single<AccountCacheInspectorContract> { AccountCacheInspector(get()) }
-    single<AccountCacheResetterContract> { AccountCacheResetter(get(), get(), get(), get(), get()) }
+    single<AccountCacheResetterContract> {
+        val triggerSyncAction = get<TriggerSyncAction>()
+        AccountCacheResetter(
+            get(), get(), get(), get(), get(),
+            cancelPendingSync = triggerSyncAction::cancelPendingSync,
+        )
+    }
     single<AccountRepository> {
         AccountRepositoryImpl(
             get<AuthTokenStore>(),
@@ -221,6 +236,7 @@ val sharedModule = module {
             get<PocketBaseClientProvider>(),
             get<SyncService>(),
             get<NotificationScheduler>(),
+            replacementExecutor = get<AuthoritativeServerReplaceContract>(),
         )
     }
     single { AllDayNotificationDismissalStore(get()) }
@@ -254,6 +270,7 @@ val sharedModule = module {
     single { FetchCalendarEventsUseCase(get()) }
     single { ParseCsvUseCase() }
     single { ParseIcsUseCase() }
+    single { ParseQuickTaskInputUseCase() }
     single { GenerateCsvExportUseCase(get(), get()) }
     single { GenerateIcsExportUseCase(get()) }
 
@@ -290,6 +307,10 @@ val sharedModule = module {
     single { ScheduleCountdownRemindersAction(get<NotificationScheduler>(), get(), get()) }
     single { RebuildReminderQueueAction(get(), get(), get(), get(), get<NotificationScheduler>()) }
     single { RestoreSessionAction(get()) }
+    single { StartLocalOnlyAction(get()) }
+    single { PrepareLocalServerReplacementAction(get()) }
+    single { ConfirmLocalServerReplacementAction(get()) }
+    single { CancelLocalServerReplacementPreparationAction(get()) }
     single { LoginAccountAction(get()) }
     single { ReauthenticateAccountAction(get()) }
     single { SwitchAccountAction(get()) }
@@ -307,11 +328,11 @@ val sharedModule = module {
     single { SaveTextSizePreferenceAction(get()) }
     single { SaveCalendarViewPreferenceAction(get()) }
     single { SaveCalendarListDisplayModePreferenceAction(get()) }
-    single { ClearLocalDataAction(get(), get(), get(), get(), get()) }
+    single { ClearLocalDataAction(get()) }
 
     // Sync
     single { PocketBaseClientProvider() }
-    single { ServerMigrationCoordinator(get()) }
+    single { ServerMigrationCoordinator(get(), get<AccountStateStore>()) }
     single { TaskSyncAdapter(get(), get(), get()) }
     single { AttachmentSyncAdapter(get(), get(), get()) }
     single { CategorySyncAdapter(get()) }
@@ -328,6 +349,18 @@ val sharedModule = module {
                 get<CountdownSyncAdapter>(),
             ),
             accountStateStore = get<AccountStateStore>(),
+        )
+    }
+    single<AuthoritativeServerReplaceContract> {
+        AuthoritativeServerReplaceExecutor(
+            adapters = listOf(
+                get<CategorySyncAdapter>(), get<TagSyncAdapter>(), get<TaskSyncAdapter>(),
+                get<AttachmentSyncAdapter>(), get<TaskTagSyncAdapter>(), get<NoteSyncAdapter>(),
+                get<CountdownSyncAdapter>(),
+            ),
+            seedExecutor = get(),
+            migrationCoordinator = get(),
+            accountStateStore = get(),
         )
     }
     single {
@@ -364,8 +397,21 @@ val sharedModule = module {
     single<AccountSyncCoordinator> { get<SyncService>() }
 
     // ViewModels
-    viewModel { AuthViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel {
+        AuthViewModel(
+            get(), get(), get(), get(), get(), get(), get(), get(), get(), get(),
+            get(), get(), get(),
+        )
+    }
     viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { (context: QuickTaskCreationContext) ->
+        QuickAddTaskViewModel(
+            context = context,
+            parser = get(),
+            addTaskAction = get(),
+            accountBoundaryExecutor = get(),
+        )
+    }
     viewModel {
         TaskNotificationViewModel(
             get(), get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),

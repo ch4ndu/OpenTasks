@@ -11,11 +11,13 @@ import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.http.content.TextContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
 import com.udnahc.opentasks.data.auth.CacheBinding
@@ -27,6 +29,26 @@ class PocketBaseRecordGatewayTest {
         accountId = "account-a",
         capabilityVersion = 2,
         boundaryEpoch = 3,
+    )
+
+    private fun inventoryWithTaskTitle(title: String) = PocketBaseServerInventory(
+        serverInstanceId = "server",
+        accountId = "account-a",
+        recordsByCollection = PocketBaseServerInventoryReader.COLLECTIONS.associateWith { collection ->
+            if (collection == "tasks") {
+                listOf(
+                    buildJsonObject {
+                        put("id", "remote-task")
+                        put("localId", "task")
+                        put("account", "account-a")
+                        put("isDeleted", false)
+                        put("title", title)
+                    },
+                )
+            } else {
+                emptyList()
+            }
+        },
     )
 
     @Test
@@ -76,6 +98,65 @@ class PocketBaseRecordGatewayTest {
     @Test
     fun `local id filter escapes quotes and backslashes`() {
         assertEquals("localId='a\\\\b\\'c'", PocketBaseFilter.localIdEquals("a\\b'c"))
+    }
+
+    @Test
+    fun `replacement fingerprint is stable across collection row and object key ordering`() {
+        val first = PocketBaseServerInventory(
+            serverInstanceId = "server",
+            accountId = "account-a",
+            recordsByCollection = PocketBaseServerInventoryReader.COLLECTIONS.associateWith { collection ->
+                if (collection == "tasks") {
+                    listOf(
+                        buildJsonObject {
+                            put("id", "b")
+                            put("localId", "task-b")
+                            put("isDeleted", true)
+                            put("title", "second")
+                        },
+                        buildJsonObject {
+                            put("id", "a")
+                            put("localId", "task-a")
+                            put("isDeleted", false)
+                            put("title", "first")
+                        },
+                    )
+                } else {
+                    emptyList()
+                }
+            },
+        )
+        val reordered = first.copy(
+            recordsByCollection = first.recordsByCollection.entries.reversed().associate { (collection, rows) ->
+                collection to rows.reversed().map { row ->
+                    JsonObject(row.entries.reversed().associate { it.toPair() })
+                }
+            },
+        )
+
+        val tasks = first.replacementCounts().first { it.collection == "tasks" }
+        assertEquals(1, tasks.active)
+        assertEquals(1, tasks.tombstones)
+        assertEquals(
+            first.replacementFingerprint("https://example.test", "account-a"),
+            reordered.replacementFingerprint("https://example.test", "account-a"),
+        )
+        assertFalse(
+            first.replacementFingerprint("https://example.test", "account-a") ==
+                first.copy(accountId = "account-b")
+                    .replacementFingerprint("https://example.test", "account-b"),
+        )
+    }
+
+    @Test
+    fun `replacement fingerprint changes when a non-identity payload field changes`() {
+        val initial = inventoryWithTaskTitle("Before")
+        val updated = inventoryWithTaskTitle("After")
+
+        assertNotEquals(
+            initial.replacementFingerprint("https://example.test", "account-a"),
+            updated.replacementFingerprint("https://example.test", "account-a"),
+        )
     }
 
     @Test
@@ -251,6 +332,52 @@ class PocketBaseRecordGatewayTest {
 
         assertFailsWith<PocketBaseOwnerMismatchException> {
             gateway.getRecords("tasks", page = 1, perPage = 30)
+        }
+    }
+
+    @Test
+    fun `hard delete requires an owner scoped inventory row and never accepts another owner`() = runTest {
+        val requests = mutableListOf<String>()
+        val gateway = PocketBaseRecordGateway(
+            HttpClient(MockEngine { request ->
+                requests += request.url.encodedPath
+                assertEquals(HttpMethod.Delete, request.method)
+                respond(content = "", status = HttpStatusCode.NoContent)
+            }),
+            "https://example.test",
+            ownerBinding = ownerBinding,
+        )
+
+        val response = gateway.deleteOwnedInventoryRecord(
+            "attachments",
+            buildJsonObject {
+                put("id", "attachment-a")
+                put("account", "account-a")
+            },
+        )
+
+        assertTrue(response.isSuccess)
+        assertEquals(
+            listOf("/api/collections/attachments/records/attachment-a"),
+            requests,
+        )
+        assertFailsWith<PocketBaseOwnerMismatchException> {
+            gateway.deleteOwnedInventoryRecord(
+                "attachments",
+                buildJsonObject {
+                    put("id", "attachment-b")
+                    put("account", "account-b")
+                },
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            gateway.deleteOwnedInventoryRecord(
+                "users",
+                buildJsonObject {
+                    put("id", "account-a")
+                    put("account", "account-a")
+                },
+            )
         }
     }
 }

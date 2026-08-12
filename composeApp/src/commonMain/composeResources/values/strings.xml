@@ -45,6 +45,11 @@
     <string name="end">End</string>
 
     <!-- Create Task Screen -->
+    <string name="task_creation_choice_title">Create task</string>
+    <string name="quick_add">Quick add</string>
+    <string name="full_task">Full task</string>
+    <string name="quick_add_example">Try “Submit report tomorrow at 3pm”</string>
+    <string name="remove_inference">Remove %1$s inference</string>
     <string name="title_hint">What would you like to do?</string>
     <string name="description_hint">Description</string>
     <string name="date_and_reminder">Date and Reminder</string>
@@ -330,6 +335,7 @@
     <string name="account_sign_in_title">Sign in to OpenTasks</string>
     <string name="account_sign_in_description">Sign in with a pre-created account to open your tasks.</string>
     <string name="account_sign_in">Sign in</string>
+    <string name="use_without_sync">Use without sync</string>
     <string name="account_reauthenticate">Sign in again</string>
     <string name="account_reauthenticate_description">Your session for %1$s needs to be restored. Enter your credentials to continue.</string>
     <string name="account_endpoint">PocketBase endpoint</string>
@@ -352,6 +358,8 @@
     <string name="account_session_transition_blocked">The account change is blocked until local changes sync successfully. Retry after the connection is restored.</string>
     <string name="account_session_storage_failed">Secure credential storage is unavailable. Fix device keychain access and try again.</string>
     <string name="account_session_generic_error">The account operation failed. Check the server and retry.</string>
+    <string name="account_session_replacement_conflict">The destination changed during replacement. Retry to delete the complete owner inventory and seed it again.</string>
+    <string name="account_session_local_seed_source_invalid">Some local attachments cannot be uploaded. Remove or re-add them before replacing server data.</string>
     <string name="account_session_transitioning">Completing account change</string>
     <string name="account_session_transition_prepared">The account change is prepared and waiting to replace local data.</string>
     <string name="account_session_transition_needs_activation">The new account cache is ready and waiting for activation.</string>
@@ -366,7 +374,32 @@
     <string name="logout_description">Remove this account's local cache. Server data is not deleted.</string>
     <string name="logout_confirm_title">Logout?</string>
     <string name="logout_confirm_message">This clears local tasks, categories, notes, countdowns, and attachments for this account. Server data remains unchanged, and you can sign in again later.</string>
-    <string name="clear_local_data_error">Could not clear local data. PocketBase remains disconnected.</string>
+    <string name="clear_local_data_error">Could not finish clearing local data. Retry to complete cleanup.</string>
+    <string name="local_only">Local only</string>
+    <string name="local_only_description">Tasks and attachments are stored only on this device.</string>
+    <string name="connect_pocketbase">Connect to PocketBase</string>
+    <string name="connect_pocketbase_description">Replace this account's server data with the complete local snapshot.</string>
+    <string name="replacement_sign_in_title">Prepare server replacement</string>
+    <string name="replacement_sign_in_message">Sign in to the destination account. OpenTasks will inspect owner-scoped counts before anything is deleted.</string>
+    <string name="replacement_confirm_title">Replace server data?</string>
+    <string name="replacement_confirm_message">Local data will replace all OpenTasks data owned by %1$s at %2$s. Remote attachment files will be deleted and uploaded again. Close other clients and keep this device online. This cannot be cancelled after confirmation.</string>
+    <string name="replacement_collection_count">%1$s: %2$d active, %3$d deleted</string>
+    <string name="replacement_collection_categories">Categories</string>
+    <string name="replacement_collection_tasks">Tasks</string>
+    <string name="replacement_collection_attachments">Attachments</string>
+    <string name="replacement_collection_task_tags">Task tags</string>
+    <string name="replacement_collection_countdowns">Countdowns</string>
+    <string name="replacement_attachment_count">Attachments to replace: %1$d</string>
+    <string name="replacement_confirm_action">Delete server data and replace</string>
+    <string name="replacement_preview_changed">Server or local data changed. Review the refreshed counts and confirm again.</string>
+    <string name="replacement_remote_delete_pending">Deleting and verifying the destination account's server data.</string>
+    <string name="replacement_exact_seed_pending">Uploading and verifying the complete local snapshot.</string>
+    <string name="clear_local_data">Clear local data</string>
+    <string name="clear_local_data_description">Delete all local tasks, categories, notes, countdowns, and attachments.</string>
+    <string name="clear_local_data_confirm_title">Clear all local data?</string>
+    <string name="clear_local_data_confirm_message">This permanently deletes all task data and attachments stored by OpenTasks on this device.</string>
+    <string name="local_clear_pre_reset">Preparing to clear the local cache.</string>
+    <string name="local_clear_files_pending">The local database is clear. Finishing attachment cleanup.</string>
 
     <!-- Import -->
     <string name="import_header">Import</string>

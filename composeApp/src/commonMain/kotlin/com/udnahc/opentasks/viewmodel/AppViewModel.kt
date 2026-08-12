@@ -29,7 +29,7 @@ class AppViewModel(
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     fun triggerSync() {
-        val expectedBoundary = accountBoundaryExecutor?.captureForegroundBoundary()
+        val expectedBoundary = accountBoundaryExecutor?.captureAuthenticatedForegroundBoundary()
         if (accountBoundaryExecutor != null && expectedBoundary == null) return
         if (!_isRefreshing.compareAndSet(expect = false, update = true)) return
         viewModelScope.launch(ioDispatcher) {

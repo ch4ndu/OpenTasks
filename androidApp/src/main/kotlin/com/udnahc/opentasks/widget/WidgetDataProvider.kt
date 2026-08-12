@@ -51,17 +51,17 @@ class WidgetDataProvider : KoinComponent {
         widgetAccountGate.currentBoundary()
             ?: throw IllegalStateException("Widget data requires an active account boundary")
 
-    suspend fun <T> withAuthenticatedBoundary(
+    suspend fun <T> withActiveCacheBoundary(
         block: suspend (AccountBoundary) -> T,
-    ): T? = widgetAccountGate.withAuthenticatedBoundary(block)
+    ): T? = widgetAccountGate.withActiveCacheBoundary(block)
 
     suspend fun getCategories(): List<Category> =
-        widgetAccountGate.withAuthenticatedBoundary {
+        widgetAccountGate.withActiveCacheBoundary {
             getCategoriesWithinBoundary()
         }.orEmpty()
 
     suspend fun getWidgetTasks(prefs: WidgetPreferences): List<WidgetTask> =
-        widgetAccountGate.withAuthenticatedBoundary {
+        widgetAccountGate.withActiveCacheBoundary {
             getWidgetTasksWithinBoundary(prefs)
         }.orEmpty()
 
@@ -123,7 +123,7 @@ class WidgetDataProvider : KoinComponent {
         month: Int,
         maxPerDay: Int = MAX_TASKS_PER_DAY,
     ): Map<Int, List<CalendarDayTask>> =
-        widgetAccountGate.withAuthenticatedBoundary {
+        widgetAccountGate.withActiveCacheBoundary {
             getTasksByDayForMonthWithinBoundary(year, month, maxPerDay)
         }.orEmpty()
 
@@ -166,7 +166,7 @@ class WidgetDataProvider : KoinComponent {
         weekStartLocalMillis: Long,
         maxPerDay: Int = MAX_TASKS_PER_WEEK_DAY,
     ): Map<Int, List<CalendarDayTask>> =
-        widgetAccountGate.withAuthenticatedBoundary {
+        widgetAccountGate.withActiveCacheBoundary {
             getTasksByDayForWeekWithinBoundary(weekStartLocalMillis, maxPerDay)
         }.orEmpty()
 

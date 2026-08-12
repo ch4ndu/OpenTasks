@@ -111,6 +111,48 @@ class BaseSyncAdapterTest {
     }
 
     @Test
+    fun authoritativeSeedNeverMergesNewerRemoteWinnerIntoLocalSnapshot() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(
+                FakeEntity(id = "one", value = "local", synced = false, updatedAt = 20),
+            ),
+            remote = mutableListOf(
+                FakeRecord(localId = "one", value = "remote", updatedAt = 30).withId("pb-one"),
+            ),
+            failCreate = true,
+        )
+
+        assertFailsWith<AuthoritativeSeedConflictException> {
+            adapter.seedAllAuthoritative(client)
+        }
+
+        assertEquals("local", adapter.local.single().value)
+        assertFalse(adapter.local.single().synced)
+        assertEquals("remote", adapter.remote.single().value)
+    }
+
+    @Test
+    fun authoritativeSeedRejectsEqualTimestampDivergentRemotePayload() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(
+                FakeEntity(id = "one", value = "local", synced = false, updatedAt = 30),
+            ),
+            remote = mutableListOf(
+                FakeRecord(localId = "one", value = "remote", updatedAt = 30).withId("pb-one"),
+            ),
+            failCreate = true,
+        )
+
+        assertFailsWith<AuthoritativeSeedConflictException> {
+            adapter.seedAllAuthoritative(client)
+        }
+
+        assertEquals("local", adapter.local.single().value)
+        assertFalse(adapter.local.single().synced)
+        assertEquals("remote", adapter.remote.single().value)
+    }
+
+    @Test
     fun missingActiveServerRowIsMarkedUnsyncedForRecreation() = runBlocking {
         val adapter = FakeAdapter(
             local = mutableListOf(FakeEntity(id = "one", pbId = "pb-one", value = "local", synced = true, updatedAt = 30)),

@@ -213,14 +213,13 @@ class SettingsViewModel(
         _exportResult.value = ExportResult.Idle
     }
 
-    fun clearLocalData(onComplete: () -> Unit) {
+    fun clearLocalData() {
         viewModelScope.launch(Dispatchers.IO) {
             _clearLocalDataStatus.value = ClearLocalDataStatus.CLEARING
             try {
                 clearLocalDataAction()
                 _syncStatus.value = SyncStatus.IDLE
                 _clearLocalDataStatus.value = ClearLocalDataStatus.IDLE
-                withContext(Dispatchers.Main) { onComplete() }
             } catch (e: Exception) {
                 log.e(e) { "Clear local data failed" }
                 _clearLocalDataStatus.value = ClearLocalDataStatus.ERROR

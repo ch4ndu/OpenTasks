@@ -50,7 +50,7 @@ class WeekWidgetSettingsActivity : ComponentActivity(), KoinComponent {
         }
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val initialPrefs = widgetAccountGate.withAuthenticatedBoundary {
+            val initialPrefs = widgetAccountGate.withActiveCacheBoundary {
                 CalendarWidgetPreferences.load(this@WeekWidgetSettingsActivity, appWidgetId)
             }
             withContext(Dispatchers.Main) {
@@ -77,7 +77,7 @@ class WeekWidgetSettingsActivity : ComponentActivity(), KoinComponent {
 
     private fun saveAndFinish(prefs: CalendarWidgetPreferences, appWidgetId: Int) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val saved = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+            val saved = widgetAccountGate.withActiveCacheBoundary { boundary ->
                 CalendarWidgetPreferences.save(this@WeekWidgetSettingsActivity, prefs)
                 WeekWidget.refreshWidgetWithinBoundary(this@WeekWidgetSettingsActivity, appWidgetId, boundary)
             }

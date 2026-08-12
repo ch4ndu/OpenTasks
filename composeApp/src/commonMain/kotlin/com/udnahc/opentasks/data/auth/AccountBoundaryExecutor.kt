@@ -6,7 +6,7 @@ import org.lighthousegames.logging.logging
 private val log = logging("AccountBoundaryExecutor")
 
 /**
- * Executes work that is authorized by the authenticated account boundary.
+ * Executes work that is authorized by the active local or authenticated cache boundary.
  *
  * Session restoration happens before the shared mutation gate is acquired
  * because restoration itself enters that gate. The gate then covers live
@@ -19,29 +19,26 @@ class AccountBoundaryExecutor(
     private val mutationGate: AccountMutationGate,
 ) {
     /**
-     * Captures only the live foreground account identity before the caller
+     * Captures only the live foreground active-cache identity before the caller
      * performs its first suspension. The full binding is revalidated after the
      * shared mutation gate is acquired.
      */
     fun captureForegroundBoundary(): AccountBoundary? {
-        val authenticated = accountRepository.sessionState.value
-            as? AccountSessionState.Authenticated
+        val binding = accountRepository.sessionState.value.activeBindingOrNull() ?: return null
+        return binding.takeIf { it.isValidActiveBinding() }?.asAccountBoundary()
+    }
+
+    fun captureAuthenticatedForegroundBoundary(): AccountBoundary? {
+        val authenticated = accountRepository.sessionState.value as? AccountSessionState.Authenticated
             ?: return null
-        val accountId = authenticated.account.accountId
-        val boundaryEpoch = authenticated.binding.boundaryEpoch
-        if (accountId.isBlank() || boundaryEpoch <= 0L ||
-            authenticated.binding.accountId != accountId
-        ) {
-            return null
-        }
-        return authenticated.binding.asAccountBoundary()
+        return authenticated.binding.takeIf { it.isValidPocketBaseBinding() }?.asAccountBoundary()
     }
 
     /**
      * Runs a foreground mutation and all of its account-owned side effects
      * under one held boundary. Unlike the restore-capable entrypoint below,
-     * this path must reject immediately unless the live session is already
-     * authenticated.
+     * this path must reject immediately unless the live session already owns
+     * an active local or remote cache.
      */
     suspend fun <T> withForegroundBoundary(
         block: suspend (AccountBoundary) -> T,
@@ -69,9 +66,31 @@ class AccountBoundaryExecutor(
     }
 
     suspend fun currentBoundary(): AccountBoundary? {
-        val restored = restoreAuthenticated() ?: return null
+        val restored = restoreActiveCache() ?: return null
         return mutationGate.withExclusive {
             validateRestoredBoundary(restored)
+        }
+    }
+
+    suspend fun <T> withActiveCacheBoundary(
+        block: suspend (AccountBoundary) -> T,
+    ): T? = withActiveCacheBoundary(null, null, block)
+
+    suspend fun <T> withActiveCacheBoundary(
+        expectedAccountId: String? = null,
+        expectedBoundaryEpoch: Long? = null,
+        block: suspend (AccountBoundary) -> T,
+    ): T? {
+        val restored = restoreActiveCache() ?: return null
+        if (!expectedBoundaryIsWellFormed(expectedAccountId, expectedBoundaryEpoch)) return null
+
+        return mutationGate.withExclusive {
+            val boundary = validateRestoredBoundary(
+                restored = restored,
+                expectedAccountId = expectedAccountId,
+                expectedBoundaryEpoch = expectedBoundaryEpoch,
+            ) ?: return@withExclusive null
+            block(boundary)
         }
     }
 
@@ -84,7 +103,7 @@ class AccountBoundaryExecutor(
         expectedBoundaryEpoch: Long? = null,
         block: suspend (AccountBoundary) -> T,
     ): T? {
-        val restored = restoreAuthenticated() ?: return null
+        val restored = restoreActiveCache() as? AccountSessionState.Authenticated ?: return null
         if (!expectedBoundaryIsWellFormed(expectedAccountId, expectedBoundaryEpoch)) return null
 
         return mutationGate.withExclusive {
@@ -100,15 +119,8 @@ class AccountBoundaryExecutor(
     private suspend fun validateForegroundBoundary(
         expected: AccountBoundary,
     ): AccountBoundary? {
-        val live = accountRepository.sessionState.value
-            as? AccountSessionState.Authenticated
-            ?: return null
-        if (live.account.accountId != expected.accountId ||
-            live.account.accountId != live.binding.accountId ||
-            live.binding.boundaryEpoch != expected.boundaryEpoch
-        ) {
-            return null
-        }
+        val liveBinding = accountRepository.sessionState.value.activeBindingOrNull() ?: return null
+        if (liveBinding.asAccountBoundary() != expected || !liveBinding.isValidActiveBinding()) return null
 
         val current = try {
             accountBoundaryGuard.activeBoundary()
@@ -119,24 +131,20 @@ class AccountBoundaryExecutor(
         } ?: return null
         if (current.accountId != expected.accountId ||
             current.boundaryEpoch != expected.boundaryEpoch ||
-            current != live.binding.asAccountBoundary()
+            current != liveBinding.asAccountBoundary()
         ) {
             return null
         }
         return current
     }
 
-    private suspend fun restoreAuthenticated(): AccountSessionState.Authenticated? {
-        val live = accountRepository.sessionState.value as? AccountSessionState.Authenticated
-        if (live != null &&
-            live.account.accountId.isNotBlank() &&
-            live.account.accountId == live.binding.accountId &&
-            live.binding.boundaryEpoch > 0L
-        ) {
-            log.d { "Reusing the live authenticated session for background account-bound work" }
+    private suspend fun restoreActiveCache(): AccountSessionState? {
+        val live = accountRepository.sessionState.value
+        if (live.activeBindingOrNull()?.isValidActiveBinding() == true) {
+            log.d { "Reusing the live active-cache session for background account-bound work" }
             return live
         }
-        log.d { "Restoring the account session for background account-bound work" }
+        log.d { "Restoring the active-cache session for background account-bound work" }
         val restored = try {
             accountRepository.restoreSession()
         } catch (error: CancellationException) {
@@ -144,22 +152,18 @@ class AccountBoundaryExecutor(
         } catch (_: Exception) {
             return null
         }
-        val authenticated = restored as? AccountSessionState.Authenticated ?: return null
-        if (authenticated.account.accountId != authenticated.binding.accountId) return null
-        return authenticated
+        return restored.takeIf { it.activeBindingOrNull()?.isValidActiveBinding() == true }
     }
 
     private suspend fun validateRestoredBoundary(
-        restored: AccountSessionState.Authenticated,
+        restored: AccountSessionState,
         expectedAccountId: String? = null,
         expectedBoundaryEpoch: Long? = null,
     ): AccountBoundary? {
-        val live = accountRepository.sessionState.value as? AccountSessionState.Authenticated ?: return null
-        if (live.account.accountId != restored.account.accountId) return null
-        if (live.account.accountId != live.binding.accountId) return null
-
-        val restoredBoundary = restored.binding.asAccountBoundary()
-        if (live.binding.asAccountBoundary() != restoredBoundary) return null
+        val restoredBoundary = restored.activeBindingOrNull()?.asAccountBoundary() ?: return null
+        val liveBoundary = accountRepository.sessionState.value.activeBindingOrNull()?.asAccountBoundary()
+            ?: return null
+        if (liveBoundary != restoredBoundary) return null
 
         val currentBoundary = try {
             accountBoundaryGuard.activeBoundary()
@@ -187,7 +191,7 @@ class AccountBoundaryExecutor(
 }
 
 class AccountBoundaryRejectedException : IllegalStateException(
-    "Foreground account-bound action was rejected because the authenticated account boundary is unavailable or stale",
+    "Foreground account-bound action was rejected because the active cache boundary is unavailable or stale",
 )
 
 /** Compatibility seam for direct action tests; production DI always supplies the executor. */

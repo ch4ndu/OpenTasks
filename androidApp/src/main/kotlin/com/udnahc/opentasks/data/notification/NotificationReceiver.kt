@@ -51,7 +51,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val delivered = accountBoundaryExecutor.withAuthenticatedBoundary(
+                val delivered = accountBoundaryExecutor.withActiveCacheBoundary(
                     expectedAccountId = accountId,
                     expectedBoundaryEpoch = boundaryEpoch,
                 ) {
@@ -83,7 +83,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
                     }
                 }
                 if (delivered == null) {
-                    log.d { "Skipping notification delivery without a matching authenticated account session" }
+                    log.d { "Skipping notification delivery without a matching active cache session" }
                 }
             } catch (e: CancellationException) {
                 throw e

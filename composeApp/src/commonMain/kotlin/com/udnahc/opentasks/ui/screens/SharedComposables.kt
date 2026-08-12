@@ -438,13 +438,32 @@ fun CompleteSeriesDialog(
 fun SyncPullToRefresh(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val contract = syncPullToRefreshContract(enabled, isRefreshing)
+    if (!contract.wrapsContent) {
+        Box(modifier = modifier, content = content)
+        return
+    }
     PullToRefreshBox(
-        isRefreshing = isRefreshing,
+        isRefreshing = contract.isRefreshing,
         onRefresh = onRefresh,
         modifier = modifier,
         content = content,
     )
 }
+
+internal data class SyncPullToRefreshContract(
+    val wrapsContent: Boolean,
+    val isRefreshing: Boolean,
+)
+
+internal fun syncPullToRefreshContract(
+    enabled: Boolean,
+    isRefreshing: Boolean,
+): SyncPullToRefreshContract = SyncPullToRefreshContract(
+    wrapsContent = enabled,
+    isRefreshing = enabled && isRefreshing,
+)

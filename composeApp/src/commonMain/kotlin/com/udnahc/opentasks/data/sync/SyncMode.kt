@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.sync
 enum class SyncMode {
     NORMAL,
     EMPTY_SERVER_SEED_PENDING,
+    AUTHORITATIVE_REPLACE_PENDING,
 }
 
 object SyncSettingsKeys {

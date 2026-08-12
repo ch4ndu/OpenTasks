@@ -2,6 +2,8 @@ package com.udnahc.opentasks.data.sync
 
 import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.auth.AccountSyncCoordinator
+import com.udnahc.opentasks.data.auth.AccountTransitionPhase
+import com.udnahc.opentasks.data.auth.AccountTransitionPurpose
 import com.udnahc.opentasks.data.settings.AccountStateStore
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -247,6 +249,8 @@ class SyncService(
         val transition = stateStore.readTransition()
         if (transition == null) return true
         return allowTransition &&
+            transition.purpose == AccountTransitionPurpose.ACCOUNT_CHANGE &&
+            transition.phase == AccountTransitionPhase.NEEDS_ACTIVATION &&
             transition.destinationAccountId == binding.accountId &&
             transition.canonicalEndpoint == binding.canonicalEndpoint &&
             transition.serverInstanceId == binding.serverInstanceId &&

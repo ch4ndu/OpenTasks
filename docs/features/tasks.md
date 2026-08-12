@@ -16,7 +16,7 @@ Task image attachment behavior is documented in [Attachments](common/attachments
 
 ## User Flow
 
-Users create tasks from the matrix, task list, calendar, system share intake, and import flows. The create/edit task screen owns form state until save, then the ViewModel writes through domain actions.
+Users create tasks from the matrix, task list, calendar, system share intake, and import flows. On Matrix, Task List, Calendar, and Quadrant Detail, the floating action button opens a chooser between Quick Add and the full task editor. The create/edit task screen owns detailed form state until save, while Quick Add owns only its entry-scoped title and inference state; both write through domain actions.
 
 Important task workflows:
 
@@ -33,6 +33,18 @@ Important task workflows:
 - Open task reminder notifications into a home-screen bottom sheet with Mark Done, Got It, and Edit Task actions.
 - Delete tasks through soft deletion so sync can propagate tombstones.
 
+## Quick Add
+
+Quick Add is an offline, deterministic English parser for short task titles. It recognizes only trailing, token-bounded clauses:
+
+- Dates: `today`, `tomorrow`, `in N days` for 1–365, `in N weeks` for 1–52, and full weekday names.
+- Times: `at H am`, `at H pm`, `at H:MM am`, `at H:MM pm`, and unambiguous 24-hour `at HH:MM`.
+- Recurrence: `daily`/`every day`, `weekly`/`every week`, `monthly`/`every month`, `yearly`/`every year`, `every weekday`, and `every <weekday>`.
+
+Recognized clauses appear as removable chips. Removing a chip keeps that phrase as literal title text; editing the phrase makes it eligible for recognition again. Unsupported or invalid phrases remain literal. Quick Add does not infer categories, tags, priorities, reminders, arbitrary recurrence intervals, or fuzzy/AI intent.
+
+The opening surface supplies category, priority, and an optional Calendar civil date. An explicit parsed date overrides only the fallback date, a parsed time overrides only the time/all-day inference, and parsed recurrence overrides only recurrence. Date-only tasks use the existing 08:00 local storage anchor and create no reminder. A time without any explicit or contextual date uses today when still future and tomorrow otherwise. All other task fields use `AddTaskAction` defaults.
+
 ## Technical Design
 
 Task data is stored in the `tasks` Room table. `TaskRepositoryImpl` wraps `TaskDao`, converts timestamps between local app time and UTC storage, and triggers sync after writes.
@@ -44,6 +56,7 @@ Screen state lives in feature ViewModels:
 - `MatrixViewModel` projects tasks for matrix list and board modes.
 - `TaskListViewModel` projects tasks for category filters, smart filters, sort options, and board/list modes.
 - `TaskFormViewModel` owns create/edit save flow, including the duplicate-save guard and pending task image handoff.
+- `QuickAddTaskViewModel` captures one reference time and active-cache boundary for its Navigation entry, owns parsing and chip dismissal, rejects duplicate or stale-boundary saves, and delegates persistence to `AddTaskAction`.
 
 Task detail fields live in the create/edit task flow. Location, URL, organizer, event status, and attendees are stored on the task so imported calendar metadata and manually entered details survive local persistence and sync.
 

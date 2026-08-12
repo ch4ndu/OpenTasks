@@ -28,6 +28,15 @@ sealed class Screen : NavClass() {
     ) : Screen()
 
     @Serializable
+    data class QuickAddTask(
+        val priorityOrdinal: Int = 0,
+        val categoryId: String = AppConstants.DEFAULT_INBOX_ID,
+        val day: Int = 0,
+        val month: Int = 0,
+        val year: Int = 0,
+    ) : Screen()
+
+    @Serializable
     data class EditTask(val taskId: String) : Screen()
     @Serializable
     data object Settings : Screen()
@@ -40,3 +49,11 @@ sealed class Screen : NavClass() {
     @Serializable
     data class EditCountdown(val countdownId: String) : Screen()
 }
+
+fun Screen.CreateTask.asQuickAddTask(): Screen.QuickAddTask = Screen.QuickAddTask(
+    priorityOrdinal = priorityOrdinal,
+    categoryId = categoryId,
+    day = day,
+    month = month,
+    year = year,
+)

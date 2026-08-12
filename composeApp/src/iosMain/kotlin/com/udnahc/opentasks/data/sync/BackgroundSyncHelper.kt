@@ -33,12 +33,12 @@ object BackgroundSyncHelper : KoinComponent {
         log.d { "Background sync starting" }
         val job = scope.launch {
             try {
-                val completed = accountBoundaryExecutor.withAuthenticatedBoundary {
+                val completed = accountBoundaryExecutor.withActiveCacheBoundary {
                     syncService.syncAll()
                     rebuildReminderQueueAction()
                 }
                 if (completed == null) {
-                    log.d { "Background sync skipped without an authenticated account boundary" }
+                    log.d { "Background maintenance skipped without an active cache boundary" }
                 }
             } catch (e: CancellationException) {
                 log.d { "Background sync cancelled" }

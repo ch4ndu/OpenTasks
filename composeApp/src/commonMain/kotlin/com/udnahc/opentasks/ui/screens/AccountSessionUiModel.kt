@@ -10,7 +10,7 @@ internal enum class AccountSessionRoute {
     SIGN_IN,
     REAUTHENTICATE,
     TRANSITIONING,
-    AUTHENTICATED,
+    ACTIVE,
 }
 
 internal fun accountSessionRoute(state: AccountSessionState): AccountSessionRoute = when (state) {
@@ -21,7 +21,8 @@ internal fun accountSessionRoute(state: AccountSessionState): AccountSessionRout
         else AccountSessionRoute.REAUTHENTICATE
 
     is AccountSessionState.Transitioning -> AccountSessionRoute.TRANSITIONING
-    is AccountSessionState.Authenticated -> AccountSessionRoute.AUTHENTICATED
+    is AccountSessionState.Authenticated,
+    is AccountSessionState.LocalOnly -> AccountSessionRoute.ACTIVE
 }
 
 internal enum class AccountSessionLayout {
@@ -89,12 +90,17 @@ internal fun submitAccountSession(
 internal data class AccountControlAvailability(
     val canSwitchAccount: Boolean,
     val canLogout: Boolean,
+    val canClearLocalData: Boolean,
+    val canConnectPocketBase: Boolean,
 )
 
 internal fun accountControlAvailability(
     currentAccount: AuthenticatedAccount?,
+    isLocalOnly: Boolean,
     operation: AccountOperation?,
 ): AccountControlAvailability = AccountControlAvailability(
-    canSwitchAccount = currentAccount != null && operation == null,
-    canLogout = operation == null,
+    canSwitchAccount = currentAccount != null && !isLocalOnly && operation == null,
+    canLogout = currentAccount != null && !isLocalOnly && operation == null,
+    canClearLocalData = isLocalOnly && operation == null,
+    canConnectPocketBase = isLocalOnly && operation == null,
 )

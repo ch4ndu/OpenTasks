@@ -57,10 +57,10 @@ class CalendarWidget : GlanceAppWidget() {
 
         suspend fun refreshWidget(context: Context, appWidgetId: Int) {
             try {
-                val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                val refreshed = widgetAccountGate.withActiveCacheBoundary { boundary ->
                     refreshWidgetWithinBoundary(context, appWidgetId, boundary)
                 }
-                if (refreshed == null) log.d { "Skipped calendar widget refresh without an authenticated boundary" }
+                if (refreshed == null) log.d { "Skipped calendar widget refresh without an active cache boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to refresh calendar widget $appWidgetId" }
             }
@@ -88,10 +88,10 @@ class CalendarWidget : GlanceAppWidget() {
 
         suspend fun refreshAllWidgets(context: Context) {
             try {
-                val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                val refreshed = widgetAccountGate.withActiveCacheBoundary { boundary ->
                     refreshAllWidgetsWithinBoundary(context, boundary)
                 }
-                if (refreshed == null) log.d { "Skipped calendar widget refresh without an authenticated boundary" }
+                if (refreshed == null) log.d { "Skipped calendar widget refresh without an active cache boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to refresh all calendar widgets" }
             }
@@ -134,10 +134,10 @@ class CalendarWidget : GlanceAppWidget() {
 
         suspend fun navigateMonth(context: Context, appWidgetId: Int, delta: Int) {
             try {
-                val navigated = widgetAccountGate.withAuthenticatedBoundary {
+                val navigated = widgetAccountGate.withActiveCacheBoundary {
                     val manager = GlanceAppWidgetManager(context)
                     val glanceId = manager.getGlanceIds(CalendarWidget::class.java)
-                        .firstOrNull { manager.getAppWidgetId(it) == appWidgetId } ?: return@withAuthenticatedBoundary
+                        .firstOrNull { manager.getAppWidgetId(it) == appWidgetId } ?: return@withActiveCacheBoundary
                     updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
                         val today = todayLocal()
                         val currentYear = prefs[CAL_DISPLAYED_YEAR_KEY] ?: today.year
@@ -159,7 +159,7 @@ class CalendarWidget : GlanceAppWidget() {
                     }
                     instance.update(context, glanceId)
                 }
-                if (navigated == null) log.d { "Skipped calendar navigation without an authenticated boundary" }
+                if (navigated == null) log.d { "Skipped calendar navigation without an active cache boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to navigate month for widget $appWidgetId" }
             }
@@ -195,7 +195,7 @@ class CalendarWidget : GlanceAppWidget() {
                 } else {
                     try {
                         val provider = WidgetDataProvider()
-                        provider.withAuthenticatedBoundary { boundary ->
+                        provider.withActiveCacheBoundary { boundary ->
                             val prefs = CalendarWidgetPreferences.load(context, appWidgetId)
                             val tasksByDay = provider.getTasksByDayForMonthWithinBoundary(
                                 displayedYear,

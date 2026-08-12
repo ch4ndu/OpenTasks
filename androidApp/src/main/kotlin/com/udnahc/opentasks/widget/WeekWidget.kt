@@ -67,10 +67,10 @@ class WeekWidget : GlanceAppWidget() {
 
         suspend fun refreshWidget(context: Context, appWidgetId: Int) {
             try {
-                val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                val refreshed = widgetAccountGate.withActiveCacheBoundary { boundary ->
                     refreshWidgetWithinBoundary(context, appWidgetId, boundary)
                 }
-                if (refreshed == null) log.d { "Skipped week widget refresh without an authenticated boundary" }
+                if (refreshed == null) log.d { "Skipped week widget refresh without an active cache boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to refresh week widget $appWidgetId" }
             }
@@ -98,10 +98,10 @@ class WeekWidget : GlanceAppWidget() {
 
         suspend fun refreshAllWidgets(context: Context) {
             try {
-                val refreshed = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+                val refreshed = widgetAccountGate.withActiveCacheBoundary { boundary ->
                     refreshAllWidgetsWithinBoundary(context, boundary)
                 }
-                if (refreshed == null) log.d { "Skipped week widget refresh without an authenticated boundary" }
+                if (refreshed == null) log.d { "Skipped week widget refresh without an active cache boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to refresh all week widgets" }
             }
@@ -144,10 +144,10 @@ class WeekWidget : GlanceAppWidget() {
 
         suspend fun navigateWeek(context: Context, appWidgetId: Int, delta: Int) {
             try {
-                val navigated = widgetAccountGate.withAuthenticatedBoundary {
+                val navigated = widgetAccountGate.withActiveCacheBoundary {
                     val manager = GlanceAppWidgetManager(context)
                     val glanceId = manager.getGlanceIds(WeekWidget::class.java)
-                        .firstOrNull { manager.getAppWidgetId(it) == appWidgetId } ?: return@withAuthenticatedBoundary
+                        .firstOrNull { manager.getAppWidgetId(it) == appWidgetId } ?: return@withActiveCacheBoundary
                     updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
                         val currentOffset = prefs[WEEK_OFFSET_KEY] ?: 0
                         prefs.toMutablePreferences().apply {
@@ -157,7 +157,7 @@ class WeekWidget : GlanceAppWidget() {
                     }
                     instance.update(context, glanceId)
                 }
-                if (navigated == null) log.d { "Skipped week navigation without an authenticated boundary" }
+                if (navigated == null) log.d { "Skipped week navigation without an active cache boundary" }
             } catch (e: Exception) {
                 log.e(e) { "Failed to navigate week for widget $appWidgetId" }
             }
@@ -190,7 +190,7 @@ class WeekWidget : GlanceAppWidget() {
                 } else {
                     try {
                         val provider = WidgetDataProvider()
-                        provider.withAuthenticatedBoundary { boundary ->
+                        provider.withActiveCacheBoundary { boundary ->
                             val prefs = CalendarWidgetPreferences.load(context, appWidgetId)
                             val today = todayLocal()
                             val todayLocalMillis = startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)

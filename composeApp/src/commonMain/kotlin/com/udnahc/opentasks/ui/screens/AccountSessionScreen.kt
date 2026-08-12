@@ -82,6 +82,14 @@ import opentasks.composeapp.generated.resources.account_storage_warning
 import opentasks.composeapp.generated.resources.account_dismiss
 import opentasks.composeapp.generated.resources.account_retry
 import opentasks.composeapp.generated.resources.loading
+import opentasks.composeapp.generated.resources.local_clear_files_pending
+import opentasks.composeapp.generated.resources.local_clear_pre_reset
+import opentasks.composeapp.generated.resources.replacement_remote_delete_pending
+import opentasks.composeapp.generated.resources.replacement_exact_seed_pending
+import opentasks.composeapp.generated.resources.replacement_preview_changed
+import opentasks.composeapp.generated.resources.account_session_replacement_conflict
+import opentasks.composeapp.generated.resources.account_session_local_seed_source_invalid
+import opentasks.composeapp.generated.resources.use_without_sync
 import org.jetbrains.compose.resources.stringResource
 
 internal enum class AccountSessionEntryMode {
@@ -98,8 +106,10 @@ internal fun AccountSessionScreen(
     error: AccountUiError?,
     storageWarning: String?,
     reauthenticationReason: AccountReauthenticationReason? = null,
+    allowLocalOnly: Boolean,
     onSignIn: (endpoint: String, email: String, password: String) -> Unit,
     onReauthenticate: (email: String, password: String) -> Unit,
+    onUseWithoutSync: () -> Unit,
     onClearError: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -164,10 +174,12 @@ internal fun AccountSessionScreen(
                 error = error,
                 storageWarning = storageWarning,
                 reauthenticationReason = reauthenticationReason,
+                allowLocalOnly = allowLocalOnly,
                 onEndpointChanged = { endpointInput = it },
                 onEmailChanged = { emailInput = it },
                 onPasswordChanged = { passwordInput = it },
                 onSubmit = ::submit,
+                onUseWithoutSync = onUseWithoutSync,
                 onClearError = onClearError,
             )
         } else {
@@ -189,10 +201,12 @@ internal fun AccountSessionScreen(
                     error = error,
                     storageWarning = storageWarning,
                     reauthenticationReason = reauthenticationReason,
+                    allowLocalOnly = allowLocalOnly,
                     onEndpointChanged = { endpointInput = it },
                     onEmailChanged = { emailInput = it },
                     onPasswordChanged = { passwordInput = it },
                     onSubmit = ::submit,
+                    onUseWithoutSync = onUseWithoutSync,
                     onClearError = onClearError,
                 )
             }
@@ -212,10 +226,12 @@ private fun AccountSessionForm(
     error: AccountUiError?,
     storageWarning: String?,
     reauthenticationReason: AccountReauthenticationReason?,
+    allowLocalOnly: Boolean,
     onEndpointChanged: (String) -> Unit,
     onEmailChanged: (String) -> Unit,
     onPasswordChanged: (String) -> Unit,
     onSubmit: () -> Unit,
+    onUseWithoutSync: () -> Unit,
     onClearError: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -251,7 +267,7 @@ private fun AccountSessionForm(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        if (mode == AccountSessionEntryMode.SIGN_IN) {
+        if (mode == AccountSessionEntryMode.SIGN_IN && allowLocalOnly) {
             OutlinedTextField(
                 value = endpointInput,
                 onValueChange = onEndpointChanged,
@@ -351,6 +367,15 @@ private fun AccountSessionForm(
             }
             Text(if (isBusy) stringResource(Res.string.loading) else submitLabel)
         }
+        if (mode == AccountSessionEntryMode.SIGN_IN && allowLocalOnly) {
+            TextButton(
+                onClick = onUseWithoutSync,
+                enabled = !isBusy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(Res.string.use_without_sync))
+            }
+        }
     }
 }
 
@@ -397,6 +422,14 @@ internal fun AccountTransitionScreen(
         AccountTransitionPhase.PREPARED -> stringResource(Res.string.account_session_transition_prepared)
         AccountTransitionPhase.NEEDS_ACTIVATION -> stringResource(
             Res.string.account_session_transition_needs_activation
+        )
+        AccountTransitionPhase.PRE_RESET -> stringResource(Res.string.local_clear_pre_reset)
+        AccountTransitionPhase.FILES_PENDING -> stringResource(Res.string.local_clear_files_pending)
+        AccountTransitionPhase.REMOTE_DELETE_PENDING -> stringResource(
+            Res.string.replacement_remote_delete_pending
+        )
+        AccountTransitionPhase.EXACT_SEED_PENDING -> stringResource(
+            Res.string.replacement_exact_seed_pending
         )
     }
     AccountStatusPanel(
@@ -491,6 +524,15 @@ internal fun AccountErrorMessage(
             Res.string.account_session_storage_failed
         )
         AccountUiError.SESSION_RESTORE_FAILED -> stringResource(Res.string.account_restore_failed)
+        AccountUiError.REPLACEMENT_CONFLICT -> stringResource(
+            Res.string.account_session_replacement_conflict
+        )
+        AccountUiError.LOCAL_SEED_SOURCE_INVALID -> stringResource(
+            Res.string.account_session_local_seed_source_invalid
+        )
+        AccountUiError.REPLACEMENT_PREVIEW_CHANGED -> stringResource(
+            Res.string.replacement_preview_changed
+        )
         AccountUiError.GENERIC -> stringResource(Res.string.account_session_generic_error)
     }
     Column(verticalArrangement = Arrangement.spacedBy(OpenTasksTheme.dimens.spacerSmall)) {

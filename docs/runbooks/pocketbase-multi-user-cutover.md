@@ -1,10 +1,12 @@
 # PocketBase multi-user ownership cutover
 
-This runbook is the operator contract for migration `011_add_account_ownership.js`.
-It converts the existing OpenTasks PocketBase data set from installation-global
-ownership to two pre-created authenticated users. It is a production change,
-not a client migration. Keep all old clients frozen until the cutover has
-passed the verification gates and the owner-aware client rollout is ready.
+Sections 1–8 are the operator contract for migration
+`011_add_account_ownership.js`. It converts the existing OpenTasks PocketBase
+data set from installation-global ownership to two pre-created authenticated
+users. Section 9 is the additive operator contract for
+`012_enable_authoritative_account_replace.js`. Both are production server
+changes, not client migrations. Keep incompatible clients frozen until the
+relevant verification gates and client rollout are ready.
 
 The migration is transactional, but it is intentionally irreversible. A
 rollback after this migration has run is a restore of the complete pre-cutover
@@ -474,8 +476,112 @@ Attach these artifacts to the change record, with secrets and tokens removed:
 - production read-only Account A/B/anonymous probe summaries; and
 - rollout or rollback decision, operator, timestamp, and preserved backup path.
 
-The migration is not considered verified until the disposable real-instance
+Migration 011 is not considered verified until the disposable real-instance
 proof and the production count/rule checks are both attached. The absence of a
 local PocketBase binary, disposable data copy, or credentials is an unresolved
 environmental check—not permission to skip the proof or to mark this phase
 complete.
+
+## 9. Migration 012: authoritative account replacement
+
+Migration `012_enable_authoritative_account_replace.js` is applied only after
+migration 011 ownership and authorization have been accepted. It does not
+change `capabilityVersion = 2`; it adds the required capability field
+`authoritativeReplaceVersion = 1` and changes the seven sync collections from
+locked deletion to this owner-only rule:
+
+```text
+@request.auth.id != "" && account = @request.auth.id
+```
+
+The rule permits the authenticated stored owner to hard-delete that owner's
+record. Anonymous and cross-owner requests remain hidden. Normal OpenTasks
+deletes continue to write `isDeleted = true` tombstones; only the explicitly
+confirmed local-authoritative replacement executor uses hard delete.
+
+### 9.1 Production preconditions and rollback
+
+Before placing migration 012 in a non-disposable server's active migration
+directory:
+
+1. Confirm PocketBase is exactly v0.36.7 and migration 011 plus its ownership,
+   index, LWW, file, and capability checks have passed.
+2. Freeze writes and stop PocketBase.
+3. Record total/tombstone counts for all seven collections and create an
+   immutable backup containing the complete `pb_data`, attachment storage,
+   active migration directory, and exact binary. A database-only backup is not
+   sufficient.
+4. Exercise migration 012 and its authorization probes against a disposable
+   copy first. Never use production records for destructive testing without a
+   separate explicit confirmation and recorded backup/count evidence.
+5. Copy the reviewed migration beside the existing applied migrations and run
+   it from the PocketBase root:
+
+   ```bash
+   cp '/path/to/repository/pocketbase/pb_migrations/012_enable_authoritative_account_replace.js' \
+     '/opt/pocketbase/pb_migrations/'
+   /opt/pocketbase/pocketbase migrate up --dir='/opt/pocketbase/pb_data'
+   ```
+
+   Confirm a second `migrate up` is a no-op, the capability row is still
+   unique with `capabilityVersion = 2` and
+   `authoritativeReplaceVersion = 1`, pre/post counts match, and every sync
+   collection has the owner-only delete rule before restarting clients.
+
+Migration 012 intentionally has no down migration. Rollback means restoring
+the matching pre-012 database, attachment storage, migration directory, and
+v0.36.7 binary together. Preserve the failed post-migration state as an
+incident artifact before restoration.
+
+### 9.2 Required disposable authorization matrix
+
+Use temporary fixture users and records only. Tokens, passwords, raw
+authorization headers, task payloads, and file-token URLs must not be stored in
+the evidence. For a record owned by Account A, record these outcomes:
+
+| Probe | Required outcome |
+|---|---|
+| Anonymous delete | hidden/not found |
+| Account B deletes Account A record | hidden/not found |
+| Account A deletes its own record | success/no content |
+| Account B reads its own control record afterward | success; unchanged |
+
+Also verify all seven collections use the rule above and the capability row is
+authenticated read-only. Authorization status alone does not prove the client
+replacement state machine, complete pagination, attachment-file deletion and
+re-upload, exact final inventory, recovery after process death, or normal
+tombstone synchronization. Those scenarios may be exercised manually against a
+disposable instance when the release risk warrants it. Do not introduce a broad
+permanent integration harness for them without explicit user approval.
+
+### 9.3 Recorded disposable PocketBase 0.36.7 evidence
+
+The manager supplied the following result from temporary fixture data on a
+real disposable PocketBase v0.36.7 instance:
+
+| Probe | Observed HTTP status |
+|---|---|
+| Anonymous delete of Account A record | `404` |
+| Account B delete of Account A record | `404` |
+| Account A delete of its own record | `204` |
+| Account B control record remained readable | `200` |
+
+This evidence proves the migration 012 owner-delete authorization boundary and
+cross-account control-record isolation for that disposable fixture. It does
+not claim a complete app-driven authoritative replacement, attachment
+delete/re-upload verification, simulator/device run, production-data test, or
+interactive UI exercise.
+
+### 9.4 Migration 012 evidence checklist
+
+- exact PocketBase v0.36.7 version output;
+- reviewed hashes for migrations `001` through `012`;
+- pre-012 full backup checksum and extraction proof;
+- pre/post migration total and tombstone counts;
+- unique capability row with capability version 2 and authoritative replace
+  version 1;
+- all seven owner-only delete rules;
+- sanitized anonymous, cross-owner, same-owner, and Account B control-record
+  probe summaries; and
+- explicit disposition of the still-unperformed app-driven attachment,
+  exact-inventory, recovery, device/simulator, and production-data checks.

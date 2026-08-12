@@ -61,7 +61,7 @@ object NotificationBoundaryHelper : KoinComponent {
             }
 
             try {
-                val accepted = accountBoundaryExecutor.withAuthenticatedBoundary(
+                val accepted = accountBoundaryExecutor.withActiveCacheBoundary(
                     expectedAccountId = accountId,
                     expectedBoundaryEpoch = boundaryEpoch,
                 ) {

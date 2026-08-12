@@ -32,7 +32,7 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        val handled = accountBoundaryExecutor.withAuthenticatedBoundary(
+                        val handled = accountBoundaryExecutor.withActiveCacheBoundary(
                             expectedAccountId = intent.accountId(),
                             expectedBoundaryEpoch = intent.boundaryEpoch(),
                         ) {
@@ -40,7 +40,7 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
                             notificationScheduler.cancel(semanticKey)
                         }
                         if (handled == null) {
-                            log.d { "Skipping all-day notification dismissal without a matching authenticated account session for task $taskId" }
+                            log.d { "Skipping all-day notification dismissal without a matching active cache session for task $taskId" }
                         }
                     } catch (e: CancellationException) {
                         throw e
@@ -55,7 +55,7 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        val handled = accountBoundaryExecutor.withAuthenticatedBoundary(
+                        val handled = accountBoundaryExecutor.withActiveCacheBoundary(
                             expectedAccountId = intent.accountId(),
                             expectedBoundaryEpoch = intent.boundaryEpoch(),
                         ) {
@@ -65,7 +65,7 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
                             notificationScheduler.stopOngoing(taskId)
                         }
                         if (handled == null) {
-                            log.d { "Skipping Mark Done action without a matching authenticated account session for task $taskId" }
+                            log.d { "Skipping Mark Done action without a matching active cache session for task $taskId" }
                         }
                     } catch (e: CancellationException) {
                         throw e

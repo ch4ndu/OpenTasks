@@ -46,6 +46,23 @@ class AccountBoundaryGuardTest {
         assertNull(AccountBoundaryGuard(FakeAccountStateStore(binding, transition)).activeBoundary())
         assertFalse(AccountBoundaryGuard(FakeAccountStateStore(binding, transition)).matches("account-a", 7))
     }
+
+    @Test
+    fun localBindingUsesTheSameOwnerEpochBoundaryWithoutRemoteIdentity() = runTest {
+        val local = CacheBinding(
+            canonicalEndpoint = "",
+            serverInstanceId = "",
+            accountId = LOCAL_CACHE_OWNER_ID,
+            capabilityVersion = 0,
+            boundaryEpoch = 9L,
+            mode = CacheMode.LOCAL_ONLY,
+        )
+        val guard = AccountBoundaryGuard(FakeAccountStateStore(binding = local))
+
+        assertEquals(local.asAccountBoundary(), guard.activeBoundary())
+        assertTrue(guard.matches(LOCAL_CACHE_OWNER_ID, 9L))
+        assertFalse(guard.matches(LOCAL_CACHE_OWNER_ID, 8L))
+    }
 }
 
 private class FakeAccountStateStore(

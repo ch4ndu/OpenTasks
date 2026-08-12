@@ -8,6 +8,12 @@ import app.cash.turbine.test
 import com.udnahc.opentasks.data.attachment.AttachmentImageDecodeException
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
+import com.udnahc.opentasks.data.auth.AccountCacheResetter
+import com.udnahc.opentasks.data.auth.AccountTransition
+import com.udnahc.opentasks.data.auth.AccountTransitionPhase
+import com.udnahc.opentasks.data.auth.AccountTransitionPurpose
+import com.udnahc.opentasks.data.auth.LOCAL_CACHE_OWNER_ID
+import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.AttachmentSyncState
@@ -23,11 +29,14 @@ import com.udnahc.opentasks.data.sync.SyncTrigger
 import com.udnahc.opentasks.data.sync.SyncDegradedException
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.SyncService
+import com.udnahc.opentasks.data.sync.ServerMigrationCoordinator
+import com.udnahc.opentasks.data.sync.SyncMode
+import com.udnahc.opentasks.data.sync.SyncSettingsKeys
 import com.udnahc.opentasks.data.sync.adapters.AttachmentFileDownloadException
 import com.udnahc.opentasks.data.sync.adapters.AttachmentSyncAdapter
 import com.udnahc.opentasks.data.sync.records.AttachmentRecord
 import com.udnahc.opentasks.data.sync.records.toAttachment
-import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
+import com.udnahc.opentasks.data.settings.RoomAccountStateStore
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
@@ -537,9 +546,7 @@ class PersistenceTest {
         val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
         val service = SyncService(provider, emptyList(), accountMutationGate = mutationGate)
         val trigger = TriggerSyncAction(provider, service)
-        val action = clearLocalDataAction(storage, service, trigger)
-
-        action()
+        clearLocalData(storage, service, trigger)
 
         assertTrue(storage.clearAllCalled)
         assertFalse(provider.isConfigured)
@@ -556,6 +563,86 @@ class PersistenceTest {
     }
 
     @Test
+    fun authoritativeSeedResetRetainsCompleteGraphAndLocalAttachmentPathsWhileClearingAllSyncMetadata() = runTest {
+        database.categoryDao().insert(testCategory(id = "category-replace", pbId = "pb-category", isSynced = true))
+        database.taskDao().insert(
+            testTask(
+                id = "task-replace",
+                categoryId = "category-replace",
+                pbId = "pb-task",
+                isSynced = true,
+            )
+        )
+        database.tagDao().insertTag(testTag(id = "tag-replace", pbId = "pb-tag", isSynced = true))
+        database.tagDao().insertTaskTag(
+            testTaskTag(
+                taskId = "task-replace",
+                tagId = "tag-replace",
+                pbId = "pb-task-tag",
+                isSynced = true,
+            )
+        )
+        database.attachmentDao().insert(
+            testAttachment(
+                id = "attachment-replace",
+                ownerId = "task-replace",
+                localPath = "/local/original.jpg",
+                thumbnailPath = "/local/original-thumb.jpg",
+                remoteFileName = "old-server.jpg",
+                syncState = AttachmentSyncState.SYNCED,
+                pbId = "pb-attachment",
+                isSynced = true,
+            )
+        )
+        database.noteDao().insert(testNote(id = "note-replace", pbId = "pb-note", isSynced = true))
+        database.countdownDao().insert(
+            testCountdown(id = "countdown-replace", pbId = "pb-countdown", isSynced = true),
+        )
+        val binding = CacheBinding(
+            canonicalEndpoint = "https://tasks.example.com:443",
+            serverInstanceId = "server",
+            accountId = "account-a",
+            capabilityVersion = 2,
+            boundaryEpoch = 8,
+        )
+        val transition = AccountTransition(
+            sourceAccountId = LOCAL_CACHE_OWNER_ID,
+            destinationAccountId = binding.accountId,
+            canonicalEndpoint = binding.canonicalEndpoint,
+            serverInstanceId = binding.serverInstanceId,
+            capabilityVersion = binding.capabilityVersion,
+            boundaryEpoch = binding.boundaryEpoch,
+            phase = AccountTransitionPhase.EXACT_SEED_PENDING,
+            purpose = AccountTransitionPurpose.LOCAL_AUTHORITATIVE_REPLACEMENT,
+        )
+        val stateStore = RoomAccountStateStore(database)
+
+        ServerMigrationCoordinator(database, stateStore).resetForAuthoritativeSeed(binding, transition)
+
+        assertEquals("task-replace", database.taskDao().getAllTasksOnce().single().id)
+        assertNull(database.taskDao().getAllTasksOnce().single().pbId)
+        assertFalse(database.taskDao().getAllTasksOnce().single().isSynced)
+        assertNull(database.categoryDao().getAllCategoriesOnce().single().pbId)
+        assertNull(database.tagDao().getAllTagsOnce().single().pbId)
+        assertNull(database.tagDao().getAllTaskTagsOnce().single().pbId)
+        assertNull(database.noteDao().getAllNotesOnce().single().pbId)
+        assertNull(database.countdownDao().getAllCountdownsOnce().single().pbId)
+        val attachment = database.attachmentDao().getAllOnce().single()
+        assertEquals("/local/original.jpg", attachment.localPath)
+        assertEquals("/local/original-thumb.jpg", attachment.thumbnailPath)
+        assertNull(attachment.pbId)
+        assertNull(attachment.remoteFileName)
+        assertFalse(attachment.isSynced)
+        assertEquals(AttachmentSyncState.LOCAL_ONLY, attachment.syncState)
+        assertEquals(
+            SyncMode.AUTHORITATIVE_REPLACE_PENDING.name,
+            database.appSettingsDao().getValue(SyncSettingsKeys.MODE),
+        )
+        assertEquals(binding, stateStore.readCacheBinding())
+        assertEquals(transition, stateStore.readTransition())
+    }
+
+    @Test
     fun clearLocalDataFailureLeavesPocketBaseDisconnected() = runTest {
         val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
         val service = SyncService(provider, emptyList(), accountMutationGate = mutationGate)
@@ -567,7 +654,7 @@ class PersistenceTest {
         }
 
         assertFailsWith<IllegalStateException> {
-            clearLocalDataAction(failingStorage, service, trigger)()
+            clearLocalData(failingStorage, service, trigger)
         }
 
         assertFalse(provider.isConfigured)
@@ -578,7 +665,7 @@ class PersistenceTest {
         val provider = PocketBaseClientProvider().apply { configure("http://localhost:8090") }
         val service = SyncService(provider, emptyList(), accountMutationGate = mutationGate)
         val trigger = TriggerSyncAction(provider, service)
-        clearLocalDataAction(FakeAttachmentFileStorage(), service, trigger)()
+        clearLocalData(FakeAttachmentFileStorage(), service, trigger)
         val repository = TaskRepositoryImpl(database.taskDao(), trigger, database, mutationGate = mutationGate)
 
         repository.insert(testTask(id = "post-reset"))
@@ -587,17 +674,38 @@ class PersistenceTest {
         assertFalse(provider.isConfigured)
     }
 
-    private fun clearLocalDataAction(
+    private suspend fun clearLocalData(
         storage: AttachmentFileStorage,
         service: SyncService,
         trigger: TriggerSyncAction,
-    ) = ClearLocalDataAction(
-        database = database,
-        attachmentFileStorage = storage,
-        syncService = service,
-        triggerSyncAction = trigger,
-        mutationGate = MutexAccountMutationGate(),
-    )
+    ) {
+        val stateStore = RoomAccountStateStore(database)
+        val resetter = AccountCacheResetter(
+            database = database,
+            attachmentFileStorage = storage,
+            syncService = service,
+            mutationGate = mutationGate,
+            stateStore = stateStore,
+            cancelPendingSync = trigger::cancelPendingSync,
+        )
+        val filesPending = AccountTransition(
+            sourceAccountId = LOCAL_CACHE_OWNER_ID,
+            destinationAccountId = "",
+            canonicalEndpoint = "",
+            serverInstanceId = "",
+            capabilityVersion = 0,
+            boundaryEpoch = 1L,
+            phase = AccountTransitionPhase.FILES_PENDING,
+            purpose = AccountTransitionPurpose.LOCAL_CLEAR,
+        )
+        resetter.replaceCacheWithinMutation(
+            binding = null,
+            transition = filesPending,
+            clearInstallationSettings = true,
+        )
+        resetter.clearAttachmentFilesWithinMutation()
+        stateStore.clearTransition()
+    }
 
     @Test
     fun attachmentPushHardDeletesNeverSyncedTombstoneBeforeParentGate() = runTest {

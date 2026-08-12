@@ -48,7 +48,7 @@ class WidgetSettingsActivity : ComponentActivity(), KoinComponent {
         }
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val initialPrefs = widgetAccountGate.withAuthenticatedBoundary {
+            val initialPrefs = widgetAccountGate.withActiveCacheBoundary {
                 WidgetPreferences.load(this@WidgetSettingsActivity, appWidgetId)
             }
             withContext(Dispatchers.Main) {
@@ -71,7 +71,7 @@ class WidgetSettingsActivity : ComponentActivity(), KoinComponent {
 
     private fun saveAndFinish(prefs: WidgetPreferences, appWidgetId: Int) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val saved = widgetAccountGate.withAuthenticatedBoundary { boundary ->
+            val saved = widgetAccountGate.withActiveCacheBoundary { boundary ->
                 WidgetPreferences.save(this@WidgetSettingsActivity, prefs)
                 TaskWidget.refreshWidgetWithinBoundary(this@WidgetSettingsActivity, appWidgetId, boundary)
             }

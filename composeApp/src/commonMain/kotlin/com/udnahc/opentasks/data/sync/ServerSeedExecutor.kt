@@ -25,8 +25,22 @@ class ServerSeedExecutor(
     suspend fun isPending(): Boolean =
         database.appSettingsDao().getValue(SyncSettingsKeys.MODE) == SyncMode.EMPTY_SERVER_SEED_PENDING.name
 
+    suspend fun isAuthoritativePending(): Boolean =
+        database.appSettingsDao().getValue(SyncSettingsKeys.MODE) == SyncMode.AUTHORITATIVE_REPLACE_PENDING.name
+
     suspend fun resume(client: PocketbaseClient) {
         if (!isPending()) return
+        resumeSeed(client, authoritative = false)
+    }
+
+    suspend fun resumeAuthoritative(client: PocketbaseClient) {
+        if (!isAuthoritativePending()) {
+            throw SyncAdapterException("Authoritative seed resume rejected: replacement mode is not pending")
+        }
+        resumeSeed(client, authoritative = true)
+    }
+
+    private suspend fun resumeSeed(client: PocketbaseClient, authoritative: Boolean) {
         val inventory = inventoryReader(client)
         val expectedIdentity = accountStateStore?.readCacheBinding()?.serverInstanceId
             ?: database.appSettingsDao().getValue(SyncSettingsKeys.SERVER_INSTANCE_ID)
@@ -43,10 +57,17 @@ class ServerSeedExecutor(
             val rows = inventory.recordsByCollection[adapter.collectionName]
                 ?: throw SyncAdapterException("Seed resume inventory is missing ${adapter.collectionName}")
             if (!adapter.validateSeedInventory(rows)) {
+                if (authoritative) {
+                    throw AuthoritativeSeedConflictException(
+                        "Authoritative seed diverged in ${adapter.collectionName}",
+                    )
+                }
                 throw SyncAdapterException("Seed resume rejected by ${adapter.collectionName} inventory")
             }
         }
-        ordered.forEach { it.seedAll(client) }
+        ordered.forEach { adapter ->
+            if (authoritative) adapter.seedAllAuthoritative(client) else adapter.seedAll(client)
+        }
 
         val finalInventory = inventoryReader(client)
         if (finalInventory.serverInstanceId != expectedIdentity ||
@@ -56,15 +77,35 @@ class ServerSeedExecutor(
         }
         database.useWriterConnection { connection ->
             connection.immediateTransaction {
-                if (database.appSettingsDao().getValue(SyncSettingsKeys.MODE) != SyncMode.EMPTY_SERVER_SEED_PENDING.name) {
+                val expectedMode = if (authoritative) {
+                    SyncMode.AUTHORITATIVE_REPLACE_PENDING.name
+                } else {
+                    SyncMode.EMPTY_SERVER_SEED_PENDING.name
+                }
+                if (database.appSettingsDao().getValue(SyncSettingsKeys.MODE) != expectedMode) {
                     return@immediateTransaction
                 }
                 val complete = ordered.all { adapter ->
                     adapter.isSeedComplete(finalInventory.recordsByCollection[adapter.collectionName].orEmpty())
                 }
-                if (!complete) throw SyncAdapterException("Seed completion invariant failed; migration remains pending")
-                database.appSettingsDao().setValue(AppSettings(SyncSettingsKeys.MODE, SyncMode.NORMAL.name))
+                if (!complete) {
+                    if (authoritative) {
+                        throw AuthoritativeSeedConflictException(
+                            "Authoritative seed completion inventory diverged",
+                        )
+                    }
+                    throw SyncAdapterException("Seed completion invariant failed; migration remains pending")
+                }
+                if (!authoritative) {
+                    database.appSettingsDao().setValue(AppSettings(SyncSettingsKeys.MODE, SyncMode.NORMAL.name))
+                }
             }
         }
     }
 }
+
+class AuthoritativeSeedConflictException(message: String) : IllegalStateException(message)
+
+class AuthoritativeLocalSeedSourceException : IllegalStateException(
+    "The local authoritative seed source is not uploadable",
+)

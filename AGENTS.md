@@ -52,6 +52,7 @@ Use these behavioral guardrails for every coding, review, and refactor task. The
 - Do not add error handling for states that cannot occur under the established app contracts.
 - If an implementation grows large and a much smaller version would solve the same problem, simplify before finishing.
 - Ask whether a senior engineer would consider the change overcomplicated. If yes, reduce it.
+- If a review, plan, skill, or agent recommends a substantially larger follow-up—such as a broad integration harness, new framework, or multi-system fixture—stop before implementing it, push back as disproportionate citing the user's preference for simple scoped work, and ask the user for explicit permission to proceed.
 
 ### 3. Surgical Changes
 

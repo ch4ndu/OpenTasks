@@ -6,11 +6,16 @@ import com.udnahc.opentasks.data.auth.AccountSessionState
 import com.udnahc.opentasks.data.auth.AuthTokenStore
 import com.udnahc.opentasks.data.auth.AuthenticatedAccount
 import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.auth.LocalServerReplacementConfirmation
+import com.udnahc.opentasks.data.sync.AuthoritativeLocalSeedSourceException
+import com.udnahc.opentasks.domain.action.account.ConfirmLocalServerReplacementAction
 import com.udnahc.opentasks.domain.action.account.LoginAccountAction
 import com.udnahc.opentasks.domain.action.account.LogoutAccountAction
 import com.udnahc.opentasks.domain.action.account.ReauthenticateAccountAction
 import com.udnahc.opentasks.domain.action.account.RestoreSessionAction
 import com.udnahc.opentasks.domain.action.account.SwitchAccountAction
+import com.udnahc.opentasks.domain.action.account.StartLocalOnlyAction
+import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.usecase.account.ObserveAccountSessionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
@@ -105,6 +110,20 @@ class AuthViewModelTest : MainDispatcherRule() {
         assertNull(viewModel.operation.value)
     }
 
+    @Test
+    fun localSeedSourceFailureMapsToActionableAccountError() = runTest(dispatcher) {
+        val repository = FakeAccountRepository(
+            confirmationFailure = AuthoritativeLocalSeedSourceException(),
+        )
+        val viewModel = authViewModel(repository)
+
+        viewModel.confirmLocalServerReplacement()
+        advanceUntilIdle()
+
+        assertEquals(AccountUiError.LOCAL_SEED_SOURCE_INVALID, viewModel.error.value)
+        assertNull(viewModel.operation.value)
+    }
+
     private fun authViewModel(repository: FakeAccountRepository): AuthViewModel = AuthViewModel(
         observeAccountSession = ObserveAccountSessionUseCase(repository),
         observePocketBaseUrl = ObservePocketBaseUrlUseCase(FakeAppSettingsRepository()),
@@ -113,7 +132,10 @@ class AuthViewModelTest : MainDispatcherRule() {
         reauthenticateAccountAction = ReauthenticateAccountAction(repository),
         switchAccountAction = SwitchAccountAction(repository),
         logoutAccountAction = LogoutAccountAction(repository),
+        startLocalOnlyAction = StartLocalOnlyAction(repository),
+        clearLocalDataAction = ClearLocalDataAction(repository),
         tokenStore = NoOpAuthTokenStore,
+        confirmLocalServerReplacementAction = ConfirmLocalServerReplacementAction(repository),
     )
 }
 
@@ -150,6 +172,7 @@ private class FakeAccountRepository(
     initialState: AccountSessionState = AccountSessionState.SignedOut,
     private val loginGate: CompletableDeferred<Unit>? = null,
     private val restoreFailure: Throwable? = null,
+    private val confirmationFailure: Throwable? = null,
 ) : AccountRepository {
     private val state = MutableStateFlow(initialState)
     override val sessionState: StateFlow<AccountSessionState> = state.asStateFlow()
@@ -162,6 +185,15 @@ private class FakeAccountRepository(
     override suspend fun restoreSession(): AccountSessionState {
         restoreFailure?.let { throw it }
         return state.value
+    }
+
+    override suspend fun startLocalOnly(): AccountSessionState = state.value
+
+    override suspend fun clearLocalData(): AccountSessionState = state.value
+
+    override suspend fun confirmLocalServerReplacement(): LocalServerReplacementConfirmation {
+        confirmationFailure?.let { throw it }
+        return LocalServerReplacementConfirmation.Started
     }
 
     override suspend fun login(

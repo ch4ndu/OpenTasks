@@ -4,6 +4,8 @@ A cross-platform task management app built with **Kotlin Multiplatform** and **C
 
 **Current release:** 1.1.0
 
+**Development source:** Local-only startup, authoritative PocketBase connect, and bounded Quick Add are implemented in the working source; release/version work remains separate.
+
 ## Note
 This project is built collaboratively with AI assistance (Claude Code). The code is reviewed, iterated on, and guided by me at every step — not auto-generated and dumped. Architecture decisions, feature design, and quality standards are human-driven; AI accelerates the implementation.
 
@@ -63,6 +65,7 @@ See [docs/README.md](docs/README.md) for feature behavior and technical design n
 ### Task Management
 - **Eisenhower Matrix** — Visualize tasks across four priority quadrants (Urgent & Important, Not Urgent & Important, Urgent & Unimportant, Not Urgent & Unimportant)
 - **Task Lists** — Organize tasks into custom categories (default "Inbox" included)
+- **Quick Add** — Capture a title with bounded offline English date, time, and recurrence phrases, review removable inference chips, or choose the full editor
 - **Recurring Tasks** — Daily, weekly, monthly, yearly, or every weekday with configurable intervals
 - **Reminders** — Configurable notifications (days/weeks/months before deadline), plus duration and date-based reminders
 - **Tags** — Color-coded tags for flexible cross-category organization
@@ -87,8 +90,10 @@ See [docs/README.md](docs/README.md) for feature behavior and technical design n
 - **Recurring Countdowns** — Project the effective occurrence and continue reminders on daily, weekly, monthly, yearly, or weekday schedules
 
 ### Sync & Data
-- **Authenticated PocketBase Sync** — Required account-scoped sync via [PocketBase](https://pocketbase.io) for task access, backup, and multi-device use (tasks, attachments, categories, notes, countdowns, tags, task-tag assignments)
-- **Automatic Sync** — Syncs on app resume and after every write; manual sync available in Settings
+- **Local-Only Mode** — Use the complete local task app without configuring a backend
+- **Optional Authenticated PocketBase Sync** — Account-scoped backup and multi-device synchronization for tasks, attachments, categories, notes, countdowns, tags, and task-tag assignments
+- **Automatic Sync** — PocketBase mode syncs on app resume and after every write; manual sync is available in Settings, while Local only mode performs no network refresh
+- **Authoritative Connect** — Connecting an existing local-only cache explicitly replaces the authenticated destination owner's PocketBase data after a count-only preview and destructive confirmation
 - **Clear Local Data** — Reset option available in Settings
 - **CSV / ICS Export** — Export all tasks to a user-chosen file on Android, iOS, and Desktop
 
@@ -183,17 +188,21 @@ Platform-specific code uses Kotlin's `expect`/`actual` pattern and is kept to a 
 - **Repository pattern** wraps Room DAOs for data access
 - **UseCase / Action pattern** — reads via UseCase classes (return `Flow`), writes via Action classes
 - **Per-screen ViewModels** — `MatrixViewModel`, `TaskListViewModel`, `CalendarViewModel`, `NoteViewModel`, `CountdownViewModel`, plus `AppViewModel` for shared operations
-- **Account-epoch lifecycle** — authenticated ViewModels and asynchronous mutations are cleared or rejected when the active PocketBase account boundary changes
+- **Active-cache epoch lifecycle** — local-only and authenticated ViewModels/asynchronous mutations are cleared or rejected when the active owner/epoch boundary changes
 - **UTC storage** — dates stored as UTC epoch millis in the database, converted to local time in the repository layer
 - **Derived StateFlows** — filtering, sorting, and grouping happen in UseCases/ViewModels, not in composables
 - **Strong skipping** — Compose compiler handles recomposition skipping; no manual `@Immutable` annotations needed
-- **Authenticated auto-sync** — repositories trigger account-scoped PocketBase sync on every write; `SyncService` uses DAOs directly and syncs with pull-before-push last-write-wins passes
+- **Optional authenticated auto-sync** — repositories request account-scoped PocketBase sync after writes when a remote session is active; `SyncService` uses DAOs directly and syncs with pull-before-push last-write-wins passes
 
-## PocketBase Sync (Required for Task UI)
+## Optional PocketBase Sync
 
-The app supports two pre-created PocketBase accounts. Each account owns its tasks, attachments, categories, notes, countdowns, tags, and task-tag assignments; PocketBase authorization rules and client-side owner validation prevent one account from reading or writing the other account's records. Task UI is shown only after an authenticated account and the single local Room cache have a proven matching boundary. After that boundary has been established online and stored durably, the same account can continue using its bound local cache offline; backend-free first launch is not supported in this release.
+On first launch, choose **Use without sync** to create a durable local-only cache without contacting PocketBase. Local-only mode supports normal tasks, reminders, imports/exports, attachments, calendars, and Android widgets. Network sync controls and pull-to-refresh are absent.
 
-Production upgrades must follow [the multi-user cutover runbook](docs/runbooks/pocketbase-multi-user-cutover.md). It covers backups, creating Account A and Account B, assigning all existing records to Account A, authorization/file probes, rollback, and client rollout order. Do not apply migration `011` to production without that procedure.
+PocketBase mode supports two pre-created accounts. Each account owns its tasks, attachments, categories, notes, countdowns, tags, and task-tag assignments; PocketBase authorization rules and client-side owner validation prevent one account from reading or writing another account's records. After an authenticated boundary has been proven and stored durably, that account can continue using its bound Room cache offline.
+
+Connecting an existing local-only cache is not a merge. The app authenticates without changing the active cache, shows sanitized destination-owner counts, and requires an explicit destructive confirmation. It then deletes only that owner's seven synchronized collections, verifies emptiness, preserves and resets the complete local snapshot's sync metadata, exact-seeds it, and activates the remote session only after final inventory equality. Once confirmed, recovery is resumable and cannot be cancelled.
+
+Production upgrades must follow [the PocketBase cutover and migration runbook](docs/runbooks/pocketbase-multi-user-cutover.md). It covers migration 011 ownership cutover, migration 012 authoritative-replacement capability, backups, authorization/file probes, rollback, and client rollout order. Do not apply either migration to production without its corresponding procedure.
 
 ### Quick Start (Ubuntu)
 
@@ -205,11 +214,11 @@ unzip pocketbase_*.zip -d /opt/pocketbase
 # 2. Copy the migration script next to the binary
 cp -r pocketbase/pb_migrations /opt/pocketbase/pb_migrations
 
-# 3. Follow the multi-user cutover runbook, then start PocketBase
+# 3. Follow the cutover runbook for migrations 011 and 012, then start PocketBase
 /opt/pocketbase/pocketbase serve --http=0.0.0.0:8090
 ```
 
-PocketBase runs the scripts in `pb_migrations/`. Migration `011` is intentionally fail-closed: it requires two distinct pre-created users plus explicit Account A, Account B, and legacy-endpoint inputs. See the runbook for the exact PocketBase 0.36.7 procedure.
+PocketBase runs the scripts in `pb_migrations/`. Migration `011` is intentionally fail-closed: it requires two distinct pre-created users plus explicit Account A, Account B, and legacy-endpoint inputs. Migration `012` preserves capability version 2, adds `authoritativeReplaceVersion = 1`, and changes only the seven sync collections' delete rules so the authenticated stored owner can be deleted by the confirmed replacement executor. See the runbook for the exact PocketBase 0.36.7 procedures.
 
 ### Running as a Background Service (systemd)
 
@@ -250,10 +259,10 @@ sudo systemctl status pocketbase
 
 ### Connecting the App
 
-1. Open the app's sign-in screen.
-2. Enter the PocketBase URL (for example `https://tasks.example.com`), Account A or Account B email, and password.
-3. Sign in. The endpoint becomes read-only while authenticated; log out before changing servers.
-4. Use **Settings → Account** to switch between the two accounts or log out. Switching and logout require an online final source sync with no pending local rows.
+1. On an unbound installation, choose **Use without sync** for Local only mode, or enter the PocketBase URL, Account A/B email, and password to sign in directly.
+2. In PocketBase mode, the endpoint becomes read-only while authenticated. Use **Settings → Account** to switch accounts or log out; both require an online final source sync with no pending local rows.
+3. In Local only mode, choose **Connect to PocketBase**, review the destination-owner counts, and confirm only if replacing that owner's server data with the complete local snapshot is intended.
+4. Keep other destination-account clients closed during replacement. The app detects divergence and retries through full delete/reset/reseed, but cannot merge those concurrent edits.
 
 ### Migration Details
 
@@ -275,7 +284,7 @@ The included migrations (`pocketbase/pb_migrations/`) create the following colle
 
 **`attachments`** — account, localId, ownerType, ownerId, kind, protected file, mimeType, fileName, fileSizeBytes, width, height, sortOrder, isDeleted, localCreatedAt, localUpdatedAt. Task images use `ownerType = "task"` and `kind = "image"`. Downloads require an authenticated PocketBase file token.
 
-Each synchronized collection has a required `account` relation and a unique `(account, localId)` index, so both accounts may use stable local IDs such as Inbox. Collection rules require authentication and enforce stored/request owner equality; deletes remain tombstone-only. The `users` collection does not expose public CRUD/list/view APIs.
+Each synchronized collection has a required `account` relation and a unique `(account, localId)` index, so both accounts may use stable local IDs such as Inbox. Collection rules require authentication and enforce stored/request owner equality. Normal application deletes remain tombstones; migration 012 additionally allows a record's authenticated stored owner to hard-delete it only for the confirmed authoritative-replacement workflow. The `users` collection does not expose public CRUD/list/view APIs.
 
 Sync runs one collection at a time in this order: categories, tags, tasks, attachments, task_tags, notes, countdowns. Each collection pulls before pushing. Conflicts use last-write-wins by the app-managed `localUpdatedAt` timestamp; if a remote row is newer it overwrites local state, and if an unsynced local row is newer or equal it is pushed. Deletes are durable tombstones (`isDeleted = true`) rather than PocketBase hard deletes. A physically missing server row is treated as server damage/manual deletion and the synced active local row is marked unsynced so the next push recreates it. Device clock skew can make the wrong edit win.
 
@@ -285,7 +294,7 @@ Manual public-rule setup is not supported. Use the versioned migrations and veri
 
 ### Backups
 
-PocketBase stores database state under `pb_data` and attachment files in its storage tree. Follow the runbook's database-and-storage backup procedure before cutover and keep regular backups afterward. A database-only copy is not a complete attachment backup.
+PocketBase stores database state under `pb_data` and attachment files in its storage tree. Follow the runbook's database-and-storage backup procedure before migrations 011/012 and before any non-disposable destructive replacement validation; keep regular backups afterward. A database-only copy is not a complete attachment backup.
 
 ```bash
 # Simple cron backup (daily at 2am)

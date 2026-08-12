@@ -34,7 +34,7 @@ class BootReceiver : BroadcastReceiver(), KoinComponent {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val rebuilt = accountBoundaryExecutor.withAuthenticatedBoundary {
+                val rebuilt = accountBoundaryExecutor.withActiveCacheBoundary {
                     try {
                         rebuildReminderQueueAction()
                     } catch (error: CancellationException) {
@@ -51,7 +51,7 @@ class BootReceiver : BroadcastReceiver(), KoinComponent {
                     }
                 }
                 if (rebuilt == null) {
-                    log.d { "Skipping reminder rebuild without an authenticated account session" }
+                    log.d { "Skipping reminder rebuild without an active cache session" }
                 }
             } catch (e: CancellationException) {
                 throw e

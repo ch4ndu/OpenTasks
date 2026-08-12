@@ -123,8 +123,69 @@ class ServerSeedExecutorTest {
         assertEquals(SyncMode.EMPTY_SERVER_SEED_PENDING.name, database.appSettingsDao().getValue(SyncSettingsKeys.MODE))
     }
 
+    @Test
+    fun `authoritative seed verifies exact inventory but leaves activation mode to the replacement executor`() = runTest {
+        setAuthoritativePending()
+        val adapter = SeedAdapter("categories", 0, mutableListOf()).apply {
+            rows += SeedRow("active", deleted = false)
+            rows += SeedRow("tombstone", deleted = true)
+        }
+        var reads = 0
+        val executor = ServerSeedExecutor(
+            database,
+            listOf(adapter),
+            inventoryReader = {
+                reads += 1
+                inventory(
+                    mapOf(
+                        "categories" to if (reads == 1) emptyList() else adapter.remoteRows(),
+                    ),
+                )
+            },
+        )
+
+        executor.resumeAuthoritative(client())
+
+        assertTrue(adapter.rows.all { it.synced })
+        assertEquals(
+            SyncMode.AUTHORITATIVE_REPLACE_PENDING.name,
+            database.appSettingsDao().getValue(SyncSettingsKeys.MODE),
+        )
+    }
+
+    @Test
+    fun `authoritative seed reports divergence as a replacement conflict`() = runTest {
+        setAuthoritativePending()
+        val adapter = SeedAdapter("categories", 0, mutableListOf()).apply {
+            rows += SeedRow("local", deleted = false)
+        }
+        val executor = ServerSeedExecutor(
+            database,
+            listOf(adapter),
+            inventoryReader = {
+                inventory(mapOf("categories" to listOf(row("other-client", false, 2))))
+            },
+        )
+
+        assertFailsWith<AuthoritativeSeedConflictException> {
+            executor.resumeAuthoritative(client())
+        }
+        assertEquals(0, adapter.seedCalls)
+        assertEquals(
+            SyncMode.AUTHORITATIVE_REPLACE_PENDING.name,
+            database.appSettingsDao().getValue(SyncSettingsKeys.MODE),
+        )
+    }
+
     private suspend fun setPending(identity: String = "server") {
         database.appSettingsDao().setValue(AppSettings(SyncSettingsKeys.MODE, SyncMode.EMPTY_SERVER_SEED_PENDING.name))
+        database.appSettingsDao().setValue(AppSettings(SyncSettingsKeys.SERVER_INSTANCE_ID, identity))
+    }
+
+    private suspend fun setAuthoritativePending(identity: String = "server") {
+        database.appSettingsDao().setValue(
+            AppSettings(SyncSettingsKeys.MODE, SyncMode.AUTHORITATIVE_REPLACE_PENDING.name),
+        )
         database.appSettingsDao().setValue(AppSettings(SyncSettingsKeys.SERVER_INSTANCE_ID, identity))
     }
 
@@ -195,6 +256,8 @@ class ServerSeedExecutorTest {
             calls += collectionName
             rows.replaceAll { it.copy(synced = true) }
         }
+
+        override suspend fun seedAllAuthoritative(client: PocketbaseClient) = seedAll(client)
 
         override suspend fun isSeedComplete(rows: List<JsonObject>): Boolean =
             complete && this.rows.all { it.synced } && rows.map { recordFromJson(it).localId }.toSet() == this.rows.map { it.id }.toSet()

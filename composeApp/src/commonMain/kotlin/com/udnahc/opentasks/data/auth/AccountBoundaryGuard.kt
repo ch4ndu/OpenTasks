@@ -8,7 +8,9 @@ class AccountBoundaryGuard(
 ) {
     suspend fun activeBoundary(): AccountBoundary? {
         if (stateStore.readTransition() != null) return null
-        return stateStore.readCacheBinding()?.asAccountBoundary()
+        return stateStore.readCacheBinding()
+            ?.takeIf { it.isValidActiveBinding() }
+            ?.asAccountBoundary()
     }
 
     suspend fun matches(accountId: String?, boundaryEpoch: Long): Boolean {
