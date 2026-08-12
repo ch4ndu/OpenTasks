@@ -92,8 +92,7 @@ internal fun CreateNoteBottomSheetContent(
 
     LaunchedEffect(stateKey) {
         if (editNote != null) {
-            log.d { "Loading note content: length=${editNote.content.length}, has newlines=${'\n' in editNote.content}" }
-            log.v { "Raw content: ${editNote.content.take(200)}" }
+            log.d { "Loading note content" }
             richTextState.setHtml(editNote.content)
         }
     }
@@ -129,7 +128,7 @@ internal fun CreateNoteBottomSheetContent(
             onBack = onDismiss,
             onSave = {
                 val content = richTextState.toHtml()
-                log.d { "Saving note content: length=${content.length}, has newlines=${'\n' in content}" }
+                log.d { "Saving note content" }
                 if (title.isNotBlank() || content.isNotBlank()) {
                     onSave(title, content)
                 }
@@ -254,5 +253,4 @@ internal fun CreateNoteTopBar(
         }
     }
 }
-
 

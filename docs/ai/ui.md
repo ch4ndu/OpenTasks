@@ -44,6 +44,7 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 - Date and Duration tabs both persist recurrence. Keep bottom-sheet state ownership in `DateReminderBottomSheet`; reusable sheet shells, date pickers, and reminder pickers receive state/callbacks rather than owning form state.
 - Date editors receive their current civil day from the `LocalDaySignal` snapshot held by the app; do not read wall-clock date helpers directly during composition.
 - Calendar composables receive `today` from `LocalDaySignal` through their ViewModel. Resolve page-level task data before cells, preserve unchanged per-day list identities, and use precomputed timeline display values rather than observing whole maps or wall-clock values in cells.
+- Calendar row/day projections carry the original task plus only UI-consumed formatted fields, fixed preview prefixes, and overflow counts. Projection identity is reused by equality; today rollover is a source-state change that may replace the affected day. A month/week layout may use one pure helper, memoized by projected-row identity and measured limit, to select a dynamic visible prefix. It must not format, sort, group, map models, or send pixel constraints back to the ViewModel.
 - Keep `LaunchedEffect` keys narrow and intentional.
 - Use `LazyColumn` keys for scrollable lists, usually `key = { it.id }`. Do not wrap large repeated rows inside one lazy item with `Column { items.forEach { ... } }`; emit keyed `items(...)` so virtualization is preserved.
 

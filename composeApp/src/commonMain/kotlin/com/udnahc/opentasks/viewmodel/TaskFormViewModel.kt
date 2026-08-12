@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import org.lighthousegames.logging.logging
 
@@ -298,11 +300,15 @@ class TaskFormViewModel(
         val failed = mutableListOf<PickedImage>()
         var firstError: Throwable? = null
         for (image in pending) {
-            runCatching { addTaskImageAction(taskId, image) }
-                .onFailure { error ->
-                    if (firstError == null) firstError = error
-                    failed += image
-                }
+            currentCoroutineContext().ensureActive()
+            try {
+                addTaskImageAction(taskId, image)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (firstError == null) firstError = error
+                failed += image
+            }
         }
         _pendingImages.value = failed
         return ImageSaveResult(

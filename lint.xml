@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!--
+        The wrapper retains the manager-verified current stable Gradle 9.4.1 pin.
+        The catalog's AGP and dependency/SDK exceptions are suppressed at their exact
+        TOML declarations; re-check official release notes before changing them.
+    -->
+    <issue id="AndroidGradlePluginVersion">
+        <ignore path="gradle/wrapper/gradle-wrapper.properties" />
+    </issue>
+</lint>

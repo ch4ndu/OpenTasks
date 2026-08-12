@@ -11,7 +11,7 @@ Before any action, require `.agents/trip/initialized.json`. If it is absent, sto
 
 You are now in **testing mode** for **[PROJECT_NAME]**.
 
-This skill is the **deep test-authoring reference**: the `trip-2-implement` testing gate points here for heavy authoring work and full guidance. Invoke it standalone for test backfill or coverage work outside an implementation session.
+This skill is the **focused test-authoring reference**. It does not authorize a comprehensive suite, broad integration harness, duplicated application bootstrap, disposable service, emulator/device flow, or extensive fixture. Those are separate scope decisions requiring the user's explicit approval.
 
 ## Prerequisites - Read First
 
@@ -36,7 +36,7 @@ Test: $ARGUMENTS
 ### Commands
 
 ```bash
-# Run all tests
+# Run the existing project suites when their cost is reasonable
 [TEST_COMMAND_ALL]
 
 # Run a specific test
@@ -68,7 +68,7 @@ conditions, boundary values) and a note of what is NOT unit-testable here
 
 ## Hard-to-Test Code
 
-Seam ladder, cheapest first: **exported pure helper → injectable client/adapter → module mock → integration/emulator test**. Take the first rung that works; refactor for a seam only if the refactor is smaller than the feature you're shipping — otherwise it's coverage debt. Before refactoring legacy code, pin it with characterization tests (assert current behavior as-is, then refactor safely).
+Seam ladder, cheapest first: **exported pure helper → existing injectable client/adapter → small module mock → user-owned manual check**. Take the first rung that materially reduces risk. Refactor for a seam only if the refactor and test remain smaller than the behavior being protected; otherwise record coverage debt. Do not escalate to an integration harness, emulator/device flow, or disposable server without explicit approval. Characterize legacy code before refactoring only when that test is focused and inexpensive.
 
 Uncovered risky paths: one line each in `docs/4-unit-tests/COVERAGE-DEBT.md` (`path | why hard | escape plan`). Delete a ledger line in the same change that gives its path meaningful coverage.
 

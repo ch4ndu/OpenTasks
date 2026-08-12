@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.ui.util
 
 import androidx.compose.runtime.Composable
+import com.udnahc.opentasks.ExternalInputFailure
 
 enum class ImportFileType(
     val extension: String,
@@ -29,7 +30,10 @@ data class ImportedFile(
 sealed interface FileImportResult {
     data class Selected(val file: ImportedFile) : FileImportResult
     data object Cancelled : FileImportResult
-    data class Error(val detail: String? = null) : FileImportResult
+    data class Error(
+        val reason: ExternalInputFailure = ExternalInputFailure.UNREADABLE,
+        val detail: String? = null,
+    ) : FileImportResult
 }
 
 @Composable

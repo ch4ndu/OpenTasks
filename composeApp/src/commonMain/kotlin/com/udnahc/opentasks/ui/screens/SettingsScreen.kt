@@ -70,7 +70,6 @@ import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.calendar_access
 import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.checking_connection
-import opentasks.composeapp.generated.resources.clear
 import opentasks.composeapp.generated.resources.clear_local_data_error
 import opentasks.composeapp.generated.resources.clear_local_data
 import opentasks.composeapp.generated.resources.clear_local_data_description
@@ -161,7 +160,6 @@ fun SettingsScreen(
     onCancelReplacementPreparation: () -> Unit = {},
 ) {
     val viewModel: SettingsViewModel = koinViewModel()
-    val currentUrl by viewModel.pocketBaseUrl.collectAsState()
     val syncStatus by viewModel.syncStatus.collectAsState()
     val themePreference by viewModel.themePreference.collectAsState()
     val textSizePreference by viewModel.textSizePreference.collectAsState()
@@ -189,7 +187,7 @@ fun SettingsScreen(
     }
 
     SettingsContent(
-        currentUrl = currentEndpoint ?: currentUrl,
+        currentEndpoint = currentEndpoint,
         syncStatus = syncStatus,
         themePreference = themePreference,
         textSizePreference = textSizePreference,
@@ -204,8 +202,6 @@ fun SettingsScreen(
         accountOperation = accountOperation,
         accountError = accountError,
         onBack = onBack,
-        onSaveUrl = { viewModel.savePocketBaseUrl(it) },
-        onClearUrl = { viewModel.clearPocketBaseUrl() },
         onSyncNow = { viewModel.triggerSync() },
         onThemeChanged = { viewModel.saveThemePreference(it) },
         onTextSizeChanged = { viewModel.saveTextSizePreference(it) },
@@ -239,7 +235,7 @@ fun SettingsScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsContent(
-    currentUrl: String?,
+    currentEndpoint: String?,
     syncStatus: SyncStatus,
     themePreference: ThemeMode = ThemeMode.SYSTEM,
     textSizePreference: TextSizePreference = TextSizePreference.SMALL,
@@ -254,8 +250,6 @@ internal fun SettingsContent(
     accountOperation: AccountOperation? = null,
     accountError: AccountUiError? = null,
     onBack: () -> Unit,
-    onSaveUrl: (String) -> Unit,
-    onClearUrl: () -> Unit,
     onSyncNow: () -> Unit = {},
     onThemeChanged: (ThemeMode) -> Unit = {},
     onTextSizeChanged: (TextSizePreference) -> Unit = {},
@@ -279,7 +273,6 @@ internal fun SettingsContent(
     onCancelReplacementPreparation: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
-    var showUrlDialog by remember { mutableStateOf(false) }
     var showSwitchAccount by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showTextSizeDialog by remember { mutableStateOf(false) }
@@ -404,20 +397,20 @@ internal fun SettingsContent(
                     val summary = if (currentAccount != null) {
                         stringResource(
                             Res.string.account_endpoint_read_only_value,
-                            currentUrl ?: stringResource(Res.string.not_configured),
+                            currentEndpoint ?: stringResource(Res.string.not_configured),
                         )
                     } else {
-                        currentUrl ?: stringResource(Res.string.not_configured)
+                        currentEndpoint ?: stringResource(Res.string.not_configured)
                     }
                     SettingsRow(
                         title = stringResource(Res.string.pocketbase_url),
                         summary = summary,
-                        onClick = { if (currentAccount == null) showUrlDialog = true },
-                        enabled = currentAccount == null,
+                        onClick = {},
+                        enabled = false,
                     )
                 }
             }
-            if (!isLocalOnly && currentUrl != null) {
+            if (!isLocalOnly && currentEndpoint != null) {
                 item(key = "sync_now") {
                     val summary = when (syncStatus) {
                         SyncStatus.SYNCING -> stringResource(Res.string.syncing)
@@ -624,7 +617,7 @@ internal fun SettingsContent(
 
     if (showSwitchAccount) {
         AccountSwitchDialog(
-            endpoint = currentUrl,
+            endpoint = currentEndpoint,
             isBusy = accountOperation == AccountOperation.SWITCHING,
             onSubmit = { email, password ->
                 showSwitchAccount = false
@@ -658,21 +651,6 @@ internal fun SettingsContent(
         )
     }
 
-    // PocketBase URL dialog
-    if (showUrlDialog) {
-        PocketBaseUrlDialog(
-            currentUrl = currentUrl,
-            onSave = { url ->
-                onSaveUrl(url)
-                showUrlDialog = false
-            },
-            onClear = {
-                onClearUrl()
-                showUrlDialog = false
-            },
-            onDismiss = { showUrlDialog = false },
-        )
-    }
 }
 
 // ── Reusable settings composables ────────────────────────────────────────────
@@ -868,51 +846,6 @@ internal fun SettingsRow(
     HorizontalDivider(
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.padding(horizontal = dimens.paddingXLarge),
-    )
-}
-
-@Composable
-private fun PocketBaseUrlDialog(
-    currentUrl: String?,
-    onSave: (String) -> Unit,
-    onClear: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var urlInput by rememberSaveable(currentUrl) { mutableStateOf(currentUrl ?: "") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(Res.string.pocketbase_url)) },
-        text = {
-            OutlinedTextField(
-                value = urlInput,
-                onValueChange = { urlInput = it },
-                placeholder = { Text(stringResource(Res.string.pocketbase_url_hint)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onSave(urlInput) },
-                enabled = urlInput.isNotBlank(),
-            ) {
-                Text(stringResource(Res.string.save))
-            }
-        },
-        dismissButton = {
-            Row {
-                if (currentUrl != null) {
-                    TextButton(onClick = onClear) {
-                        Text(stringResource(Res.string.clear))
-                    }
-                    Spacer(Modifier.width(OpenTasksTheme.dimens.spacerSmall))
-                }
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(Res.string.back))
-                }
-            }
-        },
     )
 }
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.domain.usecase.task.projectCalendarDay
 import com.udnahc.opentasks.ui.screens.calendar.WeekViewContent
 import com.udnahc.opentasks.ui.screens.calendar.WeekViewDayCell
 import com.udnahc.opentasks.ui.screens.calendar.WeekViewMiniCalendar
@@ -19,7 +20,11 @@ private fun WeekViewDayCellPreview() {
             WeekViewDayCell(
                 dayMillis = PreviewSampleData.sampleTodayMillis,
                 todayMillis = PreviewSampleData.sampleTodayMillis,
-                dayTasks = PreviewSampleData.sampleTasksByDay[PreviewSampleData.SAMPLE_TODAY_DAY_KEY].orEmpty(),
+                dayProjection = projectCalendarDay(
+                    PreviewSampleData.sampleTasksByDay[PreviewSampleData.SAMPLE_TODAY_DAY_KEY].orEmpty(),
+                    PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+                    PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+                ),
                 onTaskClick = {},
                 isSelected = true,
                 onDaySelected = {},
@@ -40,7 +45,7 @@ private fun WeekViewMiniCalendarPreview() {
                 todayYear = PreviewSampleData.SAMPLE_YEAR,
                 todayMonth = PreviewSampleData.SAMPLE_MONTH,
                 todayDay = PreviewSampleData.SAMPLE_DAY,
-                tasksByDay = PreviewSampleData.sampleTasksByDay,
+                taskDayKeys = PreviewSampleData.sampleTasksByDay.keys,
                 onDayClick = {},
             )
         }
@@ -61,7 +66,7 @@ private fun WeekViewContentPreview() {
             weekSundayMillis = PreviewSampleData.sampleWeekSundayMillis,
             calendarYear = PreviewSampleData.SAMPLE_YEAR,
             calendarMonth = PreviewSampleData.SAMPLE_MONTH,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
+            calendarDaysByDay = previewCalendarDaysByDay(),
             topBarHeight = 64.dp,
             navBarHeight = 0.dp,
             onTaskClick = {},
@@ -71,3 +76,13 @@ private fun WeekViewContentPreview() {
         )
     }
 }
+
+private fun previewCalendarDaysByDay() = PreviewSampleData.sampleTasksByDay
+    .map { (dayKey, tasks) ->
+        dayKey to projectCalendarDay(
+            tasks,
+            dayKey,
+            PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+        )
+    }
+    .toMap()

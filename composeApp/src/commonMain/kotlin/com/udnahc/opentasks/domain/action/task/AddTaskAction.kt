@@ -46,7 +46,7 @@ class AddTaskAction(
         durationReminders: String = "",
         dateReminders: String = "",
     ): Task = accountBoundaryExecutor.withForegroundActionBoundary {
-        log.d { "Adding task: '$title'" }
+        log.d { "Adding task" }
         val now = localNow()
         val task = Task(
             title = title,

@@ -63,7 +63,7 @@ class ImportCalendarEventsAction(
             for (event in events) {
                 // Skip duplicates
                 if (taskRepository.getTaskByExternalId(event.externalId) != null) {
-                    log.v { "Skipping duplicate: ${event.externalId}" }
+                    log.v { "Skipping duplicate calendar event" }
                     continue
                 }
 

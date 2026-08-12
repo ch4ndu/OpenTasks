@@ -2,9 +2,9 @@
 
 A cross-platform task management app built with **Kotlin Multiplatform** and **Compose Multiplatform**, featuring Eisenhower Matrix prioritization to help you focus on what truly matters. Inspired by [TickTick](https://ticktick.com).
 
-**Current release:** 1.1.0
+**Current release:** 1.2.0
 
-**Development source:** Local-only startup, authoritative PocketBase connect, and bounded Quick Add are implemented in the working source; release/version work remains separate.
+Version 1.2.0 adds backend-free Local-only startup, authoritative PocketBase connection, bounded Quick Add, hardened import/share and process boundaries, bounded recurrence projection, and release-safe diagnostics and dependencies.
 
 ## Note
 This project is built collaboratively with AI assistance (Claude Code). The code is reviewed, iterated on, and guided by me at every step — not auto-generated and dumped. Architecture decisions, feature design, and quality standards are human-driven; AI accelerates the implementation.

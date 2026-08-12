@@ -7,6 +7,9 @@ import com.udnahc.opentasks.data.model.Attachment
 import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.model.withSyncState
 import com.udnahc.opentasks.data.repository.AttachmentRepository
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.cancellation.CancellationException
 
 class RemoveTaskImageAction(
     private val repository: AttachmentRepository,
@@ -19,7 +22,21 @@ class RemoveTaskImageAction(
             updatedAt = localNow(),
         ).withSyncState(AttachmentSyncState.LOCAL_ONLY)
         repository.update(deleted)
-        runCatching { fileStorage.delete(attachment.localPath) }
-        runCatching { fileStorage.delete(attachment.thumbnailPath) }
+        currentCoroutineContext().ensureActive()
+        try {
+            fileStorage.delete(attachment.localPath)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // File cleanup remains best effort after the tombstone is durable.
+        }
+        currentCoroutineContext().ensureActive()
+        try {
+            fileStorage.delete(attachment.thumbnailPath)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // File cleanup remains best effort after the tombstone is durable.
+        }
     }
 }

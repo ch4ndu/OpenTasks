@@ -1,22 +1,23 @@
 package com.udnahc.opentasks.data.calendar
 
 import com.udnahc.opentasks.data.model.CalendarEvent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.TimeUnit
 
 import org.lighthousegames.logging.logging
 
 private val log = logging("JvmCalendarProvider")
 private val IS_MAC = System.getProperty("os.name").orEmpty().startsWith("Mac", ignoreCase = true)
 
-class JvmCalendarProvider : CalendarProvider {
+class JvmCalendarProvider internal constructor(
+    private val processRunner: JvmProcessRunner = JvmProcessRunner(),
+) : CalendarProvider {
 
     override fun isAvailable(): Boolean = IS_MAC
 
@@ -24,15 +25,23 @@ class JvmCalendarProvider : CalendarProvider {
         if (!IS_MAC) return CalendarPermissionStatus.NOT_AVAILABLE
         return withContext(Dispatchers.IO) {
             try {
-                val process = ProcessBuilder(
-                    "osascript", "-e",
-                    "tell application \"Calendar\" to get name of calendars"
-                ).redirectErrorStream(true).start()
-                val exited = process.waitFor(10, TimeUnit.SECONDS)
-                if (exited && process.exitValue() == 0) CalendarPermissionStatus.GRANTED
-                else CalendarPermissionStatus.DENIED
-            } catch (e: Exception) {
-                log.e { "Calendar permission check failed: ${e.message}" }
+                val result = processRunner.run(
+                    command = listOf(
+                        "osascript", "-e",
+                        "tell application \"Calendar\" to get name of calendars",
+                    ),
+                    timeoutMillis = PERMISSION_TIMEOUT_MILLIS,
+                )
+                if (result is JvmProcessResult.Completed && result.exitCode == 0) {
+                    CalendarPermissionStatus.GRANTED
+                } else {
+                    log.d { "Calendar permission check was not granted (${result.diagnosticName()})" }
+                    CalendarPermissionStatus.DENIED
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                log.e { "Calendar permission check failed" }
                 CalendarPermissionStatus.DENIED
             }
         }
@@ -85,18 +94,20 @@ class JvmCalendarProvider : CalendarProvider {
                     return output
                 """.trimIndent()
 
-                val process = ProcessBuilder("osascript", "-e", script)
-                    .redirectErrorStream(true)
-                    .start()
+                val result = processRunner.run(
+                    command = listOf("osascript", "-e", script),
+                    timeoutMillis = FETCH_TIMEOUT_MILLIS,
+                )
+                if (result !is JvmProcessResult.Completed || result.exitCode != 0) {
+                    log.d { "Calendar fetch did not complete (${result.diagnosticName()})" }
+                    return@withContext emptyList()
+                }
 
-                val outputText = process.inputStream.bufferedReader().use(BufferedReader::readText)
-                process.waitFor(30, TimeUnit.SECONDS)
-
-                if (process.exitValue() != 0) return@withContext emptyList()
-
-                parseAppleScriptOutput(outputText)
-            } catch (e: Exception) {
-                log.e { "Calendar fetch failed: ${e.message}" }
+                parseAppleScriptOutput(result.output)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                log.e { "Calendar fetch failed" }
                 emptyList()
             }
         }
@@ -142,4 +153,16 @@ class JvmCalendarProvider : CalendarProvider {
             .atZone(ZoneId.systemDefault())
             .toInstant()
             .toEpochMilli()
+
+    private companion object {
+        const val PERMISSION_TIMEOUT_MILLIS = 10_000L
+        const val FETCH_TIMEOUT_MILLIS = 30_000L
+    }
+}
+
+private fun JvmProcessResult.diagnosticName(): String = when (this) {
+    is JvmProcessResult.Completed -> "completed"
+    JvmProcessResult.TimedOut -> "timed out"
+    JvmProcessResult.OutputTooLarge -> "output limit exceeded"
+    is JvmProcessResult.Failed -> "process failure"
 }

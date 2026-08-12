@@ -3,6 +3,7 @@ package com.udnahc.opentasks.ui.preview
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.domain.usecase.task.projectCalendarDay
 import com.udnahc.opentasks.ui.screens.calendar.ListDisplayMode
 import com.udnahc.opentasks.ui.screens.calendar.ListViewContent
 import com.udnahc.opentasks.ui.screens.calendar.WeekStripPage
@@ -16,7 +17,7 @@ private fun WeekStripPagePreview() {
             weekSundayMillis = PreviewSampleData.sampleWeekSundayMillis,
             todayMillis = PreviewSampleData.sampleTodayMillis,
             selectedDayMillis = PreviewSampleData.sampleTodayMillis,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
+            calendarDaysByDay = previewCalendarDaysByDay(),
             onDaySelected = {},
         )
     }
@@ -28,7 +29,11 @@ private fun ListViewContentTimelinePreview() {
     OpenTasksTheme {
         val weekPagerState = rememberPagerState(initialPage = 520) { 1040 }
         ListViewContent(
-            dayTasks = PreviewSampleData.sampleTasks,
+            dayProjection = projectCalendarDay(
+                PreviewSampleData.sampleTasks,
+                PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+                PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+            ),
             todayMillis = PreviewSampleData.sampleTodayMillis,
             todayYear = PreviewSampleData.SAMPLE_YEAR,
             todayMonth = PreviewSampleData.SAMPLE_MONTH,
@@ -37,7 +42,7 @@ private fun ListViewContentTimelinePreview() {
             onDaySelected = {},
             weekPagerState = weekPagerState,
             weekPagerCentre = 520,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
+            calendarDaysByDay = previewCalendarDaysByDay(),
             categoryNames = emptyMap(),
             topBarHeight = 64.dp,
             navBarHeight = 0.dp,
@@ -54,7 +59,11 @@ private fun ListViewContentCardPreview() {
     OpenTasksTheme {
         val weekPagerState = rememberPagerState(initialPage = 520) { 1040 }
         ListViewContent(
-            dayTasks = PreviewSampleData.sampleTasks,
+            dayProjection = projectCalendarDay(
+                PreviewSampleData.sampleTasks,
+                PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+                PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+            ),
             todayMillis = PreviewSampleData.sampleTodayMillis,
             todayYear = PreviewSampleData.SAMPLE_YEAR,
             todayMonth = PreviewSampleData.SAMPLE_MONTH,
@@ -63,7 +72,7 @@ private fun ListViewContentCardPreview() {
             onDaySelected = {},
             weekPagerState = weekPagerState,
             weekPagerCentre = 520,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
+            calendarDaysByDay = previewCalendarDaysByDay(),
             categoryNames = emptyMap(),
             topBarHeight = 64.dp,
             navBarHeight = 0.dp,
@@ -73,3 +82,13 @@ private fun ListViewContentCardPreview() {
         )
     }
 }
+
+private fun previewCalendarDaysByDay() = PreviewSampleData.sampleTasksByDay
+    .map { (dayKey, tasks) ->
+        dayKey to projectCalendarDay(
+            tasks,
+            dayKey,
+            PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+        )
+    }
+    .toMap()

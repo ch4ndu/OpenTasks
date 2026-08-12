@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Static launcher preview: sample copy, compact sizes, and inferred-theme background are intentional. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="#FF1E1E1E"
-    android:padding="12dp">
+    android:padding="12dp"
+    tools:ignore="HardcodedText,SmallSp,Overdraw">
 
     <!-- Header -->
     <LinearLayout
@@ -39,7 +42,8 @@
             android:textColor="#FFFFFFFF"
             android:textSize="20sp"
             android:textStyle="bold"
-            android:paddingStart="4dp" />
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
     </LinearLayout>
 
     <View
@@ -67,7 +71,8 @@
             android:text="Today"
             android:textColor="#FFC83C3C"
             android:textSize="13sp"
-            android:paddingStart="8dp" />
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
     </LinearLayout>
 
     <!-- Row 2 -->
@@ -91,7 +96,8 @@
             android:text="Tomorrow"
             android:textColor="#FFC83C3C"
             android:textSize="13sp"
-            android:paddingStart="8dp" />
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
     </LinearLayout>
 
     <!-- Row 3 -->
@@ -115,7 +121,8 @@
             android:text="Mar 28"
             android:textColor="#FFC83C3C"
             android:textSize="13sp"
-            android:paddingStart="8dp" />
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
     </LinearLayout>
 
     <!-- Row 4 -->
@@ -139,7 +146,8 @@
             android:text="Mar 30"
             android:textColor="#FFC83C3C"
             android:textSize="13sp"
-            android:paddingStart="8dp" />
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
     </LinearLayout>
 
     <!-- Row 5 -->

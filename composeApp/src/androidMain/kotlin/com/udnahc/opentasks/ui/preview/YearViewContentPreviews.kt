@@ -17,7 +17,7 @@ private fun MiniMonthCardPreview() {
             todayYear = PreviewSampleData.SAMPLE_YEAR,
             todayMonth = PreviewSampleData.SAMPLE_MONTH,
             todayDay = PreviewSampleData.SAMPLE_DAY,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
+            taskDayKeys = PreviewSampleData.sampleTasksByDay.keys,
             onClick = {},
         )
     }
@@ -34,7 +34,7 @@ private fun YearViewContentPreview() {
             todayYear = PreviewSampleData.SAMPLE_YEAR,
             todayMonth = PreviewSampleData.SAMPLE_MONTH,
             todayDay = PreviewSampleData.SAMPLE_DAY,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
+            taskDayKeys = PreviewSampleData.sampleTasksByDay.keys,
             topBarHeight = 64.dp,
             navBarHeight = 0.dp,
             onMonthClick = { _, _ -> },

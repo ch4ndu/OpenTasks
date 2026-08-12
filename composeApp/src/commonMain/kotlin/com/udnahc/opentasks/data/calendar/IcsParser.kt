@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.calendar
 import com.udnahc.opentasks.data.model.CalendarEvent
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toInstant
@@ -174,8 +175,8 @@ object IcsParser {
             if (isAllDay) {
                 val date = LocalDate(
                     year = value.substring(0, 4).toInt(),
-                    monthNumber = value.substring(4, 6).toInt(),
-                    dayOfMonth = value.substring(6, 8).toInt(),
+                    month = Month(value.substring(4, 6).toInt()),
+                    day = value.substring(6, 8).toInt(),
                 )
                 val millis = date.atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
                 millis to true
@@ -191,7 +192,7 @@ object IcsParser {
                     try {
                         TimeZone.of(tzid)
                     } catch (e: Exception) {
-                        log.w(e) { "Unknown timezone '$tzid', using system default" }
+                        log.w { "Unknown calendar timezone; using system default" }
                         TimeZone.currentSystemDefault()
                     }
                 } else {
@@ -202,7 +203,7 @@ object IcsParser {
                 millis to false
             }
         } catch (e: Exception) {
-            log.w(e) { "Failed to parse ICS datetime '$value'" }
+            log.w { "Failed to parse ICS datetime" }
             null
         }
     }
@@ -213,8 +214,8 @@ object IcsParser {
         val timeStr = value.substringAfter("T", "000000")
         return LocalDateTime(
             year = dateStr.substring(0, 4).toInt(),
-            monthNumber = dateStr.substring(4, 6).toInt(),
-            dayOfMonth = dateStr.substring(6, 8).toInt(),
+            month = Month(dateStr.substring(4, 6).toInt()),
+            day = dateStr.substring(6, 8).toInt(),
             hour = timeStr.substring(0, 2).toInt(),
             minute = timeStr.substring(2, 4).toInt(),
             second = if (timeStr.length >= 6) timeStr.substring(4, 6).toInt() else 0,

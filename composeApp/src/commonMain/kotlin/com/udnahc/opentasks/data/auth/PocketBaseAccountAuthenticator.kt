@@ -3,11 +3,11 @@ package com.udnahc.opentasks.data.auth
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.PocketBaseEndpoint
 import com.udnahc.opentasks.data.sync.PocketBaseOwnerMismatchException
-import com.udnahc.opentasks.data.sync.PocketBaseRecordGatewayFactory
+import com.udnahc.opentasks.data.sync.PocketBaseRecordGateway
 import com.udnahc.opentasks.data.sync.PocketBaseServerInventoryReader
 import com.udnahc.opentasks.data.sync.PocketBaseServerInventory
 import com.udnahc.opentasks.data.sync.canonicalUrl
-import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
+import io.ktor.client.HttpClient
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -62,8 +62,7 @@ internal class AccountCredential(
     fun withCapability(capability: AccountCapability): AccountCredential =
         AccountCredential(account, endpoint, token, capability)
 
-    override fun toString(): String =
-        "AccountCredential(accountId=${account.accountId}, endpoint=${endpoint.canonicalUrl})"
+    override fun toString(): String = "AccountCredential(accountId=${account.accountId})"
 }
 
 class AccountAuthenticationRejectedException(cause: Throwable? = null) : IllegalStateException(
@@ -122,6 +121,8 @@ class LegacyCacheOwnershipException(
 internal class PocketBaseAccountAuthenticator(
     private val pbProvider: PocketBaseClientProvider,
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val sessionFactory: AccountClientSessionFactory =
+        AccountClientSessionFactory { endpoint -> pbProvider.accountClientSession(endpoint) },
 ) : AccountAuthenticator {
     override suspend fun authenticate(
         endpoint: PocketBaseEndpoint,
@@ -130,35 +131,51 @@ internal class PocketBaseAccountAuthenticator(
     ): AccountCredential {
         require(email.isNotBlank()) { "Account email must not be blank" }
         require(password.isNotBlank()) { "Account password must not be blank" }
-        log.d { "Password authentication started at ${endpoint.diagnosticAddress()}" }
-        val client = pbProvider.createClient(endpoint)
-        val response = requestAuthWithPassword(client, email, password)
-        val credential = parseCredential(response, endpoint)
-        log.d { "Password authentication accepted; validating server capability" }
-        client.authStore.save(credential.token)
-        val capability = validateCapability(client, endpoint, credential.account.accountId)
-        log.d { "Password authentication capability validation completed" }
-        return credential.withCapability(capability)
+        log.d { "Password authentication started" }
+        val session = sessionFactory.open(endpoint)
+        return try {
+            val response = requestAuthWithPassword(session.httpClient, email, password)
+            val credential = parseCredential(response, endpoint)
+            log.d { "Password authentication accepted; validating server capability" }
+            session.updateToken(credential.token)
+            val capability = validateCapability(
+                session.httpClient,
+                endpoint,
+                credential.account.accountId,
+            )
+            log.d { "Password authentication capability validation completed" }
+            credential.withCapability(capability)
+        } finally {
+            session.close()
+        }
     }
 
     override suspend fun refresh(
         endpoint: PocketBaseEndpoint,
         token: String,
     ): AccountCredential {
-        log.d { "Token refresh started at ${endpoint.diagnosticAddress()}" }
-        val client = pbProvider.createClient(endpoint)
-        client.authStore.save(token)
-        val response = requestAuthRefresh(client)
-        val credential = parseCredential(response, endpoint)
-        log.d { "Token refresh accepted; validating server capability" }
-        client.authStore.save(credential.token)
-        val capability = validateCapability(client, endpoint, credential.account.accountId)
-        log.d { "Token refresh capability validation completed" }
-        return credential.withCapability(capability)
+        log.d { "Token refresh started" }
+        val session = sessionFactory.open(endpoint)
+        return try {
+            session.updateToken(token)
+            val response = requestAuthRefresh(session.httpClient)
+            val credential = parseCredential(response, endpoint)
+            log.d { "Token refresh accepted; validating server capability" }
+            session.updateToken(credential.token)
+            val capability = validateCapability(
+                session.httpClient,
+                endpoint,
+                credential.account.accountId,
+            )
+            log.d { "Token refresh capability validation completed" }
+            credential.withCapability(capability)
+        } finally {
+            session.close()
+        }
     }
 
     private suspend fun requestAuthWithPassword(
-        client: PocketbaseClient,
+        httpClient: HttpClient,
         email: String,
         password: String,
     ): AuthResponseEnvelope {
@@ -169,7 +186,7 @@ internal class PocketBaseAccountAuthenticator(
             )
         )
         val response = try {
-            client.httpClient.post {
+            httpClient.post {
                 url { path("api", "collections", "users", "auth-with-password") }
                 header("Authorization", "")
                 contentType(ContentType.Application.Json)
@@ -182,9 +199,9 @@ internal class PocketBaseAccountAuthenticator(
         return decodeAuthResponse(response)
     }
 
-    private suspend fun requestAuthRefresh(client: PocketbaseClient): AuthResponseEnvelope {
+    private suspend fun requestAuthRefresh(httpClient: HttpClient): AuthResponseEnvelope {
         val response = try {
-            client.httpClient.post {
+            httpClient.post {
                 url { path("api", "collections", "users", "auth-refresh") }
                 contentType(ContentType.Application.Json)
             }
@@ -243,11 +260,14 @@ internal class PocketBaseAccountAuthenticator(
     }
 
     private suspend fun validateCapability(
-        client: PocketbaseClient,
+        httpClient: HttpClient,
         endpoint: PocketBaseEndpoint,
         accountId: String,
     ): AccountCapability {
-        val gateway = PocketBaseRecordGatewayFactory().create(client, endpoint)
+        val gateway = PocketBaseRecordGateway(
+            client = httpClient,
+            baseUrl = endpoint.canonicalUrl,
+        )
         val metaResponse = try {
             gateway.getCapability()
         } catch (error: Throwable) {
@@ -270,10 +290,10 @@ internal class PocketBaseAccountAuthenticator(
         // The detached candidate is authenticated but not yet active. Give
         // its inventory the same owner-scoped gateway contract as production
         // sync before the durable binding is committed.
-        val ownerGateway = PocketBaseRecordGatewayFactory().create(
-            client,
-            endpoint,
-            CacheBinding(
+        val ownerGateway = PocketBaseRecordGateway(
+            client = httpClient,
+            baseUrl = endpoint.canonicalUrl,
+            ownerBinding = CacheBinding(
                 canonicalEndpoint = endpoint.canonicalUrl,
                 serverInstanceId = meta.serverInstanceId,
                 accountId = accountId,
@@ -311,39 +331,43 @@ internal class PocketBaseAccountAuthenticator(
     }
 
     override suspend fun readOwnerInventory(credential: AccountCredential): PocketBaseServerInventory {
-        val client = pbProvider.createClient(credential.endpoint)
-        client.authStore.save(credential.token)
-        val gateway = PocketBaseRecordGatewayFactory().create(
-            client,
-            credential.endpoint,
-            CacheBinding(
-                canonicalEndpoint = credential.endpoint.canonicalUrl,
-                serverInstanceId = credential.capability.serverInstanceId,
-                accountId = credential.account.accountId,
-                capabilityVersion = credential.capability.capabilityVersion,
-                boundaryEpoch = 0L,
-            ),
-        )
-        val inventory = try {
-            PocketBaseServerInventoryReader(gateway).read()
-        } catch (error: PocketBaseOwnerMismatchException) {
-            throw AccountCapabilityRejectedException(
-                "PocketBase returned a row outside the authenticated account boundary",
+        val session = sessionFactory.open(credential.endpoint)
+        return try {
+            session.updateToken(credential.token)
+            val gateway = PocketBaseRecordGateway(
+                client = session.httpClient,
+                baseUrl = credential.endpoint.canonicalUrl,
+                ownerBinding = CacheBinding(
+                    canonicalEndpoint = credential.endpoint.canonicalUrl,
+                    serverInstanceId = credential.capability.serverInstanceId,
+                    accountId = credential.account.accountId,
+                    capabilityVersion = credential.capability.capabilityVersion,
+                    boundaryEpoch = 0L,
+                ),
             )
-        } catch (error: Throwable) {
-            if (error is CancellationException) throw error
-            throw AccountConnectivityException(error)
+            val inventory = try {
+                PocketBaseServerInventoryReader(gateway).read()
+            } catch (error: PocketBaseOwnerMismatchException) {
+                throw AccountCapabilityRejectedException(
+                    "PocketBase returned a row outside the authenticated account boundary",
+                )
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                throw AccountConnectivityException(error)
+            }
+            if (inventory.serverInstanceId != credential.capability.serverInstanceId ||
+                inventory.accountId != credential.account.accountId
+            ) {
+                throw AccountCapabilityRejectedException("PocketBase owner inventory boundary changed")
+            }
+            inventory
+        } finally {
+            session.close()
         }
-        if (inventory.serverInstanceId != credential.capability.serverInstanceId ||
-            inventory.accountId != credential.account.accountId
-        ) {
-            throw AccountCapabilityRejectedException("PocketBase owner inventory boundary changed")
-        }
-        return inventory
     }
 
     private suspend fun readAll(
-        gateway: com.udnahc.opentasks.data.sync.PocketBaseRecordGateway,
+        gateway: PocketBaseRecordGateway,
         collection: String,
     ): List<JsonObject> {
         val rows = mutableListOf<JsonObject>()
@@ -390,6 +414,3 @@ internal class PocketBaseAccountAuthenticator(
         const val INVENTORY_PAGE_SIZE = 200
     }
 }
-
-private fun PocketBaseEndpoint.diagnosticAddress(): String =
-    "${protocol.name.lowercase()}://$host:$port"

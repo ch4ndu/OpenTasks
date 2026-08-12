@@ -13,6 +13,7 @@ import opentasks.composeapp.generated.resources.csv_import_description
 import opentasks.composeapp.generated.resources.import_csv_ticktick
 import opentasks.composeapp.generated.resources.import_error
 import opentasks.composeapp.generated.resources.import_failed_generic
+import opentasks.composeapp.generated.resources.import_file_too_large
 import opentasks.composeapp.generated.resources.no_events_in_file
 import opentasks.composeapp.generated.resources.no_tasks_in_file
 import org.jetbrains.compose.resources.stringResource
@@ -58,6 +59,7 @@ internal fun ImportCsvDialogContent(
 
 @Composable
 internal fun importErrorText(error: ImportErrorState): String = when (error.type) {
+    ImportErrorType.FILE_TOO_LARGE -> stringResource(Res.string.import_file_too_large)
     ImportErrorType.EMPTY_CSV_FILE -> stringResource(Res.string.no_tasks_in_file)
     ImportErrorType.EMPTY_ICS_FILE -> stringResource(Res.string.no_events_in_file)
     ImportErrorType.GENERIC -> error.detail?.let { detail ->

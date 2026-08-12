@@ -22,9 +22,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -111,15 +110,15 @@ private fun DateReminderSheetContent(
                 )
             }
 
-            TabRow(
+            SecondaryTabRow(
                 selectedTabIndex = selectedTab,
                 modifier = Modifier.weight(1f),
                 containerColor = Color.Transparent,
                 contentColor = PrimaryBlue,
-                indicator = { tabPositions ->
-                    if (selectedTab < tabPositions.size) {
+                indicator = {
+                    if (selectedTab in 0..1) {
                         TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                            modifier = Modifier.tabIndicatorOffset(selectedTab),
                             color = PrimaryBlue,
                         )
                     }

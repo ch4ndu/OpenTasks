@@ -18,8 +18,31 @@ data class SharedTaskPayload(
         get() = icsContent.isNotBlank()
 }
 
-private val _sharedTaskPayload = MutableStateFlow<SharedTaskPayload?>(null)
-val sharedTaskPayload: StateFlow<SharedTaskPayload?> = _sharedTaskPayload.asStateFlow()
+sealed interface SharedTaskPayloadEvent {
+    val id: Long
+
+    data class Accepted(
+        val payload: SharedTaskPayload,
+    ) : SharedTaskPayloadEvent {
+        override val id: Long
+            get() = payload.id
+    }
+
+    data class Rejected(
+        val rejection: SharedTaskPayloadRejection,
+    ) : SharedTaskPayloadEvent {
+        override val id: Long
+            get() = rejection.id
+    }
+}
+
+data class SharedTaskPayloadRejection(
+    val id: Long,
+    val reason: ExternalInputFailure,
+)
+
+private val _sharedTaskPayloadEvent = MutableStateFlow<SharedTaskPayloadEvent?>(null)
+val sharedTaskPayload: StateFlow<SharedTaskPayloadEvent?> = _sharedTaskPayloadEvent.asStateFlow()
 
 fun publishSharedTaskPayload(
     id: Long,
@@ -35,13 +58,39 @@ fun publishSharedTaskPayload(
         icsContent = icsContent,
         icsFileName = icsFileName,
     )
-    if (payload.hasTaskContent || payload.hasIcsContent) {
-        _sharedTaskPayload.value = payload
+    if (!payload.hasTaskContent && !payload.hasIcsContent) return
+    val failure = ExternalInputPolicy.validateSharePayload(
+        description = payload.description,
+        url = payload.url,
+        icsContent = payload.icsContent,
+        icsFileName = payload.icsFileName,
+    )
+    if (failure != null) {
+        publishSharedTaskPayloadRejection(id, failure)
+        return
     }
+    _sharedTaskPayloadEvent.value = SharedTaskPayloadEvent.Accepted(payload)
+}
+
+fun publishSharedTaskPayloadRejection(
+    id: Long,
+    reason: ExternalInputFailure,
+) {
+    _sharedTaskPayloadEvent.value = SharedTaskPayloadEvent.Rejected(
+        SharedTaskPayloadRejection(id = id, reason = reason),
+    )
+}
+
+fun publishSharedTaskPayloadRejectionCode(
+    id: Long,
+    reason: String,
+) {
+    val failure = ExternalInputFailure.fromWireValue(reason) ?: return
+    publishSharedTaskPayloadRejection(id, failure)
 }
 
 fun clearSharedTaskPayload(id: Long) {
-    if (_sharedTaskPayload.value?.id == id) {
-        _sharedTaskPayload.value = null
+    if (_sharedTaskPayloadEvent.value?.id == id) {
+        _sharedTaskPayloadEvent.value = null
     }
 }

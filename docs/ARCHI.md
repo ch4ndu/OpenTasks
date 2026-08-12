@@ -22,19 +22,19 @@ The application is local-first: normal UI reads and writes go through the local 
 | Area | Current technology |
 | --- | --- |
 | Language | Kotlin 2.4.10; Swift 5 for the iOS host and share extension |
-| Shared UI | Compose Multiplatform 1.11.0, Material 3 1.11.0-alpha07 |
-| Navigation | AndroidX Navigation 3 runtime 1.1.4 with JetBrains Navigation 3 UI 1.1.1 |
+| Shared UI | Compose Multiplatform 1.11.1, Material 3 1.11.0-alpha07 |
+| Navigation | AndroidX Navigation 3 runtime 1.1.5 with JetBrains Navigation 3 UI 1.1.1; lifecycle Navigation 3 2.10.0 and adaptive Navigation 3 1.3.0-alpha04 remain API-36-compatible pins |
 | State and lifecycle | Coroutines/Flow 1.11.0, lifecycle ViewModels, per-screen `StateFlow` projections |
-| Persistence | Room 2.8.4, KSP 2.3.9, SQLite Bundled driver 2.7.0 |
-| Dependency injection | Koin BOM 4.2.1 |
+| Persistence | Room 2.8.4, KSP 2.3.10, SQLite Bundled driver 2.7.0 |
+| Dependency injection | Koin BOM 4.2.2 |
 | Date/time | `kotlinx-datetime` 0.8.0 |
-| Synchronization | PocketBase Kotlin 2.7.4 over Ktor 3.4.2 |
+| Synchronization | PocketBase Kotlin 2.7.4 over Ktor 3.5.2 |
 | Android platform | AGP 9.2.1, API 26 minimum, API 36 compile/target, WorkManager 2.11.2, Glance 1.1.1 |
 | Desktop | Compose Desktop with DMG, MSI, and DEB packaging |
-| Tests | `kotlin.test`, JUnit 4.13.2, coroutines-test, Turbine, Ktor MockEngine, Kover 0.9.8 |
+| Tests | `kotlin.test`, JUnit 4.13.2, coroutines-test, Turbine, Ktor MockEngine, Kover 0.9.9 |
 | Build | Gradle 9.4.1, Java/JVM target 17, version catalog |
 
-Dependency versions are centralized in `gradle/libs.versions.toml`. Platform package versions are separate release surfaces; see Configuration and Versioning.
+Dependency versions are centralized in `gradle/libs.versions.toml`. Latest stable-compatible updates are made in small attributable batches and verified with the cheapest affected compile. Compose Multiplatform 1.11.1 is paired with RichEditor 1.0.0; Material 3 remains on 1.11.0-alpha07 because it is the component version used by that Compose line. Gradle 9.4.1 and AGP 9.2.1 remain the empirically verified project pair: Kotlin 2.4.10's published KMP compatibility table lists support through AGP 9.1.0, so a move to AGP 9.3/Gradle 9.5 is deferred until a supported Kotlin line or separately authorized validation exists. Stable Android API 36 is the compile/target ceiling; the catalog records concrete AAR-metadata pins for artifacts that require API 37. Platform package versions are separate release surfaces; see Configuration and Versioning.
 
 ## 4. Project Structure
 
@@ -129,11 +129,11 @@ The iOS host reads product identity and versions from `iosApp/Configuration/Conf
 
 The project currently has multiple explicit version locations:
 
-- Android: `androidApp/build.gradle.kts` uses `versionCode = 2` and `versionName = "1.1.0"`.
-- iOS: `iosApp/Configuration/Config.xcconfig` uses `CURRENT_PROJECT_VERSION=2` and `MARKETING_VERSION=1.1.0`.
-- Desktop packages: `composeApp/build.gradle.kts` uses `packageVersion = "1.1.0"`.
+- Android: `androidApp/build.gradle.kts` uses `versionCode = 3` and `versionName = "1.2.0"`.
+- iOS: `iosApp/Configuration/Config.xcconfig` uses `CURRENT_PROJECT_VERSION=3` and `MARKETING_VERSION=1.2.0`.
+- Desktop packages: `composeApp/build.gradle.kts` uses `packageVersion = "1.2.0"`.
 
-Release work must update and verify every platform surface in scope. Version 1.1.0 is the currently configured coordinated Android, iOS, and desktop release; the local-only, authoritative-connect, and Quick Add architecture documented here is present in development source but does not itself change those release surfaces.
+Release work must update and verify every platform surface in scope. Version 1.2.0 is the currently configured coordinated Android, iOS, and desktop release and includes the local-only, authoritative-connect, Quick Add, and audit-remediation architecture documented here.
 
 ## 8. UI, State, and Navigation
 
@@ -161,6 +161,8 @@ Each application host initializes Koin once:
 - Android: `OpenTasksApplication`, with Android context.
 - iOS: `MainViewController()` before composing the UIKit controller.
 - Desktop: `main()` before opening the Compose window.
+
+External boundaries are validated before expensive work. File/share inputs use bounded byte reads and strict UTF-8, typed rejections, and stale-generation checks. Temporary PocketBase sessions and clients own one close/unregister path, while failed candidate setup leaves the active client usable. Coroutine cancellation remains cancellation across imports, attachments, sync, Settings, and export handoff. JVM Calendar processes are run through a timeout- and 16 MiB-output-bounded runner that cleans up children on timeout, cancellation, and overflow.
 
 ## 10. Persistence and Offline Data
 
@@ -238,13 +240,13 @@ The activity converts Android intents into shared events for notifications, widg
 
 The SwiftUI `iOSApp` hosts the shared Compose UI through `MainViewController`. `AppDelegate` integrates background refresh and user notifications. Kotlin supplies the shared sync/reminder work; Swift arbitrates background-task expiration and exactly-once completion.
 
-The share extension accepts shared content and hands it to the containing app through the configured app group and custom URL path. Platform source code supplies iOS calendar, file, attachment, notification, and theme implementations.
+The share extension accepts bounded shared content and hands it to the containing app through the `opentasks://share` custom URL path. There is deliberately no App Group handoff; the extension validates URL/payload limits and keeps its UI visible with local feedback when opening the containing app fails. Platform source code supplies iOS calendar, file, attachment, notification, and theme implementations.
 
 ### JVM Desktop
 
 `composeApp/src/jvmMain/.../main.kt` opens one Compose Desktop window; there is no multi-process renderer or IPC layer. JVM actual implementations use native file dialogs/filesystem APIs where needed. The Room database and attachment storage live in per-user application data locations selected by the platform module.
 
-Desktop packages target DMG, MSI, and DEB. Release ProGuard shrinking remains enabled while optimization is disabled; `proguard-desktop-release.pro` preserves generated, reflective, service-loaded, and JNI surfaces required at runtime.
+Desktop packages target DMG, MSI, and DEB. Release ProGuard shrinking remains enabled while optimization is disabled; `proguard-desktop-release.pro` preserves generated, reflective, service-loaded, and JNI surfaces required at runtime. Calendar commands use a shared process runner that drains merged output without deadlock, enforces a timeout, caps output at 16 MiB, and destroys/forcibly destroys children on timeout, cancellation, or overflow.
 
 ## 14. Import, Export, and Attachments
 
@@ -313,14 +315,14 @@ Tests are organized by source set:
 - `jvmTest`: Room persistence and migrations, active-cache/account recovery, sync adapters, server replacement/seeding, DI resolution, Actions, ViewModels, and pure UI/navigation helpers.
 - `androidApp/src/test`: Android worker and widget data-provider unit tests.
 
-The shared JVM suite runs common and JVM tests through `./gradlew :composeApp:jvmTest`. Android shell tests run through `./gradlew :androidApp:testDebugUnitTest`. Kover can generate coverage reports and excludes generated code, DI wiring, platform shells, previews, resources, and UI packages; no minimum coverage threshold is configured.
+The shared JVM suite runs common and JVM tests through `./gradlew :composeApp:jvmTest`. Android shell tests run through `./gradlew :androidApp:testDebugUnitTest`. Kover can generate coverage reports and excludes generated code, DI wiring, platform shells, previews, resources, and UI packages; no minimum coverage threshold is configured. `docs/4-unit-tests/COVERAGE-DEBT.md` records the remaining native/service boundaries; focused MockEngine/session tests are the authenticator gate, and a live PocketBase harness requires separate approval.
 
 Risk-based verification extends beyond unit tests:
 
 - Room or sync changes require persistence/migration and sync-adapter tests.
 - Cross-platform shared changes require relevant JVM, Android, and iOS compilation.
-- Android app-shell changes require lint and APK assembly; widget/notification changes also need emulator or device checks.
-- iOS host, notification, share-extension, or background-task changes require an Xcode build and relevant simulator/device behavior.
+- Android app-shell changes require lint and an affected compile/assembly; widget/notification changes retain a proportional owner-run manual checklist.
+- iOS host, notification, share-extension, or background-task changes require an Xcode compile when available and a proportional owner-run manual checklist; simulator/device execution is not implied by a local Gradle gate.
 - Desktop release changes require packaging and launching the packaged artifact, not only `run` or compilation.
 
 ## 18. Performance Considerations
@@ -360,7 +362,7 @@ database and attachment-storage backups. This is an explicitly bounded
 two-account deployment model, not arbitrary multi-tenant registration or shared
 task hosting.
 
-Native entrypoints must validate external intents, URLs, files, and shared payloads. Exported Android components and iOS extension/app-group capabilities should remain as narrow as their workflows permit.
+Native entrypoints must validate external intents, URLs, files, and shared payloads. Exported Android components and the iOS custom-URL extension capability should remain as narrow as their workflows permit.
 
 ## 20. Packaging and Distribution
 
@@ -369,7 +371,7 @@ Native entrypoints must validate external intents, URLs, files, and shared paylo
 - **Desktop:** Compose native distributions produce DMG, MSI, and DEB artifacts. The documented macOS task is `:composeApp:packageReleaseDmg`; signing and notarization are not configured.
 - **PocketBase:** JavaScript migrations in `pocketbase/pb_migrations/` create and harden the server collections. The server is deployed separately from the clients and its SQLite data requires independent backups.
 
-Application releases must preserve the stable identifiers and data locations used by Room, notifications, WorkManager, widgets, app groups, and desktop packages.
+Application releases must preserve the stable identifiers and data locations used by Room, notifications, WorkManager, widgets, the iOS custom URL, and desktop packages.
 
 ## 21. Known Constraints and Maintenance Boundaries
 

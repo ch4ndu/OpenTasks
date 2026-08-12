@@ -24,6 +24,12 @@ Calendar UI lives under `ui/screens/calendar/`. The screen keeps view selection 
 
 Calendar import is handled outside the calendar screen. Settings opens the import dialog, `FetchCalendarEventsUseCase` reads platform calendar data, and `ImportCalendarEventsAction` creates tasks in the stable `Calendar Imports` category with the `Imported` tag.
 
+## Recurrence and projection boundaries
+
+Countdown occurrences use the immutable civil-date anchor and anchor/index arithmetic. Only a bounded adjacent correction is allowed after the arithmetic estimate, so far-past/far-future dates do not require occurrence-by-occurrence iteration. `NONE` and non-positive intervals retain their fallback behavior, count-up dates continue to count from a future anchor, and monthly/yearly 29–31 or leap-day anchors clamp each occurrence to that occurrence's month without drifting the original anchor.
+
+`CalendarTransforms` and `CalendarViewModel` own the calendar projection. On `Dispatchers.Default` they precompute row date/time text, all-day/timed fields, timeline labels, selected-day state, fixed preview prefixes, and overflow counts. The original task remains on each immutable row projection. Equality-based `scan` reuse preserves unchanged day/list identity, including day rollover updates. Calendar composables consume these projections; only a measured-height limit may select a prefix through the pure layout-boundary helper, with no formatting, sorting, grouping, or pixel constraint in the ViewModel.
+
 ## Shared Capabilities
 
 - [Reminders](common/reminders.md) for task and countdown notifications visible from calendar workflows.

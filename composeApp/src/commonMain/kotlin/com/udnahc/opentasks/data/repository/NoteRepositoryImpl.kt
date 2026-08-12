@@ -50,7 +50,7 @@ class NoteRepositoryImpl(
     }
 
     override suspend fun update(note: Note) = mutationGate.withExclusive {
-        log.v { "Updating note: ${note.id}, content has newlines=${'\n' in note.content}" }
+        log.v { "Updating note: ${note.id}" }
         withContext(ioDispatcher) {
             noteDao.update(note.withUtcTimestamps().copy(isSynced = false))
         }

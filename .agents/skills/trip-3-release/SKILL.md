@@ -13,7 +13,7 @@ You are now in **release mode** for **OpenTasks**.
 
 Release: $ARGUMENTS
 
-This skill runs after `trip-2-implement` has converged (implementation done, testing gate green, Terra code review `APPROVED` or explicitly skipped). It is normally chained from trip-2 in the same session, but can be invoked standalone in a fresh session.
+This skill runs after `trip-2-implement` has converged (Luna implementation done, testing gate green, Sol code review `APPROVED` or explicitly skipped). It is normally chained from trip-2 in the same session, but can be invoked standalone in a fresh session.
 
 ---
 
@@ -21,8 +21,8 @@ This skill runs after `trip-2-implement` has converged (implementation done, tes
 
 - Implementation complete and user-confirmed.
 - Testing gate green: affected unit tests pass.
-- Terra code review converged (`APPROVED`), or explicitly skipped by the user.
-- Sol final gate completed with a metadata-verified `gpt-5.6-sol/high` session and `APPROVED`.
+- Sol code review converged (`APPROVED`), or explicitly skipped by the user.
+- Sol final gate completed with a metadata-verified `gpt-5.6-sol/xhigh` session and `APPROVED`.
 - Lint and type-check/build green.
 
 ### Standalone verification (fresh session, not chained from trip-2)
@@ -36,7 +36,7 @@ If this skill was NOT chained from a trip-2 session in the current conversation,
 ./gradlew :composeApp:jvmTest :androidApp:testDebugUnitTest
 ```
 
-All must be green. Also verify a completed, metadata-verified Terra review invocation and an approved, metadata-verified Sol `final-gate` invocation exist under `.local/trip/runtime/invocations/code-review/` for the given plan path/label (see Step 3 below). A missing Terra review may use the explicitly skipped manual-CR fallback; a missing or unapproved Sol final gate blocks release.
+All must be green. Also verify a completed, metadata-verified Sol review invocation and an approved, metadata-verified Sol `final-gate` invocation exist under `.local/trip/runtime/invocations/code-review/` for the given plan path/label (see Step 3 below). A missing Sol review may use the explicitly skipped manual-CR fallback; a missing or unapproved Sol final gate blocks release.
 
 Any failure blocks the release — fix or return to `trip-2-implement` first.
 
@@ -66,7 +66,7 @@ Use the project week in all subsequent steps.
 
 Now that week (`a`) and version (`x.y.z`) are known:
 
-1. Locate the completed Terra review body for the target under `synthesize/round-*` (multi-round) or `start/round-*` (Turn 1), and the newest Sol decision under `final-gate/round-*`. Read each `metadata.json` and `final.txt`; require `selected.verified: true` with the phase's exact model/effort.
+1. Locate the completed Sol review body for the target under `synthesize/round-*` (multi-round) or `start/round-*` (Turn 1), and the newest Sol decision under `final-gate/round-*`. Read each `metadata.json` and `final.txt`; require `selected.verified: true` with `gpt-5.6-sol/xhigh`.
    ```bash
    find .local/trip/runtime/invocations/code-review -path '*/synthesize/round-*/metadata.json' -o -path '*/start/round-*/metadata.json' -o -path '*/final-gate/round-*/metadata.json'
    ```
@@ -74,7 +74,7 @@ Now that week (`a`) and version (`x.y.z`) are known:
 2. Content source:
    - **Multi-round loop**: the synthesized invocation's final report has the consolidated review + `PROMOTION_READY`. Strip sentinel.
    - **Turn 1 convergence**: the verified invocation's final report has the full review already.
-   - **Skipped Terra**: write CR from `.agents/skills/trip-review/cr-template.md` with body "Code review skipped — trivial change." Verdict: `APPROVED with observations`.
+   - **Skipped Sol review**: write CR from `.agents/skills/trip-review/cr-template.md` with body "Code review skipped — trivial change." Verdict: `APPROVED with observations`.
 
    In every case, the Sol `final-gate` output must end in `APPROVED`; otherwise return to `trip-2-implement`.
 

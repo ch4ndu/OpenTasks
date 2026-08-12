@@ -12,11 +12,9 @@ import com.udnahc.opentasks.viewmodel.SyncStatus
 private fun SettingsContentPreview() {
     OpenTasksTheme {
         SettingsContent(
-            currentUrl = null,
+            currentEndpoint = null,
             syncStatus = SyncStatus.IDLE,
             onBack = {},
-            onSaveUrl = {},
-            onClearUrl = {},
         )
     }
 }
@@ -26,11 +24,9 @@ private fun SettingsContentPreview() {
 private fun SettingsContentConnectedPreview() {
     OpenTasksTheme {
         SettingsContent(
-            currentUrl = "http://192.168.1.100:8090",
+            currentEndpoint = "http://192.168.1.100:8090",
             syncStatus = SyncStatus.SUCCESS,
             onBack = {},
-            onSaveUrl = {},
-            onClearUrl = {},
         )
     }
 }

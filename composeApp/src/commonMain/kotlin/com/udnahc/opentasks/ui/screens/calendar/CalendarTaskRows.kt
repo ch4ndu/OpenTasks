@@ -27,14 +27,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.udnahc.opentasks.data.extensions.extractHour
-import com.udnahc.opentasks.data.extensions.extractMinute
-import com.udnahc.opentasks.data.extensions.formatDateShort
-import com.udnahc.opentasks.data.extensions.formatTime12Hr
-import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
-import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.model.isCountdownItem
+import com.udnahc.opentasks.domain.usecase.task.CalendarTaskRowProjection
 import com.udnahc.opentasks.ui.screens.EmptyPlaceholder
 import com.udnahc.opentasks.ui.screens.TaskCheckboxButton
 import com.udnahc.opentasks.ui.screens.TaskTitleText
@@ -55,12 +50,13 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 internal fun TimelineTaskRow(
-    task: Task,
+    row: CalendarTaskRowProjection,
     isFirst: Boolean,
     isLast: Boolean,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
 ) {
+    val task = row.task
     val dimens = OpenTasksTheme.dimens
     val lineColor = MaterialTheme.colorScheme.surfaceVariant
 
@@ -72,13 +68,7 @@ internal fun TimelineTaskRow(
         verticalAlignment = Alignment.Top,
     ) {
         // ── Time label ───
-        val timeText = if (task.deadline != null) {
-            val h = extractHour(task.deadline)
-            val m = extractMinute(task.deadline)
-            if (h == 0 && m == 0) stringResource(Res.string.all_day) else formatTimeFromLocalMillis(
-                task.deadline
-            )
-        } else stringResource(Res.string.all_day)
+        val timeText = row.timelineTimeText ?: stringResource(Res.string.all_day)
 
         Text(
             text = timeText,
@@ -183,12 +173,13 @@ internal fun TimelineTaskRow(
 
 @Composable
 internal fun CardTaskRow(
-    task: Task,
+    row: CalendarTaskRowProjection,
     isToday: Boolean,
     categoryName: String,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
 ) {
+    val task = row.task
     val dimens = OpenTasksTheme.dimens
     val isCountdownItem = task.isCountdownItem
     Row(
@@ -215,13 +206,12 @@ internal fun CardTaskRow(
                 title = task.title,
                 isCompleted = task.status == TaskStatus.DONE,
             )
-            if (task.deadline != null) {
-                val dayPrefix =
-                    if (isToday) stringResource(Res.string.today) else formatDateShort(task.deadline)
-                val h = extractHour(task.deadline)
-                val m = extractMinute(task.deadline)
-                val timeStr =
-                    if (h == 0 && m == 0) "" else ", ${formatTimeFromLocalMillis(task.deadline)}"
+            if (row.cardDateText.isNotEmpty()) {
+                val dayPrefix = if (isToday) stringResource(Res.string.today) else row.cardDateText
+                val timeStr = row.cardTimeText
+                    .takeIf { it.isNotEmpty() && row.startMinutes != 0 }
+                    ?.let { ", $it" }
+                    .orEmpty()
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "$dayPrefix$timeStr",
@@ -252,11 +242,12 @@ internal fun CardTaskRow(
 
 @Composable
 internal fun CalendarTaskRow(
-    task: Task,
+    row: CalendarTaskRowProjection,
     categoryName: String,
     onToggleComplete: () -> Unit,
     onClick: () -> Unit,
 ) {
+    val task = row.task
     val dimens = OpenTasksTheme.dimens
     val isCountdownItem = task.isCountdownItem
     Row(
@@ -283,9 +274,9 @@ internal fun CalendarTaskRow(
                 title = task.title,
                 isCompleted = task.status == TaskStatus.DONE,
             )
-            if (task.deadline != null) {
+            if (row.cardDateText.isNotEmpty()) {
                 Text(
-                    text = formatTimeFromLocalMillis(task.deadline),
+                    text = row.cardTimeText,
                     style = MaterialTheme.typography.labelMedium,
                     color = PrimaryBlue,
                 )
@@ -304,7 +295,7 @@ internal fun CalendarTaskRow(
 /**
  * Compact event bar used inside Day, 3-Day, and Week timeline grids.
  *
- * @param task           The task to display.
+ * @param row            The projected task row to display.
  * @param modifier       Outer modifier (size, offset, padding applied by caller).
  * @param onClick        Called when the bar is tapped.
  * @param onToggleComplete Called when the checkbox icon is tapped. When null the
@@ -316,7 +307,7 @@ internal fun CalendarTaskRow(
  */
 @Composable
 internal fun TimelineEventBar(
-    task: Task,
+    row: CalendarTaskRowProjection,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onToggleComplete: (() -> Unit)? = null,
@@ -324,8 +315,9 @@ internal fun TimelineEventBar(
     horizontalPadding: Dp = 2.dp,
     iconSpacing: Dp = 2.dp,
     showTime: Boolean = false,
-    timeText: String? = null,
+    timeText: String? = row.timelineTimeText,
 ) {
+    val task = row.task
     val dimens = OpenTasksTheme.dimens
     val priorityColor = priorityColor(task.priority)
     val isCountdown = task.isCountdownItem

@@ -19,10 +19,10 @@ import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownCalendarTasks
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarListDisplayModePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarViewPreferenceUseCase
-import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
+import com.udnahc.opentasks.domain.usecase.task.projectCalendarDay
 import com.udnahc.opentasks.domain.usecase.task.sortCalendarTasksForDay
-import com.udnahc.opentasks.domain.usecase.task.splitCalendarDayTasks
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -103,9 +103,16 @@ class CalendarViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val timelineTasksByDay: StateFlow<Map<Long, CalendarDayTasks>> = tasksByDay
-        .map { byDay -> byDay.mapValues { (_, tasks) -> splitCalendarDayTasks(tasks) } }
-        .scan(emptyMap<Long, CalendarDayTasks>()) { previous, next ->
+    val calendarDaysByDay: StateFlow<Map<Long, CalendarDayProjection>> = combine(
+        tasksByDay,
+        today,
+    ) { byDay, todayDate ->
+        val todayDayKey = dayKeyFromDate(todayDate.year, todayDate.monthNumber, todayDate.dayOfMonth)
+        byDay.mapValues { (day, tasks) ->
+            projectCalendarDay(tasks, targetDayKey = day, todayDayKey = todayDayKey)
+        }
+    }
+        .scan(emptyMap<Long, CalendarDayProjection>()) { previous, next ->
             next.mapValues { (day, tasks) ->
                 previous[day]?.takeIf { it == tasks } ?: tasks
             }
@@ -113,17 +120,45 @@ class CalendarViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val selectedListDayTasks: StateFlow<List<Task>> = combine(
-        tasksByDay,
+    val selectedListDayProjection: StateFlow<CalendarDayProjection> = combine(
+        calendarDaysByDay,
         _listSelectedDayKey,
-    ) { byDay, selectedKey -> selectedKey?.let { byDay[it] }.orEmpty() }
+        today,
+    ) { byDay, selectedKey, todayDate ->
+        val todayDayKey = dayKeyFromDate(todayDate.year, todayDate.monthNumber, todayDate.dayOfMonth)
+        val day = selectedKey ?: todayDayKey
+        byDay[day] ?: projectCalendarDay(emptyList(), targetDayKey = day, todayDayKey = todayDayKey)
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            projectCalendarDay(emptyList(), dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth), dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth)),
+        )
+
+    val selectedMonthDayProjection: StateFlow<CalendarDayProjection> = combine(
+        calendarDaysByDay,
+        _monthSelectedDayKey,
+        today,
+    ) { byDay, selectedKey, todayDate ->
+        val todayDayKey = dayKeyFromDate(todayDate.year, todayDate.monthNumber, todayDate.dayOfMonth)
+        val day = selectedKey ?: todayDayKey
+        byDay[day] ?: projectCalendarDay(emptyList(), targetDayKey = day, todayDayKey = todayDayKey)
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            projectCalendarDay(emptyList(), dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth), dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth)),
+        )
+
+    val selectedListDayTasks: StateFlow<List<Task>> = selectedListDayProjection
+        .map { projection -> projection.rows.map { row -> row.task } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val selectedMonthDayTasks: StateFlow<List<Task>> = combine(
-        tasksByDay,
-        _monthSelectedDayKey,
-    ) { byDay, selectedKey -> selectedKey?.let { byDay[it] }.orEmpty() }
+    val selectedMonthDayTasks: StateFlow<List<Task>> = selectedMonthDayProjection
+        .map { projection -> projection.rows.map { row -> row.task } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

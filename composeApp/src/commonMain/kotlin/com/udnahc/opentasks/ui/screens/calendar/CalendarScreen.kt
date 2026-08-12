@@ -43,7 +43,7 @@ import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.WidgetCalendarDate
 import com.udnahc.opentasks.WidgetNavigationEvent
-import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
 import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
 import com.udnahc.opentasks.ui.screens.OpenTasksBackButton
 import com.udnahc.opentasks.ui.screens.OpenTasksSettingsButton
@@ -173,9 +173,9 @@ fun CalendarScreen(
     CalendarContent(
         todayDate = TodayCalendarDate(today.year, today.monthNumber, today.dayOfMonth),
         tasksByDay = tasksByDay,
-        timelineTasksByDayFlow = viewModel.timelineTasksByDay,
-        selectedListDayTasksFlow = viewModel.selectedListDayTasks,
-        selectedMonthDayTasksFlow = viewModel.selectedMonthDayTasks,
+        calendarDaysByDayFlow = viewModel.calendarDaysByDay,
+        selectedListDayProjectionFlow = viewModel.selectedListDayProjection,
+        selectedMonthDayProjectionFlow = viewModel.selectedMonthDayProjection,
         categoryNamesFlow = viewModel.categoryNames,
         currentView = calendarViewPreference.toCalendarViewType(),
         listDisplayMode = listDisplayModePreference.toListDisplayMode(),
@@ -213,9 +213,9 @@ fun CalendarScreen(
 private fun CalendarContent(
     todayDate: TodayCalendarDate,
     tasksByDay: Map<Long, List<Task>>,
-    timelineTasksByDayFlow: StateFlow<Map<Long, CalendarDayTasks>>,
-    selectedListDayTasksFlow: StateFlow<List<Task>>,
-    selectedMonthDayTasksFlow: StateFlow<List<Task>>,
+    calendarDaysByDayFlow: StateFlow<Map<Long, CalendarDayProjection>>,
+    selectedListDayProjectionFlow: StateFlow<CalendarDayProjection>,
+    selectedMonthDayProjectionFlow: StateFlow<CalendarDayProjection>,
     categoryNamesFlow: StateFlow<Map<String, String>>,
     currentView: CalendarViewType,
     listDisplayMode: ListDisplayMode,
@@ -234,6 +234,7 @@ private fun CalendarContent(
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
+    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
     val density = LocalDensity.current
     val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val navBarHeight = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
@@ -491,10 +492,10 @@ private fun CalendarContent(
         ) {
             when (currentView) {
                 CalendarViewType.LIST -> {
-                    val selectedListDayTasks by selectedListDayTasksFlow.collectAsState()
+                    val selectedListDayProjection by selectedListDayProjectionFlow.collectAsState()
                     val categoryNames by categoryNamesFlow.collectAsState()
                     ListViewContent(
-                        dayTasks = selectedListDayTasks,
+                        dayProjection = selectedListDayProjection,
                         todayMillis = todayMillis,
                         todayYear = todayYear,
                         todayMonth = todayMonth,
@@ -503,7 +504,7 @@ private fun CalendarContent(
                         onDaySelected = { listSelectedDayMillis = it },
                         weekPagerState = weekPagerState,
                         weekPagerCentre = WEEK_PAGER_CENTRE,
-                        tasksByDay = tasksByDay,
+                        calendarDaysByDay = calendarDaysByDay,
                         categoryNames = categoryNames,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
@@ -520,7 +521,7 @@ private fun CalendarContent(
                         todayYear = todayYear,
                         todayMonth = todayMonth,
                         todayDay = todayDay,
-                        tasksByDay = tasksByDay,
+                        taskDayKeys = tasksByDay.keys,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
                         onMonthClick = { year, month -> navigateToMonth(year, month) },
@@ -528,10 +529,10 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.MONTH -> {
-                    val selectedMonthDayTasks by selectedMonthDayTasksFlow.collectAsState()
+                    val selectedMonthDayProjection by selectedMonthDayProjectionFlow.collectAsState()
                     val categoryNames by categoryNamesFlow.collectAsState()
                     MonthViewContent(
-                        selectedTasks = selectedMonthDayTasks,
+                        selectedDayProjection = selectedMonthDayProjection,
                         todayYear = todayYear,
                         todayMonth = todayMonth,
                         todayDay = todayDay,
@@ -539,7 +540,7 @@ private fun CalendarContent(
                         collapseProgress = collapseProgress,
                         pagerState = pagerState,
                         centreIndex = centreIndex,
-                        tasksByDay = tasksByDay,
+                        calendarDaysByDay = calendarDaysByDay,
                         categoryNames = categoryNames,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
@@ -571,7 +572,7 @@ private fun CalendarContent(
                         weekSundayMillis = weekViewSundayMillis,
                         calendarYear = extractYear(weekViewSundayMillis),
                         calendarMonth = weekViewCalendarMonth,
-                        tasksByDay = tasksByDay,
+                        calendarDaysByDay = calendarDaysByDay,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
                         onTaskClick = onTaskClick,
@@ -589,7 +590,6 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.THREE_DAY -> {
-                    val timelineTasksByDay by timelineTasksByDayFlow.collectAsState()
                     ThreeDayViewContent(
                         todayMillis = todayMillis,
                         todayYear = todayYear,
@@ -597,8 +597,7 @@ private fun CalendarContent(
                         todayDay = todayDay,
                         pagerState = threeDayPagerState,
                         pagerCentre = DAY_PAGER_CENTRE,
-                        tasksByDay = tasksByDay,
-                        timelineTasksByDay = timelineTasksByDay,
+                        calendarDaysByDay = calendarDaysByDay,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
                         onTaskClick = onTaskClick,
@@ -607,7 +606,6 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.DAY -> {
-                    val timelineTasksByDay by timelineTasksByDayFlow.collectAsState()
                     DayViewContent(
                         todayMillis = todayMillis,
                         todayYear = todayYear,
@@ -615,8 +613,7 @@ private fun CalendarContent(
                         todayDay = todayDay,
                         pagerState = dayViewPagerState,
                         pagerCentre = DAY_PAGER_CENTRE,
-                        tasksByDay = tasksByDay,
-                        timelineTasksByDay = timelineTasksByDay,
+                        calendarDaysByDay = calendarDaysByDay,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
                         onTaskClick = onTaskClick,

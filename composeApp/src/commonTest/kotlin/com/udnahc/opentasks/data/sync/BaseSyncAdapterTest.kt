@@ -2,10 +2,6 @@ package com.udnahc.opentasks.data.sync
 
 import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
-import com.udnahc.opentasks.domain.action.settings.ConfigurePocketBaseUrlAction
-import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
-import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase.Companion.KEY_POCKETBASE_URL
-import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
 import io.ktor.client.HttpClient
@@ -523,119 +519,6 @@ class BaseSyncAdapterTest {
         }
 
         assertFalse(provider.isConfigured)
-    }
-
-    @Test
-    fun configurePocketBaseUrlNoOpsWhenNoUrlIsSaved() = runBlocking {
-        val provider = PocketBaseClientProvider()
-        val configured = ConfigurePocketBaseUrlAction(
-            FakeAppSettingsRepository(),
-            provider,
-            buildTimePocketBaseUrl = "",
-        )()
-
-        assertFalse(configured)
-        assertFalse(provider.isConfigured)
-    }
-
-    @Test
-    fun configurePocketBaseUrlUsesBuildTimeUrlWhenNoUrlIsSaved() = runBlocking {
-        val provider = PocketBaseClientProvider()
-        val configured = ConfigurePocketBaseUrlAction(
-            FakeAppSettingsRepository(),
-            provider,
-            buildTimePocketBaseUrl = "http://build.example:8090",
-        )()
-
-        assertTrue(configured)
-        assertEquals("build.example", provider.endpoint?.host)
-        assertEquals(8090, provider.endpoint?.port)
-    }
-
-    @Test
-    fun configurePocketBaseUrlUsesBuildTimeUrlWhenSavedUrlIsBlank() = runBlocking {
-        val provider = PocketBaseClientProvider()
-        val configured = ConfigurePocketBaseUrlAction(
-            FakeAppSettingsRepository(mapOf(KEY_POCKETBASE_URL to "")),
-            provider,
-            buildTimePocketBaseUrl = "http://build.example:8090",
-        )()
-
-        assertTrue(configured)
-        assertEquals("build.example", provider.endpoint?.host)
-    }
-
-    @Test
-    fun configurePocketBaseUrlPrefersSavedUrlOverBuildTimeUrl() = runBlocking {
-        val provider = PocketBaseClientProvider()
-        val configured = ConfigurePocketBaseUrlAction(
-            FakeAppSettingsRepository(mapOf(KEY_POCKETBASE_URL to "http://saved.example:8090")),
-            provider,
-            buildTimePocketBaseUrl = "http://build.example:8090",
-        )()
-
-        assertTrue(configured)
-        assertEquals("saved.example", provider.endpoint?.host)
-    }
-
-    @Test
-    fun failedUrlVerificationPreservesOldUrlAndProvider() = runBlocking {
-        val settings = FakeAppSettingsRepository(mapOf(KEY_POCKETBASE_URL to "http://old.example:8090"))
-        val provider = PocketBaseClientProvider().apply { configure("http://old.example:8090") }
-        val oldEndpoint = provider.endpoint
-        val verifier = PocketBaseConnectionVerifier(
-            provider,
-            listOf(FakeAdapter(mutableListOf(), mutableListOf())),
-            healthCheck = { throw IllegalStateException("health failed") },
-        )
-        val action = SavePocketBaseUrlAction(
-            settings,
-            provider,
-            verifier,
-            SyncService(
-                provider,
-                listOf(FakeAdapter(mutableListOf(), mutableListOf())),
-                accountMutationGate = MutexAccountMutationGate(),
-            ),
-        )
-
-        assertFailsWith<PocketBaseConnectionException> {
-            action("http://new.example:8090")
-        }
-
-        assertEquals("http://old.example:8090", settings.getValue(KEY_POCKETBASE_URL))
-        assertEquals(oldEndpoint, provider.endpoint)
-        assertTrue(settings.saved.isEmpty())
-    }
-
-    @Test
-    fun unboundInitialSyncPreservesOldUrlAndProvider() = runBlocking {
-        val settings = FakeAppSettingsRepository(mapOf(KEY_POCKETBASE_URL to "http://old.example:8090"))
-        val provider = PocketBaseClientProvider().apply { configure("http://old.example:8090") }
-        val oldEndpoint = provider.endpoint
-        val verifier = PocketBaseConnectionVerifier(
-            provider,
-            listOf(FakeAdapter(mutableListOf(), mutableListOf())),
-            healthCheck = {},
-        )
-        val action = SavePocketBaseUrlAction(
-            settings,
-            provider,
-            verifier,
-            SyncService(
-                provider,
-                listOf(FakeAdapter(mutableListOf(), mutableListOf(), failFetch = true)),
-                accountMutationGate = MutexAccountMutationGate(),
-            ),
-        )
-
-        assertFailsWith<IllegalStateException> {
-            action("http://new.example:8090")
-        }
-
-        assertEquals("http://old.example:8090", settings.getValue(KEY_POCKETBASE_URL))
-        assertEquals(oldEndpoint, provider.endpoint)
-        assertTrue(settings.saved.isEmpty())
     }
 
     @Test

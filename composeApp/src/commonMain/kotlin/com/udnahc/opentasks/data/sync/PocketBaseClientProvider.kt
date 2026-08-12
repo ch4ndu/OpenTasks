@@ -33,10 +33,13 @@ class PocketBaseClientProvider {
             }
             return
         }
-        _client = createClient(endpoint)
+        val previous = _client
+        val candidate = createClient(endpoint)
+        _client = candidate
         _endpoint = endpoint
         _activeBinding = null
-        log.d { "PocketBase client configured: ${endpoint.protocol.name.lowercase()}://${endpoint.host}:${endpoint.port}" }
+        previous?.let(::releaseClient)
+        log.d { "PocketBase client configured" }
     }
 
     fun createClient(url: String): PocketbaseClient = createClient(parsePocketBaseEndpoint(url))
@@ -62,15 +65,34 @@ class PocketBaseClientProvider {
         }
         require(token.isNotBlank()) { "PocketBase auth token must not be blank" }
         val client = createClient(parsePocketBaseEndpoint(binding.canonicalEndpoint))
-        client.authStore.save(token)
-        knownBindings[client] = binding
+        try {
+            client.authStore.save(token)
+            knownBindings[client] = binding
+        } catch (error: Throwable) {
+            releaseClient(client)
+            throw error
+        }
         return client
     }
 
     internal fun releaseDetachedClient(client: PocketbaseClient) {
-        if (_client === client) return
-        knownEndpoints.remove(client)
-        knownBindings.remove(client)
+        releaseClient(client)
+    }
+
+    /** Opens a temporary account session whose client is released by close(). */
+    internal fun openAccountClientSession(
+        endpoint: PocketBaseEndpoint,
+    ): com.udnahc.opentasks.data.auth.AccountClientSession {
+        val client = createClient(endpoint)
+        return try {
+            com.udnahc.opentasks.data.auth.PocketBaseAccountClientSession(
+                client = client,
+                release = ::releaseClient,
+            )
+        } catch (error: Throwable) {
+            releaseClient(client)
+            throw error
+        }
     }
 
     /**
@@ -88,15 +110,18 @@ class PocketBaseClientProvider {
         }
         val endpoint = parsePocketBaseEndpoint(binding.canonicalEndpoint)
         val client = createClient(endpoint)
-        client.authStore.save(token)
-        _client?.takeIf { it !== client }?.let { previous ->
-            knownEndpoints.remove(previous)
-            knownBindings.remove(previous)
+        try {
+            client.authStore.save(token)
+            knownBindings[client] = binding
+        } catch (error: Throwable) {
+            releaseClient(client)
+            throw error
         }
+        val previous = _client
         _client = client
         _endpoint = endpoint
         _activeBinding = binding
-        knownBindings[client] = binding
+        previous?.takeIf { it !== client }?.let(::releaseClient)
         return client
     }
 
@@ -120,13 +145,27 @@ class PocketBaseClientProvider {
     }
 
     fun disconnect() {
-        _client?.let { client ->
-            knownEndpoints.remove(client)
-            knownBindings.remove(client)
+        val client = _client
+        if (client != null) {
+            releaseClient(client)
+        } else {
+            _endpoint = null
+            _activeBinding = null
         }
-        _client = null
-        _endpoint = null
-        _activeBinding = null
+    }
+
+    private fun releaseClient(client: PocketbaseClient) {
+        val wasActive = _client === client
+        val hadEndpoint = knownEndpoints.remove(client) != null
+        val hadBinding = knownBindings.remove(client) != null
+        if (!wasActive && !hadEndpoint && !hadBinding) return
+
+        if (wasActive) {
+            _client = null
+            _endpoint = null
+            _activeBinding = null
+        }
+        client.httpClient.close()
     }
 
     companion object {

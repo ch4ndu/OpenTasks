@@ -19,8 +19,8 @@ from typing import Any, Iterator
 ROLE_PINS = {
     "terra": {"model": "gpt-5.6-terra", "effort": "xhigh"},
     "sol-review": {"model": "gpt-5.6-sol", "effort": "xhigh"},
-    "sol-implement": {"model": "gpt-5.6-sol", "effort": "high"},
-    "sol-final": {"model": "gpt-5.6-sol", "effort": "high"},
+    "luna-implement": {"model": "gpt-5.6-luna", "effort": "max"},
+    "sol-final": {"model": "gpt-5.6-sol", "effort": "xhigh"},
 }
 MODULES = {"plan-review", "implementation", "code-review", "ask"}
 

@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
-import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 
@@ -148,7 +147,7 @@ internal fun CalendarDayCircle(
  * @param selectedDayMillis Optional local-millis of the selected day (unused by year view).
  * @param highlightedWeekSundayMillis Optional Sunday millis for animated week-band highlight
  *   (week view only).
- * @param tasksByDay Map of dayKey -> tasks for dot/color indicators.
+ * @param taskDayKeys Populated day keys for dot/color indicators.
  * @param onDayClick Callback when a day cell is tapped. Receives local start-of-day millis.
  *   Pass null to disable per-day click (year view uses card-level click instead).
  * @param showMonthHeader When true, renders the month name above the grid (year view).
@@ -164,20 +163,13 @@ internal fun MiniCalendarGrid(
     todayDay: Int,
     selectedDayMillis: Long? = null,
     highlightedWeekSundayMillis: Long? = null,
-    tasksByDay: Map<Long, List<Task>>,
+    taskDayKeys: Set<Long>,
     onDayClick: ((dayMillis: Long) -> Unit)? = null,
     showMonthHeader: Boolean = false,
     useAspectRatioCells: Boolean = false,
 ) {
     val dimens = OpenTasksTheme.dimens
     val weeks = remember(year, month) { buildMonthWeeks(year, month) }
-    val taskDayKeys = remember(weeks, tasksByDay) {
-        weeks.asSequence()
-            .flatten()
-            .map { day -> dayKeyFromDate(day.year, day.month, day.day) }
-            .filter(tasksByDay::containsKey)
-            .toSet()
-    }
 
     // Month name header (year view)
     if (showMonthHeader) {

@@ -7,20 +7,18 @@ import com.udnahc.opentasks.data.model.TextSizePreference
 import com.udnahc.opentasks.data.model.ThemeMode
 import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
-import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
-import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SaveTextSizePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveThemePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
-import com.udnahc.opentasks.domain.usecase.settings.ObservePocketBaseUrlUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTextSizePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.task.GenerateCsvExportUseCase
 import com.udnahc.opentasks.domain.usecase.task.GenerateIcsExportUseCase
 import com.udnahc.opentasks.ui.util.FileExportRequest
 import com.udnahc.opentasks.ui.util.FileExportResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,11 +43,8 @@ sealed class ExportResult {
 enum class ClearLocalDataStatus { IDLE, CLEARING, ERROR }
 
 class SettingsViewModel(
-    observePocketBaseUrl: ObservePocketBaseUrlUseCase,
     observeThemePreference: ObserveThemePreferenceUseCase,
     observeTextSizePreference: ObserveTextSizePreferenceUseCase,
-    private val savePocketBaseUrlAction: SavePocketBaseUrlAction,
-    private val clearPocketBaseUrlAction: ClearPocketBaseUrlAction,
     private val triggerSyncAction: TriggerSyncAction,
     private val saveThemePreferenceAction: SaveThemePreferenceAction,
     private val saveTextSizePreferenceAction: SaveTextSizePreferenceAction,
@@ -59,9 +54,6 @@ class SettingsViewModel(
     private val generateCsvExport: GenerateCsvExportUseCase,
     private val generateIcsExport: GenerateIcsExportUseCase,
 ) : ViewModel() {
-
-    val pocketBaseUrl: StateFlow<String?> = observePocketBaseUrl()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val themePreference: StateFlow<ThemeMode> = observeThemePreference()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
@@ -96,37 +88,6 @@ class SettingsViewModel(
         recheckPermissions()
     }
 
-    fun savePocketBaseUrl(url: String) {
-        val trimmed = url.trim()
-        if (trimmed.isEmpty()) {
-            clearPocketBaseUrl()
-            return
-        }
-        val normalized = if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-            "http://$trimmed"
-        } else {
-            trimmed
-        }
-        log.d { "Saving PocketBase URL: $normalized" }
-        viewModelScope.launch(Dispatchers.IO) {
-            _syncStatus.value = SyncStatus.CHECKING
-            try {
-                savePocketBaseUrlAction(normalized)
-                _syncStatus.value = SyncStatus.SUCCESS
-            } catch (e: Exception) {
-                log.e(e) { "Failed to save PocketBase URL" }
-                _syncStatus.value = SyncStatus.ERROR
-            }
-        }
-    }
-
-    fun clearPocketBaseUrl() {
-        viewModelScope.launch(Dispatchers.IO) {
-            clearPocketBaseUrlAction()
-            _syncStatus.value = SyncStatus.IDLE
-        }
-    }
-
     fun triggerSync() {
         log.d { "Manual sync triggered" }
         viewModelScope.launch(Dispatchers.IO) {
@@ -134,6 +95,9 @@ class SettingsViewModel(
             try {
                 triggerSyncAction.syncNow()
                 _syncStatus.value = SyncStatus.SUCCESS
+            } catch (e: CancellationException) {
+                _syncStatus.value = SyncStatus.IDLE
+                throw e
             } catch (e: Exception) {
                 log.e(e) { "Sync failed" }
                 _syncStatus.value = SyncStatus.SYNC_ERROR
@@ -172,16 +136,22 @@ class SettingsViewModel(
     fun prepareCsvExport(onReady: (FileExportRequest) -> Unit) {
         if (!_exportInProgress.compareAndSet(expect = false, update = true)) return
         viewModelScope.launch(Dispatchers.IO) {
+            var handedOff = false
             try {
                 val (content, count) = generateCsvExport()
                 pendingExportCount = count
                 withContext(Dispatchers.Main) {
                     onReady(FileExportRequest("opentasks_export.csv", content, "text/csv"))
+                    handedOff = true
                 }
+            } catch (e: CancellationException) {
+                if (!handedOff) resetExportPreparation()
+                throw e
             } catch (e: Exception) {
+                if (handedOff) return@launch
                 log.e(e) { "CSV export failed" }
                 _exportResult.value = ExportResult.Error
-                _exportInProgress.value = false
+                resetExportPreparation()
             }
         }
     }
@@ -189,16 +159,22 @@ class SettingsViewModel(
     fun prepareIcsExport(onReady: (FileExportRequest) -> Unit) {
         if (!_exportInProgress.compareAndSet(expect = false, update = true)) return
         viewModelScope.launch(Dispatchers.IO) {
+            var handedOff = false
             try {
                 val (content, count) = generateIcsExport()
                 pendingExportCount = count
                 withContext(Dispatchers.Main) {
                     onReady(FileExportRequest("opentasks_export.ics", content, "text/calendar"))
+                    handedOff = true
                 }
+            } catch (e: CancellationException) {
+                if (!handedOff) resetExportPreparation()
+                throw e
             } catch (e: Exception) {
+                if (handedOff) return@launch
                 log.e(e) { "ICS export failed" }
                 _exportResult.value = ExportResult.Error
-                _exportInProgress.value = false
+                resetExportPreparation()
             }
         }
     }
@@ -213,6 +189,11 @@ class SettingsViewModel(
         _exportResult.value = ExportResult.Idle
     }
 
+    private fun resetExportPreparation() {
+        pendingExportCount = 0
+        _exportInProgress.value = false
+    }
+
     fun clearLocalData() {
         viewModelScope.launch(Dispatchers.IO) {
             _clearLocalDataStatus.value = ClearLocalDataStatus.CLEARING
@@ -220,9 +201,15 @@ class SettingsViewModel(
                 clearLocalDataAction()
                 _syncStatus.value = SyncStatus.IDLE
                 _clearLocalDataStatus.value = ClearLocalDataStatus.IDLE
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.e(e) { "Clear local data failed" }
                 _clearLocalDataStatus.value = ClearLocalDataStatus.ERROR
+            } finally {
+                if (_clearLocalDataStatus.value == ClearLocalDataStatus.CLEARING) {
+                    _clearLocalDataStatus.value = ClearLocalDataStatus.IDLE
+                }
             }
         }
     }

@@ -2,7 +2,7 @@ package com.udnahc.opentasks.data.calendar
 
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskPriority
-import kotlinx.datetime.Instant
+import kotlin.time.Instant
 import org.lighthousegames.logging.logging
 
 private val log = logging("CsvParser")
@@ -165,7 +165,7 @@ object CsvParser {
             val normalized = value.replace(ISO_OFFSET_REGEX, "$1$2:$3")
             Instant.parse(normalized).toEpochMilliseconds()
         } catch (e: Exception) {
-            log.w(e) { "Failed to parse date '$value'" }
+            log.w { "Failed to parse imported date" }
             null
         }
     }
@@ -201,8 +201,22 @@ object CsvParser {
         val minMatch = DURATION_MIN_REGEX.find(cleaned)
         val secMatch = DURATION_SEC_REGEX.find(cleaned)
 
-        if (hourMatch != null) minutes += hourMatch.groupValues[1].toInt() * 60
-        if (minMatch != null) minutes += minMatch.groupValues[1].toInt()
+        if (hourMatch == null && minMatch == null && secMatch == null) return null
+
+        val hours = if (hourMatch == null) {
+            0L
+        } else {
+            hourMatch.groupValues[1].toLongOrNull() ?: return null
+        }
+        val minuteValue = if (minMatch == null) {
+            0L
+        } else {
+            minMatch.groupValues[1].toLongOrNull() ?: return null
+        }
+        if (hours > Int.MAX_VALUE.toLong() / 60L) return null
+        val hourMinutes = hours * 60L
+        if (minuteValue > Int.MAX_VALUE.toLong() - hourMinutes) return null
+        minutes = (hourMinutes + minuteValue).toInt()
         if (secMatch != null && hourMatch == null && minMatch == null) minutes = 0 // PT0S = 0 min
 
         return minutes

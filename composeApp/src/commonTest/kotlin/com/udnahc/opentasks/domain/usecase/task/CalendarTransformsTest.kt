@@ -9,6 +9,7 @@ import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.testutil.testTask
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class CalendarTransformsTest {
     private val dayStart = startOfDayLocalMillis(2026, 5, 4)
@@ -26,15 +27,40 @@ class CalendarTransformsTest {
     }
 
     @Test
-    fun splitCalendarDayTasksKeepsAllDayAndTimedListsSorted() {
+    fun calendarProjectionKeepsAllDayAndTimedRowsSorted() {
         val timed = testTask(id = "timed", deadline = dayStart + 10 * MILLIS_PER_HOUR)
         val midnight = testTask(id = "midnight", deadline = dayStart)
         val allDay = testTask(id = "all-day", deadline = dayStart + MILLIS_PER_HOUR, isAllDay = true)
 
-        val result = splitCalendarDayTasks(listOf(timed, allDay, midnight))
+        val result = projectCalendarDay(
+            listOf(timed, allDay, midnight),
+            targetDayKey = dayKey(dayStart),
+            todayDayKey = dayKey(dayStart),
+        )
 
-        assertEquals(listOf("midnight", "all-day"), result.allDayTasks.map { it.id })
-        assertEquals(listOf("timed"), result.timedTasks.map { it.id })
+        assertEquals(listOf("midnight", "all-day"), result.allDayRows.map { it.task.id })
+        assertEquals(listOf("timed"), result.timedRows.map { it.task.id })
+        assertTrue(result.allDayRows.all { it.isAllDay })
+        assertEquals(600, result.timedRows.single().startMinutes)
+        assertEquals("10:00 AM", result.timedRows.single().timelineTimeText)
+        assertEquals("May 4", result.timedRows.single().cardDateText)
+        assertTrue(result.isToday)
+    }
+
+    @Test
+    fun calendarProjectionUsesFixedPreviewsAndBoundedDynamicPrefix() {
+        val tasks = (0..6).map { index ->
+            testTask(
+                id = "task-$index",
+                deadline = dayStart + (index + 1) * MILLIS_PER_HOUR,
+            )
+        }
+        val projection = projectCalendarDay(tasks, dayKey(dayStart), dayKey(dayStart))
+
+        assertEquals(5, projection.monthPreview.rows.size)
+        assertEquals(2, projection.monthPreview.overflowCount)
+        assertEquals(2, calendarTaskPrefix(projection.rows, maxVisible = 2).rows.size)
+        assertEquals(5, calendarTaskPrefix(projection.rows, maxVisible = 2).overflowCount)
     }
 
     @Test

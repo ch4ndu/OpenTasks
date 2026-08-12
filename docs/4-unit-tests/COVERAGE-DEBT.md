@@ -1,0 +1,10 @@
+# Coverage Debt
+
+This is a compact risk ledger, not a request for a broad integration harness. Remove an entry only when the listed boundary is covered by a focused, maintainable test or an equivalent owner-approved host check.
+
+| Boundary | Risk and why focused automation is insufficient | Current evidence | Removal trigger |
+| --- | --- | --- | --- |
+| iOS Share Extension provider aggregation → custom URL open | Native `NSItemProvider` completion ordering, URL encoding, and `extensionContext.open` acceptance require an extension host; common policy tests cannot prove that host handoff. | Bounded Swift source contract, deterministic aggregation implementation, shared payload-policy tests, and compile/lint inspection. | Add a focused extension-host test for provider ordering, encoded-size rejection, and open-failure feedback. |
+| Android `ContentResolver` share/import integration | Provider metadata, stream cancellation, strict UTF-8 decoding, and late-generation rejection depend on Android framework behavior. | Bounded reader/source-contract tests plus Android compile/lint inspection. | Add a focused resolver seam test covering dishonest metadata and cancellation when an inexpensive framework fake is approved. |
+| macOS Calendar permission/AppleScript integration | Permission prompts and AppleScript/calendar availability are host-service behavior; JVM process-runner tests do not prove Calendar authorization or script semantics. | Process-runner success/non-zero/timeout/cancellation/overflow tests, including bounded child-death polling, and provider source inspection. | Add a focused macOS host check for permission denial and one representative AppleScript response. |
+| Live PocketBase authentication and owner-replacement integration | MockEngine proves the request/session contract but not deployed schema rules, sockets, migrations, or concurrent remote replacement. | Focused `AccountClientSession` MockEngine/auth tests and provider lifecycle tests; no live service is required for local verification. | Obtain separate approval and a controlled service environment for a small live contract check. |

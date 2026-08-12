@@ -19,7 +19,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
-import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -33,7 +32,7 @@ internal fun YearViewContent(
     todayYear: Int,
     todayMonth: Int,
     todayDay: Int,
-    tasksByDay: Map<Long, List<Task>>,
+    taskDayKeys: Set<Long>,
     topBarHeight: Dp,
     navBarHeight: Dp,
     onMonthClick: (Int, Int) -> Unit,
@@ -67,7 +66,7 @@ internal fun YearViewContent(
                             todayYear = todayYear,
                             todayMonth = todayMonth,
                             todayDay = todayDay,
-                            tasksByDay = tasksByDay,
+                            taskDayKeys = taskDayKeys,
                             onClick = { onMonthClick(year, month) },
                             modifier = Modifier.weight(1f),
                         )
@@ -88,7 +87,7 @@ internal fun MiniMonthCard(
     todayYear: Int,
     todayMonth: Int,
     todayDay: Int,
-    tasksByDay: Map<Long, List<Task>>,
+    taskDayKeys: Set<Long>,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -111,7 +110,7 @@ internal fun MiniMonthCard(
                 todayYear = todayYear,
                 todayMonth = todayMonth,
                 todayDay = todayDay,
-                tasksByDay = tasksByDay,
+                taskDayKeys = taskDayKeys,
                 onDayClick = null,
                 showMonthHeader = true,
                 useAspectRatioCells = true,
@@ -119,4 +118,3 @@ internal fun MiniMonthCard(
         }
     }
 }
-

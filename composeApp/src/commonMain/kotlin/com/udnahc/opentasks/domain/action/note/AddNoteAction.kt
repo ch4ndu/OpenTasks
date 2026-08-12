@@ -12,7 +12,7 @@ class AddNoteAction(private val repository: NoteRepository) {
         title: String,
         content: String
     ) {
-        log.d { "Adding note: '$title'" }
+        log.d { "Adding note" }
         val now = localNow()
         repository.insert(
             Note(

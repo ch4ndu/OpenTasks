@@ -25,7 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SecondaryScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -202,7 +202,7 @@ private fun FilterChipRow(
     onFilterSelected: (CountdownType?) -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
-    ScrollableTabRow(
+    SecondaryScrollableTabRow(
         selectedTabIndex = if (selectedFilter == null) 0 else selectedFilter.ordinal + 1,
         containerColor = Color.Transparent,
         edgePadding = dimens.paddingXLarge,

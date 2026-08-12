@@ -9,7 +9,7 @@ private val log = logging("AddCategoryAction")
 
 class AddCategoryAction(private val repository: CategoryRepository) {
     suspend operator fun invoke(name: String) {
-        log.d { "Adding category: '$name'" }
+        log.d { "Adding category" }
         val now = localNow()
         repository.insert(
             Category(

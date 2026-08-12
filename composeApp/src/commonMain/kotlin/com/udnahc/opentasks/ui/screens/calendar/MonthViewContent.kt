@@ -42,7 +42,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.model.Task
-import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
+import com.udnahc.opentasks.domain.usecase.task.calendarTaskPrefix
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
@@ -59,7 +60,7 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun MonthViewContent(
-    selectedTasks: List<Task>,
+    selectedDayProjection: CalendarDayProjection,
     todayYear: Int,
     todayMonth: Int,
     todayDay: Int,
@@ -67,7 +68,7 @@ internal fun MonthViewContent(
     collapseProgress: Animatable<Float, *>,
     pagerState: PagerState,
     centreIndex: Int,
-    tasksByDay: Map<Long, List<Task>>,
+    calendarDaysByDay: Map<Long, CalendarDayProjection>,
     categoryNames: Map<String, String>,
     topBarHeight: Dp,
     navBarHeight: Dp,
@@ -102,7 +103,7 @@ internal fun MonthViewContent(
                 selectedDay = selectedDay,
                 gridAvailable = gridAvailable,
                 collapsedWeekHeight = collapsedWeekHeight,
-                tasksByDay = tasksByDay,
+                calendarDaysByDay = calendarDaysByDay,
                 onDayClick = onDayClick,
             )
 
@@ -114,13 +115,13 @@ internal fun MonthViewContent(
                 todayMonth = todayMonth,
                 selectedDay = selectedDay,
                 stackedEventsHeight = stackedEventsHeight,
-                tasksByDay = tasksByDay,
+                calendarDaysByDay = calendarDaysByDay,
                 onDayClick = onDayClick,
             )
 
             MonthSelectedTaskList(
                 collapseProgress = collapseProgress,
-                selectedTasks = selectedTasks,
+                selectedDayProjection = selectedDayProjection,
                 selectedDay = selectedDay,
                 todayYear = todayYear,
                 todayMonth = todayMonth,
@@ -146,7 +147,7 @@ private fun CollapsibleMonthPager(
     selectedDay: CalendarDay?,
     gridAvailable: Dp,
     collapsedWeekHeight: Dp,
-    tasksByDay: Map<Long, List<Task>>,
+    calendarDaysByDay: Map<Long, CalendarDayProjection>,
     onDayClick: (CalendarDay) -> Unit,
 ) {
     val progress = collapseProgress.value
@@ -170,9 +171,11 @@ private fun CollapsibleMonthPager(
         }
 
         val weeks = remember(y, m) { buildMonthWeeks(y, m) }
-        val pageTasksByDay = remember(weeks, tasksByDay) {
+        val pageCalendarDaysByDay = remember(weeks, calendarDaysByDay) {
             weeks.flatten().associate { day ->
-                dayKeyFromDate(day.year, day.month, day.day) to tasksByDay[dayKeyFromDate(day.year, day.month, day.day)].orEmpty()
+                dayKeyFromDate(day.year, day.month, day.day) to calendarDaysByDay[
+                    dayKeyFromDate(day.year, day.month, day.day)
+                ]
             }
         }
         val isCurrentPage = page == pagerState.currentPage
@@ -186,7 +189,7 @@ private fun CollapsibleMonthPager(
             todayDay = todayDay,
             selectedDay = pageSelectedDay,
             collapseProgress = pageProgress,
-            tasksByDay = pageTasksByDay,
+            calendarDaysByDay = pageCalendarDaysByDay,
             onDayClick = onDayClick,
         )
     }
@@ -201,7 +204,7 @@ private fun StackedMonthEvents(
     todayMonth: Int,
     selectedDay: CalendarDay?,
     stackedEventsHeight: Dp,
-    tasksByDay: Map<Long, List<Task>>,
+    calendarDaysByDay: Map<Long, CalendarDayProjection>,
     onDayClick: (CalendarDay) -> Unit,
 ) {
     val progress = collapseProgress.value
@@ -219,9 +222,9 @@ private fun StackedMonthEvents(
     }
     val currentWeeks = remember(pageYear, pageMonth) { buildMonthWeeks(pageYear, pageMonth) }
     val selectedWeek = currentWeeks.firstOrNull { week -> week.any { it == selectedDay } }
-    val selectedWeekTasks = remember(selectedWeek, tasksByDay) {
+    val selectedWeekProjections = remember(selectedWeek, calendarDaysByDay) {
         selectedWeek.orEmpty().map { day ->
-            day to tasksByDay[dayKeyFromDate(day.year, day.month, day.day)].orEmpty()
+            day to calendarDaysByDay[dayKeyFromDate(day.year, day.month, day.day)]
         }
     }
 
@@ -239,7 +242,7 @@ private fun StackedMonthEvents(
                     .padding(horizontal = dimens.paddingSmall),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-            selectedWeekTasks.forEach { (day, dayEvents) ->
+            selectedWeekProjections.forEach { (day, dayProjection) ->
                 val isSelected = day == selectedDay
 
                     Column(
@@ -263,32 +266,30 @@ private fun StackedMonthEvents(
                             .padding(horizontal = 1.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        val (visibleEvents, overflow) = remember(dayEvents) {
-                            truncateWithOverflow(dayEvents, 5)
-                        }
-                        visibleEvents.forEach { task ->
+                        val monthPreview = dayProjection?.monthPreview ?: CalendarDayProjection().monthPreview
+                        monthPreview.rows.forEach { row ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(dimens.calendarMonthGridEventHeight)
                                     .padding(vertical = 1.dp)
                                     .clip(RoundedCornerShape(dimens.cornerTiny))
-                                    .background(priorityColor(task.priority).copy(alpha = 0.2f))
+                                    .background(priorityColor(row.task.priority).copy(alpha = 0.2f))
                                     .padding(horizontal = 2.dp),
                                 contentAlignment = Alignment.CenterStart,
                             ) {
                                 Text(
-                                    text = task.title,
+                                    text = row.task.title,
                                     style = OpenTasksTheme.typography.calendarEventTitle,
-                                    color = priorityColor(task.priority),
+                                    color = priorityColor(row.task.priority),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
-                        if (overflow > 0) {
+                        if (monthPreview.overflowCount > 0) {
                             Text(
-                                text = stringResource(Res.string.calendar_overflow, overflow),
+                                text = stringResource(Res.string.calendar_overflow, monthPreview.overflowCount),
                                 style = OpenTasksTheme.typography.calendarEventOverflow,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -309,7 +310,7 @@ private fun StackedMonthEvents(
 @Composable
 private fun MonthSelectedTaskList(
     collapseProgress: Animatable<Float, *>,
-    selectedTasks: List<Task>,
+    selectedDayProjection: CalendarDayProjection,
     selectedDay: CalendarDay?,
     todayYear: Int,
     todayMonth: Int,
@@ -334,12 +335,9 @@ private fun MonthSelectedTaskList(
             ),
         ) {
             item(key = "date_header") {
-                val isToday = selectedDay.year == todayYear &&
-                        selectedDay.month == todayMonth &&
-                        selectedDay.day == todayDay
                 Text(
-                    text = if (isToday) stringResource(Res.string.today).uppercase()
-                    else "${calendarMonthNameShort(selectedDay.month).uppercase()} ${selectedDay.day}",
+                    text = if (selectedDayProjection.isToday) stringResource(Res.string.today).uppercase()
+                    else selectedDayProjection.monthDateText,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -350,12 +348,12 @@ private fun MonthSelectedTaskList(
                 )
             }
 
-            items(selectedTasks, key = { it.id }) { task ->
+            items(selectedDayProjection.rows, key = { it.task.id }) { row ->
                 CalendarTaskRow(
-                    task = task,
-                    categoryName = categoryNames[task.categoryId] ?: defaultCategoryName,
-                    onToggleComplete = { onToggleComplete(task) },
-                    onClick = { onTaskClick(task) },
+                    row = row,
+                    categoryName = categoryNames[row.task.categoryId] ?: defaultCategoryName,
+                    onToggleComplete = { onToggleComplete(row.task) },
+                    onClick = { onTaskClick(row.task) },
                 )
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -363,7 +361,7 @@ private fun MonthSelectedTaskList(
                 )
             }
 
-            if (selectedTasks.isEmpty()) {
+            if (selectedDayProjection.rows.isEmpty()) {
                 item(key = "empty") {
                     EmptyDayPlaceholder()
                 }
@@ -386,7 +384,7 @@ private fun AnimatedMonthGrid(
     todayDay: Int,
     selectedDay: CalendarDay?,
     collapseProgress: Float,
-    tasksByDay: Map<Long, List<Task>>,
+    calendarDaysByDay: Map<Long, CalendarDayProjection?>,
     onDayClick: (CalendarDay) -> Unit,
 ) {
     val selectedWeekIndex = if (selectedDay != null) {
@@ -431,9 +429,9 @@ private fun AnimatedMonthGrid(
                         .alpha(rowAlpha),
                 ) {
                     WeekRowContent(
-                        weekTasks = remember(week, tasksByDay) {
+                        weekProjections = remember(week, calendarDaysByDay) {
                             week.map { day ->
-                                day to tasksByDay[dayKeyFromDate(day.year, day.month, day.day)].orEmpty()
+                                day to calendarDaysByDay[dayKeyFromDate(day.year, day.month, day.day)]
                             }
                         },
                         todayYear = todayYear,
@@ -454,7 +452,7 @@ private fun AnimatedMonthGrid(
 
 @Composable
 private fun WeekRowContent(
-    weekTasks: List<Pair<CalendarDay, List<Task>>>,
+    weekProjections: List<Pair<CalendarDay, CalendarDayProjection?>>,
     todayYear: Int,
     todayMonth: Int,
     todayDay: Int,
@@ -470,10 +468,9 @@ private fun WeekRowContent(
             .padding(horizontal = dimens.paddingSmall),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        weekTasks.forEach { (day, dayTasks) ->
+        weekProjections.forEach { (day, dayProjection) ->
             val isToday = day.year == todayYear && day.month == todayMonth && day.day == todayDay
             val isSelected = day == selectedDay
-            val dk = dayKeyFromDate(day.year, day.month, day.day)
 
             Column(
                 modifier = Modifier
@@ -537,7 +534,7 @@ private fun WeekRowContent(
 
                 // Event bars — shown in expanded state, fade out when collapsing
                 val eventBarAlpha = if (isSelectedWeek) 1f - collapseProgress else 1f
-                if (eventBarAlpha > 0.01f && dayTasks.isNotEmpty()) {
+                if (eventBarAlpha > 0.01f && dayProjection?.rows?.isNotEmpty() == true) {
                     BoxWithConstraints(
                         modifier = Modifier.fillMaxWidth().weight(1f),
                     ) {
@@ -547,12 +544,12 @@ private fun WeekRowContent(
                         val maxVisible =
                             ((availableHeight - overflowHeight) / eventBarHeight).toInt()
                                 .coerceAtLeast(1)
-                        val (visibleTasks, overflow) = remember(dk, dayTasks, maxVisible) {
-                            truncateWithOverflow(dayTasks, maxVisible)
+                        val prefix = remember(dayProjection, maxVisible) {
+                            calendarTaskPrefix(dayProjection.rows, maxVisible)
                         }
 
                         Column {
-                            visibleTasks.forEach { task ->
+                            prefix.rows.forEach { row ->
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -560,22 +557,22 @@ private fun WeekRowContent(
                                         .padding(vertical = 1.dp)
                                         .alpha(eventBarAlpha)
                                         .clip(RoundedCornerShape(dimens.cornerTiny))
-                                        .background(priorityColor(task.priority).copy(alpha = 0.2f))
+                                        .background(priorityColor(row.task.priority).copy(alpha = 0.2f))
                                         .padding(horizontal = 2.dp),
                                     contentAlignment = Alignment.CenterStart,
                                 ) {
                                     Text(
-                                        text = task.title,
+                                        text = row.task.title,
                                         style = OpenTasksTheme.typography.calendarEventTitle,
-                                        color = priorityColor(task.priority),
+                                        color = priorityColor(row.task.priority),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                             }
-                            if (overflow > 0) {
+                            if (prefix.overflowCount > 0) {
                                 Text(
-                                text = stringResource(Res.string.calendar_overflow, overflow),
+                                    text = stringResource(Res.string.calendar_overflow, prefix.overflowCount),
                                     style = OpenTasksTheme.typography.calendarEventOverflow,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier

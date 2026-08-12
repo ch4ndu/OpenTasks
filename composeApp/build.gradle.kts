@@ -4,6 +4,7 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.Optional
@@ -177,7 +178,6 @@ kotlin {
 }
 
 dependencies {
-    add("androidRuntimeClasspath", libs.compose.uiTooling)
     add("kspAndroid", libs.androidx.room.compiler)
     add("kspIosArm64", libs.androidx.room.compiler)
     add("kspIosSimulatorArm64", libs.androidx.room.compiler)
@@ -236,7 +236,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "OpenTasks"
-            packageVersion = "1.1.0"
+            packageVersion = "1.2.0"
             macOS {
                 bundleID = "com.udnahc.opentasks"
                 iconFile.set(project.file("src/jvmMain/resources/opentasks-macos.icns"))
@@ -249,5 +249,11 @@ compose.desktop {
                 iconFile.set(project.file("src/jvmMain/resources/ic_launcher.png"))
             }
         }
+    }
+}
+
+tasks.withType<JavaExec>().configureEach {
+    if (name == "run") {
+        jvmArgs("-Dopentasks.dev.debug=true")
     }
 }

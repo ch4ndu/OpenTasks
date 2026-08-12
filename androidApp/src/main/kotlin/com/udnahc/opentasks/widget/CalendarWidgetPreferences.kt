@@ -1,6 +1,8 @@
 package com.udnahc.opentasks.widget
 
+import android.annotation.SuppressLint
 import android.content.Context
+import androidx.core.content.edit
 
 data class CalendarWidgetPreferences(
     val widgetId: Int,
@@ -24,11 +26,13 @@ data class CalendarWidgetPreferences(
             )
         }
 
+        // The widget is refreshed immediately after saving, so asynchronous apply() could expose stale preferences.
+        @SuppressLint("ApplySharedPref")
         fun save(context: Context, prefs: CalendarWidgetPreferences) {
-            context.getSharedPreferences(prefsName(prefs.widgetId), Context.MODE_PRIVATE).edit()
-                .putString("theme", prefs.theme.name)
-                .putString("fontSize", prefs.fontSize.name)
-                .commit()
+            context.getSharedPreferences(prefsName(prefs.widgetId), Context.MODE_PRIVATE).edit(commit = true) {
+                putString("theme", prefs.theme.name)
+                putString("fontSize", prefs.fontSize.name)
+            }
         }
 
         fun delete(context: Context, widgetId: Int) {

@@ -17,7 +17,7 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
         get() = backStack.first()
 
     fun navigate(key: NavKey) {
-        log.i { "[Navigation] $key" }
+        log.i { "[Navigation] ${key.routeDiagnosticName()}" }
         if (backStack.contains(key)) {
             backStack.remove(key)
         }
@@ -25,7 +25,7 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
     }
 
     fun replaceTop(key: NavKey) {
-        log.i { "[Navigation replace] $key" }
+        log.i { "[Navigation replace] ${key.routeDiagnosticName()}" }
         if (backStack.isNotEmpty()) {
             backStack.removeAt(backStack.lastIndex)
         }
@@ -36,7 +36,10 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
         screen: NavKey,
         vararg backStackScreens: NavKey
     ) {
-        log.d { "navigateWithBackStack: $screen backstack: ${backStackScreens.toList()}" }
+        log.d {
+            "navigateWithBackStack: ${screen.routeDiagnosticName()} " +
+                "backStack=${backStackScreens.joinToString { it.routeDiagnosticName() }}"
+        }
         clearBackStack()
         backStackScreens.forEach { screen ->
             backStack.add(screen)
@@ -45,7 +48,10 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
     }
 
     fun popBackStack(): Boolean {
-        log.d { "Back: from $currentScreen to $previousScreen" }
+        log.d {
+            "Back: from ${currentScreen.routeDiagnosticName()} to " +
+                (previousScreen?.routeDiagnosticName() ?: "none")
+        }
         val index = backStack.lastIndex
         if (index > 0) {
             backStack.removeAt(index)
@@ -59,9 +65,9 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
         cls: KClass<*>,
         inclusive: Boolean = false
     ): Boolean {
-        log.d { "Popping back stack to $cls" }
+        log.d { "Popping back stack to ${cls.routeDiagnosticName()}" }
         if (!contains(cls)) {
-            log.d { "$cls not on back stack" }
+            log.d { "${cls.routeDiagnosticName()} not on back stack" }
             return false
         }
         var hasPopped = false
@@ -86,7 +92,7 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
      * Clear the backStack and navigate to given tab
      */
     fun navigateToTab(tab: NavKey) {
-        log.d { "Navigating to tab $tab" }
+        log.d { "Navigating to tab ${tab.routeDiagnosticName()}" }
         // Pop up to the start destination of the graph to
         // avoid building up a large stack of destinations
         // on the back stack as users select items
@@ -97,7 +103,7 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
      * Remove all entries of the backstack and navigate to the given key which will then be the top and only entry in the backstack.
      */
     fun setRoot(key: NavKey) {
-        log.d { "setRoot($key)" }
+        log.d { "setRoot(${key.routeDiagnosticName()})" }
         backStack.clear()
         navigate(key)
     }
@@ -131,14 +137,10 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
         if (currentScreen == key) {
             onClick.invoke()
         } else {
-            log.d { "invokeIfCurrent $key is not current $currentScreen" }
-        }
-    }
-
-    fun logBackStack(msg: String = "") {
-        log.d { "BackStack: $msg" }
-        for (entry in backStack) {
-            log.d { "  $entry" }
+            log.d {
+                "invokeIfCurrent ${key.routeDiagnosticName()} is not current " +
+                    currentScreen.routeDiagnosticName()
+            }
         }
     }
 
@@ -147,3 +149,9 @@ class AppNavController(private val backStack: NavBackStack<NavKey>) {
         fun previewController(): AppNavController = AppNavController(NavBackStack<NavKey>())
     }
 }
+
+private fun NavKey.routeDiagnosticName(): String =
+    this::class.simpleName ?: "UnknownRoute"
+
+private fun KClass<*>.routeDiagnosticName(): String =
+    simpleName ?: "UnknownRoute"

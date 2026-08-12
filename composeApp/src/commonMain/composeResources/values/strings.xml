@@ -253,6 +253,10 @@
     <string name="import_success">%1$d events imported</string>
     <string name="import_error">Import failed: %1$s</string>
     <string name="import_failed_generic">Import failed</string>
+    <string name="import_file_too_large">The selected file is too large</string>
+    <string name="shared_content_too_large">Shared content is too large</string>
+    <string name="shared_content_too_many_items">Too many shared items</string>
+    <string name="shared_content_invalid">Shared content could not be read</string>
     <string name="grant_calendar_permission">Grant calendar permission to import events</string>
     <string name="calendar_permission_denied">Calendar permission was denied. Please enable it in Settings.</string>
     <string name="calendar_not_available">Calendar import is not available on this platform</string>

@@ -26,7 +26,18 @@ System share intake supports text, URLs, and calendar payloads. Text and URLs pr
 
 On Android, the main activity handles `ACTION_SEND` and `ACTION_SEND_MULTIPLE`. Shared text becomes a task description, the first URL found in shared text fills the task URL field, and calendar MIME streams or raw ICS text route to ICS import.
 
-On iOS, the Share Extension accepts text, URLs, and calendar event payloads. It opens the containing app with a custom `opentasks://share` URL, publishes a `SharedTaskPayload`, and the shared app flow either opens Create Task or imports ICS content.
+On iOS, the Share Extension accepts text, URLs, and calendar event payloads. It opens the containing app with the custom `opentasks://share` URL and these query names: `description`, `url`, `ics`, `icsFileName`, or typed `error` values. The receiver validates the encoded URL and decoded payload again before publishing a `SharedTaskPayload`; it either opens Create Task or imports ICS content. The extension keeps its UI visible and shows local failure feedback when opening the containing app is rejected. This transport deliberately uses the custom URL only; there is no App Group handoff or shared-container dependency.
+
+## Boundary limits and rejection
+
+External data is bounded before parsing or navigation:
+
+- File imports accept at most 5 MiB. Android `ContentResolver` metadata is only an early rejection; the bounded stream read remains authoritative. JVM and iOS file readers use the same limit.
+- Android accepts at most eight share providers/URIs. The ninth item is rejected as `too_many_items`.
+- A shared payload is at most 32 KiB in cumulative UTF-8 bytes across description, URL, ICS text, and filename; the ICS filename is at most 255 UTF-8 bytes. The iOS custom URL, including percent encoding, is at most 64 KiB.
+- Malformed or unmappable UTF-8 is rejected as `invalid_utf8`, never replaced. Other typed failures are `too_large`, `too_many_items`, `invalid_file_type`, and `unreadable` where the boundary supports them. Rejections are carried through the one-shot event boundary and localized by the app; platform exception text is not shown.
+
+Cancellation remains cancellation: bounded Android/iOS reads and shared ICS import do not publish an ordinary error or continue later work after the caller is cancelled. A newer Android intent cancels the previous bounded read and rejects any late result by generation/current-job checks.
 
 The current deferred roadmap includes share-to-task images/files. Core task image attachment storage exists, but system share intake for images/documents is not wired yet.
 

@@ -18,16 +18,16 @@ PUBLIC_SKILLS = (
 RUNTIME_MODULES = ("plan-review", "implementation", "code-review", "ask")
 EXPECTED_PHASE_ROLES = {
     "plan-review": {"start": ["sol-review"], "resume": ["sol-review"]},
-    "implementation": {"start": ["sol-implement"], "continue": ["sol-implement"]},
+    "implementation": {"start": ["luna-implement"], "continue": ["luna-implement"]},
     "code-review": {
         "start": ["sol-review"], "resume": ["sol-review"], "synthesize": ["sol-review"],
-        "review-response": ["sol-review"], "fix": ["sol-review"], "final-gate": ["sol-final"],
+        "review-response": ["sol-review"], "fix": ["luna-implement"], "final-gate": ["sol-final"],
     },
     "ask": {"start": ["terra"], "follow-up": ["terra"]},
 }
 EXPECTED_MODULE_PINS = {
     "plan-review": {"model": "gpt-5.6-sol", "effort": "xhigh", "default_role": "sol-review"},
-    "implementation": {"model": "gpt-5.6-sol", "effort": "high", "default_role": "sol-implement"},
+    "implementation": {"model": "gpt-5.6-luna", "effort": "max", "default_role": "luna-implement"},
     "code-review": {"model": "gpt-5.6-sol", "effort": "xhigh", "default_role": "sol-review"},
     "ask": {"model": "gpt-5.6-terra", "effort": "xhigh", "default_role": "terra"},
 }
@@ -172,7 +172,7 @@ def validate(root: Path) -> list[str]:
                     problems.append(f"{module}/{phase}: role ownership does not match the workflow contract")
                 if not (runtime_root / module / "phases" / f"{phase}.md").is_file():
                     problems.append(f"{module}/{phase}: phase file is missing")
-            if module == "code-review" and config.get("sol_final") != {"effort": "high", "model": "gpt-5.6-sol"}:
+            if module == "code-review" and config.get("sol_final") != {"effort": "xhigh", "model": "gpt-5.6-sol"}:
                 problems.append("code-review: Sol final-gate model/effort pin is invalid")
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             problems.append(f"{module}: invalid module config: {exc}")
@@ -187,7 +187,7 @@ def validate(root: Path) -> list[str]:
     if "[ADAPT_TO_PROJECT" not in all_text or not all(token in all_text for token in PLACEHOLDERS):
         problems.append("generic templates lost required project placeholders")
     runtime_text = "\n".join((runtime_root / module / "module.json").read_text(encoding="utf-8") for module in RUNTIME_MODULES if (runtime_root / module / "module.json").is_file())
-    required_pins = ("gpt-5.6-terra", "gpt-5.6-sol", "xhigh", "high")
+    required_pins = ("gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna", "xhigh", "max")
     if not all(value in runtime_text for value in required_pins):
         problems.append("runtime model pins are incomplete")
     for forbidden in (".claude/", "JellyScope", "state/"):

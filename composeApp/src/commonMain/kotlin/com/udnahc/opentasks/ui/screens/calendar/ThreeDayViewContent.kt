@@ -35,14 +35,10 @@ import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.extensions.extractDay
-import com.udnahc.opentasks.data.extensions.extractHour
-import com.udnahc.opentasks.data.extensions.extractMinute
 import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
-import com.udnahc.opentasks.data.extensions.formatTime12Hr
 import com.udnahc.opentasks.data.model.Task
-import com.udnahc.opentasks.domain.usecase.task.CalendarDayTasks
-import com.udnahc.opentasks.domain.usecase.task.truncateWithOverflow
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
@@ -61,8 +57,7 @@ internal fun ThreeDayViewContent(
     todayDay: Int,
     pagerState: PagerState,
     pagerCentre: Int,
-    tasksByDay: Map<Long, List<Task>>,
-    timelineTasksByDay: Map<Long, CalendarDayTasks>,
+    calendarDaysByDay: Map<Long, CalendarDayProjection>,
     topBarHeight: Dp,
     navBarHeight: Dp,
     onTaskClick: (Task) -> Unit,
@@ -103,7 +98,7 @@ internal fun ThreeDayViewContent(
                             .fillMaxSize()
                             .verticalScroll(scrollState),
                     ) {
-                        for (hour in 0..23) {
+                        CalendarDayProjection().timelineHourLabels.forEach { hourLabel ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -111,7 +106,7 @@ internal fun ThreeDayViewContent(
                                 contentAlignment = Alignment.TopEnd,
                             ) {
                                 Text(
-                                    text = formatTime12Hr(hour, 0).replace(":00 ", " "),
+                                    text = hourLabel,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.End,
@@ -139,7 +134,10 @@ internal fun ThreeDayViewContent(
                     ThreeDayColumn(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
-                        dayTasks = timelineTasksByDay[dayKey(dayMillis)] ?: CalendarDayTasks(),
+                        dayTasks = calendarDaysByDay[dayKey(dayMillis)] ?: CalendarDayProjection(
+                            dayKey = dayKey(dayMillis),
+                            isToday = dayMillis == todayMillis,
+                        ),
                         hourHeight = hourHeight,
                         dayHeaderHeight = dayHeaderHeight,
                         scrollState = scrollState,
@@ -158,7 +156,7 @@ internal fun ThreeDayViewContent(
 private fun ThreeDayColumn(
     dayMillis: Long,
     todayMillis: Long,
-    dayTasks: CalendarDayTasks,
+    dayTasks: CalendarDayProjection,
     hourHeight: Dp,
     dayHeaderHeight: Dp,
     scrollState: androidx.compose.foundation.ScrollState,
@@ -173,8 +171,8 @@ private fun ThreeDayColumn(
             extractYear(dayMillis), extractMonth(dayMillis), extractDay(dayMillis)
         )
     }
-    val allDayTasks = dayTasks.allDayTasks
-    val timedTasks = dayTasks.timedTasks
+    val allDayPreview = dayTasks.allDayPreview
+    val timedRows = dayTasks.timedRows
 
     Column(modifier = Modifier.fillMaxSize()) {
         // ── Day header ───
@@ -223,21 +221,20 @@ private fun ThreeDayColumn(
                     .fillMaxSize()
                     .padding(horizontal = 1.dp),
             ) {
-                val (visibleAllDay, allDayOverflow) = truncateWithOverflow(allDayTasks, 3)
-                visibleAllDay.forEach { task ->
+                allDayPreview.rows.forEach { row ->
                     TimelineEventBar(
-                        task = task,
+                        row = row,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(dimens.threeDayEventMinHeight)
                             .padding(vertical = 2.dp),
-                        onClick = { onTaskClick(task) },
-                        onToggleComplete = { onToggleComplete(task) },
+                        onClick = { onTaskClick(row.task) },
+                        onToggleComplete = { onToggleComplete(row.task) },
                     )
                 }
-                if (allDayOverflow > 0) {
+                if (allDayPreview.overflowCount > 0) {
                     Text(
-                        text = stringResource(Res.string.calendar_overflow, allDayOverflow),
+                        text = stringResource(Res.string.calendar_overflow, allDayPreview.overflowCount),
                         style = OpenTasksTheme.typography.calendarEventOverflow,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 2.dp),
@@ -276,17 +273,17 @@ private fun ThreeDayColumn(
             }
 
             // Positioned timed events
-            timedTasks.forEach { task ->
-                val yOffset = hourHeight * (dayTasks.timedTaskStartMinutes[task.id] ?: 0) / 60f
+            timedRows.forEach { row ->
+                val yOffset = hourHeight * row.startMinutes / 60f
                 TimelineEventBar(
-                    task = task,
+                    row = row,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(dimens.threeDayEventMinHeight)
                         .offset(y = yOffset)
                         .padding(horizontal = 1.dp),
-                    onClick = { onTaskClick(task) },
-                    onToggleComplete = { onToggleComplete(task) },
+                    onClick = { onTaskClick(row.task) },
+                    onToggleComplete = { onToggleComplete(row.task) },
                 )
             }
         }

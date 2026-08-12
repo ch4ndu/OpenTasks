@@ -9,6 +9,8 @@ import com.udnahc.opentasks.ui.screens.calendar.CalendarDay
 import com.udnahc.opentasks.ui.screens.calendar.DayNameHeaders
 import com.udnahc.opentasks.ui.screens.calendar.MonthViewContent
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
+import com.udnahc.opentasks.domain.usecase.task.projectCalendarDay
 
 @Composable
 @LightDarkPreview
@@ -25,13 +27,13 @@ private fun MonthViewContentPreview() {
         MonthViewContent(
             collapseProgress = remember { Animatable(0f) },
             pagerState = rememberPagerState(initialPage = 120) { 240 },
-            selectedTasks = emptyList(),
+            selectedDayProjection = CalendarDayProjection(),
             todayYear = PreviewSampleData.SAMPLE_YEAR,
             todayMonth = PreviewSampleData.SAMPLE_MONTH,
             todayDay = PreviewSampleData.SAMPLE_DAY,
             selectedDay = null,
             centreIndex = 120,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
+            calendarDaysByDay = previewCalendarDaysByDay(),
             categoryNames = emptyMap(),
             topBarHeight = 64.dp,
             navBarHeight = 0.dp,
@@ -49,7 +51,11 @@ private fun MonthViewContentCollapsedPreview() {
         MonthViewContent(
             collapseProgress = remember { Animatable(1f) },
             pagerState = rememberPagerState(initialPage = 120) { 240 },
-            selectedTasks = PreviewSampleData.sampleTasks,
+            selectedDayProjection = projectCalendarDay(
+                PreviewSampleData.sampleTasks,
+                PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+                PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+            ),
             todayYear = PreviewSampleData.SAMPLE_YEAR,
             todayMonth = PreviewSampleData.SAMPLE_MONTH,
             todayDay = PreviewSampleData.SAMPLE_DAY,
@@ -60,7 +66,7 @@ private fun MonthViewContentCollapsedPreview() {
                 true,
             ),
             centreIndex = 120,
-            tasksByDay = PreviewSampleData.sampleTasksByDay,
+            calendarDaysByDay = previewCalendarDaysByDay(),
             categoryNames = emptyMap(),
             topBarHeight = 64.dp,
             navBarHeight = 0.dp,
@@ -70,3 +76,13 @@ private fun MonthViewContentCollapsedPreview() {
         )
     }
 }
+
+private fun previewCalendarDaysByDay() = PreviewSampleData.sampleTasksByDay
+    .map { (dayKey, tasks) ->
+        dayKey to projectCalendarDay(
+            tasks,
+            dayKey,
+            PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+        )
+    }
+    .toMap()

@@ -16,7 +16,7 @@ Load this when working on architecture, source layout, dependency flow, or cross
 - Domain layer owns read UseCases and write Actions.
 - ViewModels are per screen and inject UseCases/Actions, never repositories.
 - UI renders state and sends events. Filtering, sorting, grouping, and mapping belong in UseCases or ViewModels, not composables.
-- Expensive screen projections and mode-specific UI state belong in the screen ViewModel. Keep transient view mode and selected-date state in memory unless there is an explicit persistence requirement.
+- Expensive screen projections and mode-specific UI state belong in the screen ViewModel. Keep transient view mode and selected-date state in memory unless there is an explicit persistence requirement. Calendar row/day projections are immutable, equality-reused values built on `Dispatchers.Default`; measured-height prefix selection is the only layout-boundary exception.
 
 ## UseCases And Actions
 
@@ -69,6 +69,8 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 - Local clear persists `LOCAL_CLEAR/PRE_RESET` before resetting Room and `FILES_PENDING` before attachment cleanup; recovery resumes the indicated phase and converges to signed out.
 - Local-to-PocketBase connect is an explicitly confirmed authoritative replacement. Preflight is detached and count-only; confirmation revalidates opaque complete local/owner inventory fingerprints under the mutation gate, persists the transition before remote mutation, deletes only destination-owner rows, resets all local sync metadata without deleting content/files, exact-seeds, and activates only after final inventory equality. Any concurrent destination change retries through full delete/reset/reseed.
 - Authentication rejection requires same-account reauthentication. A connectivity-only refresh failure may enter offline mode only when an existing binding proves cache ownership.
+- Every detached or replaced PocketBase client has one owner and one idempotent close/unregister path. Candidate clients are completely configured before publication; failed setup leaves the previous active client usable.
+- `AccountClientSession` owns temporary authenticator HTTP clients. Every authenticate, refresh, capability, inventory, and validation session closes on success, ordinary failure, and cancellation.
 - Account-bound delayed callbacks carry `accountId` and `boundaryEpoch`; receivers, workers, and widgets reject stale payloads before reading or mutating task data.
 - Repositories soft-delete durable rows and trigger sync; `SyncService` and adapters use DAOs directly to avoid sync loops during pull.
 - Collections sync in dependency order: categories, tags, tasks, attachments, task_tags, notes, countdowns.
@@ -79,6 +81,13 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 - After a successful full fetch, synced active local rows missing from the server are marked unsynced so push recreates them.
 - Task-tag assignments are synced as `task_tags` records with `localId = "$taskId:$tagId"` while keeping `(taskId, tagId)` as the local Room primary key.
 - Clock skew between devices can make the wrong edit win because there is no conflict UI or history.
+
+## External boundaries and cleanup
+
+- External file/share data is bounded by byte count and decoded with strict UTF-8 before parsing or navigation. Rejections are typed and localized; raw platform exception text and user-authored content do not enter diagnostics.
+- Every temporary or replaced native resource has one owner and one idempotent cleanup path. This includes PocketBase clients, `AccountClientSession` HTTP engines, attachment files, and JVM Calendar child processes.
+- Cancellation remains cancellation across file import, export handoff, attachment work, sync, Settings, and authenticator sessions. Do not convert `CancellationException` into ordinary failure state or continue destructive work after cancellation.
+- JVM Calendar commands use a timeout- and 16 MiB-output-bounded process runner that drains merged output without deadlock and destroys/forcibly destroys children on timeout, cancellation, or overflow.
 
 ## Quick Add
 

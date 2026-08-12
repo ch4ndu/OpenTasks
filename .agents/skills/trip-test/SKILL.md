@@ -11,7 +11,7 @@ Before any action, require `.agents/trip/initialized.json`. If it is absent, sto
 
 You are now in **testing mode** for **OpenTasks**.
 
-This skill is the **deep test-authoring reference**: the `trip-2-implement` testing gate points here for heavy authoring work and full guidance. Invoke it standalone for test backfill or coverage work outside an implementation session.
+This skill is the **focused test-authoring reference**. It does not authorize a comprehensive suite, broad integration harness, duplicated application bootstrap, disposable service, emulator/device flow, or extensive fixture. Those are separate scope decisions requiring the user's explicit approval.
 
 ## Prerequisites - Read First
 
@@ -36,7 +36,7 @@ Test: $ARGUMENTS
 ### Commands
 
 ```bash
-# Run all tests
+# Run the existing project suites when their cost is reasonable
 ./gradlew :composeApp:jvmTest :androidApp:testDebugUnitTest
 
 # Run a specific test
@@ -61,24 +61,24 @@ Test: $ARGUMENTS
 - UseCase and Action behavior, ViewModel projections, parsing/import/export, date/recurrence calculations, reminder identities, and sync record mapping
 - Normal, empty, boundary, invalid, cancellation, retry, and stale-response paths
 
-**Persistence and integration tests**:
+**Persistence and integration tests, only when an existing cheap seam already supports them**:
 
 - Room migrations, transactions, tombstones, attachment file/metadata arbitration, sync ordering, pull/push failure isolation, server seeding, and DI resolution
 - Equal/newer/older timestamp conflicts and partial external failures
 
-**Manual or platform verification**:
+**User-owned manual or platform verification**:
 
 - Compose interaction and adaptive layout behavior
 - Android widgets, notifications, alarms, receivers, intents, and permissions
 - iOS notifications, background refresh, share extension, and native file/calendar flows
 - Desktop packaged startup, ProGuard/JNI, file dialogs, and native distributions
-- PocketBase migrations and wire contracts against a disposable real server
+- PocketBase migrations and live wire contracts; do not create or run a disposable server unless the user explicitly approves that scope
 
 ---
 
 ## Hard-to-Test Code
 
-Seam ladder, cheapest first: **exported pure helper → injectable client/adapter → module mock → integration/emulator test**. Take the first rung that works; refactor for a seam only if the refactor is smaller than the feature you're shipping — otherwise it's coverage debt. Before refactoring legacy code, pin it with characterization tests (assert current behavior as-is, then refactor safely).
+Seam ladder, cheapest first: **exported pure helper → existing injectable client/adapter → small module mock → user-owned manual check**. Take the first rung that materially reduces risk. Refactor for a seam only if the refactor and test remain smaller than the behavior being protected; otherwise record coverage debt. Do not escalate to an integration harness, emulator/device flow, or disposable server without explicit approval. Characterize legacy code before refactoring only when that test is focused and inexpensive.
 
 Uncovered risky paths: one line each in `docs/4-unit-tests/COVERAGE-DEBT.md` (`path | why hard | escape plan`). Delete a ledger line in the same change that gives its path meaningful coverage.
 

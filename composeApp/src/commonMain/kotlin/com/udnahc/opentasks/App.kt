@@ -57,6 +57,8 @@ import com.udnahc.opentasks.data.auth.activeBindingOrNull
 import com.udnahc.opentasks.data.auth.authenticatedAccountOrNull
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
 import com.udnahc.opentasks.data.extensions.localNow
+import com.udnahc.opentasks.ExternalInputFailure
+import com.udnahc.opentasks.SharedTaskPayloadEvent
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.TaskFormData
@@ -137,6 +139,9 @@ import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_note
 import opentasks.composeapp.generated.resources.ic_schedule
 import opentasks.composeapp.generated.resources.import_failed_generic
+import opentasks.composeapp.generated.resources.shared_content_invalid
+import opentasks.composeapp.generated.resources.shared_content_too_large
+import opentasks.composeapp.generated.resources.shared_content_too_many_items
 import opentasks.composeapp.generated.resources.import_success
 import opentasks.composeapp.generated.resources.image_save_partial_failed
 import opentasks.composeapp.generated.resources.not_urgent_important
@@ -568,35 +573,55 @@ private fun MainScreen(
     val onSettingsClick = remember { { navController.navigate(Screen.Settings) } }
 
     LaunchedEffect(navController) {
-        sharedTaskPayload.collect { payload ->
-            if (payload == null) return@collect
-            when {
-                payload.hasIcsContent -> {
+        sharedTaskPayload.collect { event ->
+            if (event == null) return@collect
+            when (event) {
+                is SharedTaskPayloadEvent.Rejected -> {
                     try {
-                        val count = withContext(Dispatchers.IO) {
-                            val events = parseIcsUseCase(payload.icsContent)
-                            importCalendarEventsAction(events)
+                        val message = when (event.rejection.reason) {
+                            ExternalInputFailure.TOO_LARGE -> getString(Res.string.shared_content_too_large)
+                            ExternalInputFailure.TOO_MANY_ITEMS -> getString(Res.string.shared_content_too_many_items)
+                            else -> getString(Res.string.shared_content_invalid)
                         }
-                        snackbarHostState.showSnackbar(getString(Res.string.import_success, count))
-                    } catch (e: Exception) {
-                        log.e(e) { "Shared ICS import failed" }
-                        snackbarHostState.showSnackbar(getString(Res.string.import_failed_generic))
+                        snackbarHostState.showSnackbar(message)
                     } finally {
-                        clearSharedTaskPayload(payload.id)
+                        clearSharedTaskPayload(event.id)
                     }
                 }
 
-                payload.hasTaskContent -> {
-                    navController.navigate(
-                        Screen.CreateTask(
-                            description = payload.description,
-                            url = payload.url,
-                        )
-                    )
-                    clearSharedTaskPayload(payload.id)
-                }
+                is SharedTaskPayloadEvent.Accepted -> {
+                    val payload = event.payload
+                    when {
+                        payload.hasIcsContent -> {
+                            try {
+                                val count = withContext(Dispatchers.IO) {
+                                    val events = parseIcsUseCase(payload.icsContent)
+                                    importCalendarEventsAction(events)
+                                }
+                                snackbarHostState.showSnackbar(getString(Res.string.import_success, count))
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                log.e(e) { "Shared ICS import failed" }
+                                snackbarHostState.showSnackbar(getString(Res.string.import_failed_generic))
+                            } finally {
+                                clearSharedTaskPayload(payload.id)
+                            }
+                        }
 
-                else -> clearSharedTaskPayload(payload.id)
+                        payload.hasTaskContent -> {
+                            navController.navigate(
+                                Screen.CreateTask(
+                                    description = payload.description,
+                                    url = payload.url,
+                                )
+                            )
+                            clearSharedTaskPayload(payload.id)
+                        }
+
+                        else -> clearSharedTaskPayload(payload.id)
+                    }
+                }
             }
         }
     }
@@ -1198,7 +1223,10 @@ private fun MainScreen(
                     result.file.content,
                 )
                 FileImportResult.Cancelled -> Unit
-                is FileImportResult.Error -> importIcsViewModel.fileSelectionFailed(result.detail)
+                is FileImportResult.Error -> importIcsViewModel.fileSelectionFailed(
+                    reason = result.reason,
+                    detail = result.detail,
+                )
             }
         }
         ImportIcsDialog(
@@ -1218,7 +1246,10 @@ private fun MainScreen(
                     result.file.content,
                 )
                 FileImportResult.Cancelled -> Unit
-                is FileImportResult.Error -> importCsvViewModel.fileSelectionFailed(result.detail)
+                is FileImportResult.Error -> importCsvViewModel.fileSelectionFailed(
+                    reason = result.reason,
+                    detail = result.detail,
+                )
             }
         }
         ImportCsvDialog(

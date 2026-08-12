@@ -16,14 +16,16 @@ kotlin {
 
 android {
     namespace = "com.udnahc.opentasks"
+    //noinspection GradleDependency
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
         applicationId = "com.udnahc.opentasks"
         minSdk = libs.versions.android.minSdk.get().toInt()
+        //noinspection OldTargetApi
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
     packaging {
         resources {
@@ -58,7 +60,7 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui)
-    implementation(libs.compose.uiTooling)
+    debugImplementation(libs.compose.uiTooling)
     implementation(libs.compose.uiToolingPreview)
     implementation(libs.compose.components.resources)
     implementation(libs.androidx.activity.compose)

@@ -6,6 +6,7 @@ import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
 import kotlinx.coroutines.CancellationException
+import com.udnahc.opentasks.ExternalInputFailure
 import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -71,14 +72,14 @@ class ImportCsvViewModel(
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                log.e(e) { "CSV import failed" }
+            } catch (_: Exception) {
+                log.e { "CSV import failed" }
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         error = ImportErrorState(
                             type = ImportErrorType.GENERIC,
-                            detail = e.message,
+                            detail = null,
                         ),
                     )
                 }
@@ -92,11 +93,18 @@ class ImportCsvViewModel(
         _uiState.value = ImportCsvUiState()
     }
 
-    fun fileSelectionFailed(detail: String?) {
+    fun fileSelectionFailed(reason: ExternalInputFailure, detail: String?) {
         _uiState.update {
             it.copy(
                 isLoading = false,
-                error = ImportErrorState(ImportErrorType.GENERIC, detail),
+                error = ImportErrorState(
+                    type = if (reason == ExternalInputFailure.TOO_LARGE) {
+                        ImportErrorType.FILE_TOO_LARGE
+                    } else {
+                        ImportErrorType.GENERIC
+                    },
+                    detail = detail,
+                ),
             )
         }
     }

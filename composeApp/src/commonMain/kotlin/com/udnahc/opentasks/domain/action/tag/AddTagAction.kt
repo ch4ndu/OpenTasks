@@ -12,7 +12,7 @@ class AddTagAction(private val repository: TagRepository) {
         name: String,
         color: String? = null
     ): String {
-        log.d { "Adding tag: '$name'" }
+        log.d { "Adding tag" }
         val tag = Tag(
             name = name,
             color = color,

@@ -31,9 +31,10 @@ import androidx.compose.ui.unit.Dp
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.extractDay
-import com.udnahc.opentasks.data.extensions.formatDateLabel
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
+import com.udnahc.opentasks.domain.usecase.task.CalendarTaskRowProjection
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
@@ -54,7 +55,7 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 internal fun ListViewContent(
-    dayTasks: List<Task>,
+    dayProjection: CalendarDayProjection,
     todayMillis: Long,
     todayYear: Int,
     todayMonth: Int,
@@ -63,7 +64,7 @@ internal fun ListViewContent(
     onDaySelected: (Long) -> Unit,
     weekPagerState: PagerState,
     weekPagerCentre: Int,
-    tasksByDay: Map<Long, List<Task>>,
+    calendarDaysByDay: Map<Long, CalendarDayProjection>,
     categoryNames: Map<String, String>,
     topBarHeight: Dp,
     navBarHeight: Dp,
@@ -89,7 +90,7 @@ internal fun ListViewContent(
                 weekSundayMillis = weekSunMillis,
                 todayMillis = todayMillis,
                 selectedDayMillis = selectedDayMillis,
-                tasksByDay = tasksByDay,
+                calendarDaysByDay = calendarDaysByDay,
                 onDaySelected = onDaySelected,
             )
         }
@@ -100,20 +101,16 @@ internal fun ListViewContent(
         )
 
         // ── Tasks for the selected day ───
-        val isToday = selectedDayMillis == todayMillis
-
         when (displayMode) {
             ListDisplayMode.TIMELINE -> TimelineTaskList(
-                dayTasks = dayTasks,
+                dayRows = dayProjection.rows,
                 navBarHeight = navBarHeight,
                 onTaskClick = onTaskClick,
                 onToggleComplete = onToggleComplete,
             )
 
             ListDisplayMode.CARD -> CardTaskList(
-                dayTasks = dayTasks,
-                selectedDayMillis = selectedDayMillis,
-                isToday = isToday,
+                dayProjection = dayProjection,
                 categoryNames = categoryNames,
                 navBarHeight = navBarHeight,
                 onTaskClick = onTaskClick,
@@ -125,7 +122,7 @@ internal fun ListViewContent(
 
 @Composable
 private fun TimelineTaskList(
-    dayTasks: List<Task>,
+    dayRows: List<CalendarTaskRowProjection>,
     navBarHeight: Dp,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
@@ -135,17 +132,17 @@ private fun TimelineTaskList(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge),
     ) {
-        items(dayTasks, key = { it.id }) { task ->
+        items(dayRows, key = { it.task.id }) { row ->
             TimelineTaskRow(
-                task = task,
-                isFirst = dayTasks.first() == task,
-                isLast = dayTasks.last() == task,
-                onToggleComplete = { onToggleComplete(task) },
-                onClick = { onTaskClick(task) },
+                row = row,
+                isFirst = dayRows.first() == row,
+                isLast = dayRows.last() == row,
+                onToggleComplete = { onToggleComplete(row.task) },
+                onClick = { onTaskClick(row.task) },
             )
         }
 
-        if (dayTasks.isEmpty()) {
+        if (dayRows.isEmpty()) {
             item(key = "empty") {
                 EmptyDayPlaceholder()
             }
@@ -155,9 +152,7 @@ private fun TimelineTaskList(
 
 @Composable
 private fun CardTaskList(
-    dayTasks: List<Task>,
-    selectedDayMillis: Long,
-    isToday: Boolean,
+    dayProjection: CalendarDayProjection,
     categoryNames: Map<String, String>,
     navBarHeight: Dp,
     onTaskClick: (Task) -> Unit,
@@ -165,9 +160,8 @@ private fun CardTaskList(
 ) {
     val dimens = OpenTasksTheme.dimens
     Text(
-        text = if (isToday) stringResource(Res.string.today).uppercase() else formatDateLabel(
-            selectedDayMillis
-        ),
+        text = if (dayProjection.isToday) stringResource(Res.string.today).uppercase()
+        else dayProjection.formattedDate,
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -184,13 +178,13 @@ private fun CardTaskList(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge),
     ) {
-        items(dayTasks, key = { it.id }) { task ->
+        items(dayProjection.rows, key = { it.task.id }) { row ->
             CardTaskRow(
-                task = task,
-                isToday = isToday,
-                categoryName = categoryNames[task.categoryId] ?: defaultCategoryName,
-                onToggleComplete = { onToggleComplete(task) },
-                onClick = { onTaskClick(task) },
+                row = row,
+                isToday = dayProjection.isToday,
+                categoryName = categoryNames[row.task.categoryId] ?: defaultCategoryName,
+                onToggleComplete = { onToggleComplete(row.task) },
+                onClick = { onTaskClick(row.task) },
             )
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.surfaceVariant,
@@ -198,7 +192,7 @@ private fun CardTaskList(
             )
         }
 
-        if (dayTasks.isEmpty()) {
+        if (dayProjection.rows.isEmpty()) {
             item(key = "empty") {
                 EmptyDayPlaceholder()
             }
@@ -212,7 +206,7 @@ internal fun WeekStripPage(
     weekSundayMillis: Long,
     todayMillis: Long,
     selectedDayMillis: Long,
-    tasksByDay: Map<Long, List<Task>>,
+    calendarDaysByDay: Map<Long, CalendarDayProjection>,
     onDaySelected: (Long) -> Unit,
 ) {
     val sun = stringResource(Res.string.sun)
@@ -239,7 +233,7 @@ internal fun WeekStripPage(
             val isToday = dayMillis == todayMillis
             val isSelected = dayMillis == selectedDayMillis
             val dk = dayKey(dayMillis)
-            val hasTasks = tasksByDay.containsKey(dk)
+            val hasTasks = calendarDaysByDay.containsKey(dk)
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,

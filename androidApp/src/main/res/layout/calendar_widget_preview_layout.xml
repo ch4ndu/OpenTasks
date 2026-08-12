@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Static launcher preview: sample copy, compact sizes, and inferred-theme background are intentional. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="#FF1E1E1E"
-    android:padding="8dp">
+    android:padding="8dp"
+    tools:ignore="HardcodedText,SmallSp,Overdraw">
 
     <!-- Header: ◂ March 2026 ▸ ⋮ -->
     <LinearLayout
@@ -48,7 +51,8 @@
             android:textColor="#FFFFFFFF"
             android:textSize="16sp"
             android:textStyle="bold"
-            android:paddingStart="4dp" />
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
     </LinearLayout>
 
     <View

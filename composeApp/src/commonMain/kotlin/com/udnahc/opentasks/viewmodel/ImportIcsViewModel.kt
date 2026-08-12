@@ -6,6 +6,7 @@ import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import kotlinx.coroutines.CancellationException
+import com.udnahc.opentasks.ExternalInputFailure
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -92,11 +93,18 @@ class ImportIcsViewModel(
         _uiState.value = ImportIcsUiState()
     }
 
-    fun fileSelectionFailed(detail: String?) {
+    fun fileSelectionFailed(reason: ExternalInputFailure, detail: String?) {
         _uiState.update {
             it.copy(
                 isLoading = false,
-                error = ImportErrorState(ImportErrorType.GENERIC, detail),
+                error = ImportErrorState(
+                    type = if (reason == ExternalInputFailure.TOO_LARGE) {
+                        ImportErrorType.FILE_TOO_LARGE
+                    } else {
+                        ImportErrorType.GENERIC
+                    },
+                    detail = detail,
+                ),
             )
         }
     }

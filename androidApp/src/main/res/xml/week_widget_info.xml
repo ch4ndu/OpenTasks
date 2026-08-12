@@ -3,12 +3,9 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="96dp"
     android:minHeight="56dp"
-    android:targetCellWidth="4"
-    android:targetCellHeight="2"
     android:updatePeriodMillis="1800000"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:configure="com.udnahc.opentasks.widget.WeekWidgetSettingsActivity"
-    android:previewLayout="@layout/week_widget_preview_layout"
     android:previewImage="@drawable/week_widget_preview"
     android:description="@string/week_widget_description" />

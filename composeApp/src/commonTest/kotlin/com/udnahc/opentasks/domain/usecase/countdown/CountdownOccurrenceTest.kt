@@ -169,6 +169,28 @@ class CountdownOccurrenceTest {
         assertEquals(leapDay, yearly.targetDate)
     }
 
+    @Test
+    fun farDatesUseAnchorArithmeticAndNormalizeNonPositiveIntervals() {
+        val daily = countdown(
+            targetDate = dateMillis(2020, 1, 1),
+            recurrenceType = RecurrenceType.DAILY,
+            interval = 0,
+        )
+        val monthly = countdown(
+            targetDate = dateMillis(2020, 1, 31),
+            recurrenceType = RecurrenceType.MONTHLY,
+        )
+
+        assertEquals(
+            dateMillis(2040, 1, 2),
+            nextCountdownOccurrenceOnOrAfter(daily, LocalDate(2040, 1, 2)),
+        )
+        assertEquals(
+            dateMillis(2030, 4, 30),
+            nextCountdownOccurrenceOnOrAfter(monthly, LocalDate(2030, 4, 1)),
+        )
+    }
+
     private fun countdown(
         targetDate: Long,
         recurrenceType: RecurrenceType = RecurrenceType.NONE,

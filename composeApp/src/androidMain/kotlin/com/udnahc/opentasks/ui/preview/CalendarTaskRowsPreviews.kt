@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.domain.usecase.task.CalendarTaskRowProjection
+import com.udnahc.opentasks.domain.usecase.task.projectCalendarDay
 import com.udnahc.opentasks.ui.screens.calendar.CalendarTaskRow
 import com.udnahc.opentasks.ui.screens.calendar.CardTaskRow
 import com.udnahc.opentasks.ui.screens.calendar.EmptyDayPlaceholder
@@ -18,7 +20,7 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 private fun TimelineTaskRowPreview() {
     OpenTasksTheme {
         TimelineTaskRow(
-            task = PreviewSampleData.sampleTasks[0],
+            row = previewRow(),
             isFirst = true,
             isLast = true,
             onToggleComplete = {},
@@ -32,7 +34,7 @@ private fun TimelineTaskRowPreview() {
 private fun CardTaskRowPreview() {
     OpenTasksTheme {
         CardTaskRow(
-            task = PreviewSampleData.sampleTasks[0],
+            row = previewRow(),
             isToday = true,
             categoryName = "Inbox",
             onToggleComplete = {},
@@ -46,7 +48,7 @@ private fun CardTaskRowPreview() {
 private fun CalendarTaskRowPreview() {
     OpenTasksTheme {
         CalendarTaskRow(
-            task = PreviewSampleData.sampleTasks[0],
+            row = previewRow(),
             categoryName = "Inbox",
             onToggleComplete = {},
             onClick = {},
@@ -59,7 +61,7 @@ private fun CalendarTaskRowPreview() {
 private fun TimelineEventBarDayPreview() {
     OpenTasksTheme {
         TimelineEventBar(
-            task = PreviewSampleData.sampleTasks[0],
+            row = previewRow(),
             modifier = Modifier.fillMaxWidth().height(24.dp),
             onClick = {},
             onToggleComplete = {},
@@ -76,7 +78,7 @@ private fun TimelineEventBarDayPreview() {
 private fun TimelineEventBarWeekPreview() {
     OpenTasksTheme {
         TimelineEventBar(
-            task = PreviewSampleData.sampleTasks[0],
+            row = previewRow(),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(OpenTasksTheme.dimens.calendarMonthGridEventHeight)
@@ -85,6 +87,12 @@ private fun TimelineEventBarWeekPreview() {
         )
     }
 }
+
+private fun previewRow(): CalendarTaskRowProjection = projectCalendarDay(
+    tasks = PreviewSampleData.sampleTasks,
+    targetDayKey = PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+    todayDayKey = PreviewSampleData.SAMPLE_TODAY_DAY_KEY,
+).rows.first()
 
 @Composable
 @LightDarkPreview

@@ -13,6 +13,7 @@ import com.udnahc.opentasks.data.sync.PocketBaseServerInventoryReader
 import com.udnahc.opentasks.data.sync.canonicalUrl
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.decodeFromString
@@ -24,6 +25,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -229,6 +231,40 @@ class AccountRepositoryImplTest {
         assertTrue(events.indexOf("write-pending:destination-token") < events.indexOf("replacement-persist"))
         assertTrue(events.indexOf("replacement-persist") < events.indexOf("replacement-resume"))
         assertEquals(1, fixture.scheduler.cancelAllCalls)
+        val detachedJob = assertNotNull(replacement.lastClient?.httpClient?.coroutineContext[Job])
+        assertFalse(detachedJob.isActive)
+    }
+
+    @Test
+    fun failedReplacementReleasesDetachedCandidate() = runTest {
+        val replacement = FakeAuthoritativeReplaceExecutor(mutableListOf()).apply {
+            resumeFailure = IllegalStateException("replacement failed")
+        }
+        val fixture = fixture(
+            binding = localBinding(boundaryEpoch = 7),
+            loginCredential = credential(
+                accountId = "account-a",
+                token = "destination-token",
+                authoritativeReplaceVersion = 1,
+                inventory = replacementInventory(tasks = listOf(replacementRow("task", false))),
+            ),
+            replacementExecutor = replacement,
+            inventoryResponses = mutableListOf(replacementInventory(tasks = listOf(replacementRow("task", false)))),
+        )
+        fixture.repository.restoreSession()
+        fixture.repository.prepareLocalServerReplacement(
+            "https://tasks.example.com",
+            "account-a@example.com",
+            "secret-password",
+        )
+
+        assertFailsWith<IllegalStateException> {
+            fixture.repository.confirmLocalServerReplacement()
+        }
+
+        val detachedJob = assertNotNull(replacement.lastClient?.httpClient?.coroutineContext[Job])
+        assertFalse(detachedJob.isActive)
+        assertNull(fixture.provider.client)
     }
 
     @Test
@@ -1069,6 +1105,8 @@ private class FakeAuthoritativeReplaceExecutor(
     var resumeCalls: Int = 0
     var validationCalls: Int = 0
     var validationFailure: Throwable? = null
+    var resumeFailure: Throwable? = null
+    var lastClient: PocketbaseClient? = null
     private var stateStore: InMemoryAccountStateStore? = null
 
     fun attach(stateStore: InMemoryAccountStateStore) {
@@ -1096,6 +1134,8 @@ private class FakeAuthoritativeReplaceExecutor(
     ): AccountTransition {
         resumeCalls += 1
         events += "replacement-resume"
+        lastClient = client
+        resumeFailure?.let { throw it }
         val needsActivation = initialTransition.copy(phase = AccountTransitionPhase.NEEDS_ACTIVATION)
         stateStore?.persistBindingAndTransition(binding, needsActivation)
             ?: error("Fake replacement executor has no state store")

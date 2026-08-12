@@ -597,10 +597,7 @@ internal class AccountRepositoryImpl(
                 )
             )
         }
-        log.d {
-            "Session restore refreshing PocketBase credentials at " +
-                "${endpoint.protocol.name.lowercase()}://${endpoint.host}:${endpoint.port}"
-        }
+        log.d { "Session restore refreshing PocketBase credentials" }
         val refreshed = try {
             authenticator.refresh(endpoint, activeToken)
         } catch (error: AccountAuthenticationRejectedException) {

@@ -10,7 +10,7 @@ TRIP is a structured development workflow with four phases:
 - **P**lan - Design features before implementation
 - **I**mplement - Build with proper documentation
 - **R**eview - Systematic code review
-- **T**est - Comprehensive testing
+- **T**est - Focused, risk-proportional testing
 
 Why call it TRIP instead of PIRT? Because why not
 

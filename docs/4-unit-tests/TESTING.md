@@ -2,7 +2,7 @@
 
 ## Test Framework
 
-OpenTasks uses `kotlin.test` with JUnit 4.13.2, `kotlinx-coroutines-test`, Turbine, Ktor MockEngine, and Kover 0.9.8. Room integration tests use the bundled SQLite driver.
+OpenTasks uses `kotlin.test` with JUnit 4.13.2, `kotlinx-coroutines-test`, Turbine, Ktor MockEngine, and Kover 0.9.9. Room integration tests use the bundled SQLite driver.
 
 ## Running Tests
 
@@ -23,7 +23,7 @@ OpenTasks uses `kotlin.test` with JUnit 4.13.2, `kotlinx-coroutines-test`, Turbi
 ./gradlew :composeApp:koverHtmlReport
 ```
 
-Use the affected suites during implementation. Run the consolidated multiplatform compile, Android lint/assembly, and native/manual checks described in `docs/ARCHI.md` when the change crosses those boundaries.
+Use the affected suites during implementation. Run the consolidated multiplatform compile, Android lint/assembly, and proportional native/manual checks described in `docs/ARCHI.md` when the change crosses those boundaries. Device, simulator, and live-service execution remain separately requested gates.
 
 ## Test Organization
 
@@ -36,10 +36,12 @@ Use the affected suites during implementation. Run the consolidated multiplatfor
 
 - Put tests in the lowest portable source set.
 - Cover valid, invalid, empty, boundary, cancellation, retry, stale-state, and partial-failure paths relevant to the change.
-- Use fake repositories for domain/ViewModel tests, real temporary Room databases for persistence and migration behavior, Ktor MockEngine for HTTP seams, and disposable real PocketBase instances for server migration or wire-contract acceptance.
+- Use fake repositories for domain/ViewModel tests, real temporary Room databases for persistence and migration behavior, and Ktor MockEngine through `AccountClientSession` for authenticator HTTP seams. A permanent disposable PocketBase/server harness requires separate scope approval.
 - Preserve cancellation semantics and deterministic time/dispatcher control.
 - Add platform or packaged-runtime verification when behavior cannot be proven by a host unit test.
 - Record intentionally uncovered risky paths in `docs/4-unit-tests/COVERAGE-DEBT.md` and remove entries when coverage is added.
+
+See [COVERAGE-DEBT.md](COVERAGE-DEBT.md) for the small ledger of remaining native and live-service boundaries. The authenticator's focused MockEngine/session tests are the required automated gate; they do not imply live PocketBase availability.
 
 ## Coverage Requirements
 

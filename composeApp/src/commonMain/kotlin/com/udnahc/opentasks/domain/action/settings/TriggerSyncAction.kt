@@ -6,12 +6,16 @@ import com.udnahc.opentasks.data.sync.SyncTrigger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 import org.lighthousegames.logging.logging
 
 private val log = logging("TriggerSyncAction")
@@ -45,15 +49,25 @@ class TriggerSyncAction(
         }
         debounceMutex.withLock {
             debounceJob?.cancel()
-            debounceJob = scope.launch {
-            delay(DEBOUNCE_DELAY_MS)
-            log.d { "Debounce elapsed, starting sync" }
-            try {
-                syncService.syncAll()
-            } catch (e: Exception) {
-                log.e(e) { "Debounced sync failed" }
+            val job = scope.launch {
+                try {
+                    delay(DEBOUNCE_DELAY_MS)
+                    log.d { "Debounce elapsed, starting sync" }
+                    syncService.syncAll()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    log.e(error) { "Debounced sync failed" }
+                } finally {
+                    val owningJob = currentCoroutineContext()[Job]
+                    withContext(NonCancellable) {
+                        debounceMutex.withLock {
+                            if (debounceJob === owningJob) debounceJob = null
+                        }
+                    }
+                }
             }
-            }
+            debounceJob = job
         }
     }
 
@@ -68,10 +82,10 @@ class TriggerSyncAction(
             log.d { "Sync skipped: PocketBase not configured" }
             return
         }
-        debounceMutex.withLock {
-            debounceJob?.cancel()
-            debounceJob = null
+        val pending = debounceMutex.withLock {
+            debounceJob.also { debounceJob = null }
         }
+        pending?.cancelAndJoin()
         syncService.syncAll()
     }
 

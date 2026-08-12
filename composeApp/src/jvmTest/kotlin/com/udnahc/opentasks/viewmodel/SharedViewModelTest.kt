@@ -215,6 +215,18 @@ class SharedViewModelTest : MainDispatcherRule() {
             assertTrue(unchangedList === updated.getValue(unchangedKey))
             cancelAndIgnoreRemainingEvents()
         }
+
+        viewModel.calendarDaysByDay.test {
+            val initial = awaitMatching { it.containsKey(unchangedKey) && it.containsKey(changedKey) }
+            val unchangedProjection = initial.getValue(unchangedKey)
+
+            taskRepository.replaceTasks(listOf(unchanged, changed.copy(title = "Updated again")))
+
+            val updated = awaitMatching { it[changedKey]?.rows?.singleOrNull()?.task?.title == "Updated again" }
+            assertTrue(unchangedProjection === updated.getValue(unchangedKey))
+            cancelAndIgnoreRemainingEvents()
+        }
+
     }
 
     @Test
@@ -690,6 +702,20 @@ class SharedViewModelTest : MainDispatcherRule() {
             val updated = awaitMatching { it[mayFifth]?.singleOrNull()?.id == "countdown_daily" }
             assertEquals(null, updated[mayFourth]?.firstOrNull { it.id == "countdown_daily" })
             assertEquals(1, updated.values.flatten().count { it.id == "countdown_daily" })
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        currentDay = LocalDate(2026, 5, 4)
+        localDaySignal.refresh()
+        viewModel.calendarDaysByDay.test {
+            val initial = awaitMatching { it[mayFourth]?.rows?.singleOrNull()?.task?.id == "countdown_daily" }
+            assertTrue(initial.getValue(mayFourth).isToday)
+
+            currentDay = LocalDate(2026, 5, 5)
+            localDaySignal.refresh()
+
+            val updated = awaitMatching { it[mayFifth]?.rows?.singleOrNull()?.task?.id == "countdown_daily" }
+            assertTrue(updated.getValue(mayFifth).isToday)
             cancelAndIgnoreRemainingEvents()
         }
     }

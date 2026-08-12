@@ -4,9 +4,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import com.udnahc.opentasks.ExternalInputFailure
+import com.udnahc.opentasks.ExternalInputPolicy
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.convert
+import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSData
@@ -14,7 +22,6 @@ import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSURL
 import platform.Foundation.create
-import platform.Foundation.dataWithContentsOfURL
 import platform.UIKit.UIApplication
 import platform.UIKit.UIDocumentPickerDelegateProtocol
 import platform.UIKit.UIDocumentPickerMode
@@ -34,9 +41,16 @@ actual fun rememberFileImportLauncher(
             onResult = { currentOnResult.value(it) },
             readFile = { url, type ->
                 scope.launch {
-                    val result = withContext(Dispatchers.Default) {
-                        readImportedFile(url, type)
+                    val result = try {
+                        withContext(Dispatchers.Default) {
+                            readImportedFile(url, type)
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        FileImportResult.Error(ExternalInputFailure.UNREADABLE)
                     }
+                    currentCoroutineContext().ensureActive()
                     currentOnResult.value(result)
                 }
             },
@@ -105,27 +119,77 @@ private class IosDocumentImportDelegate(
 }
 
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-private fun readImportedFile(url: NSURL, expectedType: ImportFileType): FileImportResult {
+private suspend fun readImportedFile(url: NSURL, expectedType: ImportFileType): FileImportResult {
     val accessing = url.startAccessingSecurityScopedResource()
     return try {
         val fileName = url.lastPathComponent ?: "import.${expectedType.extension}"
         if (!expectedType.accepts(fileName)) {
-            return FileImportResult.Error()
+            return FileImportResult.Error(ExternalInputFailure.INVALID_FILE_TYPE)
         }
-        val data = NSData.dataWithContentsOfURL(url)
-            ?: return FileImportResult.Error()
-        val content = NSString.create(data = data, encoding = NSUTF8StringEncoding)?.toString()
-            ?: return FileImportResult.Error()
-        FileImportResult.Selected(
-            ImportedFile(
-                name = fileName,
-                content = content,
-            ),
-        )
-    } catch (e: Exception) {
-        FileImportResult.Error()
+        val path = url.path ?: return FileImportResult.Error(ExternalInputFailure.UNREADABLE)
+        when (val result = readBoundedFile(path, ExternalInputPolicy.MAX_IMPORT_BYTES)) {
+            BoundedRead.TooLarge -> FileImportResult.Error(ExternalInputFailure.TOO_LARGE)
+            BoundedRead.InvalidUtf8 -> FileImportResult.Error(ExternalInputFailure.INVALID_UTF8)
+            BoundedRead.Unreadable -> FileImportResult.Error(ExternalInputFailure.UNREADABLE)
+            is BoundedRead.Success -> FileImportResult.Selected(
+                ImportedFile(name = fileName, content = result.content),
+            )
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        FileImportResult.Error(ExternalInputFailure.UNREADABLE)
     } finally {
         if (accessing) url.stopAccessingSecurityScopedResource()
+    }
+}
+
+private sealed interface BoundedRead {
+    data class Success(val content: String) : BoundedRead
+    data object TooLarge : BoundedRead
+    data object InvalidUtf8 : BoundedRead
+    data object Unreadable : BoundedRead
+}
+
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+private suspend fun readBoundedFile(path: String, maxBytes: Int): BoundedRead {
+    val file = platform.posix.fopen(path, "rb") ?: return BoundedRead.Unreadable
+    return try {
+        val contentBytes = ByteArray(maxBytes + 1)
+        val buffer = ByteArray(minOf(maxBytes + 1, 8192))
+        var total = 0
+        while (total <= maxBytes) {
+            currentCoroutineContext().ensureActive()
+            val requested = minOf(buffer.size, maxBytes + 1 - total)
+            val count = buffer.usePinned { pinned ->
+                platform.posix.fread(
+                    pinned.addressOf(0),
+                    1.convert(),
+                    requested.convert(),
+                    file,
+                ).toInt()
+            }
+            if (count < 0) return BoundedRead.Unreadable
+            if (count == 0) {
+                if (platform.posix.ferror(file) != 0) return BoundedRead.Unreadable
+                break
+            }
+            buffer.copyInto(contentBytes, destinationOffset = total, endIndex = count)
+            total += count
+        }
+        currentCoroutineContext().ensureActive()
+        if (total > maxBytes) return BoundedRead.TooLarge
+        val bytes = contentBytes.copyOf(total)
+        if (!ExternalInputPolicy.isStrictUtf8(bytes)) return BoundedRead.InvalidUtf8
+        if (bytes.isEmpty()) return BoundedRead.Success("")
+        val data = bytes.usePinned { pinned ->
+            NSData.create(bytes = pinned.addressOf(0), length = bytes.size.convert())
+        }
+        val content = NSString.create(data = data, encoding = NSUTF8StringEncoding)?.toString()
+            ?: return BoundedRead.InvalidUtf8
+        BoundedRead.Success(content)
+    } finally {
+        platform.posix.fclose(file)
     }
 }
 

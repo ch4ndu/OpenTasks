@@ -17,7 +17,7 @@ class AddCountdownAction(
     internal val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) {
     suspend operator fun invoke(countdown: Countdown) = accountBoundaryExecutor.withForegroundActionBoundary {
-        log.d { "Adding countdown: '${countdown.title}'" }
+        log.d { "Adding countdown" }
         val now = localNow()
         val created = countdown.copy(createdAt = now, updatedAt = now)
         repository.insert(created)

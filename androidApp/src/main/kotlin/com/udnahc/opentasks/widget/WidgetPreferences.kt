@@ -1,6 +1,8 @@
 package com.udnahc.opentasks.widget
 
+import android.annotation.SuppressLint
 import android.content.Context
+import androidx.core.content.edit
 
 enum class WidgetTheme { DARK, LIGHT, SYSTEM }
 enum class WidgetFontSize { SMALL, NORMAL, LARGE }
@@ -48,16 +50,18 @@ data class WidgetPreferences(
             )
         }
 
+        // The widget is refreshed immediately after saving, so asynchronous apply() could expose stale preferences.
+        @SuppressLint("ApplySharedPref")
         fun save(context: Context, prefs: WidgetPreferences) {
-            context.getSharedPreferences(prefsName(prefs.widgetId), Context.MODE_PRIVATE).edit()
-                .putString("theme", prefs.theme.name)
-                .putString("fontSize", prefs.fontSize.name)
-                .putString("filterType", prefs.filterType.name)
-                .putString("filterCategoryId", prefs.filterCategoryId)
-                .putString("sortBy", prefs.sortBy.name)
-                .putBoolean("hideDueDate", prefs.hideDueDate)
-                .putString("onClickAction", prefs.onClickAction.name)
-                .commit()
+            context.getSharedPreferences(prefsName(prefs.widgetId), Context.MODE_PRIVATE).edit(commit = true) {
+                putString("theme", prefs.theme.name)
+                putString("fontSize", prefs.fontSize.name)
+                putString("filterType", prefs.filterType.name)
+                putString("filterCategoryId", prefs.filterCategoryId)
+                putString("sortBy", prefs.sortBy.name)
+                putBoolean("hideDueDate", prefs.hideDueDate)
+                putString("onClickAction", prefs.onClickAction.name)
+            }
         }
 
         fun delete(context: Context, widgetId: Int) {

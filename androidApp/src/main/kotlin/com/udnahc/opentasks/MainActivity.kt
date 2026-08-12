@@ -3,6 +3,7 @@ package com.udnahc.opentasks
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Parcelable
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -13,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -22,11 +24,25 @@ import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
 import com.udnahc.opentasks.data.auth.WidgetAccountGate
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.sync.SyncWorker
+import com.udnahc.opentasks.ExternalInputFailure
+import com.udnahc.opentasks.ExternalInputPolicy
 import com.udnahc.opentasks.widget.CalendarWidget
 import com.udnahc.opentasks.widget.TaskWidget
 import com.udnahc.opentasks.widget.WeekWidget
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -40,6 +56,9 @@ class MainActivity : ComponentActivity(), KoinComponent {
     private var widgetNavigationEvent by mutableStateOf<WidgetNavigationEvent?>(null)
     private val widgetNavigationEventPublisher = WidgetNavigationEventPublisher()
     private val widgetAccountGate: WidgetAccountGate by inject()
+    private var shareParseGeneration = 0L
+    private var shareParseJob: Job? = null
+    private var nextSharePayloadId = System.currentTimeMillis()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -117,54 +136,202 @@ class MainActivity : ComponentActivity(), KoinComponent {
     }
 
     private fun publishShareIntent(intent: Intent?) {
-        val payload = intent?.toSharedTaskPayload() ?: return
-        publishSharedTaskPayload(
-            id = System.currentTimeMillis(),
-            description = payload.description,
-            url = payload.url,
-            icsContent = payload.icsContent,
+        val incomingIntent = intent ?: return
+        if (incomingIntent.action != Intent.ACTION_SEND &&
+            incomingIntent.action != Intent.ACTION_SEND_MULTIPLE
+        ) return
+        val generation = ++shareParseGeneration
+        val payloadId = ++nextSharePayloadId
+        shareParseJob?.cancel()
+        val unreadableShareRequest = AndroidShareRequest(
+            mimeType = "",
+            text = "",
+            subject = "",
+            streamUris = emptyList(),
+            itemFailure = ExternalInputFailure.UNREADABLE,
         )
-    }
+        val shareRequest = try {
+            incomingIntent.toShareRequest()
+        } catch (_: Exception) {
+            unreadableShareRequest
+        } ?: unreadableShareRequest
 
-    private fun Intent.toSharedTaskPayload(): AndroidSharedTaskPayload? {
-        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return null
-
-        val mimeType = type.orEmpty()
-        val text = getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
-        val icsContent = when {
-            text.isIcsContent() -> text
-            mimeType.isCalendarMimeType() -> streamUris().mapNotNull { readTextFromUri(it) }
-                .joinToString("\n")
-
-            else -> ""
-        }
-
-        return if (icsContent.isNotBlank()) {
-            AndroidSharedTaskPayload(icsContent = icsContent)
-        } else {
-            val description = text.ifBlank {
-                getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString().orEmpty()
+        val job = lifecycleScope.launch(
+            context = Dispatchers.IO,
+            start = CoroutineStart.LAZY,
+        ) {
+            val originatingJob = coroutineContext[Job]
+            val result = try {
+                shareRequest.parse()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                AndroidShareParseResult.Rejected(ExternalInputFailure.UNREADABLE)
             }
-            if (description.isBlank()) return null
-            AndroidSharedTaskPayload(
-                description = description,
-                url = description.firstUrl().orEmpty(),
-            )
+            withContext(Dispatchers.Main.immediate) {
+                currentCoroutineContext().ensureActive()
+                if (shareParseGeneration != generation ||
+                    shareParseJob !== originatingJob ||
+                    originatingJob == null ||
+                    !originatingJob.isActive
+                ) {
+                    return@withContext
+                }
+                when (result) {
+                    is AndroidShareParseResult.Accepted -> publishSharedTaskPayload(
+                        id = payloadId,
+                        description = result.payload.description,
+                        url = result.payload.url,
+                        icsContent = result.payload.icsContent,
+                        icsFileName = result.payload.icsFileName,
+                    )
+                    is AndroidShareParseResult.Rejected -> {
+                        publishSharedTaskPayloadRejection(payloadId, result.reason)
+                    }
+                    AndroidShareParseResult.Ignored -> Unit
+                }
+            }
         }
+        shareParseJob = job
+        job.start()
     }
 
     @Suppress("DEPRECATION")
-    private fun Intent.streamUris(): List<Uri> = when (action) {
-        Intent.ACTION_SEND_MULTIPLE -> getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
-        Intent.ACTION_SEND -> listOfNotNull(getParcelableExtra(Intent.EXTRA_STREAM))
-        else -> emptyList()
+    private fun Intent.toShareRequest(): AndroidShareRequest? {
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return null
+
+        val uris = when (action) {
+            Intent.ACTION_SEND_MULTIPLE -> getParcelableArrayListExtra<Parcelable>(Intent.EXTRA_STREAM)
+                .orEmpty()
+                .mapNotNull { it as? Uri }
+            Intent.ACTION_SEND -> listOfNotNull(getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM))
+                .mapNotNull { it as? Uri }
+            else -> emptyList()
+        }
+        val boundedUris = uris.take(ExternalInputPolicy.MAX_SHARE_ITEMS + 1)
+        return AndroidShareRequest(
+            mimeType = type.orEmpty(),
+            text = getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty(),
+            subject = getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString().orEmpty(),
+            streamUris = boundedUris,
+            itemFailure = ExternalInputPolicy.validateShareItemCount(uris.size),
+        )
     }
 
-    private fun readTextFromUri(uri: Uri): String? = runCatching {
-        contentResolver.openInputStream(uri)?.use { input ->
-            BufferedReader(InputStreamReader(input)).use { it.readText() }
+    private suspend fun AndroidShareRequest.parse(): AndroidShareParseResult {
+        itemFailure?.let { return AndroidShareParseResult.Rejected(it) }
+
+        if (text.isIcsContent()) {
+            if (ExternalInputPolicy.utf8ByteCountUpTo(
+                    text,
+                    ExternalInputPolicy.MAX_SHARE_PAYLOAD_BYTES,
+                ) > ExternalInputPolicy.MAX_SHARE_PAYLOAD_BYTES
+            ) {
+                return AndroidShareParseResult.Rejected(ExternalInputFailure.TOO_LARGE)
+            }
+            return AndroidSharedTaskPayload(
+                icsContent = text,
+            ).asParseResult()
         }
-    }.getOrNull()
+
+        if (mimeType.isCalendarMimeType()) {
+            val parts = mutableListOf<String>()
+            var remaining = ExternalInputPolicy.MAX_SHARE_PAYLOAD_BYTES -
+                ExternalInputPolicy.utf8ByteCountUpTo("shared.ics", ExternalInputPolicy.MAX_ICS_FILENAME_BYTES)
+            for (uri in streamUris) {
+                if (parts.isNotEmpty()) {
+                    if (remaining == 0) return AndroidShareParseResult.Rejected(ExternalInputFailure.TOO_LARGE)
+                    remaining--
+                }
+                when (val result = readTextFromUri(uri, remaining)) {
+                    is AndroidTextReadResult.Success -> {
+                        val byteCount = ExternalInputPolicy.utf8ByteCountUpTo(result.content, remaining)
+                        if (byteCount > remaining) {
+                            return AndroidShareParseResult.Rejected(ExternalInputFailure.TOO_LARGE)
+                        }
+                        remaining -= byteCount
+                        parts += result.content
+                    }
+                    AndroidTextReadResult.TooLarge -> {
+                        return AndroidShareParseResult.Rejected(ExternalInputFailure.TOO_LARGE)
+                    }
+                    AndroidTextReadResult.InvalidUtf8 -> {
+                        return AndroidShareParseResult.Rejected(ExternalInputFailure.INVALID_UTF8)
+                    }
+                    AndroidTextReadResult.Unreadable -> {
+                        return AndroidShareParseResult.Rejected(ExternalInputFailure.UNREADABLE)
+                    }
+                }
+            }
+            val icsContent = parts.joinToString("\n")
+            if (icsContent.isNotBlank()) {
+                return AndroidSharedTaskPayload(icsContent = icsContent).asParseResult()
+            }
+        }
+
+        val description = text.ifBlank { subject }
+        if (description.isBlank()) return AndroidShareParseResult.Ignored
+        if (ExternalInputPolicy.utf8ByteCountUpTo(
+                description,
+                ExternalInputPolicy.MAX_SHARE_PAYLOAD_BYTES,
+            ) > ExternalInputPolicy.MAX_SHARE_PAYLOAD_BYTES
+        ) {
+            return AndroidShareParseResult.Rejected(ExternalInputFailure.TOO_LARGE)
+        }
+        return AndroidSharedTaskPayload(
+            description = description,
+            url = description.firstUrl().orEmpty(),
+        ).asParseResult()
+    }
+
+    private suspend fun readTextFromUri(uri: Uri, maxBytes: Int): AndroidTextReadResult {
+        val input = try {
+            contentResolver.openInputStream(uri)
+        } catch (_: Exception) {
+            null
+        } ?: return AndroidTextReadResult.Unreadable
+        return try {
+            when (val result = readBoundedUtf8(input, maxBytes)) {
+                is BoundedText.Success -> AndroidTextReadResult.Success(result.content)
+                BoundedText.TooLarge -> AndroidTextReadResult.TooLarge
+                BoundedText.InvalidUtf8 -> AndroidTextReadResult.InvalidUtf8
+                BoundedText.Unreadable -> AndroidTextReadResult.Unreadable
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            AndroidTextReadResult.Unreadable
+        } finally {
+            input.close()
+        }
+    }
+
+    private suspend fun readBoundedUtf8(input: InputStream, maxBytes: Int): BoundedText {
+        val bytes = ByteArrayOutputStream(minOf(maxBytes + 1, 8192))
+        val buffer = ByteArray(minOf(maxBytes + 1, 8192))
+        while (bytes.size() <= maxBytes) {
+            currentCoroutineContext().ensureActive()
+            val requested = minOf(buffer.size, maxBytes + 1 - bytes.size())
+            val count = input.read(buffer, 0, requested)
+            if (count < 0) break
+            if (count == 0) continue
+            bytes.write(buffer, 0, count)
+        }
+        currentCoroutineContext().ensureActive()
+        val contentBytes = bytes.toByteArray()
+        if (contentBytes.size > maxBytes) return BoundedText.TooLarge
+        if (!ExternalInputPolicy.isStrictUtf8(contentBytes)) return BoundedText.InvalidUtf8
+        return try {
+            val content = Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(contentBytes))
+                .toString()
+            BoundedText.Success(content)
+        } catch (_: CharacterCodingException) {
+            BoundedText.InvalidUtf8
+        }
+    }
 
     private fun handleDeepLinkIntent(intent: Intent?) {
         deepLinkNotificationEvent = intent.toNotificationDeepLinkEvent()
@@ -259,11 +426,49 @@ const val ACTION_VIEW_TASK = "view_task"
 const val ACTION_VIEW_CALENDAR = "view_calendar"
 
 
+private data class AndroidShareRequest(
+    val mimeType: String,
+    val text: String,
+    val subject: String,
+    val streamUris: List<Uri>,
+    val itemFailure: ExternalInputFailure?,
+)
+
 private data class AndroidSharedTaskPayload(
     val description: String = "",
     val url: String = "",
     val icsContent: String = "",
+    val icsFileName: String = "shared.ics",
 )
+
+private sealed interface AndroidShareParseResult {
+    data class Accepted(val payload: AndroidSharedTaskPayload) : AndroidShareParseResult
+    data class Rejected(val reason: ExternalInputFailure) : AndroidShareParseResult
+    data object Ignored : AndroidShareParseResult
+}
+
+private sealed interface AndroidTextReadResult {
+    data class Success(val content: String) : AndroidTextReadResult
+    data object TooLarge : AndroidTextReadResult
+    data object InvalidUtf8 : AndroidTextReadResult
+    data object Unreadable : AndroidTextReadResult
+}
+
+private sealed interface BoundedText {
+    data class Success(val content: String) : BoundedText
+    data object TooLarge : BoundedText
+    data object InvalidUtf8 : BoundedText
+    data object Unreadable : BoundedText
+}
+
+private fun AndroidSharedTaskPayload.asParseResult(): AndroidShareParseResult =
+    ExternalInputPolicy.validateSharePayload(
+        description = description,
+        url = url,
+        icsContent = icsContent,
+        icsFileName = icsFileName,
+    )?.let(AndroidShareParseResult::Rejected)
+        ?: AndroidShareParseResult.Accepted(this)
 
 private fun String.isCalendarMimeType(): Boolean =
     equals("text/calendar", ignoreCase = true) ||

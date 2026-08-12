@@ -87,12 +87,9 @@ import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
 import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
-import com.udnahc.opentasks.domain.action.settings.ClearPocketBaseUrlAction
-import com.udnahc.opentasks.domain.action.settings.ConfigurePocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarListDisplayModePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAction
-import com.udnahc.opentasks.domain.action.settings.SavePocketBaseUrlAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskListViewModeAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
 import com.udnahc.opentasks.domain.action.settings.SaveTextSizePreferenceAction
@@ -315,11 +312,8 @@ val sharedModule = module {
     single { ReauthenticateAccountAction(get()) }
     single { SwitchAccountAction(get()) }
     single { LogoutAccountAction(get()) }
-    single { SavePocketBaseUrlAction(get(), get(), get(), get(), get()) }
-    single { ClearPocketBaseUrlAction(get(), get()) }
     single { TriggerSyncAction(get(), get()) }
     single<SyncTrigger> { get<TriggerSyncAction>() }
-    single { ConfigurePocketBaseUrlAction(get(), get()) }
     single { InitializeSyncAction(get()) }
     single { SaveTaskSortOptionAction(get()) }
     single { SaveTaskListViewModeAction(get()) }
@@ -458,19 +452,16 @@ val sharedModule = module {
     viewModel { CountdownFormViewModel(get(), get(), get(), get(), get()) }
     viewModel {
         SettingsViewModel(
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get()
+            observeThemePreference = get(),
+            observeTextSizePreference = get(),
+            triggerSyncAction = get(),
+            saveThemePreferenceAction = get(),
+            saveTextSizePreferenceAction = get(),
+            clearLocalDataAction = get(),
+            checkNotificationPermission = get(),
+            checkCalendarPermission = get(),
+            generateCsvExport = get(),
+            generateIcsExport = get(),
         )
     }
     viewModel { AppViewModel(get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>()) }

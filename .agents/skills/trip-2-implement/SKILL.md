@@ -1,6 +1,6 @@
 ---
 name: trip-2-implement
-description: Implement an approved TRIP plan with Sol review gates
+description: Implement an approved TRIP plan with Luna implementation and Sol review gates
 ---
 
 # Implementation Mode
@@ -35,17 +35,17 @@ Derive the short description from the plan/feature name. If already on a dedicat
 
 ---
 
-## Implementation Phase — Delegate to Sol
+## Implementation Phase — Delegate to Luna
 
-The manager owns orchestration. Sol at high reasoning owns the bounded implementation work. Sol at xhigh owns the later code-review loop. Do not expose the private implementation workflow as a public skill. (Exception: trivial unplanned changes of a few lines may be done directly.)
+The manager owns orchestration. Luna at max reasoning owns bounded implementation work. Sol at xhigh owns plan review, code review, and the final gate. Do not expose the private implementation workflow as a public skill. (Exception: trivial unplanned changes of a few lines may be done directly.)
 
-1. Read the plan fully and decide the delegation scope: the whole plan, or one phase at a time for multi-phase plans. For multiple issues, first create one dependency and ownership ledger: issue, prerequisite, owned paths, assigned Sol wave, verification, and integration order. Run only waves whose owned paths do not overlap; integrate once before review.
+1. Read the plan fully and decide the delegation scope: the whole plan, or one phase at a time for multi-phase plans. For multiple issues, first create one dependency and ownership ledger: issue, prerequisite, owned paths, assigned Luna wave, verification, and integration order. Run only waves whose owned paths do not overlap; integrate once before review.
 
 2. **Start** the implementation session (state dir is handled by the script):
 
    ```bash
    python3 .agents/trip/bin/launch_runtime.py run \
-       --module implementation --phase start --role sol-implement --target <plan-path> \
+       --module implementation --phase start --role luna-implement --target <plan-path> \
        --round 1 --owns <owned/path> --prompt "Implement Phase 1 only"
    ```
 
@@ -53,7 +53,7 @@ The manager owns orchestration. Sol at high reasoning owns the bounded implement
 
    ```bash
    python3 .agents/trip/bin/launch_runtime.py run \
-       --module implementation --phase continue --role sol-implement --target <plan-path> \
+       --module implementation --phase continue --role luna-implement --target <plan-path> \
        --round <2-5> --owns <same/owned/path> --resume --prompt "Now implement Phase 2"
    ```
 
@@ -67,11 +67,11 @@ For phased delegation, run the Delegate → Self-Review cycle per phase; the tes
 
 ## Self-Review & Fix
 
-After Sol reports, review the implementation yourself before anything else:
+After Luna reports, review the implementation yourself before anything else:
 
 - Read the full diff (`git status -s`, `git diff HEAD`) against the plan, ARCHI.md patterns, and project conventions (DRY, KISS, comment discipline, error-handling and naming conventions from ARCHI.md).
-- Fix any problem **directly yourself** — no back-and-forth with Sol over fixes. Resume the private implementation thread only for genuinely new scope (e.g., the next phase).
-- Verify the plan checkboxes Sol ticked match what the diff actually contains; cross any it completed but missed.
+- Route substantive implementation corrections back through Luna so the configured implementer remains accountable. The manager may make only trivial integration corrections that are faster and safer to apply directly.
+- Verify the plan checkboxes Luna ticked match what the diff actually contains; cross any it completed but missed.
 
 Proceed to the testing gate once you consider the implementation good for review.
 
@@ -103,15 +103,15 @@ Only the files/areas the change touched — never the full suite by default.
 ### 3. Integration impact check
 
 - Changes to `commonMain`, shared DI, Room, sync, expect/actual contracts, or build configuration require the consolidated multiplatform compile and affected test gate.
-- Android widgets, notifications, alarms, receivers, WorkManager, intents, and permissions require emulator or device verification in addition to unit tests and APK assembly.
-- iOS notifications, background refresh, share extension, file/calendar integration, and host changes require an Xcode build plus simulator or device verification.
-- Desktop packaging, ProGuard, SQLite/JNI, file dialogs, or runtime-loaded services require packaging and launching the produced artifact.
-- PocketBase schema, migration, server-replacement, and wire-contract changes require exercising a disposable real PocketBase instance; mock tests alone are insufficient.
+- Android widgets, notifications, alarms, receivers, WorkManager, intents, and permissions require a concise manual checklist in addition to focused tests and APK assembly. Run an emulator, device, or screenshot flow only when the user explicitly asks.
+- iOS notifications, background refresh, share extension, file/calendar integration, and host changes require an Xcode compile plus a concise user-owned manual checklist. Run a simulator or device only when explicitly requested.
+- Desktop packaging, ProGuard, SQLite/JNI, file dialogs, or runtime-loaded services use the cheapest relevant build/probe; launch the produced artifact only when explicitly requested.
+- PocketBase schema, migration, server-replacement, and wire-contract changes use focused MockEngine or existing integration coverage. A disposable real-service harness is a separate scope expansion requiring explicit user approval.
 - Docs-only changes skip this.
 
 ### 4. Author missing tests
 
-If the change adds new logic, write its tests **now**, guided by the plan's **Test Impact** section and the project's testing guide (see `trip-test`). If no new logic was added, skip this step.
+If the change adds new logic, write only the smallest high-value tests justified by the plan's **Test Impact** section and the project's testing guide (see `trip-test`). If automation would require a broad fixture, duplicated bootstrap, disposable service, or extensive mocking, stop and prefer a documented manual check or coverage-debt entry unless the user explicitly approves that scope.
 
 **Hard-to-cover code policy:**
 
@@ -190,13 +190,13 @@ python3 .agents/trip/bin/launch_runtime.py run \
     --round 1 --resume --prompt "Respond to every consolidated finding with current file/line evidence."
 ```
 
-Then apply all accepted fixes together through one write-capable Sol phase. Pass every owned path from the dependency/ownership ledger:
+Then apply all accepted fixes together through one write-capable Luna phase. Pass every owned path from the dependency/ownership ledger:
 
 ```bash
 python3 .agents/trip/bin/launch_runtime.py run \
-    --module code-review --phase fix --role sol-review --target <plan-path> \
+    --module code-review --phase fix --role luna-implement --target <plan-path> \
     --round 1 --owns <owned/path> \
-    --prompt "Read the newest review-response final.txt for this target. Apply all accepted findings in one wave and add their focused tests."
+    --prompt "Read the newest review-response final.txt for this target. Apply all accepted findings in one wave. Add focused regression tests only when cheap and proportionate; otherwise record manual verification or coverage debt."
 ```
 
 The fix phase deliberately starts a fresh `workspace-write` session; do not add `--resume`, because the preceding review thread is read-only.
@@ -209,7 +209,11 @@ python3 .agents/trip/bin/launch_runtime.py run \
     --round 1 --prompt "Adjudicate the consolidated review, response, fixes, and verification matrix."
 ```
 
-The persisted session must verify `gpt-5.6-sol/high`. Sol is the only role that may declare the implementation ready for release; `REQUEST_CHANGES` or `NEEDS_REWORK` returns to the consolidated response/fix/verification sequence.
+The persisted session must verify `gpt-5.6-sol/xhigh`. Sol is the only role that may declare the implementation ready for release; `REQUEST_CHANGES` or `NEEDS_REWORK` returns to the consolidated response/fix/verification sequence.
+
+### Implementer quality assessment
+
+Before handoff, report whether Luna-max is performing well enough for this project. Use concrete evidence: number of Sol review rounds, substantive findings attributable to implementation mistakes, repeated categories of mistake, regressions introduced during fixes, and manager corrections required. Recommend keeping Luna-max when review is converging efficiently; recommend a stronger implementer when repeated or high-severity rework erases the cost advantage. Do not infer quality from a run in which Luna performed no implementation.
 
 ---
 

@@ -2,11 +2,19 @@
 
 | Version | Week | Commit Message |
 | --- | --- | --- |
+| `1.2.0` | 5 | fix: remediate project audit findings |
 | `1.1.0` | 4 | feat: add multi-user PocketBase account isolation |
 | `1.0.1` | 1 | chore: initialize TRIP workflow |
 
 # Changelog Summary
 
+- **v1.2.0 (project-audit-remediation - Week 5, 12-08-2026)**:
+  - **Local operation**: Released backend-free Local-only startup, authoritative PocketBase connection, and bounded Quick Add from the checkpointed feature work
+  - **Platform boundaries**: Bounded Android, iOS, and JVM share/import inputs, strict UTF-8 decoding, iOS provider aggregation, and desktop process lifetime
+  - **Lifecycle and security**: Closed PocketBase clients exactly once, preserved coroutine cancellation, removed sensitive diagnostics, and removed the unreachable Settings endpoint editor
+  - **Calendar and recurrence**: Added bounded countdown occurrence projection and moved calendar display projection out of composition
+  - **Toolchain and Android**: Updated compatible dependencies, isolated Compose tooling to debug builds, fixed widget/resource lint, and retained documented API-36-compatible pins
+  - **Verification**: Passed 354 JVM tests, 11 Android tests, lint, debug/release APK assembly, JVM and both iOS Kotlin compiles, compile-only Xcode app/extension build, and the Sol-xhigh final gate
 - **v1.1.0 (multi-user-pocketbase-isolation - Week 4, 09-08-2026)**:
   - **Accounts**: Added two pre-created PocketBase account sessions, durable restoration, safe switching/logout, and per-account task UI boundaries
   - **Isolation**: Enforced owner-scoped PocketBase rules, client validation, cache epochs, background-entry boundaries, and account-owned ViewModel disposal

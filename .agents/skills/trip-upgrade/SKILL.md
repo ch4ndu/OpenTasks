@@ -64,7 +64,7 @@ Categorize each skill into one of:
 
 **Pure workflow skills** (no project customizations): `trip-compact`, `trip-research`, `trip-init`, `trip-upgrade`. The four helper workflows are private runtime modules: `plan-review`, `implementation`, `code-review`, and `ask`.
 
-**Exception — role pins**: do not carry arbitrary model overrides into the new runtime. Preserve Sol `gpt-5.6-sol/xhigh` for plan and code review, Sol `gpt-5.6-sol/high` for implementation and the final gate, and Terra `gpt-5.6-terra/xhigh` for research unless the user explicitly changes this project policy; the launcher fails closed on mismatch.
+**Exception — role pins**: do not carry arbitrary model overrides into the new runtime. Preserve Luna `gpt-5.6-luna/max` for implementation and accepted-finding fixes, Sol `gpt-5.6-sol/xhigh` for plan review, code review, and the final gate, and Terra `gpt-5.6-terra/xhigh` for research unless the user explicitly changes this project policy; the launcher fails closed on mismatch.
 
 **Customized skills** (have project-specific content): `trip-1-plan`, `trip-2-implement`, `trip-3-release`, `trip-review`, `trip-test`, `trip-hotfix` (carries `[MAIN_BRANCH]` only)
 

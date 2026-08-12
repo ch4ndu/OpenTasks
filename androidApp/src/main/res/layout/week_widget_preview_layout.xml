@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Static launcher preview: sample copy, compact sizes, and inferred-theme background are intentional. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="#FF1E1E1E"
-    android:padding="4dp">
+    android:padding="4dp"
+    tools:ignore="HardcodedText,SmallSp,Overdraw">
 
     <!-- Header: ◂ Mar 23 - 29 ▸ -->
     <LinearLayout
@@ -47,7 +50,9 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:baselineAligned="false"
+        tools:ignore="NestedWeights">
 
         <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center_horizontal">
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Sun" android:textColor="#FF888888" android:textSize="8sp" />
