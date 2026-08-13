@@ -49,6 +49,16 @@ For a new persisted entity or schema change:
 - Keep blocking file reads and writes off Android, UIKit, and AWT UI threads. iOS security-scoped access and temporary export files must be released or removed on every terminal path.
 - Allow only one export preparation/picker flow at a time so result metadata and platform delegates cannot be overwritten.
 
+## Delegated Workflow Authority and Evidence
+
+Apply these rules when a context agent or implementation worker assists the manager:
+
+- Treat a context agent as advisory and read-only. Current repository files, user messages, and fresh command results outrank retained context or handoff notes.
+- Keep the manager responsible for user communication, scope, integration, finding disposition, and completion. Do not let a worker or context agent declare overall completion.
+- Keep plan review, code review, and final verification independent from implementation and context-agent conclusions; provide authoritative paths and evidence, not inherited verdicts.
+- Preserve every finding with its evidence and manager disposition, including resolved findings. Require explicit user approval before implementation and separate authorization for Git publication or release actions.
+- Report request/behavior verification separately from build/test verification and identify deliberately unrun checks or residual uncertainty.
+
 ## Verification
 
 - Before calling a coding change complete, run a focused audit pass:

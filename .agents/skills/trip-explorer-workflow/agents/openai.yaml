@@ -1,0 +1,4 @@
+interface:
+  display_name: "TRIP Explorer Workflow"
+  short_description: "Run a persistent Explorer-assisted TRIP flow"
+  default_prompt: "Use $trip-explorer-workflow to plan and, after my explicit approval, implement this engineering task with persistent read-only context and independent review."
