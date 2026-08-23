@@ -483,6 +483,16 @@ internal fun SettingsContent(
                         enabled = false,
                     )
                 }
+                currentAccount.email?.takeIf { it.isNotBlank() }?.let { email ->
+                    item(key = "current_account_email") {
+                        SettingsRow(
+                            title = stringResource(Res.string.account_email),
+                            summary = email,
+                            onClick = {},
+                            enabled = false,
+                        )
+                    }
+                }
                 item(key = "switch_account") {
                     SettingsRow(
                         title = stringResource(Res.string.account_switch),

@@ -22,29 +22,10 @@ class JvmCalendarProvider internal constructor(
     override fun isAvailable(): Boolean = IS_MAC
 
     override suspend fun checkPermission(): CalendarPermissionStatus {
-        if (!IS_MAC) return CalendarPermissionStatus.NOT_AVAILABLE
-        return withContext(Dispatchers.IO) {
-            try {
-                val result = processRunner.run(
-                    command = listOf(
-                        "osascript", "-e",
-                        "tell application \"Calendar\" to get name of calendars",
-                    ),
-                    timeoutMillis = PERMISSION_TIMEOUT_MILLIS,
-                )
-                if (result is JvmProcessResult.Completed && result.exitCode == 0) {
-                    CalendarPermissionStatus.GRANTED
-                } else {
-                    log.d { "Calendar permission check was not granted (${result.diagnosticName()})" }
-                    CalendarPermissionStatus.DENIED
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                log.e { "Calendar permission check failed" }
-                CalendarPermissionStatus.DENIED
-            }
-        }
+        // Addressing Calendar through AppleScript activates the Calendar app. Keep passive
+        // permission refreshes side-effect-free and resolve automation consent only when the
+        // user explicitly imports calendar events from Settings.
+        return if (IS_MAC) CalendarPermissionStatus.GRANTED else CalendarPermissionStatus.NOT_AVAILABLE
     }
 
     override suspend fun requestPermission(): CalendarPermissionStatus = checkPermission()
@@ -155,7 +136,6 @@ class JvmCalendarProvider internal constructor(
             .toEpochMilli()
 
     private companion object {
-        const val PERMISSION_TIMEOUT_MILLIS = 10_000L
         const val FETCH_TIMEOUT_MILLIS = 30_000L
     }
 }

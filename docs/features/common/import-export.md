@@ -8,6 +8,8 @@ OpenTasks can bring external data into tasks and export tasks for use elsewhere.
 
 Calendar import reads events from the platform calendar after permission is granted. Imported events become tasks in the stable `Calendar Imports` category and receive the stable `Imported` tag.
 
+On macOS, passive permission refreshes must not execute AppleScript because addressing the Calendar application activates it. OpenTasks queries Calendar only after the user explicitly starts a calendar import from Settings; macOS resolves any Automation consent at that point.
+
 `ImportCalendarEventsAction` skips duplicates using the event external id. Event metadata such as location, URL, organizer, status, attendees, all-day state, and time range is preserved on the task where supported by the task model.
 
 ## ICS Import and Export
