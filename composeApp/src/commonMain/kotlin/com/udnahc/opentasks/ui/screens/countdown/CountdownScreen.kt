@@ -108,7 +108,6 @@ internal fun countdownTypeInitial(type: CountdownType): String = stringResource(
 fun CountdownScreen(
     viewModel: CountdownViewModel,
     onCountdownClick: (Countdown) -> Unit,
-    onDeleteCountdown: (Countdown) -> Unit,
     onSettingsClick: () -> Unit = {},
 ) {
     val countdowns by viewModel.visibleCountdownItems.collectAsState()

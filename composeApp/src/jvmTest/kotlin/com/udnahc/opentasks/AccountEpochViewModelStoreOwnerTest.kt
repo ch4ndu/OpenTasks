@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertEquals
 import kotlin.test.assertNotSame
 import kotlin.test.assertTrue
 
@@ -49,6 +50,7 @@ class AccountEpochViewModelStoreOwnerTest : MainDispatcherRule() {
         assertTrue(mainScreenStart > providerStart)
         listOf(
             "val noteViewModel: NoteViewModel = koinViewModel()",
+            "val matrixViewModel: MatrixViewModel = koinViewModel()",
             "val taskNotificationViewModel: TaskNotificationViewModel = koinViewModel()",
             "val appViewModel: AppViewModel = koinViewModel()",
             "val importCalendarViewModel: ImportCalendarViewModel = koinViewModel()",
@@ -57,6 +59,12 @@ class AccountEpochViewModelStoreOwnerTest : MainDispatcherRule() {
         ).forEach { resolution ->
             assertContains(source, resolution)
         }
+        assertEquals(
+            1,
+            Regex("val matrixViewModel: MatrixViewModel = koinViewModel\\(\\)")
+                .findAll(source)
+                .count(),
+        )
     }
 
     private fun locateAppSource(): File = listOf(

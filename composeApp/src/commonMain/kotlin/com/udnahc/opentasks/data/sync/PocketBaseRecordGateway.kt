@@ -1,5 +1,7 @@
 package com.udnahc.opentasks.data.sync
 
+import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
+import com.udnahc.opentasks.data.attachment.AttachmentFileTooLargeException
 import com.udnahc.opentasks.data.auth.CacheBinding
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -11,13 +13,14 @@ import io.ktor.client.request.url
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.path
+import io.ktor.utils.io.readAvailable
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -51,7 +54,7 @@ class PocketBaseRecordGateway(
         perPage: Int,
     ): GatewayResponse<PocketBaseRecordPage<JsonObject>> {
         val response: GatewayResponse<PocketBaseRecordPage<JsonObject>> = decode(
-            client.get("$baseUrl/api/collections/$collection/records?page=$page&perPage=$perPage" + ownerFilter()),
+            client.get("$baseUrl/api/collections/$collection/records?page=$page&perPage=$perPage&sort=id" + ownerFilter()),
         ) { text -> json.decodeFromString<PocketBaseRecordPage<JsonObject>>(text) }
         val pageBody = response.body?.let { body ->
             body.copy(items = body.items.map(::requireOwnedRecord))
@@ -112,6 +115,9 @@ class PocketBaseRecordGateway(
             ?.takeIf { it.isNotBlank() }
             ?: throw IllegalArgumentException("PocketBase inventory record has no id")
         val response = client.delete("$baseUrl/api/collections/$collection/records/$recordId")
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw SyncAuthenticationRejectedException()
+        }
         val rawBody = response.bodyAsText()
         return GatewayResponse(
             status = response.status,
@@ -202,11 +208,14 @@ class PocketBaseRecordGateway(
                 parameters.append("token", token)
             }
         }
-        val bytes = if (response.status.value in 200..299) response.bodyAsBytes() else null
+        val bytes = if (response.status.value in 200..299) readBoundedResponseBytes(response) else null
         return GatewayResponse(response.status, bytes, "")
     }
 
     private suspend fun <T> decode(response: HttpResponse, decode: (String) -> T?): GatewayResponse<T> {
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw SyncAuthenticationRejectedException()
+        }
         val text = response.bodyAsText()
         return GatewayResponse(
             status = response.status,
@@ -244,6 +253,22 @@ class PocketBaseRecordGateway(
 
     private fun JsonObject.withoutFileFields(): JsonObject =
         JsonObject(filterKeys { it != "file" && it != "file-" })
+
+    /** Reads at most the policy cap plus one sentinel byte without buffering an unbounded response. */
+    private suspend fun readBoundedResponseBytes(response: HttpResponse): ByteArray {
+        val maxBytes = AttachmentFilePolicy.MAX_UPLOAD_BYTES
+        val output = ByteArray((maxBytes + 1L).toInt())
+        val channel = response.bodyAsChannel()
+        var total = 0
+        while (total < output.size) {
+            val read = channel.readAvailable(output, total, output.size - total)
+            if (read < 0) break
+            if (read == 0) continue
+            total += read
+        }
+        if (total > maxBytes) throw AttachmentFileTooLargeException(maxBytes)
+        return output.copyOf(total)
+    }
 
     private fun ownedBody(body: JsonObject): JsonObject {
         val binding = ownerBinding ?: return body

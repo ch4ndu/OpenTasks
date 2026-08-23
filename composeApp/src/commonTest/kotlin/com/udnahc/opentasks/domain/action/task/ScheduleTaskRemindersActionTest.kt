@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_HOUR
+import com.udnahc.opentasks.data.extensions.computeNextDeadlineUtc
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskStatus
@@ -13,6 +14,7 @@ import com.udnahc.opentasks.testutil.FakeTaskRepository
 import com.udnahc.opentasks.testutil.testTask
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Instant
 import kotlinx.coroutines.test.runTest
@@ -23,6 +25,60 @@ import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 
 class ScheduleTaskRemindersActionTest {
+    @Test
+    fun occurrenceValidationAcceptsOnlyTheExactOneOffRawUtcDeadline() {
+        val deadline = LocalDateTime(2026, 5, 8, 13, 0)
+            .toInstant(TimeZone.currentSystemDefault())
+            .toEpochMilliseconds()
+        val action = ScheduleTaskRemindersAction(
+            scheduler = FakeReminderScheduler(),
+            taskRepository = FakeTaskRepository(),
+        )
+        val task = testTask(id = "one-off", deadline = deadline)
+
+        assertTrue(action.isValidOccurrence(task, deadline))
+        assertFalse(action.isValidOccurrence(task, deadline - 1L))
+        assertFalse(action.isValidOccurrence(task, deadline + 1L))
+        assertFalse(action.isValidOccurrence(task.copy(status = TaskStatus.DONE), deadline))
+        assertFalse(action.isValidOccurrence(task.copy(deadline = null), deadline))
+    }
+
+    @Test
+    fun occurrenceValidationAcceptsProjectedRecurringMembersAndRejectsAdjacentOrUnboundedValues() {
+        val deadline = LocalDateTime(2026, 5, 8, 13, 0)
+            .toInstant(TimeZone.currentSystemDefault())
+            .toEpochMilliseconds()
+        val action = ScheduleTaskRemindersAction(
+            scheduler = FakeReminderScheduler(),
+            taskRepository = FakeTaskRepository(),
+        )
+        val task = testTask(
+            id = "recurring",
+            deadline = deadline,
+            recurrenceType = RecurrenceType.DAILY,
+            recurrenceInterval = 1,
+        )
+        val projectedOccurrence = computeNextDeadlineUtc(
+            currentDeadlineUtcMillis = deadline,
+            recurrenceType = task.recurrenceType.name,
+            interval = task.recurrenceInterval,
+            anchorDay = task.recurrenceAnchorDay,
+        )
+        var outsideBound = deadline
+        repeat(4096) {
+            outsideBound = computeNextDeadlineUtc(
+                currentDeadlineUtcMillis = outsideBound,
+                recurrenceType = task.recurrenceType.name,
+                interval = task.recurrenceInterval,
+                anchorDay = task.recurrenceAnchorDay,
+            )
+        }
+
+        assertTrue(action.isValidOccurrence(task, projectedOccurrence))
+        assertFalse(action.isValidOccurrence(task, projectedOccurrence + 1L))
+        assertFalse(action.isValidOccurrence(task, outsideBound))
+    }
+
     @Test
     fun allDayTaskDueTodayStartsOngoingNotification() = runTest {
         val timeZone = TimeZone.currentSystemDefault()

@@ -1,20 +1,22 @@
 package com.udnahc.opentasks.domain.action.settings
 
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
+import com.udnahc.opentasks.data.sync.SyncOutcome
 import com.udnahc.opentasks.data.sync.SyncService
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 import org.lighthousegames.logging.logging
 
@@ -23,12 +25,17 @@ private val log = logging("TriggerSyncAction")
 class TriggerSyncAction(
     private val pbProvider: PocketBaseClientProvider,
     private val syncService: SyncService,
+    private val runSyncPass: suspend () -> Unit = { syncService.syncAll() },
+    coroutineDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val waitForDebounce: suspend (Long) -> Unit = { delay(it) },
 ) : SyncTrigger {
     // Long-lived scope: this class is a Koin `single` that lives for the app's lifetime.
     // SupervisorJob ensures individual sync failures don't cancel the entire scope.
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + coroutineDispatcher)
     private val debounceMutex = Mutex()
-    private var debounceJob: Job? = null
+    private var pendingDelayJob: Job? = null
+
+    val outcome: StateFlow<SyncOutcome> = syncService.outcome
 
     companion object {
         private const val DEBOUNCE_DELAY_MS = 2000L
@@ -48,26 +55,30 @@ class TriggerSyncAction(
             return
         }
         debounceMutex.withLock {
-            debounceJob?.cancel()
-            val job = scope.launch {
+            pendingDelayJob?.cancel()
+            val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
-                    delay(DEBOUNCE_DELAY_MS)
+                    waitForDebounce(DEBOUNCE_DELAY_MS)
+                    val owningJob = currentCoroutineContext()[Job]
+                    val claimed = debounceMutex.withLock {
+                        if (pendingDelayJob === owningJob) {
+                            pendingDelayJob = null
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    if (!claimed) return@launch
                     log.d { "Debounce elapsed, starting sync" }
-                    syncService.syncAll()
+                    runSyncPass()
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
                     log.e(error) { "Debounced sync failed" }
-                } finally {
-                    val owningJob = currentCoroutineContext()[Job]
-                    withContext(NonCancellable) {
-                        debounceMutex.withLock {
-                            if (debounceJob === owningJob) debounceJob = null
-                        }
-                    }
                 }
             }
-            debounceJob = job
+            pendingDelayJob = job
+            job.start()
         }
     }
 
@@ -83,15 +94,15 @@ class TriggerSyncAction(
             return
         }
         val pending = debounceMutex.withLock {
-            debounceJob.also { debounceJob = null }
+            pendingDelayJob.also { pendingDelayJob = null }
         }
         pending?.cancelAndJoin()
-        syncService.syncAll()
+        runSyncPass()
     }
 
     suspend fun cancelPendingSync() {
         val pending = debounceMutex.withLock {
-            debounceJob.also { debounceJob = null }
+            pendingDelayJob.also { pendingDelayJob = null }
         }
         pending?.cancelAndJoin()
     }

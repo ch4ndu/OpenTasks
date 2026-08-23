@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.sync
 import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.auth.CacheMode
+import com.udnahc.opentasks.data.auth.canonicalizeAccountEndpoint
 import com.udnahc.opentasks.data.auth.isValidPocketBaseBinding
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.ktor.http.URLProtocol
@@ -186,27 +187,5 @@ data class PocketBaseEndpoint(
     val port: Int,
 )
 
-internal fun parsePocketBaseEndpoint(url: String): PocketBaseEndpoint {
-    val cleaned = url.trim().trimEnd('/')
-    require(cleaned.isNotBlank()) { "PocketBase URL is blank" }
-
-    val useHttps = cleaned.startsWith("https://")
-    val useHttp = cleaned.startsWith("http://")
-    val protocol = if (useHttps) URLProtocol.HTTPS else URLProtocol.HTTP
-    val withoutProtocol = cleaned
-        .removePrefix("https://")
-        .removePrefix("http://")
-        .substringBefore('/')
-    val separator = withoutProtocol.lastIndexOf(':')
-    val host = if (separator > 0) withoutProtocol.substring(0, separator) else withoutProtocol
-    val explicitPort =
-        if (separator > 0) withoutProtocol.substring(separator + 1).toIntOrNull() else null
-    val port = explicitPort ?: when {
-        useHttps -> 443
-        useHttp -> 80
-        else -> 80
-    }
-
-    require(host.isNotBlank()) { "PocketBase URL host is blank" }
-    return PocketBaseEndpoint(protocol, host, port)
-}
+internal fun parsePocketBaseEndpoint(url: String): PocketBaseEndpoint =
+    canonicalizeAccountEndpoint(url)

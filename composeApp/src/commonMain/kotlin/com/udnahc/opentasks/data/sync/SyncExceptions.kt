@@ -12,6 +12,16 @@ class SyncDegradedException(
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
+/**
+ * A structured authenticated PocketBase request received HTTP 401. This is
+ * deliberately distinct from forbidden, timeout, and degraded-sync failures:
+ * only a confirmed authentication rejection may transition the account shell
+ * to reauthentication.
+ */
+class SyncAuthenticationRejectedException(
+    cause: Throwable? = null,
+) : Exception("PocketBase authentication was rejected during sync", cause)
+
 data class SyncCollectionFailure(
     val collectionName: String,
     val operation: String,
@@ -36,3 +46,13 @@ class PocketBaseConnectionException(
 ) : Exception(message, cause)
 
 class PocketBaseOwnerMismatchException(message: String) : IllegalStateException(message)
+
+/** Preserves a confirmed authentication rejection through adapter/service wrappers. */
+internal fun Throwable.findSyncAuthenticationRejected(): SyncAuthenticationRejectedException? =
+    generateSequence(this) { it.cause }
+        .filterIsInstance<SyncAuthenticationRejectedException>()
+        .firstOrNull()
+
+internal fun Throwable.rethrowSyncAuthenticationRejected() {
+    findSyncAuthenticationRejected()?.let { throw it }
+}

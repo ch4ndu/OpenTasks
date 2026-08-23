@@ -2,6 +2,7 @@ package com.udnahc.opentasks.data.notification
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ReminderQueueTest {
@@ -65,6 +66,83 @@ class ReminderQueueTest {
 
         assertEquals(5, setOf(date, duration, overdue, countdown, ongoing).map { it.semanticKey }.size)
         assertEquals(date, ReminderIdentity.fromSemanticKey(date.semanticKey))
+    }
+
+    @Test
+    fun commandValidatorAcceptsOnlyCanonicalPayloadsForEachPolicy() {
+        val task = ReminderIdentity("task-1", 100L, ReminderKind.DATE, 0)
+        val ongoing = ReminderIdentity("task-1", 100L, ReminderKind.ONGOING, 0)
+        val countdown = ReminderIdentity("countdown-1", 200L, ReminderKind.COUNTDOWN, 0)
+
+        assertAccepted(ReminderCommand.MARK_DONE, task)
+        assertAccepted(ReminderCommand.TASK_TAP, task)
+        assertAccepted(ReminderCommand.DELIVERY, task)
+        assertAccepted(ReminderCommand.GOT_IT, ongoing)
+        assertAccepted(ReminderCommand.SHEET_DISMISS, task)
+        assertAccepted(ReminderCommand.SHEET_DISMISS, ongoing)
+        assertAccepted(ReminderCommand.ONGOING_TAP, ongoing)
+        assertAccepted(ReminderCommand.COUNTDOWN_TAP, countdown)
+        assertAccepted(ReminderCommand.COUNTDOWN_DELIVERY, countdown)
+
+        assertRejectedFields(ReminderCommand.MARK_DONE, ongoing)
+        assertRejectedFields(ReminderCommand.TASK_TAP, countdown)
+        assertRejectedFields(ReminderCommand.GOT_IT, task)
+        assertRejectedFields(ReminderCommand.SHEET_DISMISS, countdown)
+    }
+
+    @Test
+    fun commandValidatorRejectsMismatchedOrMalformedDuplicatedFields() {
+        val identity = ReminderIdentity("task-1", 100L, ReminderKind.DATE, 2)
+
+        assertRejectedFields(ReminderCommand.MARK_DONE, identity, semanticKey = "v1|7|task-1|100|DATE|1")
+        assertRejectedFields(ReminderCommand.MARK_DONE, identity, eventId = "other-task")
+        assertRejectedFields(ReminderCommand.MARK_DONE, identity, occurrenceUtcMillis = 101L)
+        assertRejectedFields(ReminderCommand.MARK_DONE, identity, accountId = "")
+        assertRejectedFields(ReminderCommand.MARK_DONE, identity, boundaryEpoch = 0L)
+        assertRejectedFields(ReminderCommand.MARK_DONE, identity, semanticKey = identity.semanticKey + "|extra")
+        assertRejectedFields(ReminderCommand.MARK_DONE, identity, semanticKey = "task-1")
+    }
+
+    @Test
+    fun semanticKeyParserFailsClosedOnOverflowingEventLength() {
+        assertEquals(
+            null,
+            ReminderIdentity.fromSemanticKey("v1|2147483647|task-1|100|DATE|0"),
+        )
+    }
+
+    private fun assertAccepted(command: ReminderCommand, identity: ReminderIdentity) {
+        val result = validateReminderCommand(
+            command = command,
+            semanticKey = identity.semanticKey,
+            eventId = identity.eventId,
+            occurrenceUtcMillis = identity.occurrenceUtcMillis,
+            accountId = "account-1",
+            boundaryEpoch = 1L,
+        )
+        val accepted = result as? ReminderCommandValidation.Accepted
+            ?: error("Expected the canonical reminder command to be accepted")
+        assertEquals(identity, accepted.identity)
+    }
+
+    private fun assertRejectedFields(
+        command: ReminderCommand,
+        identity: ReminderIdentity,
+        semanticKey: String? = identity.semanticKey,
+        eventId: String? = identity.eventId,
+        occurrenceUtcMillis: Long? = identity.occurrenceUtcMillis,
+        accountId: String? = "account-1",
+        boundaryEpoch: Long = 1L,
+    ) {
+        val result = validateReminderCommand(
+            command = command,
+            semanticKey = semanticKey,
+            eventId = eventId,
+            occurrenceUtcMillis = occurrenceUtcMillis,
+            accountId = accountId,
+            boundaryEpoch = boundaryEpoch,
+        )
+        assertFalse(result is ReminderCommandValidation.Accepted)
     }
 
     private fun request(

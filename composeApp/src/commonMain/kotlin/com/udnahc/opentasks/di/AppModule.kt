@@ -16,6 +16,7 @@ import com.udnahc.opentasks.data.database.MIGRATION_8_9
 import com.udnahc.opentasks.data.database.MIGRATION_9_10
 import com.udnahc.opentasks.data.database.MIGRATION_10_11
 import com.udnahc.opentasks.data.database.MIGRATION_11_12
+import com.udnahc.opentasks.data.database.MIGRATION_12_13
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.auth.AccountCacheInspector
 import com.udnahc.opentasks.data.auth.AccountCacheInspectorContract
@@ -25,6 +26,7 @@ import com.udnahc.opentasks.data.auth.AccountAuthenticator
 import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.auth.AccountBoundaryGuard
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.AccountAuthenticationRejectionDispatcher
 import com.udnahc.opentasks.data.auth.AccountRepository
 import com.udnahc.opentasks.data.auth.AccountRepositoryImpl
 import com.udnahc.opentasks.data.auth.AccountSyncCoordinator
@@ -58,6 +60,7 @@ import com.udnahc.opentasks.data.sync.AuthoritativeServerReplaceExecutor
 import com.udnahc.opentasks.data.sync.AuthoritativeServerReplaceContract
 import com.udnahc.opentasks.data.sync.ServerSeedExecutor
 import com.udnahc.opentasks.data.sync.SyncService
+import com.udnahc.opentasks.data.sync.SyncPassContextFactory
 import com.udnahc.opentasks.data.sync.SyncTrigger
 import com.udnahc.opentasks.data.sync.adapters.CategorySyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.AttachmentSyncAdapter
@@ -143,6 +146,7 @@ import com.udnahc.opentasks.domain.usecase.task.ParseQuickTaskInputUseCase
 import com.udnahc.opentasks.domain.usecase.task.QuickTaskCreationContext
 import com.udnahc.opentasks.domain.usecase.task.LocalizedTaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
+import com.udnahc.opentasks.domain.usecase.task.TaskReminderEligibilityUseCase
 import com.udnahc.opentasks.viewmodel.AppViewModel
 import com.udnahc.opentasks.viewmodel.AuthViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
@@ -182,6 +186,7 @@ val sharedModule = module {
                 MIGRATION_9_10,
                 MIGRATION_10_11,
                 MIGRATION_11_12,
+                MIGRATION_12_13,
             )
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
@@ -213,6 +218,7 @@ val sharedModule = module {
     single<AccountStateStore> { RoomAccountStateStore(get()) }
     single { AccountBoundaryGuard(get()) }
     single<AccountBoundaryExecutor> { AccountBoundaryExecutor(get(), get(), get()) }
+    single { AccountAuthenticationRejectionDispatcher() }
     single<AccountAuthenticator> { PocketBaseAccountAuthenticator(get()) }
     single<AccountCacheInspectorContract> { AccountCacheInspector(get()) }
     single<AccountCacheResetterContract> {
@@ -234,6 +240,7 @@ val sharedModule = module {
             get<SyncService>(),
             get<NotificationScheduler>(),
             replacementExecutor = get<AuthoritativeServerReplaceContract>(),
+            authenticationRejectionDispatcher = get(),
         )
     }
     single { AllDayNotificationDismissalStore(get()) }
@@ -267,6 +274,7 @@ val sharedModule = module {
     single { FetchCalendarEventsUseCase(get()) }
     single { ParseCsvUseCase() }
     single { ParseIcsUseCase() }
+    single { TaskReminderEligibilityUseCase() }
     single { ParseQuickTaskInputUseCase() }
     single { GenerateCsvExportUseCase(get(), get()) }
     single { GenerateIcsExportUseCase(get()) }
@@ -284,8 +292,8 @@ val sharedModule = module {
     single { ToggleTaskCompleteAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
     single { MarkTaskNotificationDoneAction(get()) }
     single { DismissTaskNotificationAction(get(), get(), get<NotificationScheduler>()) }
-    single { ToggleTaskStarredAction(get()) }
-    single { AddCategoryAction(get()) }
+    single { ToggleTaskStarredAction(get(), get<AccountBoundaryExecutor>()) }
+    single { AddCategoryAction(get(), get<AccountBoundaryExecutor>()) }
     single { AddNoteAction(get()) }
     single { AddCountdownAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
     single { UpdateCountdownAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
@@ -326,6 +334,7 @@ val sharedModule = module {
 
     // Sync
     single { PocketBaseClientProvider() }
+    single { SyncPassContextFactory(get()) }
     single { ServerMigrationCoordinator(get(), get<AccountStateStore>()) }
     single { TaskSyncAdapter(get(), get(), get()) }
     single { AttachmentSyncAdapter(get(), get(), get()) }
@@ -343,6 +352,7 @@ val sharedModule = module {
                 get<CountdownSyncAdapter>(),
             ),
             accountStateStore = get<AccountStateStore>(),
+            passContextFactory = get(),
         )
     }
     single<AuthoritativeServerReplaceContract> {
@@ -386,6 +396,8 @@ val sharedModule = module {
             get(),
             get(),
             get<AccountStateStore>(),
+            passContextFactory = get(),
+            authenticationRejectionHandler = get<AccountAuthenticationRejectionDispatcher>(),
         )
     }
     single<AccountSyncCoordinator> { get<SyncService>() }
@@ -393,11 +405,27 @@ val sharedModule = module {
     // ViewModels
     viewModel {
         AuthViewModel(
-            get(), get(), get(), get(), get(), get(), get(), get(), get(), get(),
-            get(), get(), get(),
+            observeAccountSession = get(),
+            observePocketBaseUrl = get(),
+            restoreSessionAction = get(),
+            loginAccountAction = get(),
+            reauthenticateAccountAction = get(),
+            switchAccountAction = get(),
+            logoutAccountAction = get(),
+            startLocalOnlyAction = get(),
+            clearLocalDataAction = get(),
+            tokenStore = get(),
+            prepareLocalServerReplacementAction = get(),
+            confirmLocalServerReplacementAction = get(),
+            cancelLocalServerReplacementPreparationAction = get(),
         )
     }
-    viewModel { TaskFormViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel {
+        TaskFormViewModel(
+            get(), get(), get(), get(), get(), get(), get(), get(), get(), get(),
+            accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
     viewModel { (context: QuickTaskCreationContext) ->
         QuickAddTaskViewModel(
             context = context,
@@ -411,7 +439,12 @@ val sharedModule = module {
             get(), get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
         )
     }
-    viewModel { MatrixViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel {
+        MatrixViewModel(
+            get(), get(), get(), get(), get(), get(), get(), get(),
+            accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
     viewModel {
         TaskListViewModel(
             get(),
@@ -428,10 +461,24 @@ val sharedModule = module {
             get(),
             get(),
             get(),
-            get()
+            get(),
+            accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
         )
     }
-    viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel {
+        CalendarViewModel(
+            observeTasksByDay = get(),
+            observeAllCountdowns = get(),
+            observeAllCategories = get(),
+            toggleTaskCompleteAction = get(),
+            observeCalendarViewPreference = get(),
+            saveCalendarViewPreference = get(),
+            observeCalendarListDisplayModePreference = get(),
+            saveCalendarListDisplayModePreference = get(),
+            localDaySignal = get(),
+            accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
     viewModel {
         NoteViewModel(
             get(), get(), get(), get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
@@ -448,8 +495,22 @@ val sharedModule = module {
     viewModel {
         ImportCsvViewModel(get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>())
     }
-    viewModel { CountdownViewModel(get(), get(), get()) }
-    viewModel { CountdownFormViewModel(get(), get(), get(), get(), get()) }
+    viewModel {
+        CountdownViewModel(
+            observeAllCountdowns = get(),
+            localDaySignal = get(),
+        )
+    }
+    viewModel {
+        CountdownFormViewModel(
+            addCountdownAction = get(),
+            updateCountdownAction = get(),
+            deleteCountdownAction = get(),
+            observeCountdownByIdUseCase = get(),
+            localDaySignal = get(),
+            accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
     viewModel {
         SettingsViewModel(
             observeThemePreference = get(),
@@ -464,5 +525,12 @@ val sharedModule = module {
             generateIcsExport = get(),
         )
     }
-    viewModel { AppViewModel(get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>()) }
+    viewModel {
+        AppViewModel(
+            triggerSyncAction = get(),
+            parseIcsUseCase = get(),
+            importCalendarEventsAction = get(),
+            accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
 }

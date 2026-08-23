@@ -7,6 +7,7 @@ import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.sync.SyncTrigger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -47,34 +48,57 @@ class CountdownRepositoryImpl(
     override suspend fun getAllCountdownsForReminderReconciliationUtc(): List<Countdown> =
         withContext(ioDispatcher) { countdownDao.getAllCountdownsForReminderReconciliationUtc() }
 
-    override suspend fun insert(countdown: Countdown) = mutationGate.withExclusive {
+    override suspend fun insert(countdown: Countdown): CommittedMutation<Countdown> = mutationGate.withExclusive {
         log.v { "Inserting countdown: ${countdown.id}" }
+        val committed = countdown.withDefaultTimestamps()
         withContext(ioDispatcher) {
-            countdownDao.insert(countdown.withDefaultTimestamps().withUtcTimestamps())
+            countdownDao.insert(committed.withUtcTimestamps())
         }
-        syncTrigger.triggerSync()
+        CommittedMutation(committed).withPostCommitWarning(
+            triggerSyncAfterCommit(),
+            PostCommitWarningPhase.SYNC,
+        )
     }
 
-    override suspend fun update(countdown: Countdown) = mutationGate.withExclusive {
+    override suspend fun update(countdown: Countdown): CommittedMutation<Countdown> = mutationGate.withExclusive {
         log.v { "Updating countdown: ${countdown.id}" }
+        val committed = countdown.copy(
+            isSynced = false,
+            updatedAt = maxOf(localNow(), countdown.updatedAt),
+        )
         withContext(ioDispatcher) {
-            countdownDao.update(countdown.withUtcTimestamps().copy(isSynced = false))
+            countdownDao.update(committed.withUtcTimestamps())
         }
-        syncTrigger.triggerSync()
+        CommittedMutation(committed).withPostCommitWarning(
+            triggerSyncAfterCommit(),
+            PostCommitWarningPhase.SYNC,
+        )
     }
 
-    override suspend fun delete(countdown: Countdown) = mutationGate.withExclusive {
+    override suspend fun delete(countdown: Countdown): CommittedMutation<Countdown> = mutationGate.withExclusive {
         log.v { "Soft-deleting countdown: ${countdown.id}" }
+        val committed = countdown.copy(
+            isDeleted = true,
+            isSynced = false,
+            updatedAt = maxOf(localNow(), countdown.updatedAt),
+        )
         withContext(ioDispatcher) {
-            countdownDao.update(
-                countdown.withUtcTimestamps().copy(
-                    isDeleted = true,
-                    isSynced = false,
-                    updatedAt = localToUtc(localNow()),
-                )
-            )
+            countdownDao.update(committed.withUtcTimestamps())
         }
+        CommittedMutation(committed).withPostCommitWarning(
+            triggerSyncAfterCommit(),
+            PostCommitWarningPhase.SYNC,
+        )
+    }
+
+    private suspend fun triggerSyncAfterCommit(): Throwable? = try {
         syncTrigger.triggerSync()
+        null
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        log.w(error) { "Countdown write committed, but sync scheduling failed" }
+        error
     }
 
     private fun Countdown.withDefaultTimestamps(): Countdown {

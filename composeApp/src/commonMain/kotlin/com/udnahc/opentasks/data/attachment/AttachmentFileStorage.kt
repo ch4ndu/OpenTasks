@@ -20,10 +20,18 @@ data class StoredAttachmentFile(
 
 class AttachmentImageDecodeException : IllegalArgumentException("Attachment image decode failed")
 
+class AttachmentFileTooLargeException(
+    val maxBytes: Long,
+) : IllegalArgumentException("Attachment file exceeds the configured byte limit")
+
 interface AttachmentFileStorage {
     suspend fun storePickedImage(image: PickedImage): StoredAttachmentFile
     suspend fun storeRemoteImage(fileName: String, bytes: ByteArray): StoredAttachmentFile
-    suspend fun readBytes(path: String): ByteArray?
+    /** Reads no more than [maxBytes], throwing a typed failure when one additional byte exists. */
+    suspend fun readBytes(
+        path: String,
+        maxBytes: Long = AttachmentFilePolicy.MAX_UPLOAD_BYTES,
+    ): ByteArray?
     suspend fun exists(path: String): Boolean
     suspend fun delete(path: String)
     suspend fun clearAll()

@@ -9,6 +9,8 @@ import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.data.repository.CommittedMutation
+import com.udnahc.opentasks.data.repository.PostCommitWarningPhase
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import org.lighthousegames.logging.logging
 
@@ -45,7 +47,7 @@ class AddTaskAction(
         attendees: String = "",
         durationReminders: String = "",
         dateReminders: String = "",
-    ): Task = accountBoundaryExecutor.withForegroundActionBoundary {
+    ): CommittedMutation<Task> = accountBoundaryExecutor.withForegroundActionBoundary {
         log.d { "Adding task" }
         val now = localNow()
         val task = Task(
@@ -75,9 +77,21 @@ class AddTaskAction(
             updatedAt = now,
         )
         val persisted = coordinator.create(task)
-        log.v { "Task created: id=${task.id}" }
-        rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(persisted.id) }
-            ?: scheduleTaskRemindersAction(persisted.id)
-        persisted
+        log.v { "Task created: id=${persisted.value.id}" }
+        val reminderWarning = if (rebuildReminderQueueAction != null) {
+            rebuildReminderQueueAction.afterRecordChangeResult(
+                scheduleDirectly = { scheduleTaskRemindersAction(persisted.value.id) },
+            )
+        } else {
+            try {
+                scheduleTaskRemindersAction(persisted.value.id)
+                null
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                error
+            }
+        }
+        persisted.withPostCommitWarning(reminderWarning, PostCommitWarningPhase.REMINDER_MAINTENANCE)
     }
 }

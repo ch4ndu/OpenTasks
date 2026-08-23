@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.testutil
 
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
+import com.udnahc.opentasks.data.attachment.AttachmentFileTooLargeException
 import com.udnahc.opentasks.data.attachment.PickedImage
 import com.udnahc.opentasks.data.attachment.StoredAttachmentFile
 
@@ -18,7 +19,9 @@ class FakeAttachmentFileStorage : AttachmentFileStorage {
         storeRemoteImageError?.let { throw it } ?:
         store(fileName, bytes)
 
-    override suspend fun readBytes(path: String): ByteArray? = files[path]
+    override suspend fun readBytes(path: String, maxBytes: Long): ByteArray? = files[path]?.also { bytes ->
+        if (bytes.size.toLong() > maxBytes) throw AttachmentFileTooLargeException(maxBytes)
+    }
 
     override suspend fun exists(path: String): Boolean = path in files
 

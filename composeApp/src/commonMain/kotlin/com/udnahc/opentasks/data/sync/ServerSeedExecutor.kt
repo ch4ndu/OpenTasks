@@ -21,6 +21,12 @@ class ServerSeedExecutor(
         PocketBaseServerInventoryReader(PocketBaseRecordGatewayFactory().create(client)).read()
     },
     private val accountStateStore: AccountStateStore? = null,
+    private val passContextFactory: SyncPassContextFactory = SyncPassContextFactory(),
+    private val passInventoryReader: suspend (SyncPassContext) -> PocketBaseServerInventory = { pass ->
+        PocketBaseServerInventoryReader(
+            pass.gateway ?: error("Seed pass requires an owner-scoped gateway"),
+        ).read()
+    },
 ) {
     suspend fun isPending(): Boolean =
         database.appSettingsDao().getValue(SyncSettingsKeys.MODE) == SyncMode.EMPTY_SERVER_SEED_PENDING.name
@@ -29,19 +35,39 @@ class ServerSeedExecutor(
         database.appSettingsDao().getValue(SyncSettingsKeys.MODE) == SyncMode.AUTHORITATIVE_REPLACE_PENDING.name
 
     suspend fun resume(client: PocketbaseClient) {
+        if (PocketBaseClientProvider.bindingFor(client) == null) {
+            resumeSeed(client, pass = null, authoritative = false)
+        } else {
+            resume(passContextFactory.create(client))
+        }
+    }
+
+    suspend fun resume(pass: SyncPassContext) {
         if (!isPending()) return
-        resumeSeed(client, authoritative = false)
+        resumeSeed(pass.client, pass, authoritative = false)
     }
 
     suspend fun resumeAuthoritative(client: PocketbaseClient) {
+        if (PocketBaseClientProvider.bindingFor(client) == null) {
+            resumeSeed(client, pass = null, authoritative = true)
+        } else {
+            resumeAuthoritative(passContextFactory.create(client))
+        }
+    }
+
+    suspend fun resumeAuthoritative(pass: SyncPassContext) {
         if (!isAuthoritativePending()) {
             throw SyncAdapterException("Authoritative seed resume rejected: replacement mode is not pending")
         }
-        resumeSeed(client, authoritative = true)
+        resumeSeed(pass.client, pass, authoritative = true)
     }
 
-    private suspend fun resumeSeed(client: PocketbaseClient, authoritative: Boolean) {
-        val inventory = inventoryReader(client)
+    private suspend fun resumeSeed(
+        client: PocketbaseClient,
+        pass: SyncPassContext?,
+        authoritative: Boolean,
+    ) {
+        val inventory = if (pass != null) passInventoryReader(pass) else inventoryReader(client)
         val expectedIdentity = accountStateStore?.readCacheBinding()?.serverInstanceId
             ?: database.appSettingsDao().getValue(SyncSettingsKeys.SERVER_INSTANCE_ID)
         if (expectedIdentity.isNullOrBlank() || expectedIdentity != inventory.serverInstanceId) {
@@ -66,10 +92,14 @@ class ServerSeedExecutor(
             }
         }
         ordered.forEach { adapter ->
-            if (authoritative) adapter.seedAllAuthoritative(client) else adapter.seedAll(client)
+            if (pass == null) {
+                if (authoritative) adapter.seedAllAuthoritative(client) else adapter.seedAll(client)
+            } else {
+                if (authoritative) adapter.seedAllAuthoritative(pass) else adapter.seedAll(pass)
+            }
         }
 
-        val finalInventory = inventoryReader(client)
+        val finalInventory = if (pass != null) passInventoryReader(pass) else inventoryReader(client)
         if (finalInventory.serverInstanceId != expectedIdentity ||
             (activeBinding != null && finalInventory.accountId != activeBinding.accountId)
         ) {

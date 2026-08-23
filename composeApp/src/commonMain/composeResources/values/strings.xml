@@ -122,6 +122,16 @@
     <string name="task_notification_mark_done">Mark Done</string>
     <string name="task_notification_got_it">Got It</string>
     <string name="task_notification_missing">Task not found</string>
+    <string name="task_notification_retry_error">Could not update this task. Check your connection and try again.</string>
+    <string name="task_notification_saved_warning">Task updated, but follow-up maintenance could not finish.</string>
+    <string name="task_mutation_saved_warning">Task change was saved, but follow-up maintenance could not finish.</string>
+    <string name="task_delete_failed">Could not delete task</string>
+    <string name="countdown_save_failed">Could not save countdown</string>
+    <string name="countdown_delete_failed">Could not delete countdown</string>
+    <string name="countdown_saved_warning">Countdown change was saved, but follow-up maintenance could not finish.</string>
+    <string name="task_notification_obsolete">This task is already complete or this reminder is obsolete.</string>
+    <string name="task_notification_task_missing">Task no longer exists.</string>
+    <string name="task_notification_stale">Task changed; this reminder is no longer current.</string>
 
     <!-- Reminder Options (Date tab) -->
     <string name="reminder">Reminder</string>

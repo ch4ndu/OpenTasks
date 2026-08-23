@@ -2,10 +2,13 @@ package com.udnahc.opentasks
 
 import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
+import com.udnahc.opentasks.data.notification.ReminderIdentity
+import com.udnahc.opentasks.data.notification.ReminderKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -184,6 +187,125 @@ class NotificationDeepLinkTest {
         assertEquals(listOf(delivered[1]), matchingAccountB)
     }
 
+    @Test
+    fun sharedPublisherAcceptsCanonicalTaskCountdownAndOngoingTaps() {
+        clearPublishedEvent()
+        try {
+            listOf(
+                ReminderIdentity("task-a", 100L, ReminderKind.DATE, 0),
+                ReminderIdentity(
+                    "${COUNTDOWN_ID_PREFIX}countdown-a",
+                    200L,
+                    ReminderKind.COUNTDOWN,
+                    1,
+                ),
+                ReminderIdentity("task-b", 300L, ReminderKind.ONGOING, 0),
+            ).forEach { identity ->
+                publishNotificationDeepLinkEvent(
+                    eventId = identity.eventId,
+                    occurrenceDeadlineUtcMillis = identity.occurrenceUtcMillis,
+                    notificationAtUtcMillis = identity.occurrenceUtcMillis + 1L,
+                    semanticKey = identity.semanticKey,
+                    accountId = "account-a",
+                    boundaryEpoch = 7L,
+                )
+
+                val event = assertNotNull(notificationDeepLinkEvent.value)
+                assertEquals(identity.eventId, event.eventId)
+                assertEquals(identity.semanticKey, event.semanticKey)
+                assertEquals("account-a", event.accountId)
+                assertEquals(7L, event.boundaryEpoch)
+            }
+        } finally {
+            clearPublishedEvent()
+        }
+    }
+
+    @Test
+    fun malformedSharedPublisherPayloadDoesNotOverwriteANewerEvent() {
+        clearPublishedEvent()
+        try {
+            val first = ReminderIdentity("task-a", 100L, ReminderKind.DATE, 0)
+            val newer = ReminderIdentity("task-b", 200L, ReminderKind.DATE, 0)
+            publishNotificationDeepLinkEvent(
+                first.eventId,
+                first.occurrenceUtcMillis,
+                first.occurrenceUtcMillis + 1L,
+                first.semanticKey,
+                "account-a",
+                7L,
+            )
+            publishNotificationDeepLinkEvent(
+                newer.eventId,
+                newer.occurrenceUtcMillis,
+                newer.occurrenceUtcMillis + 1L,
+                newer.semanticKey,
+                "account-a",
+                7L,
+            )
+            val current = assertNotNull(notificationDeepLinkEvent.value)
+
+            val countdown = ReminderIdentity(
+                "${COUNTDOWN_ID_PREFIX}countdown-a",
+                300L,
+                ReminderKind.COUNTDOWN,
+                0,
+            )
+            assertPublicationRejected(current) {
+                publishNotificationDeepLinkEvent(
+                    newer.eventId,
+                    countdown.occurrenceUtcMillis,
+                    countdown.occurrenceUtcMillis + 1L,
+                    countdown.semanticKey,
+                    "account-a",
+                    7L,
+                )
+            }
+            assertPublicationRejected(current) {
+                publishNotificationDeepLinkEvent(
+                    "other-task",
+                    newer.occurrenceUtcMillis,
+                    newer.occurrenceUtcMillis + 1L,
+                    newer.semanticKey,
+                    "account-a",
+                    7L,
+                )
+            }
+            assertPublicationRejected(current) {
+                publishNotificationDeepLinkEvent(
+                    newer.eventId,
+                    newer.occurrenceUtcMillis + 1L,
+                    newer.occurrenceUtcMillis + 2L,
+                    newer.semanticKey,
+                    "account-a",
+                    7L,
+                )
+            }
+            assertPublicationRejected(current) {
+                publishNotificationDeepLinkEvent(
+                    newer.eventId,
+                    newer.occurrenceUtcMillis,
+                    newer.occurrenceUtcMillis + 1L,
+                    newer.semanticKey,
+                    "",
+                    7L,
+                )
+            }
+            assertPublicationRejected(current) {
+                publishNotificationDeepLinkEvent(
+                    newer.eventId,
+                    newer.occurrenceUtcMillis,
+                    newer.occurrenceUtcMillis + 1L,
+                    newer.semanticKey,
+                    "account-a",
+                    0L,
+                )
+            }
+        } finally {
+            clearPublishedEvent()
+        }
+    }
+
     private fun countdownEvent(accountId: String, boundaryEpoch: Long) = NotificationDeepLinkEvent(
         eventId = "${COUNTDOWN_ID_PREFIX}countdown-a",
         accountId = accountId,
@@ -197,6 +319,18 @@ class NotificationDeepLinkTest {
         capabilityVersion = 2,
         boundaryEpoch = boundaryEpoch,
     )
+
+    private fun clearPublishedEvent() {
+        notificationDeepLinkEvent.value?.let(::clearNotificationDeepLinkEvent)
+    }
+
+    private fun assertPublicationRejected(
+        current: NotificationDeepLinkEvent,
+        publish: () -> Unit,
+    ) {
+        publish()
+        assertEquals(current, notificationDeepLinkEvent.value)
+    }
 }
 
 private data class DeliveredNotification(

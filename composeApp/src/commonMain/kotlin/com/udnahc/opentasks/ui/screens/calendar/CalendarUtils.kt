@@ -1,7 +1,11 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
+import com.udnahc.opentasks.data.extensions.dayKey as dayKeyFromMillis
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.extensions.daysInMonth
+import com.udnahc.opentasks.data.extensions.extractDay
+import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 
 // ── Calendar day model ──────────────────────────────────────────────────────
 
@@ -10,7 +14,27 @@ internal data class CalendarDay(
     val month: Int,   // 1-12
     val day: Int,      // 1-31
     val isCurrentMonth: Boolean,
+) {
+    /** Cached when the remembered month-grid cell is constructed. */
+    val localMillis: Long = startOfDayLocalMillis(year, month, day)
+    val dayKey: Long = dayKeyFromMillis(localMillis)
+}
+
+internal data class WeekStripDay(
+    val millis: Long,
+    val dayNumber: Int,
+    val dayKey: Long,
 )
+
+internal fun buildWeekStripDays(weekSundayMillis: Long): List<WeekStripDay> =
+    List(7) { index ->
+        val millis = weekSundayMillis + index * MILLIS_PER_DAY
+        WeekStripDay(
+            millis = millis,
+            dayNumber = extractDay(millis),
+            dayKey = dayKeyFromMillis(millis),
+        )
+    }
 
 // ── Month grid builder ──────────────────────────────────────────────────────
 

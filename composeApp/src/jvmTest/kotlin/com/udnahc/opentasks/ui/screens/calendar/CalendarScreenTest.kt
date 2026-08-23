@@ -1,6 +1,9 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
 import com.udnahc.opentasks.WidgetCalendarDate
+import com.udnahc.opentasks.data.extensions.dayKey
+import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
+import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -60,5 +63,34 @@ class CalendarScreenTest {
             CalendarDay(year = 2028, month = 2, day = 29, isCurrentMonth = true),
             widgetCalendarDay(WidgetCalendarDate(year = 2028, month = 2, day = 29)),
         )
+    }
+
+    @Test
+    fun monthCellsCacheLeapDayMillisAndDayKeyWithoutChangingDataClassEquality() {
+        val monthCells = buildMonthWeeks(2028, 2).flatten()
+        val januaryBoundary = monthCells
+            .single { !it.isCurrentMonth && it.year == 2028 && it.month == 1 && it.day == 31 }
+        val leapDay = monthCells
+            .single { it.year == 2028 && it.month == 2 && it.day == 29 }
+        val copy = leapDay.copy()
+
+        assertEquals(startOfDayLocalMillis(2028, 1, 31), januaryBoundary.localMillis)
+        assertEquals(dayKey(januaryBoundary.localMillis), januaryBoundary.dayKey)
+        assertEquals(startOfDayLocalMillis(2028, 2, 29), leapDay.localMillis)
+        assertEquals(dayKey(leapDay.localMillis), leapDay.dayKey)
+        assertEquals(leapDay, copy)
+        assertEquals(leapDay.localMillis, copy.localMillis)
+        assertEquals(leapDay.dayKey, copy.dayKey)
+    }
+
+    @Test
+    fun weekStripProjectionCachesDaysAcrossYearBoundary() {
+        val sunday = startOfWeekLocalMillis(startOfDayLocalMillis(2026, 12, 31))
+        val days = buildWeekStripDays(sunday)
+
+        assertEquals(listOf(27, 28, 29, 30, 31, 1, 2), days.map { it.dayNumber })
+        assertEquals(startOfDayLocalMillis(2027, 1, 1), days[5].millis)
+        assertEquals(days.map { dayKey(it.millis) }, days.map { it.dayKey })
+        assertEquals(sunday + 6 * com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY, days.last().millis)
     }
 }

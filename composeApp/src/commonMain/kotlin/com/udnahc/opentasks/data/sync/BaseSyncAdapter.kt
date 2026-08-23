@@ -134,8 +134,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
      * Production pulls use the same owner-scoped gateway as writes.  The
      * legacy SDK fetch remains available only to isolated fake adapters.
      */
-    protected suspend fun fetchAllRecordsThroughGateway(client: PocketbaseClient): List<Record> {
-        val gateway = recordGateway(client)
+    protected suspend fun fetchAllRecordsThroughGateway(gateway: PocketBaseRecordGateway): List<Record> {
         val rows = mutableListOf<Record>()
         var page = 1
         var totalPages: Int
@@ -152,8 +151,8 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         return rows
     }
 
-    protected suspend fun verifyCollectionThroughGateway(client: PocketbaseClient) {
-        val response = recordGateway(client).getRecords(collectionName, 1, 1)
+    protected suspend fun verifyCollectionThroughGateway(gateway: PocketBaseRecordGateway) {
+        val response = gateway.getRecords(collectionName, 1, 1)
         if (!response.isSuccess) {
             throw SyncAdapterException(
                 "Unable to verify $collectionName through the owner-scoped gateway (HTTP ${response.status.value})",
@@ -163,11 +162,14 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
 
     /** Used by connection checks after a client has been activated. */
     suspend fun verifyCollectionForActiveBoundary(client: PocketbaseClient) {
-        verifyCollectionThroughGateway(client)
+        verifyCollectionThroughGateway(recordGateway(client))
     }
 
     /** Push all unsynced entities to server. */
-    open suspend fun pushAll(client: PocketbaseClient) {
+    open suspend fun pushAll(client: PocketbaseClient) = pushAll(standalonePassContext(client))
+
+    /** Production passes receive one shared owner-scoped gateway for all adapters. */
+    open suspend fun pushAll(pass: SyncPassContext) {
         val unsynced = getUnsynced()
         val failures = mutableListOf<Throwable>()
         log.d { "Pushing ${unsynced.size} $collectionName" }
@@ -187,14 +189,14 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 val body = stripId(toJsonBody(entity))
 
                 if (entityPbId != null) {
-                    val result = updateByPbIdOrRecover(client, entityLocalId, entityPbId, body)
+                    val result = updateByPbIdOrRecover(pass, entityLocalId, entityPbId, body)
                     if (result == PushResolution.Pushed) {
                         markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
                     } else if (result == PushResolution.Failed) {
                         failures += SyncAdapterException("Failed to update $collectionName $entityLocalId")
                     }
                 } else {
-                    when (createOrRecover(client, entityLocalId, entityUpdatedAt, body)) {
+                    when (createOrRecover(pass, entityLocalId, entityUpdatedAt, body)) {
                         PushResolution.Pushed -> {
                         markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
                         }
@@ -204,6 +206,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                e.rethrowSyncAuthenticationRejected()
                 log.e(e) { "Failed to push $collectionName ${localId(entity)}" }
                 failures += e
             }
@@ -218,16 +221,21 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
      * pending tombstones are durable remote records, never candidates for the
      * normal no-pbId local hard-delete shortcut.
      */
-    open suspend fun seedAll(client: PocketbaseClient) {
-        seedAllInternal(client, allowRemoteMerge = true)
+    open suspend fun seedAll(client: PocketbaseClient) = seedAll(standalonePassContext(client))
+
+    open suspend fun seedAll(pass: SyncPassContext) {
+        seedAllInternal(pass, allowRemoteMerge = true)
     }
 
     /** Authoritative replacement treats any remote winner as a conflict and never merges it locally. */
-    open suspend fun seedAllAuthoritative(client: PocketbaseClient) {
-        seedAllInternal(client, allowRemoteMerge = false)
+    open suspend fun seedAllAuthoritative(client: PocketbaseClient) =
+        seedAllAuthoritative(standalonePassContext(client))
+
+    open suspend fun seedAllAuthoritative(pass: SyncPassContext) {
+        seedAllInternal(pass, allowRemoteMerge = false)
     }
 
-    private suspend fun seedAllInternal(client: PocketbaseClient, allowRemoteMerge: Boolean) {
+    private suspend fun seedAllInternal(pass: SyncPassContext, allowRemoteMerge: Boolean) {
         val failures = mutableListOf<Throwable>()
         for (entity in getUnsynced()) {
             try {
@@ -236,11 +244,12 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 val deleted = isDeleted(entity)
                 val body = stripId(toJsonBody(entity))
                 val resolution = pbId(entity)?.let {
-                    updateByPbIdOrRecover(client, id, it, body, allowRemoteMerge)
-                } ?: createOrRecover(client, id, timestamp, body, allowRemoteMerge)
+                    updateByPbIdOrRecover(pass, id, it, body, allowRemoteMerge)
+                } ?: createOrRecover(pass, id, timestamp, body, allowRemoteMerge)
                 if (resolution == PushResolution.Pushed) markSyncedAfterPush(id, timestamp, deleted)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
+                error.rethrowSyncAuthenticationRejected()
                 if (error is AuthoritativeSeedConflictException) throw error
                 failures += error
             }
@@ -274,12 +283,15 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     }
 
     /** Pull all records from server and merge locally. */
-    open suspend fun pullAll(client: PocketbaseClient) {
+    open suspend fun pullAll(client: PocketbaseClient) = pullAll(standalonePassContext(client))
+
+    open suspend fun pullAll(pass: SyncPassContext) {
+        val client = pass.client
         try {
             val remoteRecords = if (allowsTestOnlyLegacySdkWrites()) {
                 fetchAllRecords(client)
             } else {
-                fetchAllRecordsThroughGateway(client)
+                fetchAllRecordsThroughGateway(requirePassGateway(pass))
             }
             log.d { "Pulled ${remoteRecords.size} $collectionName" }
 
@@ -297,7 +309,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                         degradedMessages += validationMessage
                         continue
                     }
-                    when (mergeRemoteIfNewer(toEntity(record))) {
+                    when (mergeRemoteAndValidate(pass, record)) {
                         RemoteMergeResult.Applied,
                         RemoteMergeResult.KeptLocal -> Unit
                         RemoteMergeResult.MissingParent -> {
@@ -325,26 +337,27 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 log.w { message }
                 degradedMessages += message
             } else {
-                for (local in localSyncedSnapshot) {
-                    if (localId(local) !in remoteIds) {
-                        try {
-                            log.w { "Recovering missing $collectionName ${localId(local)}: server row absent, marking unsynced for recreation" }
-                            markUnsynced(localId(local))
-                        } catch (e: Exception) {
-                            if (e is CancellationException) throw e
-                            log.e(e) { "Failed to mark missing $collectionName ${localId(local)} unsynced" }
-                        }
-                    }
+                val missingCandidateIds = localSyncedSnapshot
+                    .map(::localId)
+                    .filterNot(remoteIds::contains)
+                    .toSet()
+                missingCandidateIds.forEach { localId ->
+                    log.w { "Recovering missing $collectionName $localId: server row absent, marking unsynced for recreation" }
+                }
+                if (missingCandidateIds.isNotEmpty()) {
+                    recoverMissingRowsAtWriterBoundary(pass, missingCandidateIds)
                 }
             }
             if (degradedMessages.isNotEmpty()) {
                 throw SyncDegradedException(degradedMessages.joinToString("; "))
             }
         } catch (e: SyncDegradedException) {
+            e.rethrowSyncAuthenticationRejected()
             throw e
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            e.rethrowSyncAuthenticationRejected()
             log.e(e) { "Failed to pull $collectionName" }
             throw SyncAdapterException("Failed to pull $collectionName", e)
         }
@@ -358,19 +371,105 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         }.toString()
     }
 
+    /**
+     * A DAO may return KeptLocal because it reread a newer row, or because an
+     * equal timestamp already exists. Equal timestamps are safe only when the
+     * normalized durable payloads agree.
+     */
+    private suspend fun mergeRemoteAndValidate(
+        pass: SyncPassContext,
+        record: Record,
+    ): RemoteMergeResult {
+        val remote = toEntity(record)
+        var result: RemoteMergeResult? = null
+        pass.runWriterTransaction {
+            val mergeResult = mergeRemoteIfNewer(remote)
+            result = mergeResult
+            if (mergeResult != RemoteMergeResult.KeptLocal) return@runWriterTransaction
+
+            val current = getById(recordLocalId(record))
+                ?: throw SyncDegradedException(
+                    "$collectionName ${recordLocalId(record)} disappeared while validating an equal-timestamp remote row",
+                )
+            when {
+                updatedAt(current) > recordUpdatedAt(record) -> Unit
+                updatedAt(current) < recordUpdatedAt(record) -> throw SyncDegradedException(
+                    "$collectionName ${recordLocalId(record)} changed while validating a remote row",
+                )
+                !normalizedPayloadEquals(current, remote) -> throw SyncDegradedException(
+                    "$collectionName ${recordLocalId(record)} has an equal-timestamp divergent payload",
+                )
+            }
+        }
+        return checkNotNull(result) { "Sync merge did not produce a result" }
+    }
+
+    /** Revalidates the complete snapshot candidate set in one pass-owned writer transaction. */
+    private suspend fun recoverMissingRowsAtWriterBoundary(
+        pass: SyncPassContext,
+        localIds: Set<String>,
+    ) {
+        pass.runMissingRowTransaction {
+            for (localId in localIds) {
+                val current = getById(localId) ?: continue
+                if (isSynced(current) && !isDeleted(current)) {
+                    markUnsynced(localId)
+                }
+            }
+        }
+    }
+
+    private fun normalizedPayloadEquals(local: Entity, remote: Entity): Boolean {
+        val localBody = normalizedBody(local) ?: return false
+        val remoteBody = normalizedBody(remote) ?: return false
+        return localBody == remoteBody
+    }
+
+    private fun normalizedBody(entity: Entity): JsonObject? =
+        Json.parseToJsonElement(stripId(toJsonBody(entity))) as? JsonObject
+
+    protected fun standalonePassContext(client: PocketbaseClient): SyncPassContext =
+        SyncPassContext.standalone(
+            client = client,
+            gateway = standaloneGatewayOrNull(client),
+        )
+
+    private fun standaloneGatewayOrNull(client: PocketbaseClient): PocketBaseRecordGateway? {
+        if (allowsTestOnlyLegacySdkWrites()) return null
+        return try {
+            recordGateway(client)
+        } catch (error: IllegalStateException) {
+            if (PocketBaseClientProvider.endpointFor(client) == null ||
+                PocketBaseClientProvider.bindingFor(client) == null
+            ) {
+                null
+            } else {
+                throw error
+            }
+        }
+    }
+
+    protected fun requirePassGateway(pass: SyncPassContext): PocketBaseRecordGateway =
+        pass.gateway ?: throw SyncAdapterException("$collectionName requires a canonical guarded PocketBase gateway")
+
     private suspend fun updateByPbIdOrRecover(
-        client: PocketbaseClient,
+        pass: SyncPassContext,
         localId: String,
         pbId: String,
         body: String,
         allowRemoteMerge: Boolean = true,
     ): PushResolution {
+        val client = pass.client
         if (allowsTestOnlyLegacySdkWrites()) {
             return testOnlyUpdateByPbIdOrRecover(client, localId, pbId, body, allowRemoteMerge)
         }
-        val gateway = runCatching { recordGateway(client) }.getOrNull()
-        if (gateway != null) return guardedUpdateByPbIdOrRecover(gateway, localId, pbId, body, allowRemoteMerge)
-        throw SyncAdapterException("$collectionName requires a canonical guarded PocketBase gateway")
+        return guardedUpdateByPbIdOrRecover(
+            requirePassGateway(pass),
+            localId,
+            pbId,
+            body,
+            allowRemoteMerge,
+        )
     }
 
     /** Isolated fake adapters can model SDK records without exposing this path to production DI. */
@@ -420,18 +519,23 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     }
 
     private suspend fun createOrRecover(
-        client: PocketbaseClient,
+        pass: SyncPassContext,
         localId: String,
         updatedAt: Long,
         body: String,
         allowRemoteMerge: Boolean = true,
     ): PushResolution {
+        val client = pass.client
         if (allowsTestOnlyLegacySdkWrites()) {
             return testOnlyCreateOrRecover(client, localId, updatedAt, body, allowRemoteMerge)
         }
-        val gateway = runCatching { recordGateway(client) }.getOrNull()
-        if (gateway != null) return guardedCreateOrRecover(gateway, localId, updatedAt, body, allowRemoteMerge)
-        throw SyncAdapterException("$collectionName requires a canonical guarded PocketBase gateway")
+        return guardedCreateOrRecover(
+            requirePassGateway(pass),
+            localId,
+            updatedAt,
+            body,
+            allowRemoteMerge,
+        )
     }
 
     private suspend fun testOnlyCreateOrRecover(

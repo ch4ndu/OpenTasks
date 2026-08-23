@@ -51,22 +51,25 @@ class NoteRepositoryImpl(
 
     override suspend fun update(note: Note) = mutationGate.withExclusive {
         log.v { "Updating note: ${note.id}" }
+        val committed = note.copy(
+            isSynced = false,
+            updatedAt = maxOf(localNow(), note.updatedAt),
+        )
         withContext(ioDispatcher) {
-            noteDao.update(note.withUtcTimestamps().copy(isSynced = false))
+            noteDao.update(committed.withUtcTimestamps())
         }
         syncTrigger.triggerSync()
     }
 
     override suspend fun delete(note: Note) = mutationGate.withExclusive {
         log.v { "Soft-deleting note: ${note.id}" }
+        val committed = note.copy(
+            isDeleted = true,
+            isSynced = false,
+            updatedAt = maxOf(localNow(), note.updatedAt),
+        )
         withContext(ioDispatcher) {
-            noteDao.update(
-                note.withUtcTimestamps().copy(
-                    isDeleted = true,
-                    isSynced = false,
-                    updatedAt = localToUtc(localNow()),
-                )
-            )
+            noteDao.update(committed.withUtcTimestamps())
         }
         syncTrigger.triggerSync()
     }

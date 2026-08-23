@@ -2,6 +2,7 @@ package com.udnahc.opentasks.data.sync.adapters
 
 import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
+import com.udnahc.opentasks.data.attachment.AttachmentFileTooLargeException
 import com.udnahc.opentasks.data.attachment.AttachmentImageDecodeException
 import com.udnahc.opentasks.data.attachment.StoredAttachmentFile
 import com.udnahc.opentasks.data.dao.AttachmentDao
@@ -18,8 +19,10 @@ import com.udnahc.opentasks.data.sync.AuthoritativeLocalSeedSourceException
 import com.udnahc.opentasks.data.sync.AuthoritativeSeedConflictException
 import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import com.udnahc.opentasks.data.sync.PocketBaseRecordGateway
+import com.udnahc.opentasks.data.sync.SyncPassContext
 import com.udnahc.opentasks.data.sync.SyncAdapterException
 import com.udnahc.opentasks.data.sync.SyncDegradedException
+import com.udnahc.opentasks.data.sync.rethrowSyncAuthenticationRejected
 import com.udnahc.opentasks.data.sync.records.AttachmentRecord
 import com.udnahc.opentasks.data.sync.records.toAttachment
 import com.udnahc.opentasks.data.sync.records.toAttachmentRecord
@@ -93,13 +96,16 @@ open class AttachmentSyncAdapter(
     override suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): AttachmentRecord? =
         throw SyncAdapterException("Attachment lookup must use the structured guarded gateway")
 
-    override suspend fun pullAll(client: PocketbaseClient) {
+    override suspend fun pullAll(client: PocketbaseClient) = pullAll(standalonePassContext(client))
+
+    override suspend fun pullAll(pass: SyncPassContext) {
+        val client = pass.client
         val remoteRecords = if (allowsTestOnlyLegacySdkWrites()) {
             fetchAllRecords(client)
         } else {
-            fetchAllRecordsThroughGateway(client)
+            fetchAllRecordsThroughGateway(requirePassGateway(pass))
         }
-        val gateway = if (allowsTestOnlyLegacySdkWrites()) null else recordGateway(client)
+        val gateway = if (allowsTestOnlyLegacySdkWrites()) null else requirePassGateway(pass)
         val localSnapshot = getAllOnce()
         val localById = localSnapshot.associateBy { it.id }
         for (record in remoteRecords) {
@@ -140,11 +146,16 @@ open class AttachmentSyncAdapter(
                 upsertRemoteDownloadSuccess(incoming, stored, local)
             }.onFailure {
                 if (it is CancellationException) throw it
+                it.rethrowSyncAuthenticationRejected()
                 log.e(it) { "Failed to download attachment ${record.localId}" }
-                upsertRemoteDownloadFailure(incoming, it, local)
+                if (it is AttachmentFileTooLargeException) {
+                    upsertRemotePolicyBlock(incoming, local)
+                } else {
+                    upsertRemoteDownloadFailure(incoming, it, local)
+                }
             }
         }
-        recoverMissingRemoteRows(remoteRecords, localSnapshot)
+        recoverMissingRemoteRows(remoteRecords, localSnapshot, pass)
     }
 
     internal suspend fun upsertRemoteDownloadFailure(
@@ -197,14 +208,38 @@ open class AttachmentSyncAdapter(
     }
 
     internal suspend fun shouldSkipIncomingRecord(record: AttachmentRecord, local: Attachment?): Boolean {
+        if (record.isDeleted && !record.file.isNullOrBlank()) {
+            throw SyncDegradedException(
+                "attachments ${record.localId} tombstone retained a remote file",
+            )
+        }
         if (local == null) return false
+        if (record.updatedAtUtc < local.updatedAt) return true
+        if (record.updatedAtUtc == local.updatedAt && !equalTimestampMetadataMatches(local, record)) {
+            throw SyncDegradedException(
+                "attachments ${record.localId} has an equal-timestamp divergent metadata payload",
+            )
+        }
+        if (record.updatedAtUtc > local.updatedAt) return false
         val localFileMissing = !local.isDeleted &&
                 !record.isDeleted &&
                 !record.file.isNullOrBlank() &&
                 !fileStorage.exists(local.localPath)
         val retryRemoteDownload = local.isRemoteOriginDownloadFailure()
-        return record.updatedAtUtc <= local.updatedAt && !localFileMissing && !retryRemoteDownload
+        return !localFileMissing && !retryRemoteDownload
     }
+
+    /**
+     * Attachment bytes and their derived local media details are not stable
+     * across platform decoders/encoders. Compare only metadata that is
+     * durably canonical on both the local row and PocketBase record; the
+     * active server-owned `file` is intentionally excluded.
+     */
+    private fun equalTimestampMetadataMatches(local: Attachment, remote: AttachmentRecord): Boolean =
+        local.canonicalSyncMetadata() == remote.toAttachment().canonicalSyncMetadata()
+
+    private fun Attachment.canonicalSyncMetadata(): JsonObject =
+        JsonObject(toBody().filterKeys { it in CANONICAL_SYNC_METADATA_KEYS })
 
     internal suspend fun upsertRemoteTombstone(incoming: Attachment, local: Attachment?) {
         when (val merged = dao.mergeRemoteTombstoneIfNewer(incoming.withSyncState(AttachmentSyncState.SYNCED))) {
@@ -243,8 +278,10 @@ open class AttachmentSyncAdapter(
         }
     }
 
-    override suspend fun pushAll(client: PocketbaseClient) {
-        pushAttachments(client, seedMode = false, allowRemoteMerge = true)
+    override suspend fun pushAll(client: PocketbaseClient) = pushAll(standalonePassContext(client))
+
+    override suspend fun pushAll(pass: SyncPassContext) {
+        pushAttachments(pass, seedMode = false, allowRemoteMerge = true)
     }
 
     /**
@@ -252,12 +289,17 @@ open class AttachmentSyncAdapter(
      * receives durable deletion metadata. Normal sync retains the local-only
      * cleanup shortcut before any parent or gateway work.
      */
-    override suspend fun seedAll(client: PocketbaseClient) {
-        pushAttachments(client, seedMode = true, allowRemoteMerge = true)
+    override suspend fun seedAll(client: PocketbaseClient) = seedAll(standalonePassContext(client))
+
+    override suspend fun seedAll(pass: SyncPassContext) {
+        pushAttachments(pass, seedMode = true, allowRemoteMerge = true)
     }
 
-    override suspend fun seedAllAuthoritative(client: PocketbaseClient) {
-        pushAttachments(client, seedMode = true, allowRemoteMerge = false)
+    override suspend fun seedAllAuthoritative(client: PocketbaseClient) =
+        seedAllAuthoritative(standalonePassContext(client))
+
+    override suspend fun seedAllAuthoritative(pass: SyncPassContext) {
+        pushAttachments(pass, seedMode = true, allowRemoteMerge = false)
     }
 
     override suspend fun validateLocalSeedSource() {
@@ -267,7 +309,7 @@ open class AttachmentSyncAdapter(
     }
 
     private suspend fun pushAttachments(
-        client: PocketbaseClient,
+        pass: SyncPassContext,
         seedMode: Boolean,
         allowRemoteMerge: Boolean,
     ) {
@@ -280,9 +322,10 @@ open class AttachmentSyncAdapter(
             if (!allowRemoteMerge) validateAttachmentSeedSource(attachment)
             if (!shouldPush(attachment)) continue
             try {
-                pushOne(client, attachment, allowRemoteMerge)
+                pushOne(pass, attachment, allowRemoteMerge)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                e.rethrowSyncAuthenticationRejected()
                 if (e is AuthoritativeSeedConflictException) throw e
                 if (e is AuthoritativeLocalSeedSourceException) throw e
                 log.e(e) { "Failed to push attachment ${attachment.id}" }
@@ -353,7 +396,7 @@ open class AttachmentSyncAdapter(
             throw AuthoritativeLocalSeedSourceException()
         }
         val bytes = try {
-            fileStorage.readBytes(attachment.localPath)
+            fileStorage.readBytes(attachment.localPath, AttachmentFilePolicy.MAX_UPLOAD_BYTES)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
@@ -371,13 +414,13 @@ open class AttachmentSyncAdapter(
         }
 
     private suspend fun pushOne(
-        client: PocketbaseClient,
+        pass: SyncPassContext,
         attachment: Attachment,
         allowRemoteMerge: Boolean,
     ) {
         val body = JsonObject(attachment.toBody())
         if (attachment.isDeleted) {
-            pushAttachmentTombstone(client, attachment, body, allowRemoteMerge)
+            pushAttachmentTombstone(pass, attachment, body, allowRemoteMerge)
             return
         }
 
@@ -388,7 +431,7 @@ open class AttachmentSyncAdapter(
         }
 
         val bytes = try {
-            fileStorage.readBytes(attachment.localPath)
+            fileStorage.readBytes(attachment.localPath, AttachmentFilePolicy.MAX_UPLOAD_BYTES)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -400,7 +443,7 @@ open class AttachmentSyncAdapter(
             dao.markSyncFailed(attachment.id, AttachmentSyncState.FAILED.name, "local_file_missing")
             return
         }
-        val gateway = recordGateway(client)
+        val gateway = requirePassGateway(pass)
         val updated = pushActiveAttachment(
             gateway, attachment, body, bytes, allowRemoteMerge,
         ) ?: return
@@ -491,12 +534,12 @@ open class AttachmentSyncAdapter(
     }
 
     private suspend fun pushAttachmentTombstone(
-        client: PocketbaseClient,
+        pass: SyncPassContext,
         attachment: Attachment,
         body: JsonObject,
         allowRemoteMerge: Boolean,
     ) {
-        val gateway = recordGateway(client)
+        val gateway = requirePassGateway(pass)
         val byPbId = attachment.pbId?.let { pbId ->
             val preflight = gateway.getRecord(collectionName, pbId)
             when {
@@ -617,6 +660,7 @@ open class AttachmentSyncAdapter(
     internal suspend fun recoverMissingRemoteRows(
         remoteRecords: List<AttachmentRecord>,
         localSnapshot: List<Attachment>,
+        pass: SyncPassContext? = null,
     ) {
         val localSyncedActive = localSnapshot.filter { it.isSynced && !it.isDeleted }
         if (localSyncedActive.isEmpty()) return
@@ -633,12 +677,23 @@ open class AttachmentSyncAdapter(
             throw SyncDegradedException(message)
         }
         val remoteIds = remoteRecords.map { it.localId }.toSet()
-        for (local in localSyncedActive) {
-            if (local.id !in remoteIds) {
-                log.w { "Recovering missing $collectionName ${local.id}: server row absent, marking unsynced for recreation" }
-                dao.markUnsynced(local.id)
+        val missingCandidateIds = localSyncedActive
+            .map { it.id }
+            .filterNot(remoteIds::contains)
+            .toSet()
+        missingCandidateIds.forEach { id ->
+            log.w { "Recovering missing $collectionName $id: server row absent, marking unsynced for recreation" }
+        }
+        if (missingCandidateIds.isEmpty()) return
+        val recover: suspend () -> Unit = {
+            for (id in missingCandidateIds) {
+                val current = dao.findByIdAnyState(id) ?: continue
+                if (current.isSynced && !current.isDeleted) {
+                    dao.markUnsynced(current.id)
+                }
             }
         }
+        if (pass == null) recover() else pass.runMissingRowTransaction(recover)
     }
 
     private fun Attachment.toBody(): Map<String, JsonPrimitive> =
@@ -660,5 +715,15 @@ open class AttachmentSyncAdapter(
 
     private companion object {
         const val MISSING_ROW_RECOVERY_MIN_RATIO = 0.1
+        val CANONICAL_SYNC_METADATA_KEYS = setOf(
+            "localId",
+            "ownerType",
+            "ownerId",
+            "kind",
+            "sortOrder",
+            "isDeleted",
+            "localCreatedAt",
+            "localUpdatedAt",
+        )
     }
 }

@@ -2,6 +2,7 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.extensions.todayLocal
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.scan
@@ -45,11 +47,22 @@ class CalendarViewModel(
     saveCalendarViewPreference: SaveCalendarViewPreferenceAction,
     observeCalendarListDisplayModePreference: ObserveCalendarListDisplayModePreferenceUseCase,
     saveCalendarListDisplayModePreference: SaveCalendarListDisplayModePreferenceAction,
-    localDaySignal: LocalDaySignal = LocalDaySignal(),
+    localDaySignal: LocalDaySignal,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) : ViewModel() {
 
-    private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
+    private val mutationLauncher = ForegroundMutationLauncher(
+        accountBoundaryExecutor,
+        viewModelScope,
+        ioDispatcher,
+    )
+    private val completionHandler = TaskCompletionHandler(
+        toggleTaskCompleteAction,
+        viewModelScope,
+        accountBoundaryExecutor,
+        mutationLauncher::launch,
+    )
     val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
     private val _listSelectedDayKey = MutableStateFlow<Long?>(null)
     private val _monthSelectedDayKey = MutableStateFlow<Long?>(null)
@@ -102,6 +115,12 @@ class CalendarViewModel(
         }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val taskDayKeys: StateFlow<Set<Long>> = tasksByDay
+        .map { tasksByDay -> tasksByDay.keys.toSet() }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     val calendarDaysByDay: StateFlow<Map<Long, CalendarDayProjection>> = combine(
         tasksByDay,

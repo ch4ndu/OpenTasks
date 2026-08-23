@@ -20,9 +20,13 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
 import com.udnahc.opentasks.data.auth.WidgetAccountGate
+import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
+import com.udnahc.opentasks.data.notification.ReminderCommand
 import com.udnahc.opentasks.data.notification.NotificationScheduler
+import com.udnahc.opentasks.data.notification.refreshNotificationWidgetsIndependently
 import com.udnahc.opentasks.data.sync.SyncWorker
 import com.udnahc.opentasks.ExternalInputFailure
 import com.udnahc.opentasks.ExternalInputPolicy
@@ -88,6 +92,7 @@ class MainActivity : ComponentActivity(), KoinComponent {
                 onAccountBoundaryChanged = { binding ->
                     refreshWidgetsAndScheduleSync(binding)
                 },
+                onTaskNotificationWidgetsRefresh = ::refreshTaskNotificationWidgets,
                 onSystemBarIconAppearanceChanged = ::updateSystemBarIconAppearance,
             )
         }
@@ -125,6 +130,26 @@ class MainActivity : ComponentActivity(), KoinComponent {
             }
         } catch (_: AccountBoundaryRejectedException) {
             log.w { "Widget refresh skipped because the foreground account boundary changed" }
+        }
+    }
+
+    private suspend fun refreshTaskNotificationWidgets(boundary: AccountBoundary) {
+        try {
+            widgetAccountGate.withForegroundBoundary(boundary) { currentBoundary ->
+                refreshNotificationWidgetsIndependently(
+                    refreshTaskWidget = {
+                        TaskWidget.refreshAllWidgetsWithinBoundary(this, currentBoundary)
+                    },
+                    refreshCalendarWidget = {
+                        CalendarWidget.refreshAllWidgetsWithinBoundary(this, currentBoundary)
+                    },
+                    refreshWeekWidget = {
+                        WeekWidget.refreshAllWidgetsWithinBoundary(this, currentBoundary)
+                    },
+                )
+            }
+        } catch (_: AccountBoundaryRejectedException) {
+            log.w { "Notification widget refresh skipped because the account boundary changed" }
         }
     }
 
@@ -334,7 +359,9 @@ class MainActivity : ComponentActivity(), KoinComponent {
     }
 
     private fun handleDeepLinkIntent(intent: Intent?) {
-        deepLinkNotificationEvent = intent.toNotificationDeepLinkEvent()
+        intent.toNotificationDeepLinkEvent()?.let { event ->
+            deepLinkNotificationEvent = event
+        }
     }
 
     private fun publishWidgetNavigationIntent(intent: Intent?) {
@@ -366,21 +393,34 @@ class MainActivity : ComponentActivity(), KoinComponent {
     }
 }
 
-internal fun Intent?.toNotificationDeepLinkEvent(): NotificationDeepLinkEvent? =
-    createNotificationDeepLinkEvent(
-        eventId = this?.getStringExtra(NotificationScheduler.EXTRA_TASK_ID),
-        occurrenceDeadlineUtcMillis = optionalLongExtra(
+internal fun Intent?.toNotificationDeepLinkEvent(): NotificationDeepLinkEvent? {
+    val intent = this ?: return null
+    return createAndroidNotificationDeepLinkEvent(
+        uri = intent.data?.toAndroidReminderTapUri(),
+        eventId = intent.getStringExtra(NotificationScheduler.EXTRA_TASK_ID),
+        occurrenceDeadlineUtcMillis = intent.optionalLongExtra(
             NotificationScheduler.EXTRA_OCCURRENCE_DEADLINE_UTC,
         ),
-        notificationAtUtcMillis = optionalLongExtra(
+        notificationAtUtcMillis = intent.optionalLongExtra(
             NotificationScheduler.EXTRA_NOTIFICATION_AT_UTC,
         ),
-        semanticKey = this?.getStringExtra(NotificationScheduler.EXTRA_SEMANTIC_KEY),
-        accountId = this?.getStringExtra(NotificationScheduler.EXTRA_ACCOUNT_ID),
-        boundaryEpoch = this?.getLongExtra(NotificationScheduler.EXTRA_BOUNDARY_EPOCH, 0L) ?: 0L,
+        semanticKey = intent.getStringExtra(NotificationScheduler.EXTRA_SEMANTIC_KEY),
+        accountId = intent.getStringExtra(NotificationScheduler.EXTRA_ACCOUNT_ID),
+        boundaryEpoch = intent.getLongExtra(NotificationScheduler.EXTRA_BOUNDARY_EPOCH, 0L),
     )
+}
 
-internal fun createNotificationDeepLinkEvent(
+internal data class AndroidReminderTapUri(
+    val scheme: String?,
+    val authority: String?,
+    val encodedPath: String?,
+    val encodedFragment: String?,
+    val queryParameterNames: Set<String>,
+    val keyValues: List<String>,
+)
+
+internal fun createAndroidNotificationDeepLinkEvent(
+    uri: AndroidReminderTapUri?,
     eventId: String?,
     occurrenceDeadlineUtcMillis: Long?,
     notificationAtUtcMillis: Long?,
@@ -388,14 +428,57 @@ internal fun createNotificationDeepLinkEvent(
     accountId: String?,
     boundaryEpoch: Long,
 ): NotificationDeepLinkEvent? {
-    val normalizedEventId = eventId?.takeIf { it.isNotBlank() } ?: return null
-    return NotificationDeepLinkEvent(
-        eventId = normalizedEventId,
+    val command = androidReminderTapCommand(uri, semanticKey, eventId) ?: return null
+    return createValidatedNotificationDeepLinkEvent(
+        command = command,
+        eventId = eventId,
         occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
         notificationAtUtcMillis = notificationAtUtcMillis,
         semanticKey = semanticKey,
         accountId = accountId,
         boundaryEpoch = boundaryEpoch,
+    )
+}
+
+internal fun androidReminderTapCommand(
+    uri: AndroidReminderTapUri?,
+    semanticKey: String?,
+    eventId: String?,
+): ReminderCommand? {
+    val tapUri = uri ?: return null
+    if (tapUri.scheme != "opentasks" ||
+        tapUri.authority != "reminder" ||
+        tapUri.encodedFragment != null ||
+        tapUri.queryParameterNames != setOf("key") ||
+        tapUri.keyValues.size != 1 ||
+        semanticKey.isNullOrBlank() ||
+        tapUri.keyValues.single() != semanticKey ||
+        eventId.isNullOrBlank()
+    ) {
+        return null
+    }
+    return when (tapUri.encodedPath) {
+        "/${NotificationScheduler.ROLE_TAP}" ->
+            if (eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
+                ReminderCommand.COUNTDOWN_TAP
+            } else {
+                ReminderCommand.TASK_TAP
+            }
+        "/${NotificationScheduler.ROLE_ONGOING_TAP}" ->
+            if (eventId.startsWith(COUNTDOWN_ID_PREFIX)) null else ReminderCommand.ONGOING_TAP
+        else -> null
+    }
+}
+
+private fun Uri.toAndroidReminderTapUri(): AndroidReminderTapUri? {
+    if (!isHierarchical) return null
+    return AndroidReminderTapUri(
+        scheme = scheme,
+        authority = authority,
+        encodedPath = encodedPath,
+        encodedFragment = encodedFragment,
+        queryParameterNames = queryParameterNames,
+        keyValues = getQueryParameters("key"),
     )
 }
 

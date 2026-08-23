@@ -140,9 +140,6 @@ interface AttachmentDao {
     @Query("SELECT * FROM attachments WHERE id = :id")
     suspend fun findByIdAnyState(id: String): Attachment?
 
-    @Query("SELECT * FROM attachments WHERE ownerType = :ownerType AND ownerId = :ownerId AND isDeleted = 0")
-    suspend fun getActiveForOwnerAnyState(ownerType: String, ownerId: String): List<Attachment>
-
     /** Includes tombstones so a task graph cannot discard an already-remote child relation. */
     @Query("SELECT * FROM attachments WHERE ownerType = :ownerType AND ownerId = :ownerId")
     suspend fun getForOwnerAnyState(ownerType: String, ownerId: String): List<Attachment>

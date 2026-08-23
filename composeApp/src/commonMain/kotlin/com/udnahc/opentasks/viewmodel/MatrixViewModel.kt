@@ -2,6 +2,7 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.AttachmentSummary
@@ -46,6 +47,7 @@ class MatrixViewModel(
     observeTaskImageSummaries: ObserveTaskImageSummariesUseCase,
     localDaySignal: LocalDaySignal,
     private val taskDueTextProvider: TaskDueTextProvider = PlainTaskDueTextProvider,
+    accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) : ViewModel() {
 
     data class TaskCategoryGroup(
@@ -61,7 +63,16 @@ class MatrixViewModel(
 
     private val _selectedPriority = MutableStateFlow(TaskPriority.HIGH)
     private val _viewMode = MutableStateFlow(TaskListViewMode.LIST)
-    private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
+    private val mutationLauncher = ForegroundMutationLauncher(
+        accountBoundaryExecutor,
+        viewModelScope,
+    )
+    private val completionHandler = TaskCompletionHandler(
+        toggleTaskCompleteAction,
+        viewModelScope,
+        accountBoundaryExecutor,
+        mutationLauncher::launch,
+    )
     val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
     val viewMode: StateFlow<TaskListViewMode> = _viewMode
 
@@ -165,12 +176,12 @@ class MatrixViewModel(
         if (targetStatus == TaskStatus.DONE && task.status != TaskStatus.DONE) {
             toggleComplete(task)
         } else {
-            viewModelScope.launch(Dispatchers.IO) { updateTaskStatusAction(task.id, targetStatus) }
+            mutationLauncher.launch { updateTaskStatusAction(task.id, targetStatus) }
         }
     }
 
     fun toggleStar(task: Task) {
-        viewModelScope.launch(Dispatchers.IO) { toggleTaskStarredAction(task.id) }
+        mutationLauncher.launch { toggleTaskStarredAction(task.id) }
     }
 
     private fun categorize(

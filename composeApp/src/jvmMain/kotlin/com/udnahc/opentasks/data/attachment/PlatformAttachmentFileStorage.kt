@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.attachment
 
 import com.udnahc.opentasks.data.extensions.uuid4
+import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineDispatcher
@@ -24,8 +25,8 @@ class PlatformAttachmentFileStorage(
     override suspend fun storeRemoteImage(fileName: String, bytes: ByteArray): StoredAttachmentFile =
         storeBytes(bytes)
 
-    override suspend fun readBytes(path: String): ByteArray? =
-        withContext(ioDispatcher) { File(path).takeIf { it.isFile }?.readBytes() }
+    override suspend fun readBytes(path: String, maxBytes: Long): ByteArray? =
+        withContext(ioDispatcher) { File(path).readBoundedBytes(maxBytes) }
 
     override suspend fun exists(path: String): Boolean =
         withContext(ioDispatcher) { File(path).isFile }
@@ -63,6 +64,26 @@ class PlatformAttachmentFileStorage(
                 height = optimized.fullSize.height,
             )
         }
+
+    private fun File.readBoundedBytes(maxBytes: Long): ByteArray? {
+        if (!isFile) return null
+        require(maxBytes >= 0L) { "Attachment byte limit must not be negative" }
+        inputStream().use { input ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var total = 0L
+            while (total <= maxBytes) {
+                val remaining = (maxBytes + 1L - total).coerceAtMost(buffer.size.toLong()).toInt()
+                val read = input.read(buffer, 0, remaining)
+                if (read < 0) break
+                if (read == 0) continue
+                total += read
+                if (total > maxBytes) throw AttachmentFileTooLargeException(maxBytes)
+                output.write(buffer, 0, read)
+            }
+            return output.toByteArray()
+        }
+    }
 
     private fun Image.scaleAndEncode(longEdge: Int): Encoded {
         val width = imageInfo.width

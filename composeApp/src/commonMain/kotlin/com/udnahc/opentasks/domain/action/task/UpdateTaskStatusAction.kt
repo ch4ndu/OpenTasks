@@ -4,6 +4,8 @@ import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.data.repository.CommittedMutation
+import com.udnahc.opentasks.data.repository.PostCommitWarningPhase
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 
 class UpdateTaskStatusAction(
@@ -17,12 +19,26 @@ class UpdateTaskStatusAction(
     suspend operator fun invoke(
         taskId: String,
         newStatus: TaskStatus
-    ): TaskWriteResult = accountBoundaryExecutor.withForegroundActionBoundary {
+    ): CommittedMutation<TaskWriteResult> = accountBoundaryExecutor.withForegroundActionBoundary {
         val result = coordinator.write(taskId, TaskWriteIntent.SetStatus(newStatus))
-        if (result is TaskWriteResult.Updated) {
-            rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(taskId) }
-                ?: scheduleTaskRemindersAction(taskId)
+        val reminderWarning = if (result.value is TaskWriteResult.Updated) {
+            if (rebuildReminderQueueAction != null) {
+                rebuildReminderQueueAction.afterRecordChangeResult(
+                    scheduleDirectly = { scheduleTaskRemindersAction(taskId) },
+                )
+            } else {
+                try {
+                    scheduleTaskRemindersAction(taskId)
+                    null
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    error
+                }
+            }
+        } else {
+            null
         }
-        result
+        result.withPostCommitWarning(reminderWarning, PostCommitWarningPhase.REMINDER_MAINTENANCE)
     }
 }

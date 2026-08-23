@@ -65,3 +65,24 @@ interface AccountSyncCoordinator {
 
     suspend fun initialPullWithinMutation(client: PocketbaseClient)
 }
+
+/** Narrow sync-to-account callback for a confirmed HTTP 401 on an active boundary. */
+interface AccountAuthenticationRejectionHandler {
+    /** Returns true only when the exact live authenticated boundary was transitioned. */
+    suspend fun onAuthenticationRejected(boundary: AccountBoundary): Boolean
+}
+
+/**
+ * Avoids a construction cycle: SyncService depends on this stable callback
+ * boundary, while AccountRepositoryImpl registers itself once constructed.
+ */
+class AccountAuthenticationRejectionDispatcher : AccountAuthenticationRejectionHandler {
+    private var handler: AccountAuthenticationRejectionHandler? = null
+
+    fun register(handler: AccountAuthenticationRejectionHandler) {
+        this.handler = handler
+    }
+
+    override suspend fun onAuthenticationRejected(boundary: AccountBoundary): Boolean =
+        handler?.onAuthenticationRejected(boundary) ?: false
+}

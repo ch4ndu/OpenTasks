@@ -18,6 +18,7 @@ import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.ScheduleCountdownRemindersAction
 import com.udnahc.opentasks.domain.action.countdown.UpdateCountdownAction
+import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import com.udnahc.opentasks.domain.action.tag.AddTagAction
@@ -28,6 +29,7 @@ import com.udnahc.opentasks.domain.action.task.ImportCsvTasksAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.action.task.TaskWriteIntent
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
+import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
 import com.udnahc.opentasks.testutil.FakeCategoryRepository
@@ -39,10 +41,14 @@ import com.udnahc.opentasks.testutil.testCountdown
 import com.udnahc.opentasks.testutil.FakeNoteRepository
 import com.udnahc.opentasks.testutil.testNote
 import com.udnahc.opentasks.testutil.testTask
+import com.udnahc.opentasks.viewmodel.ForegroundMutationLauncher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import kotlin.coroutines.cancellation.CancellationException
@@ -52,6 +58,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ForegroundActionBoundaryTest {
     @Test
     fun taskActionHoldsAccountBoundaryThroughWriteReadAndSchedule() = runTest {
@@ -118,6 +125,94 @@ class ForegroundActionBoundaryTest {
             events,
         )
         assertTrue(repository.updated.single().isStarred)
+    }
+
+    @Test
+    fun starredActionRejectsAStaleForegroundBoundaryBeforeMutation() = runTest {
+        val fixture = fixture()
+        val repository = FakeTaskRepository(listOf(testTask(id = "task")))
+        fixture.repository.publishState(destinationState())
+
+        assertFailsWith<AccountBoundaryRejectedException> {
+            ToggleTaskStarredAction(repository, fixture.executor)("task")
+        }
+        assertTrue(repository.updated.isEmpty())
+    }
+
+    @Test
+    fun categoryActionRejectsAStaleForegroundBoundaryBeforeMutation() = runTest {
+        val fixture = fixture()
+        val repository = FakeCategoryRepository()
+        fixture.repository.publishState(destinationState())
+
+        assertFailsWith<AccountBoundaryRejectedException> {
+            AddCategoryAction(repository, fixture.executor)("Work")
+        }
+        assertTrue(repository.inserted.isEmpty())
+    }
+
+    @Test
+    fun foregroundMutationLauncherRejectsBoundaryChangesWithoutUncaughtFailure() = runTest {
+        val fixture = fixture()
+        var writes = 0
+        var rejected = 0
+        var failures = 0
+        val launcher = ForegroundMutationLauncher(
+            fixture.executor,
+            this,
+            StandardTestDispatcher(testScheduler),
+        )
+
+        launcher.launch(
+            onBoundaryRejected = { rejected += 1 },
+            onFailure = { failures += 1 },
+        ) { writes += 1 }
+        fixture.repository.publishState(destinationState())
+        fixture.stateStore.setBinding(destinationBinding())
+        advanceUntilIdle()
+
+        assertEquals(0, writes)
+        assertEquals(1, rejected)
+        assertEquals(0, failures)
+    }
+
+    @Test
+    fun foregroundMutationLauncherRoutesOrdinaryFailureToCallback() = runTest {
+        var failures = 0
+        val launcher = ForegroundMutationLauncher(
+            null,
+            this,
+            StandardTestDispatcher(testScheduler),
+        )
+
+        launcher.launch(
+            onFailure = { failures += 1 },
+        ) { error("mutation failed") }
+        advanceUntilIdle()
+
+        assertEquals(1, failures)
+    }
+
+    @Test
+    fun foregroundMutationLauncherRethrowsCancellationWithoutFailureCallbacks() = runTest {
+        var rejected = 0
+        var failures = 0
+        val launcher = ForegroundMutationLauncher(
+            null,
+            this,
+            StandardTestDispatcher(testScheduler),
+        )
+
+        launcher.launch(
+            onBoundaryRejected = { rejected += 1 },
+            onFailure = { failures += 1 },
+        ) {
+            throw CancellationException("cancelled")
+        }
+        advanceUntilIdle()
+
+        assertEquals(0, rejected)
+        assertEquals(0, failures)
     }
 
     @Test
@@ -194,6 +289,57 @@ class ForegroundActionBoundaryTest {
                 "account-a:replace:countdown_$sharedLocalId",
                 "account-b:cancel-source-reminders",
             ),
+            events,
+        )
+    }
+
+    @Test
+    fun boundedAfterRecordChangeUsesFullQueueRebuildInsteadOfDirectScheduling() = runTest {
+        val taskRepository = FakeTaskRepository()
+        val countdownRepository = FakeCountdownRepository(
+            listOf(
+                testCountdown(
+                    id = "bounded-countdown",
+                    targetDate = FUTURE_UTC_MILLIS,
+                    reminders = "0",
+                ),
+            ),
+        )
+        val events = mutableListOf<String>()
+        val scheduler = BlockingReminderScheduler(
+            accountId = { "account-a" },
+            events = events,
+            blockCancellation = false,
+        )
+        val scheduleTask = ScheduleTaskRemindersAction(
+            scheduler = scheduler,
+            taskRepository = taskRepository,
+            nowUtcMillisProvider = { 0L },
+        )
+        val scheduleCountdown = ScheduleCountdownRemindersAction(
+            scheduler = scheduler,
+            countdownRepository = countdownRepository,
+            nowUtcMillisProvider = { 0L },
+        )
+        val rebuild = RebuildReminderQueueAction(
+            taskRepository = taskRepository,
+            countdownRepository = countdownRepository,
+            scheduleTaskRemindersAction = scheduleTask,
+            scheduleCountdownRemindersAction = scheduleCountdown,
+            scheduler = scheduler,
+            pendingQueueLimit = { 60 },
+        )
+        var directScheduleCalls = 0
+
+        assertEquals(
+            null,
+            rebuild.afterRecordChangeResult {
+                directScheduleCalls += 1
+            },
+        )
+        assertEquals(0, directScheduleCalls)
+        assertEquals(
+            listOf("account-a:replace:countdown_bounded-countdown"),
             events,
         )
     }

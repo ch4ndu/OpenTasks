@@ -16,6 +16,23 @@ internal data class ReminderKeyRecord(
     val kind: ReminderKind,
 )
 
+/** A durable reminder-key write failed before an alarm may be armed. */
+internal class ReminderKeyPersistenceException(message: String) : IllegalStateException(message)
+
+/**
+ * Replacement only removes future pending alarms that no longer belong to the
+ * requested semantic set. Delivered and ongoing records remain visible until
+ * their own explicit cleanup paths consume them.
+ */
+internal fun pendingReplacementRecordsToCancel(
+    storedRecords: List<ReminderKeyRecord>,
+    replacementSemanticKeys: Set<String>,
+): List<ReminderKeyRecord> = storedRecords.filter { record ->
+    record.lifecycle == ReminderLifecycle.PENDING &&
+        record.kind != ReminderKind.ONGOING &&
+        record.semanticKey !in replacementSemanticKeys
+}
+
 /**
  * Minimal persistent primitive used by Android's SharedPreferences-backed
  * reminder key store and deterministic tests.

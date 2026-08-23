@@ -22,6 +22,7 @@ import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.attachment.PendingTaskImageHandoff
+import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImagesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveCountdownByIdUseCase
@@ -37,6 +38,7 @@ import com.udnahc.opentasks.testutil.testTask
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -259,6 +261,20 @@ class FormViewModelTest : MainDispatcherRule() {
     }
 
     @Test
+    fun taskFormCarriesCommittedWarningThroughSavedEvent() = runTest(dispatcher) {
+        val repository = FakeTaskRepository()
+        val warning = IllegalStateException("sync warning")
+        repository.insertPostCommitWarning = warning
+        val viewModel = taskFormViewModel(taskRepository = repository)
+
+        viewModel.saveNewTask(TaskFormData(title = "Warning", content = ""))
+        advanceUntilIdle()
+
+        val event = viewModel.saveEvent.value as TaskFormSaveEvent.Saved
+        assertEquals(warning, event.postCommitWarning?.cause)
+    }
+
+    @Test
     fun taskFormSaveResultSurvivesCollectorRecreationAndIsConsumedOnce() = runTest(dispatcher) {
         val viewModel = taskFormViewModel()
         val form = TaskFormData(title = "Durable", content = "")
@@ -325,6 +341,48 @@ class FormViewModelTest : MainDispatcherRule() {
 
         assertTrue(viewModel.pendingImages.value.isEmpty())
         assertTrue(taskRepository.updated.single().isDeleted)
+    }
+
+    @Test
+    fun taskFormDeleteFailureRetainsImagesDraftAndPendingCompletionChoice() = runTest(dispatcher) {
+        val deadline = 1_778_918_400_000L
+        val task = testTask(
+            id = "delete-failure",
+            deadline = deadline,
+            recurrenceType = RecurrenceType.DAILY,
+        )
+        val taskRepository = FakeTaskRepository(listOf(task))
+        val viewModel = taskFormViewModel(taskRepository = taskRepository)
+        val form = TaskFormData(
+            title = "Keep this draft",
+            content = "",
+            deadline = deadline,
+            recurrence = RecurrenceType.DAILY,
+            status = TaskStatus.DONE,
+        )
+        val image = PickedImage("pending.jpg", ByteArray(8), id = "pending")
+        viewModel.addPendingImage(image)
+        viewModel.saveExistingTask(task.id, form)
+        advanceUntilIdle()
+        val expectedChoice = PendingFormCompletion(task.id, form, deadline)
+        assertEquals(expectedChoice, viewModel.pendingFormCompletion.value)
+
+        val error = IllegalStateException("delete failed")
+        taskRepository.graphDeletionError = error
+        viewModel.saveEvent.test {
+            assertEquals(null, awaitItem())
+            viewModel.deleteTask(task.id)
+            advanceUntilIdle()
+
+            val event = awaitItem()
+            assertTrue(event is TaskFormSaveEvent.DeleteError)
+            assertEquals(error.message, event.error.message)
+            assertFalse(viewModel.isSaving.value)
+            assertEquals(listOf(image), viewModel.pendingImages.value)
+            assertEquals(form, viewModel.retainedFormDraft.value)
+            assertEquals(expectedChoice, viewModel.pendingFormCompletion.value)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
@@ -500,6 +558,7 @@ class FormViewModelTest : MainDispatcherRule() {
             updateCountdownAction = UpdateCountdownAction(repository, scheduler),
             deleteCountdownAction = DeleteCountdownAction(repository, scheduler),
             observeCountdownByIdUseCase = ObserveCountdownByIdUseCase(repository),
+            localDaySignal = LocalDaySignal(),
             ioDispatcher = dispatcher,
         )
 
@@ -510,14 +569,182 @@ class FormViewModelTest : MainDispatcherRule() {
         }
 
         viewModel.addCountdown(testCountdown(id = "new"))
+        advanceUntilIdle()
         viewModel.updateCountdown(countdown.copy(title = "Updated"))
+        advanceUntilIdle()
         viewModel.deleteCountdown(countdown)
         advanceUntilIdle()
 
         assertEquals("new", repository.inserted.single().id)
         assertEquals("Updated", repository.updated.first().title)
-        assertEquals("countdown", repository.updated.last().id)
-        assertTrue(repository.updated.last().isDeleted)
+        assertEquals(1, repository.updated.size)
+        assertEquals("countdown", repository.deleted.single().id)
+        assertTrue(repository.deleted.single().isDeleted)
+    }
+
+    @Test
+    fun countdownFormPublishesCommittedWarningOnceAndRejectsDuplicateDispatch() = runTest(dispatcher) {
+        val repository = FakeCountdownRepository()
+        val warning = IllegalStateException("sync warning")
+        repository.insertPostCommitWarning = warning
+        val scheduler = ScheduleCountdownRemindersAction(NotificationScheduler(), repository)
+        val viewModel = CountdownFormViewModel(
+            addCountdownAction = AddCountdownAction(repository, scheduler),
+            updateCountdownAction = UpdateCountdownAction(repository, scheduler),
+            deleteCountdownAction = DeleteCountdownAction(repository, scheduler),
+            observeCountdownByIdUseCase = ObserveCountdownByIdUseCase(repository),
+            localDaySignal = LocalDaySignal(),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.addCountdown(testCountdown(id = "countdown"))
+        viewModel.addCountdown(testCountdown(id = "duplicate"))
+        advanceUntilIdle()
+
+        assertEquals(1, repository.inserted.size)
+        val event = viewModel.mutationEvent.value as CountdownMutationEvent.Saved
+        assertEquals(warning, event.postCommitWarning?.cause)
+        assertTrue(viewModel.consumeMutationEvent(event))
+        assertFalse(viewModel.consumeMutationEvent(event))
+    }
+
+    @Test
+    fun countdownFormFailureEmitsFailedKeepsRouteStateAndCanRetry() = runTest(dispatcher) {
+        val countdown = testCountdown(id = "countdown", title = "Launch")
+        val repository = FakeCountdownRepository(listOf(countdown))
+        val scheduler = ScheduleCountdownRemindersAction(NotificationScheduler(), repository)
+        val viewModel = CountdownFormViewModel(
+            addCountdownAction = AddCountdownAction(repository, scheduler),
+            updateCountdownAction = UpdateCountdownAction(repository, scheduler),
+            deleteCountdownAction = DeleteCountdownAction(repository, scheduler),
+            observeCountdownByIdUseCase = ObserveCountdownByIdUseCase(repository),
+            localDaySignal = LocalDaySignal(),
+            ioDispatcher = dispatcher,
+        )
+        viewModel.setCountdownId(countdown.id)
+        val error = IllegalStateException("update failed")
+        repository.updateError = error
+
+        viewModel.updateCountdown(countdown.copy(title = "Changed"))
+        advanceUntilIdle()
+
+        val failed = viewModel.mutationEvent.value
+        assertTrue(failed is CountdownMutationEvent.Failed)
+        assertEquals(error, failed.error)
+        assertFalse(viewModel.isSaving.value)
+        assertTrue(viewModel.consumeMutationEvent(failed))
+        assertEquals(emptyList(), repository.updated)
+
+        repository.updateError = null
+        viewModel.updateCountdown(countdown.copy(title = "Retried"))
+        advanceUntilIdle()
+
+        val saved = viewModel.mutationEvent.value
+        assertTrue(saved is CountdownMutationEvent.Saved)
+        assertEquals("Retried", saved.countdown.title)
+        assertFalse(viewModel.isSaving.value)
+    }
+
+    @Test
+    fun countdownFormCancellationRethrowsWithoutFailedEventAndAllowsRetry() = runTest(dispatcher) {
+        val countdown = testCountdown(id = "countdown", title = "Launch")
+        val repository = FakeCountdownRepository(listOf(countdown))
+        val scheduler = ScheduleCountdownRemindersAction(NotificationScheduler(), repository)
+        val viewModel = CountdownFormViewModel(
+            addCountdownAction = AddCountdownAction(repository, scheduler),
+            updateCountdownAction = UpdateCountdownAction(repository, scheduler),
+            deleteCountdownAction = DeleteCountdownAction(repository, scheduler),
+            observeCountdownByIdUseCase = ObserveCountdownByIdUseCase(repository),
+            localDaySignal = LocalDaySignal(),
+            ioDispatcher = dispatcher,
+        )
+        val cancellation = CancellationException("cancelled")
+        repository.updateError = cancellation
+
+        viewModel.updateCountdown(countdown.copy(title = "Cancelled"))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.isSaving.value)
+        assertEquals(null, viewModel.mutationEvent.value)
+
+        repository.updateError = null
+        viewModel.updateCountdown(countdown.copy(title = "Retried"))
+        advanceUntilIdle()
+
+        val saved = viewModel.mutationEvent.value
+        assertTrue(saved is CountdownMutationEvent.Saved)
+        assertEquals("Retried", saved.countdown.title)
+        assertFalse(viewModel.isSaving.value)
+    }
+
+    @Test
+    fun countdownFormDeletePublishesCommittedWarningOnce() = runTest(dispatcher) {
+        val countdown = testCountdown(id = "countdown", title = "Launch")
+        val repository = FakeCountdownRepository(listOf(countdown))
+        val warning = IllegalStateException("sync warning")
+        repository.deletePostCommitWarning = warning
+        val scheduler = ScheduleCountdownRemindersAction(NotificationScheduler(), repository)
+        val viewModel = CountdownFormViewModel(
+            addCountdownAction = AddCountdownAction(repository, scheduler),
+            updateCountdownAction = UpdateCountdownAction(repository, scheduler),
+            deleteCountdownAction = DeleteCountdownAction(repository, scheduler),
+            observeCountdownByIdUseCase = ObserveCountdownByIdUseCase(repository),
+            localDaySignal = LocalDaySignal(),
+            ioDispatcher = dispatcher,
+        )
+
+        viewModel.deleteCountdown(countdown)
+        advanceUntilIdle()
+
+        val event = viewModel.mutationEvent.value
+        assertTrue(event is CountdownMutationEvent.Deleted)
+        assertEquals(warning, event.postCommitWarning?.cause)
+        assertTrue(viewModel.consumeMutationEvent(event))
+        assertFalse(viewModel.consumeMutationEvent(event))
+        assertTrue(repository.deleted.single().isDeleted)
+        assertFalse(viewModel.isSaving.value)
+    }
+
+    @Test
+    fun countdownFormDeleteFailureKeepsSourceStateAndCanRetry() = runTest(dispatcher) {
+        val countdown = testCountdown(id = "countdown", title = "Launch")
+        val repository = FakeCountdownRepository(listOf(countdown))
+        val scheduler = ScheduleCountdownRemindersAction(NotificationScheduler(), repository)
+        val viewModel = CountdownFormViewModel(
+            addCountdownAction = AddCountdownAction(repository, scheduler),
+            updateCountdownAction = UpdateCountdownAction(repository, scheduler),
+            deleteCountdownAction = DeleteCountdownAction(repository, scheduler),
+            observeCountdownByIdUseCase = ObserveCountdownByIdUseCase(repository),
+            localDaySignal = LocalDaySignal(),
+            ioDispatcher = dispatcher,
+        )
+        viewModel.setCountdownId(countdown.id)
+        viewModel.editCountdown.test {
+            assertEquals(countdown.id, awaitMatching { it?.id == countdown.id }?.id)
+            val error = IllegalStateException("delete failed")
+            repository.deleteError = error
+
+            viewModel.deleteCountdown(countdown)
+            advanceUntilIdle()
+
+            val failed = viewModel.mutationEvent.value
+            assertTrue(failed is CountdownMutationEvent.Failed)
+            assertEquals(error, failed.error)
+            assertFalse(viewModel.isSaving.value)
+            assertEquals(countdown.id, viewModel.editCountdown.value?.id)
+            assertTrue(repository.deleted.isEmpty())
+            assertTrue(viewModel.consumeMutationEvent(failed))
+            cancelAndIgnoreRemainingEvents()
+
+            repository.deleteError = null
+            viewModel.deleteCountdown(countdown)
+            advanceUntilIdle()
+        }
+
+        val deleted = viewModel.mutationEvent.value
+        assertTrue(deleted is CountdownMutationEvent.Deleted)
+        assertTrue(repository.deleted.single().isDeleted)
+        assertFalse(viewModel.isSaving.value)
     }
 
     private suspend fun <T> app.cash.turbine.ReceiveTurbine<T>.awaitMatching(predicate: (T) -> Boolean): T {

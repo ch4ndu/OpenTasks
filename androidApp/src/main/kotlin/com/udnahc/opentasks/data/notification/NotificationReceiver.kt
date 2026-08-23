@@ -9,7 +9,6 @@ import androidx.core.app.NotificationManagerCompat
 import com.udnahc.opentasks.MainActivity
 import com.udnahc.opentasks.R
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
-import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.TaskStatus
@@ -39,35 +38,38 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
     override fun onReceive(context: Context, intent: Intent) {
         val eventId = intent.getStringExtra(NotificationScheduler.EXTRA_TASK_ID) ?: return
         val semanticKey = intent.getStringExtra(NotificationScheduler.EXTRA_SEMANTIC_KEY) ?: return
+        val delivery = DeliveryCommandPayload(
+            eventId = eventId,
+            semanticKey = semanticKey,
+            occurrenceUtcMillis = intent.occurrenceDeadlineUtcMillis(),
+            accountId = intent.getStringExtra(NotificationScheduler.EXTRA_ACCOUNT_ID),
+            boundaryEpoch = intent.getLongExtra(NotificationScheduler.EXTRA_BOUNDARY_EPOCH, 0L),
+        ).validatedDeliveryCommand() ?: run {
+            log.w { "Skipping notification delivery with an invalid canonical payload" }
+            return
+        }
         val title = intent.getStringExtra(NotificationScheduler.EXTRA_TITLE) ?: return
         val body = intent.getStringExtra(NotificationScheduler.EXTRA_BODY).orEmpty()
-        val occurrenceDeadlineUtcMillis = intent.occurrenceDeadlineUtcMillis()
         val notificationAtUtcMillis = intent.notificationAtUtcMillis()
         val allowMarkDone = intent.getBooleanExtra(NotificationScheduler.EXTRA_ALLOW_MARK_DONE, false)
         val rescheduleAfterFire = intent.getBooleanExtra(NotificationScheduler.EXTRA_RESCHEDULE_AFTER_FIRE, false)
-        val accountId = intent.getStringExtra(NotificationScheduler.EXTRA_ACCOUNT_ID)
-        val boundaryEpoch = intent.getLongExtra(NotificationScheduler.EXTRA_BOUNDARY_EPOCH, 0L)
 
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val delivered = accountBoundaryExecutor.withActiveCacheBoundary(
-                    expectedAccountId = accountId,
-                    expectedBoundaryEpoch = boundaryEpoch,
+                    expectedAccountId = delivery.accountId,
+                    expectedBoundaryEpoch = delivery.boundaryEpoch,
                 ) {
                     try {
                         deliverNotification(
                             context = context,
-                            eventId = eventId,
-                            semanticKey = semanticKey,
+                            delivery = delivery,
                             title = title,
                             body = body,
-                            occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
                             notificationAtUtcMillis = notificationAtUtcMillis,
                             allowMarkDone = allowMarkDone,
                             rescheduleAfterFire = rescheduleAfterFire,
-                            accountId = accountId.orEmpty(),
-                            boundaryEpoch = boundaryEpoch,
                         )
                     } catch (error: CancellationException) {
                         throw error
@@ -85,10 +87,10 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
                 if (delivered == null) {
                     log.d { "Skipping notification delivery without a matching active cache session" }
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.e(e) { "Notification session validation failed for $eventId" }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                log.e(error) { "Notification session validation failed for ${delivery.eventId}" }
             } finally {
                 pendingResult.finish()
             }
@@ -97,168 +99,154 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
 
     private suspend fun deliverNotification(
         context: Context,
-        eventId: String,
-        semanticKey: String,
+        delivery: ValidatedDeliveryCommand,
         title: String,
         body: String,
-        occurrenceDeadlineUtcMillis: Long?,
         notificationAtUtcMillis: Long,
         allowMarkDone: Boolean,
         rescheduleAfterFire: Boolean,
-        accountId: String,
-        boundaryEpoch: Long,
     ) {
-        val notificationId = try {
-            notificationScheduler.markAlarmDisplayed(semanticKey) ?: return
-        } catch (error: CancellationException) {
-            throw error
-        } catch (e: Exception) {
-            log.e(e) { "Unable to resolve reminder allocation for $eventId" }
-            return
-        }
-        try {
-            notificationScheduler.cancelDisplayedReminders(eventId, exceptSemanticKey = semanticKey)
-            if (eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
-                handleCountdownNotification(
-                    context = context,
-                    eventId = eventId,
-                    semanticKey = semanticKey,
-                    title = title,
-                    body = body,
-                    notificationId = notificationId,
-                    occurrenceTargetUtcMillis = occurrenceDeadlineUtcMillis,
-                    notificationAtUtcMillis = notificationAtUtcMillis,
-                    rescheduleAfterFire = rescheduleAfterFire,
-                    accountId = accountId,
-                    boundaryEpoch = boundaryEpoch,
+        runValidatedReminderDelivery(
+            resolveCurrent = {
+                if (delivery.eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
+                    resolveCountdownDelivery(
+                        context = context,
+                        delivery = delivery,
+                        title = title,
+                        body = body,
+                        notificationAtUtcMillis = notificationAtUtcMillis,
+                        rescheduleAfterFire = rescheduleAfterFire,
+                    )
+                } else {
+                    resolveTaskDelivery(
+                        context = context,
+                        delivery = delivery,
+                        title = title,
+                        body = body,
+                        notificationAtUtcMillis = notificationAtUtcMillis,
+                        allowMarkDone = allowMarkDone,
+                        rescheduleAfterFire = rescheduleAfterFire,
+                    )
+                }
+            },
+            cleanupPriorDisplays = {
+                notificationScheduler.cancelDisplayedReminders(
+                    eventId = delivery.eventId,
+                    exceptSemanticKey = delivery.semanticKey,
                 )
-                return
-            }
-            val task = taskRepository.getTaskById(eventId)
-            if (task == null || task.status == TaskStatus.DONE || task.isDeleted) {
-                notificationScheduler.cancelAll(eventId)
-                log.d { "Skipping notification for inactive task $eventId" }
-                return
-            }
-            val occurrenceDeadlineLocalMillis = occurrenceDeadlineUtcMillis?.let(::utcToLocal)
-            val taskDeadline = task.deadline
-            if (
-                occurrenceDeadlineLocalMillis != null &&
-                taskDeadline != null &&
-                taskDeadline > occurrenceDeadlineLocalMillis
-            ) {
-                notificationScheduler.cancel(semanticKey)
-                log.d { "Skipping stale notification for task $eventId" }
-                return
-            }
-            if (
-                rescheduleAfterFire &&
-                occurrenceDeadlineUtcMillis != null &&
-                task.recurrenceType != RecurrenceType.NONE
-            ) {
-                scheduleTaskRemindersAction.invokeAfterOccurrence(eventId, occurrenceDeadlineUtcMillis)
-            }
-            if (allowMarkDone && task.isAllDay && occurrenceDeadlineUtcMillis != null) {
-                notificationScheduler.startOngoing(
-                    identity = com.udnahc.opentasks.data.notification.ReminderIdentity(
-                        eventId = eventId,
-                        occurrenceUtcMillis = occurrenceDeadlineUtcMillis,
-                        kind = com.udnahc.opentasks.data.notification.ReminderKind.ONGOING,
-                        ordinal = 0,
-                    ),
-                    title = title,
-                )
-                notificationScheduler.cancel(semanticKey)
-                return
-            }
-            if (!showNotification(
-                    context = context,
-                    eventId = eventId,
-                    semanticKey = semanticKey,
-                    title = title,
-                    body = body,
-                    notificationId = notificationId,
-                    occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
-                    notificationAtUtcMillis = notificationAtUtcMillis,
-                    allowMarkDone = allowMarkDone,
-                    accountId = accountId,
-                    boundaryEpoch = boundaryEpoch,
-                )
-            ) {
-                notificationScheduler.cancel(semanticKey)
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (e: Exception) {
-            // Preserve reminder delivery if an app-data lookup fails; the
-            // alarm's semantic allocation remains the notification authority.
-            log.e(e) { "Notification validation failed, showing reminder for $eventId" }
-            if (!showNotification(
-                    context = context,
-                    eventId = eventId,
-                    semanticKey = semanticKey,
-                    title = title,
-                    body = body,
-                    notificationId = notificationId,
-                    occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
-                    notificationAtUtcMillis = notificationAtUtcMillis,
-                    allowMarkDone = allowMarkDone,
-                    accountId = accountId,
-                    boundaryEpoch = boundaryEpoch,
-                )
-            ) {
-                notificationScheduler.cancel(semanticKey)
-            }
-        }
+            },
+            discardExact = { notificationScheduler.cancel(delivery.semanticKey) },
+            discardAll = { notificationScheduler.cancelAll(delivery.eventId) },
+            logOperationalFailure = { phase, error ->
+                log.e(error) { "Reminder $phase failed for ${delivery.eventId}" }
+            },
+        )
     }
 
-    private suspend fun handleCountdownNotification(
+    private suspend fun resolveTaskDelivery(
         context: Context,
-        eventId: String,
-        semanticKey: String,
+        delivery: ValidatedDeliveryCommand,
         title: String,
         body: String,
-        notificationId: Int,
-        occurrenceTargetUtcMillis: Long?,
+        notificationAtUtcMillis: Long,
+        allowMarkDone: Boolean,
+        rescheduleAfterFire: Boolean,
+    ): ReminderDeliveryResolution {
+        val task = taskRepository.getTaskByIdUtc(delivery.eventId)
+        if (task == null || task.status == TaskStatus.DONE || task.isDeleted) {
+            log.d { "Skipping notification for inactive task ${delivery.eventId}" }
+            return ReminderDeliveryResolution.DiscardAll
+        }
+        if (!scheduleTaskRemindersAction.isValidOccurrence(task, delivery.occurrenceUtcMillis)) {
+            log.d { "Skipping stale notification for task ${delivery.eventId}" }
+            return ReminderDeliveryResolution.DiscardExact
+        }
+        return ReminderDeliveryResolution.Deliver(
+            prepareCurrentDisplay = { notificationScheduler.markAlarmDisplayed(delivery.semanticKey) },
+            chainNextOccurrence = {
+                if (rescheduleAfterFire && task.recurrenceType != RecurrenceType.NONE) {
+                    scheduleTaskRemindersAction.invokeAfterOccurrence(
+                        delivery.eventId,
+                        delivery.occurrenceUtcMillis,
+                    )
+                }
+            },
+            displayCurrent = { notificationId ->
+                if (allowMarkDone && task.isAllDay) {
+                    notificationScheduler.startOngoing(
+                        identity = ReminderIdentity(
+                            eventId = delivery.eventId,
+                            occurrenceUtcMillis = delivery.occurrenceUtcMillis,
+                            kind = ReminderKind.ONGOING,
+                            ordinal = 0,
+                        ),
+                        title = title,
+                    )
+                    notificationScheduler.cancel(delivery.semanticKey)
+                    true
+                } else {
+                    showNotification(
+                        context = context,
+                        eventId = delivery.eventId,
+                        semanticKey = delivery.semanticKey,
+                        title = title,
+                        body = body,
+                        notificationId = notificationId,
+                        occurrenceDeadlineUtcMillis = delivery.occurrenceUtcMillis,
+                        notificationAtUtcMillis = notificationAtUtcMillis,
+                        allowMarkDone = allowMarkDone,
+                        accountId = delivery.accountId,
+                        boundaryEpoch = delivery.boundaryEpoch,
+                    )
+                }
+            },
+        )
+    }
+
+    private suspend fun resolveCountdownDelivery(
+        context: Context,
+        delivery: ValidatedDeliveryCommand,
+        title: String,
+        body: String,
         notificationAtUtcMillis: Long,
         rescheduleAfterFire: Boolean,
-        accountId: String,
-        boundaryEpoch: Long,
-    ) {
-        val countdownId = eventId.removePrefix(COUNTDOWN_ID_PREFIX)
+    ): ReminderDeliveryResolution {
+        val countdownId = delivery.eventId.removePrefix(COUNTDOWN_ID_PREFIX)
         val countdown = countdownRepository.getCountdownByIdUtc(countdownId)
         if (countdown == null || countdown.isCompleted || countdown.isDeleted) {
-            notificationScheduler.cancelAll(eventId)
             log.d { "Skipping notification for inactive countdown $countdownId" }
-            return
+            return ReminderDeliveryResolution.DiscardAll
         }
-        if (
-            occurrenceTargetUtcMillis != null &&
-            !scheduleCountdownRemindersAction.isValidOccurrence(countdown, occurrenceTargetUtcMillis)
-        ) {
-            notificationScheduler.cancel(semanticKey)
+        if (!scheduleCountdownRemindersAction.isValidOccurrence(countdown, delivery.occurrenceUtcMillis)) {
             log.d { "Skipping stale notification for countdown $countdownId" }
-            return
+            return ReminderDeliveryResolution.DiscardExact
         }
-        if (rescheduleAfterFire && occurrenceTargetUtcMillis != null) {
-            scheduleCountdownRemindersAction.invokeAfterOccurrence(countdownId, occurrenceTargetUtcMillis)
-        }
-        if (!showNotification(
-                context = context,
-                eventId = eventId,
-                semanticKey = semanticKey,
-                title = title,
-                body = body,
-                notificationId = notificationId,
-                occurrenceDeadlineUtcMillis = occurrenceTargetUtcMillis,
-                notificationAtUtcMillis = notificationAtUtcMillis,
-                allowMarkDone = false,
-                accountId = accountId,
-                boundaryEpoch = boundaryEpoch,
-            )
-        ) {
-            notificationScheduler.cancel(semanticKey)
-        }
+        return ReminderDeliveryResolution.Deliver(
+            prepareCurrentDisplay = { notificationScheduler.markAlarmDisplayed(delivery.semanticKey) },
+            chainNextOccurrence = {
+                if (rescheduleAfterFire) {
+                    scheduleCountdownRemindersAction.invokeAfterOccurrence(
+                        countdownId,
+                        delivery.occurrenceUtcMillis,
+                    )
+                }
+            },
+            displayCurrent = { notificationId ->
+                showNotification(
+                    context = context,
+                    eventId = delivery.eventId,
+                    semanticKey = delivery.semanticKey,
+                    title = title,
+                    body = body,
+                    notificationId = notificationId,
+                    occurrenceDeadlineUtcMillis = delivery.occurrenceUtcMillis,
+                    notificationAtUtcMillis = notificationAtUtcMillis,
+                    allowMarkDone = false,
+                    accountId = delivery.accountId,
+                    boundaryEpoch = delivery.boundaryEpoch,
+                )
+            },
+        )
     }
 
     private fun showNotification(
@@ -268,7 +256,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
         title: String,
         body: String,
         notificationId: Int,
-        occurrenceDeadlineUtcMillis: Long?,
+        occurrenceDeadlineUtcMillis: Long,
         notificationAtUtcMillis: Long,
         allowMarkDone: Boolean,
         accountId: String,
@@ -279,9 +267,7 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
             data = NotificationScheduler.pendingIntentUri(semanticKey, NotificationScheduler.ROLE_TAP)
             putExtra(NotificationScheduler.EXTRA_TASK_ID, eventId)
             putExtra(NotificationScheduler.EXTRA_SEMANTIC_KEY, semanticKey)
-            occurrenceDeadlineUtcMillis?.let {
-                putExtra(NotificationScheduler.EXTRA_OCCURRENCE_DEADLINE_UTC, it)
-            }
+            putExtra(NotificationScheduler.EXTRA_OCCURRENCE_DEADLINE_UTC, occurrenceDeadlineUtcMillis)
             putExtra(NotificationScheduler.EXTRA_NOTIFICATION_AT_UTC, notificationAtUtcMillis)
             putExtra(NotificationScheduler.EXTRA_ACCOUNT_ID, accountId)
             putExtra(NotificationScheduler.EXTRA_BOUNDARY_EPOCH, boundaryEpoch)
@@ -301,27 +287,25 @@ class NotificationReceiver : BroadcastReceiver(), KoinComponent {
             .setContentIntent(tapPendingIntent)
 
         if (allowMarkDone && !eventId.startsWith(COUNTDOWN_ID_PREFIX)) {
-            occurrenceDeadlineUtcMillis?.let { occurrence ->
-                notificationBuilder.addAction(
-                    0,
-                    context.getString(R.string.notification_action_mark_done),
-                    NotificationScheduler.markDonePendingIntent(
-                        context,
-                        eventId,
-                        semanticKey,
-                        notificationId,
-                        occurrence,
-                        accountId,
-                        boundaryEpoch,
-                    ),
-                )
-            }
+            notificationBuilder.addAction(
+                0,
+                context.getString(R.string.notification_action_mark_done),
+                NotificationScheduler.markDonePendingIntent(
+                    context,
+                    eventId,
+                    semanticKey,
+                    notificationId,
+                    occurrenceDeadlineUtcMillis,
+                    accountId,
+                    boundaryEpoch,
+                ),
+            )
         }
         return try {
             NotificationManagerCompat.from(context).notify(notificationId, notificationBuilder.build())
             true
-        } catch (e: SecurityException) {
-            log.e(e) { "Failed to show notification (permission denied)" }
+        } catch (error: SecurityException) {
+            log.e(error) { "Failed to show notification (permission denied)" }
             false
         }
     }

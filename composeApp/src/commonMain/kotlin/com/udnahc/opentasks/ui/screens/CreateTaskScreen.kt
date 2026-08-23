@@ -62,10 +62,13 @@ import com.udnahc.opentasks.data.model.Attachment
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.RecurrenceType
+import com.udnahc.opentasks.data.model.SubtaskItem
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskFormData
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
+import com.udnahc.opentasks.data.model.toSubtaskItems
+import com.udnahc.opentasks.data.model.toSubtasksJson
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.PriorityHigh

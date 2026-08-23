@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
+import com.udnahc.opentasks.domain.usecase.task.EMPTY_CALENDAR_DAY_PROJECTION
 import com.udnahc.opentasks.domain.usecase.task.calendarTaskPrefix
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -266,7 +267,8 @@ private fun StackedMonthEvents(
                             .padding(horizontal = 1.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        val monthPreview = dayProjection?.monthPreview ?: CalendarDayProjection().monthPreview
+                        val monthPreview = dayProjection?.monthPreview
+                            ?: EMPTY_CALENDAR_DAY_PROJECTION.monthPreview
                         monthPreview.rows.forEach { row ->
                             Box(
                                 modifier = Modifier

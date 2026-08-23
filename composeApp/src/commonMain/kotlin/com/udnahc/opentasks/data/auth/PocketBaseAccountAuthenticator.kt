@@ -6,6 +6,7 @@ import com.udnahc.opentasks.data.sync.PocketBaseOwnerMismatchException
 import com.udnahc.opentasks.data.sync.PocketBaseRecordGateway
 import com.udnahc.opentasks.data.sync.PocketBaseServerInventoryReader
 import com.udnahc.opentasks.data.sync.PocketBaseServerInventory
+import com.udnahc.opentasks.data.sync.SyncAuthenticationRejectedException
 import com.udnahc.opentasks.data.sync.canonicalUrl
 import io.ktor.client.HttpClient
 import io.ktor.client.request.header
@@ -270,6 +271,8 @@ internal class PocketBaseAccountAuthenticator(
         )
         val metaResponse = try {
             gateway.getCapability()
+        } catch (error: SyncAuthenticationRejectedException) {
+            throw AccountAuthenticationRejectedException(error)
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             throw AccountConnectivityException(error)
@@ -347,6 +350,8 @@ internal class PocketBaseAccountAuthenticator(
             )
             val inventory = try {
                 PocketBaseServerInventoryReader(gateway).read()
+            } catch (error: SyncAuthenticationRejectedException) {
+                throw AccountAuthenticationRejectedException(error)
             } catch (error: PocketBaseOwnerMismatchException) {
                 throw AccountCapabilityRejectedException(
                     "PocketBase returned a row outside the authenticated account boundary",
@@ -375,6 +380,8 @@ internal class PocketBaseAccountAuthenticator(
         do {
             val response = try {
                 gateway.getRecords(collection, page, INVENTORY_PAGE_SIZE)
+            } catch (error: SyncAuthenticationRejectedException) {
+                throw AccountAuthenticationRejectedException(error)
             } catch (error: PocketBaseOwnerMismatchException) {
                 throw AccountCapabilityRejectedException(
                     "PocketBase returned a row outside the authenticated account boundary",

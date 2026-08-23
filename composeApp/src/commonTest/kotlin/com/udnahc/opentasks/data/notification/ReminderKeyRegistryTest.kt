@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.notification
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
@@ -76,6 +77,69 @@ class ReminderKeyRegistryTest {
 
         assertEquals(1, cleanupCalls)
     }
+
+    @Test
+    fun persistenceFailurePropagatesWithoutLeavingAnUsableReminderRecord() = runTest {
+        val storage = StagedFailingReminderKeyStorage(failOnEdit = 2)
+        val registry = ReminderKeyRegistry(storage)
+        val identity = ReminderIdentity("task", 100L, ReminderKind.DATE, 0)
+
+        assertFailsWith<ReminderKeyPersistenceException> {
+            registry.allocatePending(identity)
+        }
+
+        assertNull(registry.record(identity.semanticKey))
+    }
+
+    @Test
+    fun emptyReplacementDropsOnlyPendingNonOngoingRecords() {
+        val pending = ReminderKeyRecord(
+            semanticKey = ReminderIdentity("task", 100L, ReminderKind.DATE, 0).semanticKey,
+            eventId = "task",
+            notificationId = 1,
+            lifecycle = ReminderLifecycle.PENDING,
+            kind = ReminderKind.DATE,
+        )
+        val displayed = pending.copy(
+            semanticKey = ReminderIdentity("task", 200L, ReminderKind.DATE, 0).semanticKey,
+            notificationId = 2,
+            lifecycle = ReminderLifecycle.DISPLAYED,
+        )
+        val ongoing = pending.copy(
+            semanticKey = ReminderIdentity("task", 300L, ReminderKind.ONGOING, 0).semanticKey,
+            notificationId = 3,
+            kind = ReminderKind.ONGOING,
+        )
+
+        val cancelled = pendingReplacementRecordsToCancel(
+            storedRecords = listOf(pending, displayed, ongoing),
+            replacementSemanticKeys = emptySet(),
+        )
+
+        assertEquals(listOf(pending), cancelled)
+    }
+
+    @Test
+    fun replacementKeepsItsPendingSemanticKeys() {
+        val retained = ReminderKeyRecord(
+            semanticKey = ReminderIdentity("task", 100L, ReminderKind.DATE, 0).semanticKey,
+            eventId = "task",
+            notificationId = 1,
+            lifecycle = ReminderLifecycle.PENDING,
+            kind = ReminderKind.DATE,
+        )
+        val dropped = retained.copy(
+            semanticKey = ReminderIdentity("task", 200L, ReminderKind.DATE, 0).semanticKey,
+            notificationId = 2,
+        )
+
+        val cancelled = pendingReplacementRecordsToCancel(
+            storedRecords = listOf(retained, dropped),
+            replacementSemanticKeys = setOf(retained.semanticKey),
+        )
+
+        assertEquals(listOf(dropped), cancelled)
+    }
 }
 
 private class InMemoryReminderKeyStorage : ReminderKeyStorage {
@@ -101,5 +165,24 @@ private class InMemoryReminderKeyStorage : ReminderKeyStorage {
                 stringSets.remove(key)
             }
         }.apply(block)
+    }
+}
+
+private class StagedFailingReminderKeyStorage(
+    private val failOnEdit: Int,
+) : ReminderKeyStorage {
+    private val delegate = InMemoryReminderKeyStorage()
+    private var editCount = 0
+
+    override fun getString(key: String): String? = delegate.getString(key)
+
+    override fun getStringSet(key: String): Set<String> = delegate.getStringSet(key)
+
+    override fun edit(block: ReminderKeyStorageEditor.() -> Unit) {
+        editCount += 1
+        if (editCount == failOnEdit) {
+            throw ReminderKeyPersistenceException("staged persistence failure")
+        }
+        delegate.edit(block)
     }
 }

@@ -53,11 +53,6 @@ class AttachmentRepositoryImpl(
     override suspend fun getByIdAnyState(id: String): Attachment? =
         withContext(ioDispatcher) { dao.findByIdAnyState(id)?.withLocalTimestamps() }
 
-    override suspend fun getActiveForOwnerAnyState(ownerType: String, ownerId: String): List<Attachment> =
-        withContext(ioDispatcher) {
-            dao.getActiveForOwnerAnyState(ownerType, ownerId).map { it.withLocalTimestamps() }
-        }
-
     override suspend fun nextSortOrder(ownerType: String, ownerId: String, kind: String): Int =
         withContext(ioDispatcher) { dao.maxSortOrder(ownerType, ownerId, kind) + 1 }
 

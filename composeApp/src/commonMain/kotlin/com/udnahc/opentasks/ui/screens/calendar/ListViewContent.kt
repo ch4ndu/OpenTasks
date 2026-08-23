@@ -29,8 +29,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
-import com.udnahc.opentasks.data.extensions.dayKey
-import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
@@ -73,7 +71,7 @@ internal fun ListViewContent(
     onToggleComplete: (Task) -> Unit,
 ) {
     // Compute the Sunday of the week containing "today"
-    val todayWeekSunMillis = remember { startOfWeekLocalMillis(todayMillis) }
+    val todayWeekSunMillis = remember(todayMillis) { startOfWeekLocalMillis(todayMillis) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Spacer(Modifier.height(topBarHeight))
@@ -219,6 +217,7 @@ internal fun WeekStripPage(
     val dayLabels = remember(sun, mon, tue, wed, thu, fri, sat) {
         listOf(sun, mon, tue, wed, thu, fri, sat)
     }
+    val weekDays = remember(weekSundayMillis) { buildWeekStripDays(weekSundayMillis) }
 
     val dimens = OpenTasksTheme.dimens
     Row(
@@ -227,22 +226,19 @@ internal fun WeekStripPage(
             .padding(horizontal = dimens.paddingSmall, vertical = dimens.paddingMedium),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        for (i in 0..6) {
-            val dayMillis = weekSundayMillis + i * MILLIS_PER_DAY
-            val dayNum = extractDay(dayMillis)
-            val isToday = dayMillis == todayMillis
-            val isSelected = dayMillis == selectedDayMillis
-            val dk = dayKey(dayMillis)
-            val hasTasks = calendarDaysByDay.containsKey(dk)
+        weekDays.forEachIndexed { index, day ->
+            val isToday = day.millis == todayMillis
+            val isSelected = day.millis == selectedDayMillis
+            val hasTasks = calendarDaysByDay.containsKey(day.dayKey)
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { onDaySelected(dayMillis) },
+                    .clickable { onDaySelected(day.millis) },
             ) {
                 Text(
-                    text = dayLabels[i],
+                    text = dayLabels[index],
                     style = MaterialTheme.typography.labelSmall,
                     color = if (isSelected || isToday) PrimaryBlue
                     else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -265,7 +261,7 @@ internal fun WeekStripPage(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = dayNum.toString(),
+                        text = day.dayNumber.toString(),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
                         color = when {

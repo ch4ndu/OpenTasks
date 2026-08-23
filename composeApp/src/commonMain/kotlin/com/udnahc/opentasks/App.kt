@@ -46,19 +46,20 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
 import com.udnahc.opentasks.data.auth.AccountSessionState
 import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.auth.activeBindingOrNull
 import com.udnahc.opentasks.data.auth.authenticatedAccountOrNull
-import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
-import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.ExternalInputFailure
 import com.udnahc.opentasks.SharedTaskPayloadEvent
+import com.udnahc.opentasks.claimSharedIcsPayload
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.TaskFormData
@@ -69,14 +70,16 @@ import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import com.udnahc.opentasks.domain.action.settings.InitializeSyncAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
-import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
+import com.udnahc.opentasks.domain.action.task.TaskWriteResult
+import com.udnahc.opentasks.data.repository.CommittedMutation
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.settings.CheckNotificationPermissionUseCase
-import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import com.udnahc.opentasks.domain.usecase.task.QuickTaskCreationContext
+import com.udnahc.opentasks.domain.usecase.task.TaskReminderEligibilityUseCase
 import com.udnahc.opentasks.navigation.AppNavController
 import com.udnahc.opentasks.navigation.Screen
 import com.udnahc.opentasks.navigation.asQuickAddTask
+import com.udnahc.opentasks.navigation.screenNavSavedStateConfiguration
 import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
 import com.udnahc.opentasks.ui.screens.AccountSessionEntryMode
 import com.udnahc.opentasks.ui.screens.AccountSessionRoute
@@ -111,6 +114,7 @@ import com.udnahc.opentasks.viewmodel.AppViewModel
 import com.udnahc.opentasks.viewmodel.AuthViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
+import com.udnahc.opentasks.viewmodel.CountdownMutationEvent
 import com.udnahc.opentasks.viewmodel.CountdownViewModel
 import com.udnahc.opentasks.viewmodel.ImportCalendarViewModel
 import com.udnahc.opentasks.viewmodel.ImportCsvViewModel
@@ -124,6 +128,9 @@ import com.udnahc.opentasks.viewmodel.TaskFormSaveEvent
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.viewmodel.TaskNotificationViewModel
+import com.udnahc.opentasks.viewmodel.TaskNotificationSheetFeedback
+import com.udnahc.opentasks.viewmodel.SharedIcsImportResult
+import com.udnahc.opentasks.viewmodel.taskNotificationSheetDecision
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -148,6 +155,15 @@ import opentasks.composeapp.generated.resources.not_urgent_important
 import opentasks.composeapp.generated.resources.not_urgent_unimportant
 import opentasks.composeapp.generated.resources.open_settings
 import opentasks.composeapp.generated.resources.task_save_failed
+import opentasks.composeapp.generated.resources.task_mutation_saved_warning
+import opentasks.composeapp.generated.resources.task_delete_failed
+import opentasks.composeapp.generated.resources.task_notification_saved_warning
+import opentasks.composeapp.generated.resources.task_notification_obsolete
+import opentasks.composeapp.generated.resources.task_notification_task_missing
+import opentasks.composeapp.generated.resources.task_notification_stale
+import opentasks.composeapp.generated.resources.countdown_save_failed
+import opentasks.composeapp.generated.resources.countdown_delete_failed
+import opentasks.composeapp.generated.resources.countdown_saved_warning
 import opentasks.composeapp.generated.resources.urgent_important
 import opentasks.composeapp.generated.resources.urgent_unimportant
 import org.jetbrains.compose.resources.DrawableResource
@@ -168,6 +184,7 @@ fun App(
     widgetNavigationEvent: WidgetNavigationEvent? = null,
     onNotificationDeepLinkEventConsumed: (NotificationDeepLinkEvent) -> Unit = {},
     onAccountBoundaryChanged: suspend (com.udnahc.opentasks.data.auth.CacheBinding?) -> Unit = {},
+    onTaskNotificationWidgetsRefresh: suspend (AccountBoundary) -> Unit = {},
     onSystemBarIconAppearanceChanged: (useDarkIcons: Boolean) -> Unit = {},
 ) {
     val settingsViewModel: SettingsViewModel = koinViewModel()
@@ -258,6 +275,7 @@ fun App(
                         deepLinkNotificationEvent = deepLinkNotificationEvent,
                         widgetNavigationEvent = widgetNavigationEvent,
                         onNotificationDeepLinkEventConsumed = onNotificationDeepLinkEventConsumed,
+                        onTaskNotificationWidgetsRefresh = onTaskNotificationWidgetsRefresh,
                     )
                 }
             }
@@ -272,11 +290,12 @@ private fun ActiveAppContent(
     deepLinkNotificationEvent: NotificationDeepLinkEvent?,
     widgetNavigationEvent: WidgetNavigationEvent?,
     onNotificationDeepLinkEventConsumed: (NotificationDeepLinkEvent) -> Unit,
+    onTaskNotificationWidgetsRefresh: suspend (AccountBoundary) -> Unit,
 ) {
     val binding = sessionState.activeBindingOrNull() ?: return
     val isRemoteSyncEnabled = sessionState is AccountSessionState.Authenticated
-    val backStack = remember { NavBackStack<NavKey>(Screen.Matrix) }
-    val navController = remember { AppNavController(backStack) }
+    val backStack = rememberNavBackStack(screenNavSavedStateConfiguration, Screen.Matrix)
+    val navController = remember(backStack) { AppNavController(backStack) }
     var taskNotificationEvent by remember { mutableStateOf<NotificationDeepLinkEvent?>(null) }
     val initializeSyncAction = koinInject<InitializeSyncAction>()
     val rebuildReminderQueueAction = koinInject<RebuildReminderQueueAction>()
@@ -409,6 +428,7 @@ private fun ActiveAppContent(
             },
             taskNotificationEvent = taskNotificationEvent,
             onTaskNotificationDismiss = { taskNotificationEvent = null },
+            onTaskNotificationWidgetsRefresh = onTaskNotificationWidgetsRefresh,
             binding = binding,
             currentAccount = sessionState.authenticatedAccountOrNull(),
             isRemoteSyncEnabled = isRemoteSyncEnabled,
@@ -488,12 +508,14 @@ private fun MainScreen(
     onCalendarNavigationConsumed: (Long) -> Unit,
     taskNotificationEvent: NotificationDeepLinkEvent?,
     onTaskNotificationDismiss: () -> Unit,
+    onTaskNotificationWidgetsRefresh: suspend (AccountBoundary) -> Unit,
     binding: CacheBinding,
     currentAccount: com.udnahc.opentasks.data.auth.AuthenticatedAccount?,
     isRemoteSyncEnabled: Boolean,
     authViewModel: AuthViewModel,
 ) {
     val noteViewModel: NoteViewModel = koinViewModel()
+    val matrixViewModel: MatrixViewModel = koinViewModel()
     val taskNotificationViewModel: TaskNotificationViewModel = koinViewModel()
     val appViewModel: AppViewModel = koinViewModel()
     val accountOperation by authViewModel.operation.collectAsState()
@@ -515,9 +537,16 @@ private fun MainScreen(
     var pendingTaskCreation by remember { mutableStateOf<Screen.CreateTask?>(null) }
     val taskFormBackHandlerRegistry = remember { TaskFormBackHandlerRegistry() }
     val snackbarHostState = remember { SnackbarHostState() }
+    val taskMutationSavedWarning = stringResource(Res.string.task_mutation_saved_warning)
+    val notificationSavedWarning = stringResource(Res.string.task_notification_saved_warning)
+    val notificationObsolete = stringResource(Res.string.task_notification_obsolete)
+    val notificationTaskMissing = stringResource(Res.string.task_notification_task_missing)
+    val notificationStale = stringResource(Res.string.task_notification_stale)
+    val countdownSaveFailed = stringResource(Res.string.countdown_save_failed)
+    val countdownDeleteFailed = stringResource(Res.string.countdown_delete_failed)
+    val countdownSavedWarning = stringResource(Res.string.countdown_saved_warning)
     val checkNotificationPermissionUseCase = koinInject<CheckNotificationPermissionUseCase>()
-    val parseIcsUseCase = koinInject<ParseIcsUseCase>()
-    val importCalendarEventsAction = koinInject<ImportCalendarEventsAction>()
+    val taskReminderEligibilityUseCase = koinInject<TaskReminderEligibilityUseCase>()
     val snackbarScope = rememberCoroutineScope()
     var pendingGlobalPostSaveReminderCheck by remember { mutableStateOf<TaskFormData?>(null) }
     val requestGlobalNotificationPermission = rememberNotificationPermissionLauncher {
@@ -527,6 +556,7 @@ private fun MainScreen(
             maybeShowExactReminderSnackbar(
                 formData = formData,
                 checkNotificationPermissionUseCase = checkNotificationPermissionUseCase,
+                taskReminderEligibilityUseCase = taskReminderEligibilityUseCase,
                 snackbarHostState = snackbarHostState,
                 scope = snackbarScope,
             )
@@ -534,7 +564,7 @@ private fun MainScreen(
     }
 
     fun requestPostSaveReminderCheck(formData: TaskFormData) {
-        if (!formData.hasFutureReminder()) return
+        if (!taskReminderEligibilityUseCase(formData)) return
         pendingGlobalPostSaveReminderCheck = formData
         requestGlobalNotificationPermission()
     }
@@ -593,20 +623,7 @@ private fun MainScreen(
                     val payload = event.payload
                     when {
                         payload.hasIcsContent -> {
-                            try {
-                                val count = withContext(Dispatchers.IO) {
-                                    val events = parseIcsUseCase(payload.icsContent)
-                                    importCalendarEventsAction(events)
-                                }
-                                snackbarHostState.showSnackbar(getString(Res.string.import_success, count))
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                log.e(e) { "Shared ICS import failed" }
-                                snackbarHostState.showSnackbar(getString(Res.string.import_failed_generic))
-                            } finally {
-                                clearSharedTaskPayload(payload.id)
-                            }
+                            claimSharedIcsPayload(payload.id)?.let(appViewModel::importSharedIcs)
                         }
 
                         payload.hasTaskContent -> {
@@ -621,6 +638,23 @@ private fun MainScreen(
 
                         else -> clearSharedTaskPayload(payload.id)
                     }
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(appViewModel) {
+        appViewModel.sharedIcsImportResult.collect { result ->
+            if (result == null || !appViewModel.consumeSharedIcsImportResult(result)) return@collect
+            when (result) {
+                is SharedIcsImportResult.Success -> {
+                    snackbarHostState.showSnackbar(
+                        getString(Res.string.import_success, result.importedCount),
+                    )
+                }
+
+                is SharedIcsImportResult.Failed -> {
+                    snackbarHostState.showSnackbar(getString(Res.string.import_failed_generic))
                 }
             }
         }
@@ -649,7 +683,6 @@ private fun MainScreen(
             ),
             entryProvider = entryProvider {
                 entry<Screen.Matrix> {
-                    val matrixViewModel: MatrixViewModel = koinViewModel()
                     EisenhowerMatrixScreen(
                         viewModel = matrixViewModel,
                         onTaskClick = { task ->
@@ -743,7 +776,6 @@ private fun MainScreen(
                 }
 
                 entry<Screen.QuadrantDetail> { screen ->
-                    val matrixViewModel: MatrixViewModel = koinViewModel()
                     val priority = TaskPriority.entries[screen.priorityOrdinal]
                     val quadrantTitle = quadrantTitle(priority)
                     QuadrantDetailScreen(
@@ -773,6 +805,11 @@ private fun MainScreen(
                             when (saveEvent) {
                                 is QuickAddTaskSaveEvent.Saved -> {
                                     if (backStack.lastOrNull() == screen) navController.popBackStack()
+                                    if (saveEvent.postCommitWarning != null) {
+                                        snackbarScope.launch {
+                                            snackbarHostState.showSnackbar(taskMutationSavedWarning)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -808,6 +845,7 @@ private fun MainScreen(
                             maybeShowExactReminderSnackbar(
                                 formData = formData,
                                 checkNotificationPermissionUseCase = checkNotificationPermissionUseCase,
+                                taskReminderEligibilityUseCase = taskReminderEligibilityUseCase,
                                 snackbarHostState = snackbarHostState,
                                 scope = snackbarScope,
                             )
@@ -823,7 +861,12 @@ private fun MainScreen(
                             when (saveEvent) {
                                 is TaskFormSaveEvent.Saved -> {
                                     navController.popBackStack()
-                                    if (saveEvent.formData.hasFutureReminder()) {
+                                    if (saveEvent.postCommitWarning != null) {
+                                        snackbarScope.launch {
+                                            snackbarHostState.showSnackbar(taskMutationSavedWarning)
+                                        }
+                                    }
+                                    if (taskReminderEligibilityUseCase(saveEvent.formData)) {
                                         pendingPostSaveReminderCheck = saveEvent.formData
                                         requestNotificationPermission()
                                     }
@@ -833,11 +876,20 @@ private fun MainScreen(
                                     navController.replaceTop(Screen.EditTask(saveEvent.taskId))
                                     snackbarScope.launch {
                                         snackbarHostState.showSnackbar(getString(Res.string.image_save_partial_failed))
+                                        if (saveEvent.postCommitWarning != null) {
+                                            snackbarHostState.showSnackbar(taskMutationSavedWarning)
+                                        }
                                         requestPostSaveReminderCheck(saveEvent.formData)
                                     }
                                 }
 
-                                is TaskFormSaveEvent.ImagesFailed -> Unit
+                                is TaskFormSaveEvent.ImagesFailed -> {
+                                    if (saveEvent.postCommitWarning != null) {
+                                        snackbarScope.launch {
+                                            snackbarHostState.showSnackbar(taskMutationSavedWarning)
+                                        }
+                                    }
+                                }
 
                                 is TaskFormSaveEvent.Error -> {
                                     snackbarScope.launch {
@@ -848,6 +900,21 @@ private fun MainScreen(
                                 is TaskFormSaveEvent.StaleOccurrence -> {
                                     snackbarScope.launch {
                                         snackbarHostState.showSnackbar(getString(Res.string.task_save_failed))
+                                    }
+                                }
+
+                                is TaskFormSaveEvent.DeleteError -> {
+                                    snackbarScope.launch {
+                                        snackbarHostState.showSnackbar(getString(Res.string.task_delete_failed))
+                                    }
+                                }
+
+                                is TaskFormSaveEvent.Deleted -> {
+                                    navController.popBackStack()
+                                    if (saveEvent.postCommitWarning != null) {
+                                        snackbarScope.launch {
+                                            snackbarHostState.showSnackbar(taskMutationSavedWarning)
+                                        }
                                     }
                                 }
                             }
@@ -898,6 +965,7 @@ private fun MainScreen(
                             maybeShowExactReminderSnackbar(
                                 formData = formData,
                                 checkNotificationPermissionUseCase = checkNotificationPermissionUseCase,
+                                taskReminderEligibilityUseCase = taskReminderEligibilityUseCase,
                                 snackbarHostState = snackbarHostState,
                                 scope = snackbarScope,
                             )
@@ -913,7 +981,12 @@ private fun MainScreen(
                             when (saveEvent) {
                                 is TaskFormSaveEvent.Saved -> {
                                     navController.popBackStack()
-                                    if (saveEvent.formData.hasFutureReminder()) {
+                                    if (saveEvent.postCommitWarning != null) {
+                                        snackbarScope.launch {
+                                            snackbarHostState.showSnackbar(taskMutationSavedWarning)
+                                        }
+                                    }
+                                    if (taskReminderEligibilityUseCase(saveEvent.formData)) {
                                         pendingPostSaveReminderCheck = saveEvent.formData
                                         requestNotificationPermission()
                                     }
@@ -924,7 +997,10 @@ private fun MainScreen(
                                 is TaskFormSaveEvent.ImagesFailed -> {
                                     snackbarScope.launch {
                                         snackbarHostState.showSnackbar(getString(Res.string.image_save_partial_failed))
-                                        if (saveEvent.formData.hasFutureReminder()) {
+                                        if (saveEvent.postCommitWarning != null) {
+                                            snackbarHostState.showSnackbar(taskMutationSavedWarning)
+                                        }
+                                        if (taskReminderEligibilityUseCase(saveEvent.formData)) {
                                             pendingPostSaveReminderCheck = saveEvent.formData
                                             requestNotificationPermission()
                                         }
@@ -940,6 +1016,21 @@ private fun MainScreen(
                                 is TaskFormSaveEvent.StaleOccurrence -> {
                                     snackbarScope.launch {
                                         snackbarHostState.showSnackbar(getString(Res.string.task_save_failed))
+                                    }
+                                }
+
+                                is TaskFormSaveEvent.DeleteError -> {
+                                    snackbarScope.launch {
+                                        snackbarHostState.showSnackbar(getString(Res.string.task_delete_failed))
+                                    }
+                                }
+
+                                is TaskFormSaveEvent.Deleted -> {
+                                    navController.popBackStack()
+                                    if (saveEvent.postCommitWarning != null) {
+                                        snackbarScope.launch {
+                                            snackbarHostState.showSnackbar(taskMutationSavedWarning)
+                                        }
                                     }
                                 }
                             }
@@ -983,7 +1074,6 @@ private fun MainScreen(
                             onRemoveTaskImage = { taskFormViewModel.removeTaskImage(it) },
                             onDelete = {
                                 taskFormViewModel.deleteTask(screen.taskId)
-                                navController.popBackStack()
                             },
                         )
                     }
@@ -1004,13 +1094,31 @@ private fun MainScreen(
                         onCountdownClick = { countdown ->
                             navController.navigate(Screen.CountdownDetail(countdown.id))
                         },
-                        onDeleteCountdown = viewModel::deleteCountdown,
                         onSettingsClick = onSettingsClick,
                     )
                 }
 
                 entry<Screen.CreateCountdown> { screen ->
                     val viewModel: CountdownFormViewModel = koinViewModel()
+                    val isSaving by viewModel.isSaving.collectAsState()
+                    LaunchedEffect(viewModel) {
+                        viewModel.mutationEvent.collect { event ->
+                            val mutationEvent = event ?: return@collect
+                            if (!viewModel.consumeMutationEvent(mutationEvent)) return@collect
+                            when (mutationEvent) {
+                                is CountdownMutationEvent.Saved -> {
+                                    navController.popBackStack()
+                                    if (mutationEvent.postCommitWarning != null) {
+                                        snackbarHostState.showSnackbar(countdownSavedWarning)
+                                    }
+                                }
+                                is CountdownMutationEvent.Failed -> {
+                                    snackbarHostState.showSnackbar(countdownSaveFailed)
+                                }
+                                is CountdownMutationEvent.Deleted -> Unit
+                            }
+                        }
+                    }
                     val initialType =
                         CountdownType.entries.getOrElse(screen.typeOrdinal) { CountdownType.COUNTDOWN }
                     CreateCountdownScreen(
@@ -1019,12 +1127,31 @@ private fun MainScreen(
                         currentDate = currentDate,
                         onSave = { countdown -> viewModel.addCountdown(countdown) },
                         onBack = { navController.popBackStack() },
+                        isSaving = isSaving,
                     )
                 }
 
                 entry<Screen.CountdownDetail> { screen ->
                     val viewModel: CountdownFormViewModel = koinViewModel()
                     LaunchedEffect(screen.countdownId) { viewModel.setCountdownId(screen.countdownId) }
+                    LaunchedEffect(viewModel) {
+                        viewModel.mutationEvent.collect { event ->
+                            val mutationEvent = event ?: return@collect
+                            if (!viewModel.consumeMutationEvent(mutationEvent)) return@collect
+                            when (mutationEvent) {
+                                is CountdownMutationEvent.Deleted -> {
+                                    navController.popBackStack()
+                                    if (mutationEvent.postCommitWarning != null) {
+                                        snackbarHostState.showSnackbar(countdownSavedWarning)
+                                    }
+                                }
+                                is CountdownMutationEvent.Failed -> {
+                                    snackbarHostState.showSnackbar(countdownDeleteFailed)
+                                }
+                                is CountdownMutationEvent.Saved -> Unit
+                            }
+                        }
+                    }
                     val countdown by viewModel.editCountdown.collectAsState()
                     val detailCountdown by viewModel.detailCountdown.collectAsState()
                     CountdownDetailScreen(
@@ -1036,7 +1163,6 @@ private fun MainScreen(
                         onDelete = {
                             val current = countdown ?: return@CountdownDetailScreen
                             viewModel.deleteCountdown(current)
-                            navController.popBackStack()
                         },
                     )
                 }
@@ -1044,6 +1170,25 @@ private fun MainScreen(
                 entry<Screen.EditCountdown> { screen ->
                     val viewModel: CountdownFormViewModel = koinViewModel()
                     LaunchedEffect(screen.countdownId) { viewModel.setCountdownId(screen.countdownId) }
+                    val isSaving by viewModel.isSaving.collectAsState()
+                    LaunchedEffect(viewModel) {
+                        viewModel.mutationEvent.collect { event ->
+                            val mutationEvent = event ?: return@collect
+                            if (!viewModel.consumeMutationEvent(mutationEvent)) return@collect
+                            when (mutationEvent) {
+                                is CountdownMutationEvent.Saved -> {
+                                    navController.popBackStack()
+                                    if (mutationEvent.postCommitWarning != null) {
+                                        snackbarHostState.showSnackbar(countdownSavedWarning)
+                                    }
+                                }
+                                is CountdownMutationEvent.Failed -> {
+                                    snackbarHostState.showSnackbar(countdownSaveFailed)
+                                }
+                                is CountdownMutationEvent.Deleted -> Unit
+                            }
+                        }
+                    }
                     val editCountdown by viewModel.editCountdown.collectAsState()
                     editCountdown?.let { countdown ->
                         CreateCountdownScreen(
@@ -1054,6 +1199,7 @@ private fun MainScreen(
                                 viewModel.updateCountdown(updated)
                             },
                             onBack = { navController.popBackStack() },
+                            isSaving = isSaving,
                         )
                     }
                 }
@@ -1189,7 +1335,29 @@ private fun MainScreen(
             uiState = taskNotificationUiState,
             onDismiss = { closeTaskNotificationSheet() },
             onMarkDone = {
-                taskNotificationViewModel.markDone { closeTaskNotificationSheet() }
+                taskNotificationViewModel.markDone(
+                    onTaskUpdated = onTaskNotificationWidgetsRefresh,
+                    onResult = { mutation: CommittedMutation<TaskWriteResult> ->
+                        taskNotificationViewModel.clearActionError()
+                        val decision = taskNotificationSheetDecision(mutation)
+                        if (decision.close) {
+                            closeTaskNotificationSheet()
+                        }
+                        val feedback = decision.feedback
+                        if (feedback != null) {
+                            snackbarScope.launch {
+                                snackbarHostState.showSnackbar(
+                                    when (feedback) {
+                                        TaskNotificationSheetFeedback.SAVED_WARNING -> notificationSavedWarning
+                                        TaskNotificationSheetFeedback.OBSOLETE -> notificationObsolete
+                                        TaskNotificationSheetFeedback.TASK_MISSING -> notificationTaskMissing
+                                        TaskNotificationSheetFeedback.STALE -> notificationStale
+                                    },
+                                )
+                            }
+                        }
+                    },
+                )
             },
             onGotIt = {
                 taskNotificationViewModel.gotIt { closeTaskNotificationSheet() }
@@ -1263,10 +1431,11 @@ private fun MainScreen(
 private fun maybeShowExactReminderSnackbar(
     formData: TaskFormData,
     checkNotificationPermissionUseCase: CheckNotificationPermissionUseCase,
+    taskReminderEligibilityUseCase: TaskReminderEligibilityUseCase,
     snackbarHostState: SnackbarHostState,
     scope: kotlinx.coroutines.CoroutineScope,
 ) {
-    if (!formData.hasFutureReminder()) return
+    if (!taskReminderEligibilityUseCase(formData)) return
     scope.launch {
         if (checkNotificationPermissionUseCase.exactReminderStatus() != ExactReminderPermissionStatus.NOT_GRANTED) {
             return@launch
@@ -1279,33 +1448,6 @@ private fun maybeShowExactReminderSnackbar(
             checkNotificationPermissionUseCase.openExactReminderSettings()
         }
     }
-}
-
-private fun TaskFormData.hasFutureReminder(): Boolean {
-    val deadlineValue = deadline ?: return false
-    val now = localNow()
-    val dateOffsets = dateReminders.parseMinuteValues()
-    val durationOffsets = durationReminders.parseMinuteValues()
-    val legacyOffsets = if (dateOffsets.isEmpty() && durationOffsets.isEmpty()) {
-        legacyReminderMinutes()
-    } else {
-        emptyList()
-    }
-    return dateOffsets.any { deadlineValue - (it * MILLIS_PER_MINUTE) > now } ||
-            durationOffsets.any { offset ->
-                val triggerAt =
-                    if (offset == -1) endDeadline else deadlineValue - (offset * MILLIS_PER_MINUTE)
-                triggerAt != null && triggerAt > now
-            } ||
-            legacyOffsets.any { deadlineValue - (it * MILLIS_PER_MINUTE) > now }
-}
-
-private fun String.parseMinuteValues(): List<Int> =
-    split(",").mapNotNull { it.trim().toIntOrNull() }
-
-private fun TaskFormData.legacyReminderMinutes(): List<Int> {
-    val value = reminderDays.takeIf { it > 0 } ?: return emptyList()
-    return listOf(value * 1440)
 }
 
 @Composable

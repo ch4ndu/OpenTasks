@@ -1,3 +1,4 @@
+import org.gradle.api.GradleException
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -5,6 +6,31 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
 }
+
+val releaseSigningInputs = mapOf(
+    "storeFile" to (
+        providers.gradleProperty("opentasks.android.signing.storeFile").orNull?.takeIf { it.isNotBlank() }
+            ?: providers.environmentVariable("OPENTASKS_ANDROID_KEYSTORE_PATH").orNull?.takeIf { it.isNotBlank() }
+        ),
+    "storePassword" to (
+        providers.gradleProperty("opentasks.android.signing.storePassword").orNull?.takeIf { it.isNotBlank() }
+            ?: providers.environmentVariable("OPENTASKS_ANDROID_KEYSTORE_PASSWORD").orNull?.takeIf { it.isNotBlank() }
+        ),
+    "keyAlias" to (
+        providers.gradleProperty("opentasks.android.signing.keyAlias").orNull?.takeIf { it.isNotBlank() }
+            ?: providers.environmentVariable("OPENTASKS_ANDROID_KEY_ALIAS").orNull?.takeIf { it.isNotBlank() }
+        ),
+    "keyPassword" to (
+        providers.gradleProperty("opentasks.android.signing.keyPassword").orNull?.takeIf { it.isNotBlank() }
+            ?: providers.environmentVariable("OPENTASKS_ANDROID_KEY_PASSWORD").orNull?.takeIf { it.isNotBlank() }
+        ),
+)
+val isReleaseSigningConfigured = releaseSigningInputs.values.all { it != null }
+if (releaseSigningInputs.values.any { it != null } && !isReleaseSigningConfigured) {
+    val missingInputs = releaseSigningInputs.filterValues { it == null }.keys.joinToString(", ")
+    throw GradleException("Incomplete Android release signing configuration; missing inputs: $missingInputs")
+}
+val releaseStoreFile = releaseSigningInputs.getValue("storeFile")?.let(::file)
 
 kotlin {
     target {
@@ -33,10 +59,30 @@ android {
             excludes += "/META-INF/INDEX.LIST"
         }
     }
+    if (isReleaseSigningConfigured) {
+        signingConfigs {
+            create("release") {
+                storeFile = requireNotNull(releaseStoreFile)
+                storePassword = requireNotNull(releaseSigningInputs.getValue("storePassword"))
+                keyAlias = requireNotNull(releaseSigningInputs.getValue("keyAlias"))
+                keyPassword = requireNotNull(releaseSigningInputs.getValue("keyPassword"))
+            }
+        }
+    }
     buildTypes {
         getByName("release") {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            signingConfig = if (isReleaseSigningConfigured) {
+                signingConfigs.getByName("release")
+            } else {
+                // Keep local minified release builds installable when production signing is unavailable.
+                signingConfigs.getByName("debug")
+            }
         }
     }
     buildFeatures {

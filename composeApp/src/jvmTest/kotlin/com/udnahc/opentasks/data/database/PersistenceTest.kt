@@ -2,6 +2,8 @@ package com.udnahc.opentasks.data.database
 
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import app.cash.turbine.test
@@ -14,15 +16,21 @@ import com.udnahc.opentasks.data.auth.AccountTransitionPhase
 import com.udnahc.opentasks.data.auth.AccountTransitionPurpose
 import com.udnahc.opentasks.data.auth.LOCAL_CACHE_OWNER_ID
 import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
+import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.model.AppSettings
 import com.udnahc.opentasks.data.model.ATTACHMENT_OWNER_TASK
+import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.AttachmentRepositoryImpl
 import com.udnahc.opentasks.data.repository.AppSettingsRepositoryImpl
 import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
+import com.udnahc.opentasks.data.repository.CountdownRepositoryImpl
+import com.udnahc.opentasks.data.repository.NoteRepositoryImpl
+import com.udnahc.opentasks.data.repository.PostCommitWarningPhase
 import com.udnahc.opentasks.data.repository.TagRepositoryImpl
 import com.udnahc.opentasks.data.repository.TaskRepositoryImpl
 import com.udnahc.opentasks.data.sync.SyncTrigger
@@ -31,7 +39,10 @@ import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.SyncService
 import com.udnahc.opentasks.data.sync.ServerMigrationCoordinator
 import com.udnahc.opentasks.data.sync.SyncMode
+import com.udnahc.opentasks.data.sync.SyncPassContextFactory
+import com.udnahc.opentasks.data.sync.SyncPassContext
 import com.udnahc.opentasks.data.sync.SyncSettingsKeys
+import com.udnahc.opentasks.data.sync.SyncWriterTransactionRunner
 import com.udnahc.opentasks.data.sync.adapters.AttachmentFileDownloadException
 import com.udnahc.opentasks.data.sync.adapters.AttachmentSyncAdapter
 import com.udnahc.opentasks.data.sync.records.AttachmentRecord
@@ -60,6 +71,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.coroutines.cancellation.CancellationException
 
 class PersistenceTest {
     private lateinit var databaseFile: File
@@ -68,6 +80,14 @@ class PersistenceTest {
 
     private object NoOpSyncTrigger : SyncTrigger {
         override suspend fun triggerSync() = Unit
+    }
+
+    private object FailingSyncTrigger : SyncTrigger {
+        override suspend fun triggerSync() = error("sync trigger failed")
+    }
+
+    private object CancellingSyncTrigger : SyncTrigger {
+        override suspend fun triggerSync(): Unit = throw CancellationException("cancelled")
     }
 
     @BeforeTest
@@ -225,6 +245,47 @@ class PersistenceTest {
     }
 
     @Test
+    fun migrationTwelveToThirteenPreservesTaskAndCreatesCalendarIndex() {
+        val migrationFile = File.createTempFile("opentasks-migration-12-13", ".db")
+        val connection = BundledSQLiteDriver().open(migrationFile.absolutePath)
+        try {
+            connection.execSQL(
+                "CREATE TABLE tasks (id TEXT NOT NULL PRIMARY KEY, isDeleted INTEGER NOT NULL, deadline INTEGER)",
+            )
+            connection.execSQL("INSERT INTO tasks (id, isDeleted, deadline) VALUES ('task', 0, 1234)")
+
+            MIGRATION_12_13.migrate(connection)
+
+            connection.prepare("SELECT id, isDeleted, deadline FROM tasks WHERE id = 'task'").use { statement ->
+                assertTrue(statement.step())
+                assertEquals("task", statement.getText(0))
+                assertEquals(0L, statement.getLong(1))
+                assertEquals(1234L, statement.getLong(2))
+            }
+            connection.prepare("PRAGMA index_list(tasks)").use { statement ->
+                var found = false
+                while (statement.step()) {
+                    if (statement.getText(1) == "index_tasks_isDeleted_deadline") {
+                        found = true
+                        assertEquals(0L, statement.getLong(2))
+                    }
+                }
+                assertTrue(found)
+            }
+            connection.prepare("PRAGMA index_info(index_tasks_isDeleted_deadline)").use { statement ->
+                val columns = mutableListOf<String>()
+                while (statement.step()) {
+                    columns += statement.getText(2)
+                }
+                assertEquals(listOf("isDeleted", "deadline"), columns)
+            }
+        } finally {
+            connection.close()
+            migrationFile.delete()
+        }
+    }
+
+    @Test
     fun taskDaoFiltersDeletedRowsAndOrdersByUpdatedAt() = runTest {
         database.taskDao().insert(testTask(id = "old", updatedAt = 10L))
         database.taskDao().insert(testTask(id = "new", updatedAt = 30L))
@@ -267,6 +328,177 @@ class PersistenceTest {
     }
 
     @Test
+    fun taskRepositoryReturnsCommittedTruthWhenSyncTriggerFailsAfterRoomCommit() = runTest {
+        val repository = TaskRepositoryImpl(
+            taskDao = database.taskDao(),
+            syncTrigger = FailingSyncTrigger,
+            database = database,
+            mutationGate = mutationGate,
+        )
+
+        val result = repository.insert(testTask(id = "sync-warning"))
+
+        assertNotNull(database.taskDao().getTaskById("sync-warning"))
+        assertEquals(PostCommitWarningPhase.SYNC, result.postCommitWarning?.phase)
+        assertTrue(result.postCommitWarning?.cause is IllegalStateException)
+    }
+
+    @Test
+    fun taskRepositoryPreservesCancellationAfterRoomCommit() = runTest {
+        val repository = TaskRepositoryImpl(
+            taskDao = database.taskDao(),
+            syncTrigger = CancellingSyncTrigger,
+            database = database,
+            mutationGate = mutationGate,
+        )
+
+        assertFailsWith<CancellationException> {
+            repository.insert(testTask(id = "cancelled-sync"))
+        }
+        assertNotNull(database.taskDao().getTaskById("cancelled-sync"))
+    }
+
+    @Test
+    fun countdownRepositoryReturnsCommittedTruthWhenSyncTriggerFailsAfterRoomCommit() = runTest {
+        val repository = CountdownRepositoryImpl(
+            countdownDao = database.countdownDao(),
+            syncTrigger = FailingSyncTrigger,
+            mutationGate = mutationGate,
+        )
+
+        val result = repository.insert(testCountdown(id = "countdown-sync-warning"))
+
+        assertNotNull(database.countdownDao().getCountdownById("countdown-sync-warning"))
+        assertEquals(PostCommitWarningPhase.SYNC, result.postCommitWarning?.phase)
+        assertTrue(result.postCommitWarning?.cause is IllegalStateException)
+    }
+
+    @Test
+    fun countdownRepositoryPreservesCancellationAfterRoomCommit() = runTest {
+        val repository = CountdownRepositoryImpl(
+            countdownDao = database.countdownDao(),
+            syncTrigger = CancellingSyncTrigger,
+            mutationGate = mutationGate,
+        )
+
+        assertFailsWith<CancellationException> {
+            repository.insert(testCountdown(id = "countdown-cancelled-sync"))
+        }
+        assertNotNull(database.countdownDao().getCountdownById("countdown-cancelled-sync"))
+    }
+
+    @Test
+    fun noteAndCategoryRepositoriesAdvanceStaleTimestampsAndPreserveFutureTombstonesInUtc() = runTest {
+        val noteRepository = NoteRepositoryImpl(
+            noteDao = database.noteDao(),
+            syncTrigger = NoOpSyncTrigger,
+            mutationGate = mutationGate,
+        )
+        val categoryRepository = CategoryRepositoryImpl(
+            categoryDao = database.categoryDao(),
+            syncTrigger = NoOpSyncTrigger,
+            mutationGate = mutationGate,
+        )
+        val note = testNote(id = "timestamp-note", isSynced = true, updatedAt = 1L)
+        val category = testCategory(id = "timestamp-category", isSynced = true, updatedAt = 1L)
+
+        noteRepository.insert(note)
+        categoryRepository.insert(category)
+        val updateStartedAt = localNow()
+        noteRepository.update(note)
+        categoryRepository.update(category)
+
+        val updatedNote = assertNotNull(database.noteDao().findNoteByIdAnyState(note.id))
+        val updatedCategory = assertNotNull(database.categoryDao().findCategoryByIdAnyState(category.id))
+        assertTrue(utcToLocal(updatedNote.updatedAt) >= updateStartedAt)
+        assertTrue(utcToLocal(updatedCategory.updatedAt) >= updateStartedAt)
+        assertFalse(updatedNote.isSynced)
+        assertFalse(updatedCategory.isSynced)
+
+        val noteFuture = localNow() + MILLIS_PER_DAY
+        val categoryFuture = noteFuture + MILLIS_PER_DAY
+        noteRepository.delete(note.copy(updatedAt = noteFuture, isSynced = true))
+        categoryRepository.delete(category.copy(updatedAt = categoryFuture, isSynced = true))
+
+        val deletedNote = assertNotNull(database.noteDao().findNoteByIdAnyState(note.id))
+        val deletedCategory = assertNotNull(database.categoryDao().findCategoryByIdAnyState(category.id))
+        assertTrue(deletedNote.isDeleted)
+        assertTrue(deletedCategory.isDeleted)
+        assertFalse(deletedNote.isSynced)
+        assertFalse(deletedCategory.isSynced)
+        assertEquals(localToUtc(noteFuture), deletedNote.updatedAt)
+        assertEquals(localToUtc(categoryFuture), deletedCategory.updatedAt)
+        assertNull(noteRepository.getNoteById(note.id))
+        assertNull(categoryRepository.getCategoryById(category.id))
+    }
+
+    @Test
+    fun countdownRepositoryCommitsLocalCandidatesAndExposesItsPersistedTombstone() = runTest {
+        val repository = CountdownRepositoryImpl(
+            countdownDao = database.countdownDao(),
+            syncTrigger = NoOpSyncTrigger,
+            mutationGate = mutationGate,
+        )
+        val countdown = testCountdown(
+            id = "timestamp-countdown",
+            targetDate = localNow() + MILLIS_PER_DAY,
+            isSynced = true,
+            updatedAt = 1L,
+        )
+
+        repository.insert(countdown)
+        val updateStartedAt = localNow()
+        val updated = repository.update(countdown)
+        val updatedRaw = assertNotNull(database.countdownDao().getCountdownByIdUtc(countdown.id))
+        assertTrue(updated.value.updatedAt >= updateStartedAt)
+        assertFalse(updated.value.isSynced)
+        assertEquals(updated.value, updatedRaw.toLocalTimestamps())
+
+        val future = localNow() + MILLIS_PER_DAY
+        val deleted = repository.delete(countdown.copy(updatedAt = future, isSynced = true))
+        val deletedRaw = assertNotNull(database.countdownDao().getCountdownByIdUtc(countdown.id))
+        assertEquals(future, deleted.value.updatedAt)
+        assertTrue(deleted.value.isDeleted)
+        assertFalse(deleted.value.isSynced)
+        assertEquals(localToUtc(future), deletedRaw.updatedAt)
+        assertEquals(deleted.value, deletedRaw.toLocalTimestamps())
+        assertNull(database.countdownDao().getCountdownById(countdown.id))
+        assertTrue(repository.getAllCountdownsForReminderReconciliationUtc().any { it.id == countdown.id && it.isDeleted })
+    }
+
+    @Test
+    fun countdownRepositoryUpdateReturnsWarningAndDeleteRethrowsCancellationAfterCommit() = runTest {
+        val warningRepository = CountdownRepositoryImpl(
+            countdownDao = database.countdownDao(),
+            syncTrigger = FailingSyncTrigger,
+            mutationGate = mutationGate,
+        )
+        val countdown = testCountdown(id = "countdown-update-warning")
+        database.countdownDao().insert(countdown)
+
+        val warning = warningRepository.update(countdown)
+
+        assertEquals(PostCommitWarningPhase.SYNC, warning.postCommitWarning?.phase)
+        assertTrue(warning.postCommitWarning?.cause is IllegalStateException)
+        assertEquals(warning.value, database.countdownDao().getCountdownByIdUtc(countdown.id)?.toLocalTimestamps())
+
+        val cancellingRepository = CountdownRepositoryImpl(
+            countdownDao = database.countdownDao(),
+            syncTrigger = CancellingSyncTrigger,
+            mutationGate = mutationGate,
+        )
+        val cancellationCountdown = testCountdown(id = "countdown-delete-cancelled")
+        database.countdownDao().insert(cancellationCountdown)
+
+        assertFailsWith<CancellationException> {
+            cancellingRepository.delete(cancellationCountdown)
+        }
+        val tombstone = assertNotNull(database.countdownDao().getCountdownByIdUtc(cancellationCountdown.id))
+        assertTrue(tombstone.isDeleted)
+        assertFalse(tombstone.isSynced)
+    }
+
+    @Test
     fun taskGraphDeleteCommitsParentAndChildTombstonesAtOneWriterBoundary() = runTest {
         val task = testTask(id = "task-graph", pbId = "pb-task", isSynced = true, updatedAt = 10L)
         val tag = testTag(id = "tag-graph")
@@ -285,7 +517,7 @@ class PersistenceTest {
 
         val result = repository.deleteGraph(task.id)
 
-        assertTrue(result is com.udnahc.opentasks.data.repository.TaskGraphDeletionResult.Deleted)
+        assertTrue(result.value is com.udnahc.opentasks.data.repository.TaskGraphDeletionResult.Deleted)
         assertNull(database.taskDao().getTaskById(task.id))
         assertTrue(database.taskDao().findTaskByIdAnyState(task.id)?.isDeleted == true)
         assertTrue(database.tagDao().getTaskTagsForTaskAnyState(task.id).single().isDeleted)
@@ -674,6 +906,12 @@ class PersistenceTest {
         assertFalse(provider.isConfigured)
     }
 
+    private fun Countdown.toLocalTimestamps(): Countdown = copy(
+        targetDate = utcToLocal(targetDate),
+        createdAt = utcToLocal(createdAt),
+        updatedAt = utcToLocal(updatedAt),
+    )
+
     private suspend fun clearLocalData(
         storage: AttachmentFileStorage,
         service: SyncService,
@@ -933,16 +1171,90 @@ class PersistenceTest {
             taskDao = database.taskDao(),
             fileStorage = FakeAttachmentFileStorage(),
         )
+        val provider = PocketBaseClientProvider()
+        val client = provider.activate(
+            CacheBinding(
+                canonicalEndpoint = "http://localhost:8090",
+                serverInstanceId = "server",
+                accountId = "account-a",
+                capabilityVersion = 2,
+                boundaryEpoch = 1L,
+            ),
+            "token",
+        )
 
         adapter.recoverMissingRemoteRows(
             remoteRecords = listOf(AttachmentRecord(localId = "other", createdAtUtc = 1L, updatedAtUtc = 1L)),
             localSnapshot = database.attachmentDao().getAllOnce(),
+            pass = SyncPassContextFactory(database).create(client),
         )
 
         val attachment = assertNotNull(database.attachmentDao().findByIdAnyState("local-missing-remotely"))
         assertFalse(attachment.isSynced)
         assertEquals(AttachmentSyncState.LOCAL_ONLY, attachment.syncState)
         assertEquals("pb-local", attachment.pbId)
+    }
+
+    @Test
+    fun attachmentMissingRowsUseOneWriterTransactionAndRollbackTogetherWhenSecondMutationFails() = runTest {
+        database.attachmentDao().insert(
+            testAttachment(
+                id = "missing-a",
+                isSynced = true,
+                syncState = AttachmentSyncState.SYNCED,
+                pbId = "pb-a",
+            ),
+        )
+        database.attachmentDao().insert(
+            testAttachment(
+                id = "missing-b",
+                isSynced = true,
+                syncState = AttachmentSyncState.SYNCED,
+                pbId = "pb-b",
+            ),
+        )
+        database.useWriterConnection { connection ->
+            connection.usePrepared(
+                """
+                CREATE TRIGGER fail_second_attachment_missing_recovery
+                BEFORE UPDATE OF isSynced ON attachments
+                WHEN NEW.id = 'missing-b'
+                BEGIN
+                    SELECT RAISE(ABORT, 'second recovery failed');
+                END
+                """.trimIndent(),
+            ) { statement ->
+                statement.step()
+            }
+        }
+        var writerTransactionCalls = 0
+        val pass = SyncPassContext(
+            client = PocketBaseClientProvider().createClient("http://localhost:8090"),
+            gateway = null,
+            writerTransactionRunner = SyncWriterTransactionRunner { block ->
+                writerTransactionCalls += 1
+                database.useWriterConnection { connection ->
+                    connection.immediateTransaction { block() }
+                }
+            },
+        )
+        val adapter = AttachmentSyncAdapter(
+            dao = database.attachmentDao(),
+            taskDao = database.taskDao(),
+            fileStorage = FakeAttachmentFileStorage(),
+        )
+
+        assertFailsWith<Exception> {
+            adapter.recoverMissingRemoteRows(
+                remoteRecords = listOf(AttachmentRecord(localId = "remote", createdAtUtc = 1L, updatedAtUtc = 1L)),
+                localSnapshot = database.attachmentDao().getAllOnce(),
+                pass = pass,
+            )
+        }
+
+        assertEquals(1, writerTransactionCalls)
+        assertTrue(database.attachmentDao().findByIdAnyState("missing-a")?.isSynced == true)
+        assertTrue(database.attachmentDao().findByIdAnyState("missing-b")?.isSynced == true)
     }
 
     @Test

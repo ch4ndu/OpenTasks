@@ -170,6 +170,7 @@ fun CreateCountdownScreen(
     currentDate: LocalDate,
     onSave: (Countdown) -> Unit,
     onBack: () -> Unit,
+    isSaving: Boolean = false,
 ) {
     CreateCountdownContent(
         editCountdown = editCountdown,
@@ -177,6 +178,7 @@ fun CreateCountdownScreen(
         currentDate = currentDate,
         onSave = onSave,
         onBack = onBack,
+        isSaving = isSaving,
     )
 }
 
@@ -188,6 +190,7 @@ internal fun CreateCountdownContent(
     currentDate: LocalDate,
     onSave: (Countdown) -> Unit,
     onBack: () -> Unit,
+    isSaving: Boolean,
 ) {
     val dimens = OpenTasksTheme.dimens
     val stateKey = editCountdown?.id ?: ""
@@ -357,6 +360,7 @@ internal fun CreateCountdownContent(
 
             // Save button
             Button(
+                enabled = !isSaving,
                 onClick = {
                     if (name.isBlank()) return@Button
                     val targetDateMillis =
@@ -383,7 +387,6 @@ internal fun CreateCountdownContent(
                         )
                     }
                     onSave(countdown)
-                    onBack()
                 },
                 modifier = Modifier
                     .fillMaxWidth()

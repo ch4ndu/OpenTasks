@@ -7,6 +7,7 @@ import com.udnahc.opentasks.data.repository.CountdownRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.domain.action.countdown.ScheduleCountdownRemindersAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
+import kotlin.coroutines.cancellation.CancellationException
 import org.lighthousegames.logging.logging
 
 private val log = logging("RebuildReminderQueueAction")
@@ -20,8 +21,25 @@ class RebuildReminderQueueAction(
     private val scheduler: ReminderScheduler,
     private val pendingQueueLimit: () -> Int? = ::pendingReminderQueueLimit,
 ) {
+    /**
+     * Keep the platform's existing queue strategy after a committed record
+     * change. Android has no pending queue limit and schedules directly;
+     * bounded platforms rebuild their selected queue for fairness and caps.
+     */
     suspend fun afterRecordChange(scheduleDirectly: suspend () -> Unit) {
         if (pendingQueueLimit() == null) scheduleDirectly() else invoke()
+    }
+
+    suspend fun afterRecordChangeResult(
+        scheduleDirectly: suspend () -> Unit,
+    ): Throwable? = try {
+        afterRecordChange(scheduleDirectly)
+        null
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        log.w(error) { "Reminder maintenance failed after a committed write" }
+        error
     }
 
     suspend operator fun invoke() {

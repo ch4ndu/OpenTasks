@@ -6,6 +6,7 @@ import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
 import com.udnahc.opentasks.data.model.TextSizePreference
 import com.udnahc.opentasks.data.model.ThemeMode
 import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
+import com.udnahc.opentasks.data.sync.SyncOutcome
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.action.settings.SaveTextSizePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveThemePreferenceAction
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,8 +63,9 @@ class SettingsViewModel(
     val textSizePreference: StateFlow<TextSizePreference> = observeTextSizePreference()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TextSizePreference.SMALL)
 
-    private val _syncStatus = MutableStateFlow(SyncStatus.IDLE)
-    val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
+    val syncStatus: StateFlow<SyncStatus> = triggerSyncAction.outcome
+        .map(::toSettingsSyncStatus)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SyncStatus.IDLE)
 
     private val _notificationGranted = MutableStateFlow(true)
     val notificationGranted: StateFlow<Boolean> = _notificationGranted.asStateFlow()
@@ -91,16 +94,12 @@ class SettingsViewModel(
     fun triggerSync() {
         log.d { "Manual sync triggered" }
         viewModelScope.launch(Dispatchers.IO) {
-            _syncStatus.value = SyncStatus.SYNCING
             try {
                 triggerSyncAction.syncNow()
-                _syncStatus.value = SyncStatus.SUCCESS
             } catch (e: CancellationException) {
-                _syncStatus.value = SyncStatus.IDLE
                 throw e
             } catch (e: Exception) {
                 log.e(e) { "Sync failed" }
-                _syncStatus.value = SyncStatus.SYNC_ERROR
             }
         }
     }
@@ -199,7 +198,6 @@ class SettingsViewModel(
             _clearLocalDataStatus.value = ClearLocalDataStatus.CLEARING
             try {
                 clearLocalDataAction()
-                _syncStatus.value = SyncStatus.IDLE
                 _clearLocalDataStatus.value = ClearLocalDataStatus.IDLE
             } catch (e: CancellationException) {
                 throw e
@@ -223,4 +221,12 @@ internal fun FileExportResult.toUiResult(count: Int): ExportResult = when (this)
     FileExportResult.Completed -> ExportResult.Success(count)
     FileExportResult.Cancelled -> ExportResult.Idle
     is FileExportResult.Error -> ExportResult.Error
+}
+
+internal fun toSettingsSyncStatus(outcome: SyncOutcome): SyncStatus = when (outcome) {
+    SyncOutcome.Idle -> SyncStatus.IDLE
+    SyncOutcome.Syncing -> SyncStatus.SYNCING
+    SyncOutcome.Success -> SyncStatus.SUCCESS
+    SyncOutcome.Failed,
+    SyncOutcome.ReauthenticationRequired -> SyncStatus.SYNC_ERROR
 }

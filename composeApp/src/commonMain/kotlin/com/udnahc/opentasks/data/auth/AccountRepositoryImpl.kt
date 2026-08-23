@@ -34,12 +34,44 @@ internal class AccountRepositoryImpl(
     private val reminderScheduler: ReminderScheduler,
     private val buildTimePocketBaseUrl: String = LocalSyncDefaults.POCKETBASE_URL,
     private val replacementExecutor: AuthoritativeServerReplaceContract? = null,
-) : AccountRepository {
+    private val authenticationRejectionDispatcher: AccountAuthenticationRejectionDispatcher? = null,
+) : AccountRepository, AccountAuthenticationRejectionHandler {
     private val _sessionState = MutableStateFlow<AccountSessionState>(AccountSessionState.Restoring)
 
     override val sessionState: StateFlow<AccountSessionState> = _sessionState.asStateFlow()
 
     private var preparedReplacement: PreparedReplacement? = null
+
+    init {
+        authenticationRejectionDispatcher?.register(this)
+    }
+
+    override suspend fun onAuthenticationRejected(boundary: AccountBoundary): Boolean =
+        mutationGate.withExclusive {
+            val current = _sessionState.value as? AccountSessionState.Authenticated
+                ?: return@withExclusive false
+            val binding = current.binding
+            if (!binding.isValidPocketBaseBinding() ||
+                binding.asAccountBoundary() != boundary ||
+                current.account.accountId != binding.accountId ||
+                stateStore.readTransition() != null ||
+                stateStore.readCacheBinding() != binding ||
+                pbProvider.activeBoundary() != boundary
+            ) {
+                return@withExclusive false
+            }
+
+            tokenStore.clearAllTokens()
+            pbProvider.disconnect()
+            publish(
+                AccountSessionState.ReauthenticationRequired(
+                    account = current.account,
+                    reason = AccountReauthenticationReason.AUTHENTICATION_REJECTED,
+                    canonicalEndpoint = binding.canonicalEndpoint,
+                )
+            )
+            true
+        }
 
     override suspend fun restoreSession(): AccountSessionState {
         log.d { "Session restore waiting for the account mutation gate" }

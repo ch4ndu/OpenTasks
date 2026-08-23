@@ -3,6 +3,7 @@ package com.udnahc.opentasks.data.sync
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.AppSettings
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
@@ -177,6 +178,59 @@ class ServerSeedExecutorTest {
         )
     }
 
+    @Test
+    fun `seed pass allocates one owner gateway across every collection`() = runTest {
+        setPending()
+        val calls = mutableListOf<String>()
+        val adapters = collectionNames.mapIndexed { index, collection ->
+            SeedAdapter(collection, index, calls).apply { rows += SeedRow("$collection-local", deleted = false) }
+        }
+        var gatewayCreations = 0
+        var inventoryReads = 0
+        val gatewayFactory = object : PocketBaseRecordGatewayFactory() {
+            override fun create(
+                client: PocketbaseClient,
+                endpoint: PocketBaseEndpoint,
+                binding: CacheBinding,
+            ): PocketBaseRecordGateway {
+                gatewayCreations += 1
+                return super.create(client, endpoint, binding)
+            }
+        }
+        val provider = PocketBaseClientProvider()
+        val client = provider.activate(
+            CacheBinding(
+                canonicalEndpoint = "https://seed.test:8090",
+                serverInstanceId = "server",
+                accountId = "account-a",
+                capabilityVersion = 2,
+                boundaryEpoch = 1L,
+            ),
+            "token",
+        )
+        val executor = ServerSeedExecutor(
+            database = database,
+            adapters = adapters,
+            passContextFactory = SyncPassContextFactory(gatewayFactory = gatewayFactory),
+            passInventoryReader = {
+                inventoryReads += 1
+                if (inventoryReads == 1) {
+                    inventory(emptyMap(), accountId = "account-a")
+                } else {
+                    inventory(
+                        adapters.associate { it.collectionName to it.remoteRows() },
+                        accountId = "account-a",
+                    )
+                }
+            },
+        )
+
+        executor.resume(client)
+
+        assertEquals(collectionNames, calls)
+        assertEquals(1, gatewayCreations)
+    }
+
     private suspend fun setPending(identity: String = "server") {
         database.appSettingsDao().setValue(AppSettings(SyncSettingsKeys.MODE, SyncMode.EMPTY_SERVER_SEED_PENDING.name))
         database.appSettingsDao().setValue(AppSettings(SyncSettingsKeys.SERVER_INSTANCE_ID, identity))
@@ -192,9 +246,11 @@ class ServerSeedExecutorTest {
     private fun inventory(
         rows: Map<String, List<JsonObject>>,
         identity: String = "server",
+        accountId: String? = null,
     ) = PocketBaseServerInventory(
         serverInstanceId = identity,
         recordsByCollection = collectionNames.associateWith { rows[it].orEmpty() },
+        accountId = accountId,
     )
 
     private fun client() = PocketbaseClient({
@@ -257,7 +313,11 @@ class ServerSeedExecutorTest {
             rows.replaceAll { it.copy(synced = true) }
         }
 
+        override suspend fun seedAll(pass: SyncPassContext) = seedAll(pass.client)
+
         override suspend fun seedAllAuthoritative(client: PocketbaseClient) = seedAll(client)
+
+        override suspend fun seedAllAuthoritative(pass: SyncPassContext) = seedAll(pass.client)
 
         override suspend fun isSeedComplete(rows: List<JsonObject>): Boolean =
             complete && this.rows.all { it.synced } && rows.map { recordFromJson(it).localId }.toSet() == this.rows.map { it.id }.toSet()

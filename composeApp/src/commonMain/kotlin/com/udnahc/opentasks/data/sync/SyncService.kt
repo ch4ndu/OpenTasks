@@ -1,12 +1,15 @@
 package com.udnahc.opentasks.data.sync
 
 import com.udnahc.opentasks.data.auth.AccountMutationGate
+import com.udnahc.opentasks.data.auth.AccountAuthenticationRejectionHandler
 import com.udnahc.opentasks.data.auth.AccountSyncCoordinator
 import com.udnahc.opentasks.data.auth.AccountTransitionPhase
 import com.udnahc.opentasks.data.auth.AccountTransitionPurpose
 import com.udnahc.opentasks.data.settings.AccountStateStore
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.cancellation.CancellationException
@@ -20,10 +23,15 @@ class SyncService(
     private val seedExecutor: ServerSeedExecutor? = null,
     private val accountMutationGate: AccountMutationGate,
     private val accountStateStore: AccountStateStore? = null,
+    private val passContextFactory: SyncPassContextFactory = SyncPassContextFactory(),
+    private val authenticationRejectionHandler: AccountAuthenticationRejectionHandler? = null,
 ) : AccountSyncCoordinator {
     private val syncMutex = Mutex()
     private val resetMutex = Mutex()
     private val resetInProgress = MutableStateFlow(false)
+    private val _outcome = MutableStateFlow<SyncOutcome>(SyncOutcome.Idle)
+
+    val outcome: StateFlow<SyncOutcome> = _outcome.asStateFlow()
 
     suspend fun syncAll() = accountMutationGate.withExclusive {
         if (resetInProgress.value) {
@@ -97,30 +105,37 @@ class SyncService(
             "PocketBase initial-pull client does not match the durable account boundary"
         }
         if (resetInProgress.value) return
+        val startingBoundary = pbProvider.activeBoundary()
+            ?: throw IllegalStateException("PocketBase initial pull has no active account boundary")
         syncMutex.withLock {
-            if (resetInProgress.value) return
-            if (seedExecutor?.isPending() == true) {
-                seedExecutor.resume(client)
-                return
-            }
-            val failures = mutableListOf<SyncCollectionFailure>()
-            val boundary = pbProvider.activeBoundary()
-            val failedPulls = mutableSetOf<String>()
-            adapters.sortedBy { it.order }.forEach { adapter ->
-                val collectionName = adapter.collectionName
-                if (shouldSkipPull(collectionName, failedPulls)) {
-                    log.w { "Skipping initial pull $collectionName because a parent collection pull failed" }
-                } else {
-                    runCatching { adapter.pullAll(client) }
-                        .onFailure {
-                            if (it is CancellationException) throw it
-                            log.e(it) { "Initial pull $collectionName failed" }
-                            failedPulls += collectionName
-                            failures += SyncCollectionFailure(collectionName, "initial_pull", it, boundary)
-                        }
+            runWithOutcome(startingBoundary) {
+                if (resetInProgress.value) {
+                    return@runWithOutcome
                 }
+                val pass = passContextFactory.create(client)
+                if (seedExecutor?.isPending() == true) {
+                    seedExecutor.resume(pass)
+                    return@runWithOutcome
+                }
+                val failures = mutableListOf<SyncCollectionFailure>()
+                val failedPulls = mutableSetOf<String>()
+                adapters.sortedBy { it.order }.forEach { adapter ->
+                    val collectionName = adapter.collectionName
+                    if (shouldSkipPull(collectionName, failedPulls)) {
+                        log.w { "Skipping initial pull $collectionName because a parent collection pull failed" }
+                    } else {
+                        runCatching { adapter.pullAll(pass) }
+                            .onFailure {
+                                if (it is CancellationException) throw it
+                                it.rethrowSyncAuthenticationRejected()
+                                log.e(it) { "Initial pull $collectionName failed" }
+                                failedPulls += collectionName
+                                failures += SyncCollectionFailure(collectionName, "initial_pull", it, startingBoundary)
+                            }
+                    }
+                }
+                if (failures.isNotEmpty()) throw SyncException(failures)
             }
-            if (failures.isNotEmpty()) throw SyncException(failures)
         }
     }
 
@@ -133,24 +148,29 @@ class SyncService(
             log.d { "Sync skipped: local data reset in progress" }
             return
         }
+        val startingBoundary = pbProvider.activeBoundary()
+            ?: throw IllegalStateException("PocketBase sync has no active account boundary")
         syncMutex.withLock {
-            if (resetInProgress.value) {
-                log.d { "Sync skipped: local data reset in progress" }
-                return
-            }
-            if (seedExecutor?.isPending() == true) {
-                seedExecutor.resume(client)
-                return
-            }
-            log.d { "Sync started" }
-            val passFailures = syncPass(client)
-            if (passFailures.isEmpty()) {
-                log.d { "Sync completed" }
-            } else {
-                log.e { "Sync completed with ${passFailures.size} failure(s)" }
-            }
-            if (passFailures.isNotEmpty()) {
-                throw SyncException(passFailures)
+            runWithOutcome(startingBoundary) {
+                if (resetInProgress.value) {
+                    log.d { "Sync skipped: local data reset in progress" }
+                    return@runWithOutcome
+                }
+                val pass = passContextFactory.create(client)
+                if (seedExecutor?.isPending() == true) {
+                    seedExecutor.resume(pass)
+                    return@runWithOutcome
+                }
+                log.d { "Sync started" }
+                val passFailures = syncPass(pass, startingBoundary)
+                if (passFailures.isEmpty()) {
+                    log.d { "Sync completed" }
+                } else {
+                    log.e { "Sync completed with ${passFailures.size} failure(s)" }
+                }
+                if (passFailures.isNotEmpty()) {
+                    throw SyncException(passFailures)
+                }
             }
         }
     }
@@ -184,22 +204,26 @@ class SyncService(
             }
         } finally {
             resetInProgress.value = false
+            _outcome.value = SyncOutcome.Idle
         }
     }
 
-    private suspend fun syncPass(client: PocketbaseClient): List<SyncCollectionFailure> {
+    private suspend fun syncPass(
+        pass: SyncPassContext,
+        boundary: com.udnahc.opentasks.data.auth.AccountBoundary,
+    ): List<SyncCollectionFailure> {
         val failures = mutableListOf<SyncCollectionFailure>()
         val failedPulls = mutableSetOf<String>()
-        val boundary = pbProvider.activeBoundary()
 
         adapters.sortedBy { it.order }.forEach { adapter ->
             val collectionName = adapter.collectionName
             if (shouldSkipPull(collectionName, failedPulls)) {
                 log.w { "Skipping pull $collectionName because a parent collection pull failed" }
             } else {
-                runCatching { adapter.pullAll(client) }
+                runCatching { adapter.pullAll(pass) }
                     .onFailure {
                         if (it is CancellationException) throw it
+                        it.rethrowSyncAuthenticationRejected()
                         log.e(it) { "Pull $collectionName failed" }
                         failedPulls += collectionName
                         failures += SyncCollectionFailure(collectionName, "pull", it, boundary)
@@ -209,9 +233,10 @@ class SyncService(
             if (shouldSkipPush(collectionName, failedPulls)) {
                 log.w { "Skipping push $collectionName because pull dependencies failed" }
             } else {
-                runCatching { adapter.pushAll(client) }
+                runCatching { adapter.pushAll(pass) }
                     .onFailure {
                         if (it is CancellationException) throw it
+                        it.rethrowSyncAuthenticationRejected()
                         log.e(it) { "Push $collectionName failed" }
                         failures += SyncCollectionFailure(collectionName, "push", it, boundary)
                     }
@@ -219,6 +244,40 @@ class SyncService(
         }
 
         return failures
+    }
+
+    private suspend fun <T> runWithOutcome(
+        startingBoundary: com.udnahc.opentasks.data.auth.AccountBoundary,
+        block: suspend () -> T,
+    ): T {
+        _outcome.value = SyncOutcome.Syncing
+        return try {
+            block().also { _outcome.value = SyncOutcome.Success }
+        } catch (error: CancellationException) {
+            _outcome.value = SyncOutcome.Idle
+            throw error
+        } catch (error: Throwable) {
+            val authenticationRejection = error.findSyncAuthenticationRejected()
+            if (authenticationRejection != null) {
+                val transitioned = try {
+                    authenticationRejectionHandler?.onAuthenticationRejected(startingBoundary) ?: false
+                } catch (callbackError: CancellationException) {
+                    _outcome.value = SyncOutcome.Idle
+                    throw callbackError
+                } catch (callbackError: Throwable) {
+                    log.e(callbackError) { "Failed to apply the sync authentication-rejection transition" }
+                    false
+                }
+                _outcome.value = if (transitioned) {
+                    SyncOutcome.ReauthenticationRequired
+                } else {
+                    SyncOutcome.Failed
+                }
+                throw authenticationRejection
+            }
+            _outcome.value = SyncOutcome.Failed
+            throw error
+        }
     }
 
     private fun shouldSkipPull(

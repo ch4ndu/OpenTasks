@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.AccountBoundaryGuard
+import com.udnahc.opentasks.data.auth.AccountMutationGate
 import org.lighthousegames.logging.logging
 
 private val log = logging("NotificationScheduler")
@@ -23,6 +24,7 @@ private const val NOTIFICATION_ACTION_RECEIVER_CLASS =
 
 actual class NotificationScheduler(
     private val context: Context,
+    private val mutationGate: AccountMutationGate,
     private val boundaryGuard: AccountBoundaryGuard,
 ) : ReminderScheduler {
 
@@ -53,15 +55,27 @@ actual class NotificationScheduler(
         manager.createNotificationChannel(ongoingChannel)
     }
 
-    actual override suspend fun schedule(request: ReminderRequest) {
-        val boundary = boundaryGuard.activeBoundary()
-            ?: throw IllegalStateException("Cannot schedule a reminder without an active account boundary")
+    actual override suspend fun schedule(request: ReminderRequest) =
+        withCurrentHeldReminderBoundary { boundary ->
+            scheduleWithinHeldBoundary(request, boundary)
+        }
+
+    private suspend fun scheduleWithinHeldBoundary(
+        request: ReminderRequest,
+        boundary: AccountBoundary,
+    ) {
         cleanupLegacyOnce(request.eventId)
         val allocation = keyStore.allocatePending(request.identity)
         cancelPlatform(allocation, removeFromStore = false)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            alarmManager.canScheduleExactAlarms()
+        val canExact = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            true
+        } else {
+            shouldUseExactAlarm(
+            sdkInt = Build.VERSION.SDK_INT,
+                canScheduleExactAlarms = alarmManager.canScheduleExactAlarms(),
+            )
+        }
         val intent = context.appComponentIntent(NOTIFICATION_RECEIVER_CLASS).apply {
             data = pendingIntentUri(request.identity.semanticKey, ROLE_ALARM)
             putExtra(EXTRA_TASK_ID, request.eventId)
@@ -117,11 +131,18 @@ actual class NotificationScheduler(
         stopOngoing(eventId)
     }
 
-    actual override suspend fun startOngoing(identity: ReminderIdentity, title: String) {
-        val boundary = boundaryGuard.activeBoundary()
-            ?: throw IllegalStateException("Cannot start a reminder without an active account boundary")
+    actual override suspend fun startOngoing(identity: ReminderIdentity, title: String) =
+        withCurrentHeldReminderBoundary { boundary ->
+            startOngoingWithinHeldBoundary(identity, title, boundary)
+        }
+
+    private suspend fun startOngoingWithinHeldBoundary(
+        identity: ReminderIdentity,
+        title: String,
+        boundary: AccountBoundary,
+    ) {
         cleanupLegacyOnce(identity.eventId)
-        stopOngoing(identity.eventId)
+        stopOngoingRecords(identity.eventId)
         val allocation = keyStore.allocatePending(identity)
         val notification = buildOngoingNotification(identity, title, allocation.notificationId, boundary)
         try {
@@ -134,6 +155,10 @@ actual class NotificationScheduler(
     }
 
     actual override suspend fun stopOngoing(eventId: String) {
+        stopOngoingRecords(eventId)
+    }
+
+    private suspend fun stopOngoingRecords(eventId: String) {
         keyStore.recordsForEvent(eventId)
             .filter { it.kind == ReminderKind.ONGOING }
             .forEach { allocation -> cancelPlatform(allocation, removeFromStore = true) }
@@ -147,12 +172,28 @@ actual class NotificationScheduler(
     }
 
     actual override suspend fun replacePendingReminders(requests: List<ReminderRequest>) {
-        for (request in requests) {
-            schedule(request)
+        withCurrentHeldReminderBoundary { boundary ->
+            val replacementKeys = requests.mapTo(mutableSetOf()) { it.identity.semanticKey }
+            pendingReplacementRecordsToCancel(keyStore.allRecords(), replacementKeys)
+                .forEach { allocation -> cancelPlatform(allocation, removeFromStore = true) }
+            requests.forEach { request -> scheduleWithinHeldBoundary(request, boundary) }
         }
     }
 
-    /** Called by the alarm receiver before it validates and displays a delivery. */
+    private suspend fun <T> withCurrentHeldReminderBoundary(
+        block: suspend (AccountBoundary) -> T,
+    ): T {
+        val expectedBoundary = boundaryGuard.activeBoundary()
+            ?: throw IllegalStateException("Cannot schedule a reminder without an active account boundary")
+        return withHeldReminderBoundary(
+            mutationGate = mutationGate,
+            activeBoundary = boundaryGuard::activeBoundary,
+            expectedBoundary = expectedBoundary,
+            block = block,
+        )
+    }
+
+    /** Called only after the receiver has validated current persisted delivery truth. */
     suspend fun markAlarmDisplayed(semanticKey: String): Int? =
         keyStore.markDisplayed(semanticKey)?.notificationId
 
@@ -163,6 +204,35 @@ actual class NotificationScheduler(
                 it.lifecycle == ReminderLifecycle.DISPLAYED &&
                     it.kind != ReminderKind.ONGOING &&
                     it.semanticKey != exceptSemanticKey
+            }
+            .forEach { allocation -> cancelPlatform(allocation, removeFromStore = true) }
+    }
+
+    /** Removes only identities at or before a delivered occurrence. */
+    suspend fun cancelObsoleteOccurrenceReminders(
+        eventId: String,
+        occurrenceUtcMillis: Long,
+    ) {
+        cleanupLegacyOnce(eventId)
+        keyStore.recordsForEvent(eventId)
+            .filter { record ->
+                ReminderIdentity.fromSemanticKey(record.semanticKey)
+                    ?.occurrenceUtcMillis
+                    ?.let { it <= occurrenceUtcMillis } == true
+            }
+            .forEach { allocation -> cancelPlatform(allocation, removeFromStore = true) }
+    }
+
+    /** Removes every reminder identity for one validated occurrence. */
+    suspend fun cancelOccurrenceReminders(
+        eventId: String,
+        occurrenceUtcMillis: Long,
+    ) {
+        cleanupLegacyOnce(eventId)
+        keyStore.recordsForEvent(eventId)
+            .filter { record ->
+                ReminderIdentity.fromSemanticKey(record.semanticKey)
+                    ?.occurrenceUtcMillis == occurrenceUtcMillis
             }
             .forEach { allocation -> cancelPlatform(allocation, removeFromStore = true) }
     }
@@ -239,6 +309,7 @@ actual class NotificationScheduler(
             data = pendingIntentUri(identity.semanticKey, ROLE_GOT_IT)
             putExtra(EXTRA_TASK_ID, identity.eventId)
             putExtra(EXTRA_SEMANTIC_KEY, identity.semanticKey)
+            putExtra(EXTRA_OCCURRENCE_DEADLINE_UTC, identity.occurrenceUtcMillis)
             putBoundary(boundary)
         }
         val gotItPendingIntent = PendingIntent.getBroadcast(
@@ -260,7 +331,7 @@ actual class NotificationScheduler(
                 markDonePendingIntent(
                     context,
                     identity.eventId,
-                    identity.semanticKey,
+                    identity.taskWriteSemanticKey(),
                     notificationId,
                     identity.occurrenceUtcMillis,
                     boundary.accountId,
@@ -324,7 +395,7 @@ actual class NotificationScheduler(
 
         private const val ROLE_ALARM = "alarm"
         const val ROLE_TAP = "tap"
-        private const val ROLE_ONGOING_TAP = "ongoing_tap"
+        const val ROLE_ONGOING_TAP = "ongoing_tap"
         private const val ROLE_MARK_DONE = "mark_done"
         private const val ROLE_GOT_IT = "got_it"
         private const val LEGACY_ONGOING_SLOT = 99
@@ -339,6 +410,13 @@ private fun Intent.putBoundary(boundary: AccountBoundary) {
     putExtra(NotificationScheduler.EXTRA_ACCOUNT_ID, boundary.accountId)
     putExtra(NotificationScheduler.EXTRA_BOUNDARY_EPOCH, boundary.boundaryEpoch)
 }
+
+private fun ReminderIdentity.taskWriteSemanticKey(): String = ReminderIdentity(
+    eventId = eventId,
+    occurrenceUtcMillis = occurrenceUtcMillis,
+    kind = ReminderKind.DATE,
+    ordinal = 0,
+).semanticKey
 
 private fun Context.appComponentIntent(className: String): Intent =
     Intent().setClassName(packageName, className)

@@ -4,6 +4,7 @@ import com.udnahc.opentasks.data.extensions.localMillisToLocalDateTime
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.notification.NotificationScheduler
+import com.udnahc.opentasks.data.repository.PostCommitWarningPhase
 import com.udnahc.opentasks.domain.action.task.AddTaskAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.usecase.task.ParseQuickTaskInputUseCase
@@ -109,6 +110,21 @@ class QuickAddTaskViewModelTest {
         assertEquals(1, fixture.taskRepository.inserted.size)
         assertTrue(fixture.viewModel.uiState.value.isSaved)
         assertFalse(fixture.viewModel.uiState.value.canSave)
+    }
+
+    @Test
+    fun committedAddWarningIsCarriedByTheOneShotSavedEvent() = runTest(dispatcher) {
+        val fixture = fixture()
+        val warning = IllegalStateException("sync warning")
+        fixture.taskRepository.insertPostCommitWarning = warning
+        fixture.viewModel.onInputChanged("Saved task")
+
+        fixture.viewModel.save()
+        advanceUntilIdle()
+
+        val event = assertIs<QuickAddTaskSaveEvent.Saved>(fixture.viewModel.saveEvent.value)
+        assertEquals(warning, event.postCommitWarning?.cause)
+        assertEquals(PostCommitWarningPhase.SYNC, event.postCommitWarning?.phase)
     }
 
     @Test

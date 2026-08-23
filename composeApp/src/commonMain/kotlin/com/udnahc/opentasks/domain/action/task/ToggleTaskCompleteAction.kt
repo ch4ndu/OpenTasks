@@ -3,6 +3,8 @@ package com.udnahc.opentasks.domain.action.task
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.data.repository.CommittedMutation
+import com.udnahc.opentasks.data.repository.PostCommitWarningPhase
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import org.lighthousegames.logging.logging
 
@@ -20,17 +22,31 @@ class ToggleTaskCompleteAction(
         taskId: String,
         completeSeries: Boolean = false,
         occurrenceDeadlineLocalMillis: Long? = null,
-    ): TaskWriteResult = accountBoundaryExecutor.withForegroundActionBoundary {
+    ): CommittedMutation<TaskWriteResult> = accountBoundaryExecutor.withForegroundActionBoundary {
         val intent = when {
             completeSeries -> TaskWriteIntent.CompleteSeries(occurrenceDeadlineLocalMillis)
             occurrenceDeadlineLocalMillis != null -> TaskWriteIntent.CompleteOccurrence(occurrenceDeadlineLocalMillis)
             else -> TaskWriteIntent.ToggleCompletion
         }
         val result = coordinator.write(taskId, intent)
-        if (result is TaskWriteResult.Updated) {
-            rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(taskId) }
-                ?: scheduleTaskRemindersAction(taskId)
+        val reminderWarning = if (result.value is TaskWriteResult.Updated) {
+            if (rebuildReminderQueueAction != null) {
+                rebuildReminderQueueAction.afterRecordChangeResult(
+                    scheduleDirectly = { scheduleTaskRemindersAction(taskId) },
+                )
+            } else {
+                try {
+                    scheduleTaskRemindersAction(taskId)
+                    null
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    error
+                }
+            }
+        } else {
+            null
         }
-        result
+        result.withPostCommitWarning(reminderWarning, PostCommitWarningPhase.REMINDER_MAINTENANCE)
     }
 }

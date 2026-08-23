@@ -32,6 +32,10 @@ import platform.CoreGraphics.CGImageGetWidth
 import platform.CoreServices.kUTTypeJPEG
 import platform.Foundation.NSData
 import platform.Foundation.NSDocumentDirectory
+import platform.Foundation.NSFileHandle
+import platform.Foundation.closeFile
+import platform.Foundation.fileHandleForReadingAtPath
+import platform.Foundation.readDataOfLength
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
@@ -64,11 +68,18 @@ class PlatformAttachmentFileStorage(
     override suspend fun storeRemoteImage(fileName: String, bytes: ByteArray): StoredAttachmentFile =
         storeBytes(fileName, bytes)
 
-    override suspend fun readBytes(path: String): ByteArray? =
+    override suspend fun readBytes(path: String, maxBytes: Long): ByteArray? =
         withContext(ioDispatcher) {
-            val data = NSData.create(contentsOfFile = path) ?: return@withContext null
-            val bytes = data.bytes ?: return@withContext null
-            bytes.reinterpret<ByteVar>().readBytes(data.length.toInt())
+            require(maxBytes >= 0L) { "Attachment byte limit must not be negative" }
+            val handle = NSFileHandle.fileHandleForReadingAtPath(path) ?: return@withContext null
+            try {
+                val data = handle.readDataOfLength((maxBytes + 1L).toULong())
+                if (data.length.toLong() > maxBytes) throw AttachmentFileTooLargeException(maxBytes)
+                val bytes = data.bytes ?: return@withContext null
+                bytes.reinterpret<ByteVar>().readBytes(data.length.toInt())
+            } finally {
+                handle.closeFile()
+            }
         }
 
     override suspend fun exists(path: String): Boolean =

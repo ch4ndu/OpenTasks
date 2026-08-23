@@ -35,6 +35,7 @@ import opentasks.composeapp.generated.resources.task_notification_got_it
 import opentasks.composeapp.generated.resources.task_notification_mark_done
 import opentasks.composeapp.generated.resources.task_notification_missing
 import opentasks.composeapp.generated.resources.task_notification_notified
+import opentasks.composeapp.generated.resources.task_notification_retry_error
 import opentasks.composeapp.generated.resources.task_notification_title
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -110,6 +111,14 @@ internal fun TaskNotificationBottomSheetContent(
                     value = uiState.dueText,
                 )
             }
+        }
+        if (uiState.hasActionError) {
+            Spacer(Modifier.height(dimens.spacerMedium))
+            Text(
+                text = stringResource(Res.string.task_notification_retry_error),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         Spacer(Modifier.height(dimens.paddingLarge))
         Row(

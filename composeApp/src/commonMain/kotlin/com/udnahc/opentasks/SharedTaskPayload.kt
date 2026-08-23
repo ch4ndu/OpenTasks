@@ -89,8 +89,28 @@ fun publishSharedTaskPayloadRejectionCode(
     publishSharedTaskPayloadRejection(id, failure)
 }
 
+/**
+ * Atomically claims an accepted ICS payload for the currently mounted account
+ * epoch. A claimed payload is retired from this process-global handoff and is
+ * never replayed into a later account epoch.
+ */
+fun claimSharedIcsPayload(id: Long): SharedTaskPayload? {
+    val event = _sharedTaskPayloadEvent.value as? SharedTaskPayloadEvent.Accepted
+        ?: return null
+    if (event.id != id || !event.payload.hasIcsContent) return null
+    return if (_sharedTaskPayloadEvent.compareAndSet(event, null)) {
+        event.payload
+    } else {
+        null
+    }
+}
+
 fun clearSharedTaskPayload(id: Long) {
-    if (_sharedTaskPayloadEvent.value?.id == id) {
-        _sharedTaskPayloadEvent.value = null
+    while (true) {
+        val event = _sharedTaskPayloadEvent.value ?: return
+        if (event.id != id || !_sharedTaskPayloadEvent.compareAndSet(event, null)) {
+            return
+        }
+        return
     }
 }

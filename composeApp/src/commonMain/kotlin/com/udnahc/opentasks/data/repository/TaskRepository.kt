@@ -8,19 +8,22 @@ interface TaskRepository {
     suspend fun getTaskById(id: String): Task?
     fun observeTaskById(id: String): Flow<Task?>
     suspend fun getTaskByExternalId(externalId: String): Task?
-    suspend fun insert(task: Task): Long
+    suspend fun insert(task: Task): CommittedMutation<Long>
 
     /**
      * The sole ordinary existing-task write boundary. The transform receives a
      * current active row with local timestamps and runs in the Room writer transaction.
      */
-    suspend fun mutateExisting(id: String, transform: (Task) -> Task?): TaskMutationResult
+    suspend fun mutateExisting(
+        id: String,
+        transform: (Task) -> Task?,
+    ): CommittedMutation<TaskMutationResult>
 
     /**
      * Deletes one task and its child relations at the single Room writer boundary.
      * Paths are returned only after the transaction commits, for best-effort file cleanup.
      */
-    suspend fun deleteGraph(id: String): TaskGraphDeletionResult
+    suspend fun deleteGraph(id: String): CommittedMutation<TaskGraphDeletionResult>
     suspend fun getTasksWithDeadlines(): List<Task>
 
     /** Returns task with raw UTC timestamps for notification scheduling. */

@@ -39,6 +39,7 @@ import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
+import com.udnahc.opentasks.domain.usecase.task.EMPTY_CALENDAR_DAY_PROJECTION
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
@@ -98,7 +99,7 @@ internal fun ThreeDayViewContent(
                             .fillMaxSize()
                             .verticalScroll(scrollState),
                     ) {
-                        CalendarDayProjection().timelineHourLabels.forEach { hourLabel ->
+                        EMPTY_CALENDAR_DAY_PROJECTION.timelineHourLabels.forEach { hourLabel ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -134,10 +135,8 @@ internal fun ThreeDayViewContent(
                     ThreeDayColumn(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
-                        dayTasks = calendarDaysByDay[dayKey(dayMillis)] ?: CalendarDayProjection(
-                            dayKey = dayKey(dayMillis),
-                            isToday = dayMillis == todayMillis,
-                        ),
+                        dayTasks = calendarDaysByDay[dayKey(dayMillis)]
+                            ?: EMPTY_CALENDAR_DAY_PROJECTION,
                         hourHeight = hourHeight,
                         dayHeaderHeight = dayHeaderHeight,
                         scrollState = scrollState,

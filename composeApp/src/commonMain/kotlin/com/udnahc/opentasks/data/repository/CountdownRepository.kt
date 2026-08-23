@@ -10,7 +10,7 @@ interface CountdownRepository {
     suspend fun getCountdownByIdUtc(id: String): Countdown?
     /** Includes tombstones so reminder reconciliation can cancel removed countdown occurrences. */
     suspend fun getAllCountdownsForReminderReconciliationUtc(): List<Countdown>
-    suspend fun insert(countdown: Countdown)
-    suspend fun update(countdown: Countdown)
-    suspend fun delete(countdown: Countdown)
+    suspend fun insert(countdown: Countdown): CommittedMutation<Countdown>
+    suspend fun update(countdown: Countdown): CommittedMutation<Countdown>
+    suspend fun delete(countdown: Countdown): CommittedMutation<Countdown>
 }

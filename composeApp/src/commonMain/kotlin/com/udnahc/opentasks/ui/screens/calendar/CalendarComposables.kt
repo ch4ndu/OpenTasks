@@ -33,8 +33,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.udnahc.opentasks.data.extensions.dayKeyFromDate
-import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 
@@ -229,8 +227,7 @@ private fun MiniCalendarAspectRatioGrid(
             week.forEach { day ->
                 val isToday =
                     day.year == todayYear && day.month == todayMonth && day.day == todayDay
-                val dayKey = dayKeyFromDate(day.year, day.month, day.day)
-                val hasTasks = dayKey in taskDayKeys
+                val hasTasks = day.dayKey in taskDayKeys
 
                 Box(
                     modifier = Modifier
@@ -281,7 +278,7 @@ private fun MiniCalendarFillGrid(
     val highlightedWeekRowIndex = remember(weeks, highlightedWeekSundayMillis) {
         if (highlightedWeekSundayMillis == null) -1
         else weeks.indexOfFirst { week ->
-            val weekSunMillis = startOfDayLocalMillis(week[0].year, week[0].month, week[0].day)
+            val weekSunMillis = week[0].localMillis
             weekSunMillis == highlightedWeekSundayMillis
         }
     }
@@ -333,9 +330,8 @@ private fun MiniCalendarFillGrid(
                     week.forEach { day ->
                         val isToday =
                             day.year == todayYear && day.month == todayMonth && day.day == todayDay
-                        val dk = dayKeyFromDate(day.year, day.month, day.day)
-                        val hasTasks = dk in taskDayKeys
-                        val dayMillis = startOfDayLocalMillis(day.year, day.month, day.day)
+                        val hasTasks = day.dayKey in taskDayKeys
+                        val dayMillis = day.localMillis
 
                         Box(
                             modifier = Modifier

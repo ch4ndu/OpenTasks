@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -371,10 +372,10 @@ internal fun TaskListContent(
                         }
 
                         if (!completedCollapsed) {
-                            items(
+                            itemsIndexed(
                                 items = completedTasks,
-                                key = { "completed_${it.id}" },
-                            ) { task ->
+                                key = { _, task -> "completed_${task.id}" },
+                            ) { index, task ->
                                 CompletedTaskRow(
                                     task = task,
                                     contentPreview = taskContentPreviews[task.id].orEmpty(),
@@ -384,7 +385,7 @@ internal fun TaskListContent(
                                     onClick = { onTaskClick(task) },
                                     onToggleStar = { onToggleStar(task) },
                                 )
-                                if (task.id != completedTasks.last().id) {
+                                if (index < completedTasks.lastIndex) {
                                     HorizontalDivider(
                                         color = MaterialTheme.colorScheme.surfaceVariant,
                                         thickness = dimens.dividerThin,

@@ -40,19 +40,26 @@ data class ReminderIdentity(
 
     companion object {
         fun fromSemanticKey(key: String): ReminderIdentity? {
-            if (!key.startsWith("v1|")) return null
+            if (key.isBlank() || !key.startsWith("v1|")) return null
             val lengthEnd = key.indexOf('|', startIndex = 3)
-            val eventLength = key.substring(3, lengthEnd.coerceAtLeast(3)).toIntOrNull() ?: return null
+            if (lengthEnd <= 3) return null
+            val eventLength = key.substring(3, lengthEnd).toIntOrNull()
+                ?.takeIf { it > 0 }
+                ?: return null
             val eventStart = lengthEnd + 1
+            val maxEventLength = key.length - eventStart - 1
+            if (maxEventLength < 1 || eventLength > maxEventLength) return null
             val eventEnd = eventStart + eventLength
-            if (lengthEnd < 3 || eventEnd >= key.length || key.getOrNull(eventEnd) != '|') return null
+            if (key.getOrNull(eventEnd) != '|') return null
             val eventId = key.substring(eventStart, eventEnd)
+            if (eventId.isBlank()) return null
             val fields = key.substring(eventEnd + 1).split('|')
             if (fields.size != 3) return null
-            val occurrence = fields[0].toLongOrNull() ?: return null
+            val occurrence = fields[0].toLongOrNull()?.takeIf { it > 0L } ?: return null
             val kind = ReminderKind.entries.firstOrNull { it.name == fields[1] } ?: return null
-            val ordinal = fields[2].toIntOrNull() ?: return null
-            return ReminderIdentity(eventId, occurrence, kind, ordinal)
+            val ordinal = fields[2].toIntOrNull()?.takeIf { it >= 0 } ?: return null
+            val identity = ReminderIdentity(eventId, occurrence, kind, ordinal)
+            return identity.takeIf { it.semanticKey == key }
         }
     }
 }

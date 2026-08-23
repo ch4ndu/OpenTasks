@@ -49,6 +49,8 @@ data class CalendarDayProjection(
     val timelineHourLabels: List<String> = CALENDAR_TIMELINE_HOUR_LABELS,
 )
 
+internal val EMPTY_CALENDAR_DAY_PROJECTION = CalendarDayProjection()
+
 /**
  * Returns tasks for a specific day, sorted by deadline.
  * Filters from the full task list by matching dayKey.

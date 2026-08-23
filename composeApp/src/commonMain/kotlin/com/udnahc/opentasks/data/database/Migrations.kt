@@ -228,3 +228,9 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
         connection.addColumnIfMissing("tasks", "completedAt", "completedAt INTEGER DEFAULT NULL")
     }
 }
+
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_isDeleted_deadline ON tasks(isDeleted, deadline)")
+    }
+}

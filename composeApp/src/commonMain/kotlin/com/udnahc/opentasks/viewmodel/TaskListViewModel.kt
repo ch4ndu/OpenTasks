@@ -2,6 +2,7 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.AttachmentSummary
@@ -62,6 +63,7 @@ class TaskListViewModel(
     observeTaskImageSummaries: ObserveTaskImageSummariesUseCase,
     localDaySignal: LocalDaySignal,
     private val taskDueTextProvider: TaskDueTextProvider = PlainTaskDueTextProvider,
+    accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) : ViewModel() {
 
     data class SectionGroup(
@@ -88,9 +90,19 @@ class TaskListViewModel(
         observeAllCategories,
         addCategoryAction,
         viewModelScope,
+        accountBoundaryExecutor,
     )
 
-    private val completionHandler = TaskCompletionHandler(toggleTaskCompleteAction, viewModelScope)
+    private val mutationLauncher = ForegroundMutationLauncher(
+        accountBoundaryExecutor,
+        viewModelScope,
+    )
+    private val completionHandler = TaskCompletionHandler(
+        toggleTaskCompleteAction,
+        viewModelScope,
+        accountBoundaryExecutor,
+        mutationLauncher::launch,
+    )
     val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -227,7 +239,7 @@ class TaskListViewModel(
     fun dismissSeriesChoice() = completionHandler.dismissSeriesChoice()
 
     fun toggleStar(task: Task) {
-        viewModelScope.launch(Dispatchers.IO) { toggleTaskStarredAction(task.id) }
+        mutationLauncher.launch { toggleTaskStarredAction(task.id) }
     }
 
     fun addCategory(name: String) {
@@ -259,7 +271,7 @@ class TaskListViewModel(
         if (targetStatus == TaskStatus.DONE && task.status != TaskStatus.DONE) {
             toggleComplete(task)
         } else {
-            viewModelScope.launch(Dispatchers.IO) { updateTaskStatusAction(task.id, targetStatus) }
+            mutationLauncher.launch { updateTaskStatusAction(task.id, targetStatus) }
         }
     }
 

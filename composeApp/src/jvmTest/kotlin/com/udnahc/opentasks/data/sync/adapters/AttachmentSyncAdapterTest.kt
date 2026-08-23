@@ -3,12 +3,17 @@ package com.udnahc.opentasks.data.sync.adapters
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
+import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
+import com.udnahc.opentasks.data.attachment.AttachmentFileTooLargeException
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.PocketBaseRecordGateway
 import com.udnahc.opentasks.data.sync.AuthoritativeLocalSeedSourceException
 import com.udnahc.opentasks.data.sync.SyncAdapterException
+import com.udnahc.opentasks.data.sync.SyncAuthenticationRejectedException
+import com.udnahc.opentasks.data.sync.SyncDegradedException
 import com.udnahc.opentasks.data.sync.records.AttachmentRecord
 import com.udnahc.opentasks.testutil.FakeAttachmentFileStorage
 import com.udnahc.opentasks.testutil.testAttachment
@@ -169,11 +174,209 @@ class AttachmentSyncAdapterTest {
         val storage = FakeAttachmentFileStorage().apply { addFile(local.localPath) }
         val record = AttachmentRecord(
             localId = local.id,
+            ownerType = local.ownerType,
+            ownerId = local.ownerId,
+            kind = local.kind,
             file = "remote.jpg",
+            mimeType = local.mimeType,
+            fileName = local.fileName,
+            fileSizeBytes = local.fileSizeBytes,
+            width = local.width,
+            height = local.height,
+            sortOrder = local.sortOrder,
+            isDeleted = local.isDeleted,
+            createdAtUtc = local.createdAt,
             updatedAtUtc = local.updatedAt,
         )
 
         assertFalse(createAdapter(storage).shouldSkipIncomingRecord(record, local))
+    }
+
+    @Test
+    fun equalTimestampMetadataDivergenceFailsBeforeAttachmentFileAccess() = runTest {
+        val local = testAttachment(id = "attachment", remoteFileName = "old.jpg", updatedAt = 200L)
+        var existsCalls = 0
+        val storage = object : AttachmentFileStorage by FakeAttachmentFileStorage() {
+            override suspend fun exists(path: String): Boolean {
+                existsCalls += 1
+                return true
+            }
+        }
+        val divergent = AttachmentRecord(
+            localId = local.id,
+            ownerType = local.ownerType,
+            ownerId = "different-owner",
+            kind = local.kind,
+            file = "server-owned-name.jpg",
+            mimeType = local.mimeType,
+            fileName = local.fileName,
+            fileSizeBytes = local.fileSizeBytes,
+            width = local.width,
+            height = local.height,
+            sortOrder = local.sortOrder,
+            isDeleted = local.isDeleted,
+            createdAtUtc = local.createdAt,
+            updatedAtUtc = local.updatedAt,
+        )
+
+        assertFailsWith<SyncDegradedException> {
+            createAdapter(storage).shouldSkipIncomingRecord(divergent, local)
+        }
+
+        assertEquals(0, existsCalls)
+    }
+
+    @Test
+    fun newerRemoteTombstoneWithAFileFailsBeforeAttachmentFileAccess() = runTest {
+        val local = testAttachment(id = "attachment", remoteFileName = "old.jpg", updatedAt = 200L)
+        var existsCalls = 0
+        val storage = object : AttachmentFileStorage by FakeAttachmentFileStorage() {
+            override suspend fun exists(path: String): Boolean {
+                existsCalls += 1
+                return true
+            }
+        }
+        val malformedTombstone = AttachmentRecord(
+            localId = local.id,
+            ownerType = local.ownerType,
+            ownerId = local.ownerId,
+            kind = local.kind,
+            file = "must-be-cleared.jpg",
+            mimeType = local.mimeType,
+            fileName = local.fileName,
+            fileSizeBytes = local.fileSizeBytes,
+            width = local.width,
+            height = local.height,
+            sortOrder = local.sortOrder,
+            isDeleted = true,
+            createdAtUtc = local.createdAt,
+            updatedAtUtc = local.updatedAt + 1L,
+        )
+
+        assertFailsWith<SyncDegradedException> {
+            createAdapter(storage).shouldSkipIncomingRecord(malformedTombstone, local)
+        }
+
+        assertEquals(0, existsCalls)
+    }
+
+    @Test
+    fun equalTimestampRemoteDownloadKeepsPlatformDerivedLocalMediaMetadataOutOfTheComparison() = runTest {
+        val local = testAttachment(
+            id = "attachment",
+            remoteFileName = "remote.jpg",
+            mimeType = "image/webp",
+            fileName = "locally-generated.webp",
+            fileSizeBytes = 99L,
+            width = 64,
+            height = 48,
+            updatedAt = 200L,
+        )
+        val storage = FakeAttachmentFileStorage().apply { addFile(local.localPath) }
+        val remote = AttachmentRecord(
+            localId = local.id,
+            ownerType = local.ownerType,
+            ownerId = local.ownerId,
+            kind = local.kind,
+            file = "remote.jpg",
+            mimeType = "image/jpeg",
+            fileName = "source.jpg",
+            fileSizeBytes = 123L,
+            width = 128,
+            height = 96,
+            sortOrder = local.sortOrder,
+            isDeleted = local.isDeleted,
+            createdAtUtc = local.createdAt,
+            updatedAtUtc = local.updatedAt,
+        )
+
+        assertTrue(createAdapter(storage).shouldSkipIncomingRecord(remote, local))
+    }
+
+    @Test
+    fun oversizedLocalAttachmentNeverStartsMultipartWrite() = runTest {
+        val parent = testTask(id = "task", pbId = "task-remote", isSynced = true)
+        val attachment = testAttachment(
+            id = "attachment",
+            ownerId = parent.id,
+            isSynced = false,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+        )
+        database.taskDao().insert(parent)
+        database.attachmentDao().insert(attachment)
+        val storage = FakeAttachmentFileStorage().apply {
+            addFile(
+                attachment.localPath,
+                ByteArray(AttachmentFilePolicy.MAX_UPLOAD_BYTES.toInt() + 1),
+            )
+        }
+        val requests = mutableListOf<HttpMethod>()
+        val gateway = PocketBaseRecordGateway(HttpClient(MockEngine { request ->
+            requests += request.method
+            error("Oversized attachment must not reach the gateway")
+        }), "https://example.test")
+
+        assertFailsWith<SyncAdapterException> {
+            GatewayAttachmentSyncAdapter(database, storage, gateway)
+                .pushAll(PocketBaseClientProvider().createClient("http://localhost:8090"))
+        }
+
+        assertTrue(requests.isEmpty())
+        assertEquals(
+            AttachmentSyncState.FAILED,
+            database.attachmentDao().findByIdAnyState(attachment.id)?.syncState,
+        )
+    }
+
+    @Test
+    fun fakeAttachmentStorageAcceptsTheExactCapAndRejectsOneMoreByte() = runTest {
+        val storage = FakeAttachmentFileStorage()
+        val exactPath = "/tmp/exact.jpg"
+        val oversizedPath = "/tmp/oversized.jpg"
+        storage.addFile(exactPath, ByteArray(AttachmentFilePolicy.MAX_UPLOAD_BYTES.toInt()))
+        storage.addFile(oversizedPath, ByteArray(AttachmentFilePolicy.MAX_UPLOAD_BYTES.toInt() + 1))
+
+        assertEquals(AttachmentFilePolicy.MAX_UPLOAD_BYTES.toInt(), storage.readBytes(exactPath)?.size)
+        assertFailsWith<AttachmentFileTooLargeException> { storage.readBytes(oversizedPath) }
+    }
+
+    @Test
+    fun attachmentPushRethrowsTypedAuthenticationRejectionBeforeLaterRows() = runTest {
+        val parent = testTask(id = "task", pbId = "task-remote", isSynced = true)
+        val first = testAttachment(
+            id = "attachment-first",
+            ownerId = parent.id,
+            pbId = "attachment-first-remote",
+            isSynced = false,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+        )
+        val later = testAttachment(
+            id = "attachment-later",
+            ownerId = parent.id,
+            pbId = "attachment-later-remote",
+            isSynced = false,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+        )
+        database.taskDao().insert(parent)
+        database.attachmentDao().insert(first)
+        database.attachmentDao().insert(later)
+        val storage = FakeAttachmentFileStorage().apply {
+            addFile(first.localPath)
+            addFile(later.localPath)
+        }
+        var requests = 0
+        val gateway = PocketBaseRecordGateway(HttpClient(MockEngine {
+            requests += 1
+            respond("", HttpStatusCode.Unauthorized)
+        }), "https://example.test")
+
+        assertFailsWith<SyncAuthenticationRejectedException> {
+            GatewayAttachmentSyncAdapter(database, storage, gateway)
+                .pushAll(PocketBaseClientProvider().createClient("http://localhost:8090"))
+        }
+
+        assertEquals(1, requests)
+        assertFalse(database.attachmentDao().findByIdAnyState(later.id)?.isSynced == true)
     }
 
     @Test
@@ -584,7 +787,7 @@ class AttachmentSyncAdapterTest {
         assertEquals(blocked, database.attachmentDao().findByIdAnyState(blocked.id))
     }
 
-    private fun createAdapter(storage: FakeAttachmentFileStorage) = AttachmentSyncAdapter(
+    private fun createAdapter(storage: AttachmentFileStorage) = AttachmentSyncAdapter(
         dao = database.attachmentDao(),
         taskDao = database.taskDao(),
         fileStorage = storage,

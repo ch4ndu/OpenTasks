@@ -32,6 +32,9 @@ replay_pid*
 **/build/
 !src/**/build/
 local.properties
+androidApp/*.jks
+androidApp/*.keystore
+androidApp/keystore.properties
 .local/
 .idea
 .claude/settings.local.json

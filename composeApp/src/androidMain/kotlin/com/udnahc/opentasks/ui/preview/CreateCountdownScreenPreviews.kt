@@ -17,6 +17,7 @@ private fun CreateCountdownContentPreview() {
             currentDate = LocalDate(2026, 7, 17),
             onSave = {},
             onBack = {},
+            isSaving = false,
         )
     }
 }
@@ -36,6 +37,7 @@ private fun CreateCountdownEditPreview() {
             currentDate = LocalDate(2026, 7, 17),
             onSave = {},
             onBack = {},
+            isSaving = false,
         )
     }
 }

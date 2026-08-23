@@ -166,7 +166,7 @@ External boundaries are validated before expensive work. File/share inputs use b
 
 ## 10. Persistence and Offline Data
 
-Room database `opentasks.db` is currently schema version 12. Its entities are `Task`, `Category`, `Note`, `Tag`, `TaskTag`, `AppSettings`, `Countdown`, and `Attachment`. Exported schemas live under `composeApp/schemas/`, and explicit migrations cover each version from 1 through 12. Destructive migration fallback is not part of the design.
+Room database `opentasks.db` is currently schema version 13. Its entities are `Task`, `Category`, `Note`, `Tag`, `TaskTag`, `AppSettings`, `Countdown`, and `Attachment`. Exported schemas live under `composeApp/schemas/`, and explicit migrations cover each version from 1 through 13. Tasks include an `(isDeleted, deadline)` index for active deadline queries. Destructive migration fallback is not part of the design.
 
 DAOs expose observable reads and suspend writes. Repository implementations:
 
@@ -338,7 +338,7 @@ There are no formal startup, frame-time, database-size, or sync-duration budgets
 
 ## 19. Security and Privacy Considerations
 
-OpenTasks stores task content and settings locally in an unencrypted Room/SQLite database and platform file storage. Platform backup behavior follows the host configuration; Android currently permits application backup.
+OpenTasks stores task content and settings locally in an unencrypted Room/SQLite database and platform file storage. Android disables application backup and device transfer with both legacy and Android 12+ rules that exclude every app-data domain. iOS ATS permits local networking only and retains its local-network usage description; it does not enable arbitrary loads or public exception domains.
 
 PocketBase mode supports exactly two pre-created users in this deployment model. The
 client authenticates each user through PocketBase's `users` collection, and every
@@ -354,19 +354,13 @@ macOS login keychain; Windows/Linux use the documented owner-only app-private
 fallback and surface a weaker-storage warning. Passwords and file tokens are not
 persisted in application settings or logged.
 
-Local-only mode stores no PocketBase credentials and performs no server requests. The local Room/SQLite database and platform attachment files remain unencrypted,
-and platform backup behavior follows the host configuration. PocketBase
-transport security depends on the configured endpoint, so deployments still
-require HTTPS, appropriate reverse-proxy/access-control hardening, and reliable
-database and attachment-storage backups. This is an explicitly bounded
-two-account deployment model, not arbitrary multi-tenant registration or shared
-task hosting.
+Local-only mode stores no PocketBase credentials and performs no server requests. The local Room/SQLite database and platform attachment files remain unencrypted. PocketBase endpoints require HTTPS except for loopback and RFC1918 private IPv4 HTTP; every provider string is validated by the shared strict parser. Android deliberately keeps cleartext enabled at the manifest boundary because Android XML cannot express the required RFC1918 CIDR ranges, so the parser—not a static network-security config—is the runtime authority. Deployments still require HTTPS for public servers, appropriate reverse-proxy/access-control hardening, and reliable database and attachment-storage backups. This is an explicitly bounded two-account deployment model, not arbitrary multi-tenant registration or shared task hosting.
 
 Native entrypoints must validate external intents, URLs, files, and shared payloads. Exported Android components and the iOS custom-URL extension capability should remain as narrow as their workflows permit.
 
 ## 20. Packaging and Distribution
 
-- **Android:** `:androidApp:assembleDebug` builds the development APK. The current release build is minification-disabled and uses the debug signing configuration; production signing/distribution is not configured.
+- **Android:** `:androidApp:assembleDebug` builds the development APK. `:androidApp:assembleRelease` uses optimized R8 and resource shrinking. Release signing is external and all-or-nothing for production: a complete four-input tuple configures signing, no inputs use the debug key only as a local/test convenience, and a partial tuple fails during configuration. `androidApp/proguard-rules.pro` starts empty of broad rules; add only concrete R8 evidence. Pull-request/manual CI runs JVM tests, Android unit tests, lint, and debug assembly without credentials or service fixtures.
 - **iOS:** build the `iosApp` scheme in Xcode. Team ID, signing, provisioning, and store distribution are environment/project configuration concerns.
 - **Desktop:** Compose native distributions produce DMG, MSI, and DEB artifacts. The documented macOS task is `:composeApp:packageReleaseDmg`; signing and notarization are not configured.
 - **PocketBase:** JavaScript migrations in `pocketbase/pb_migrations/` create and harden the server collections. The server is deployed separately from the clients and its SQLite data requires independent backups.
@@ -384,7 +378,7 @@ Application releases must preserve the stable identifiers and data locations use
   deployment/access-control hardening, and backup/restore rehearsal remain
   operator responsibilities.
 - Platform version values are not driven from one shared source.
-- Production Android signing and macOS signing/notarization are not configured.
+- Android production release signing requires externally supplied local/CI inputs; an empty tuple uses only the debug key for local/test convenience, while macOS signing and notarization are not configured.
 - Full platform behavior cannot be proven by a single Gradle compile or test task.
 
 Changes that alter layering, module ownership, persistence/sync contracts, platform entrypoints, build targets, or verification requirements must update this document and the relevant `docs/ai/*` guidance.

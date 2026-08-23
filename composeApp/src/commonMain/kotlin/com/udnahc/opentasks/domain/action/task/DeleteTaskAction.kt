@@ -6,6 +6,9 @@ import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.repository.TaskAttachmentFilePaths
 import com.udnahc.opentasks.data.repository.TaskGraphDeletionResult
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.data.repository.CommittedMutation
+import com.udnahc.opentasks.data.repository.PostCommitWarningPhase
+import com.udnahc.opentasks.data.repository.mapValue
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import org.lighthousegames.logging.logging
 import kotlin.coroutines.cancellation.CancellationException
@@ -22,19 +25,37 @@ class DeleteTaskAction(
 ) {
     private val coordinator = TaskWriteCoordinator(repository)
 
-    suspend operator fun invoke(taskId: String): TaskWriteResult = withActionBoundary {
+    suspend operator fun invoke(taskId: String): CommittedMutation<TaskWriteResult> = withActionBoundary {
         log.d { "Soft-deleting task: $taskId" }
         val deleted = coordinator.deleteGraph(taskId)
-        val result = when (deleted) {
+        val result = when (val value = deleted.value) {
             TaskGraphDeletionResult.Missing -> TaskWriteResult.Missing
-            is TaskGraphDeletionResult.Deleted -> TaskWriteResult.Updated(deleted.task)
+            is TaskGraphDeletionResult.Deleted -> TaskWriteResult.Updated(value.task)
         }
-        if (deleted is TaskGraphDeletionResult.Deleted) {
-            cleanupNeverUploadedAttachmentFiles(deleted.neverUploadedFilePaths)
-            rebuildReminderQueueAction?.afterRecordChange { scheduleTaskRemindersAction(taskId) }
-                ?: scheduleTaskRemindersAction(taskId)
+        val reminderWarning = when (val deletion = deleted.value) {
+            is TaskGraphDeletionResult.Deleted -> {
+                cleanupNeverUploadedAttachmentFiles(deletion.neverUploadedFilePaths)
+                if (rebuildReminderQueueAction != null) {
+                    rebuildReminderQueueAction.afterRecordChangeResult(
+                        scheduleDirectly = { scheduleTaskRemindersAction(taskId) },
+                    )
+                } else {
+                    try {
+                        scheduleTaskRemindersAction(taskId)
+                        null
+                    } catch (error: kotlinx.coroutines.CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        error
+                    }
+                }
+            }
+            TaskGraphDeletionResult.Missing -> null
         }
-        result
+        deleted.mapValue { result }.withPostCommitWarning(
+            reminderWarning,
+            PostCommitWarningPhase.REMINDER_MAINTENANCE,
+        )
     }
 
     private suspend fun <T> withActionBoundary(block: suspend () -> T): T =

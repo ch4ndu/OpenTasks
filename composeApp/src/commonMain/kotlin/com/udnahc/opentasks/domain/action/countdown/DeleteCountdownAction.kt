@@ -2,9 +2,10 @@ package com.udnahc.opentasks.domain.action.countdown
 
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
-import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.repository.CountdownRepository
+import com.udnahc.opentasks.data.repository.CommittedMutation
+import com.udnahc.opentasks.data.repository.PostCommitWarningPhase
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import org.lighthousegames.logging.logging
 
@@ -16,11 +17,14 @@ class DeleteCountdownAction(
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
     internal val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) {
-    suspend operator fun invoke(countdown: Countdown) = accountBoundaryExecutor.withForegroundActionBoundary {
+    suspend operator fun invoke(countdown: Countdown): CommittedMutation<Countdown> = accountBoundaryExecutor.withForegroundActionBoundary {
         log.d { "Deleting countdown: ${countdown.id}" }
-        val deleted = countdown.copy(isDeleted = true, updatedAt = localNow())
-        repository.update(deleted)
-        rebuildReminderQueueAction?.afterRecordChange { scheduleCountdownRemindersAction(deleted.id) }
-            ?: scheduleCountdownRemindersAction(deleted.id)
+        val committed = repository.delete(countdown)
+        committed.withPostCommitWarning(
+            runCountdownReminderMaintenance(rebuildReminderQueueAction) {
+                scheduleCountdownRemindersAction(committed.value.id)
+            },
+            PostCommitWarningPhase.REMINDER_MAINTENANCE,
+        )
     }
 }

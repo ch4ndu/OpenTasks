@@ -1,6 +1,8 @@
 package com.udnahc.opentasks.data.sync
 
 import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.auth.AccountAuthenticationRejectionHandler
+import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
@@ -19,8 +21,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
@@ -56,13 +61,25 @@ class BaseSyncAdapterTest {
             remote = mutableListOf(FakeRecord(localId = "one", value = "remote", updatedAt = 20).withId("pb-one")),
         )
 
-        adapter.pullAll(client)
-        assertFailsWith<SyncAdapterException> {
-            adapter.pushAll(client)
+        assertFailsWith<SyncDegradedException> {
+            adapter.pullAll(client)
         }
 
         assertEquals("remote", adapter.remote.single().value)
         assertFalse(adapter.local.single().synced)
+    }
+
+    @Test
+    fun equalTimestampIdenticalCanonicalPayloadSucceedsWithoutDegradation() = runBlocking {
+        val local = FakeEntity(id = "one", pbId = "pb-one", value = "same", synced = true, updatedAt = 20)
+        val adapter = FakeAdapter(
+            local = mutableListOf(local),
+            remote = mutableListOf(FakeRecord(localId = "one", value = "same", updatedAt = 20).withId("pb-one")),
+        )
+
+        adapter.pullAll(client)
+
+        assertEquals(local, adapter.local.single())
     }
 
     @Test
@@ -396,6 +413,205 @@ class BaseSyncAdapterTest {
     }
 
     @Test
+    fun syncServiceRethrowsNestedAuthenticationRejectionWithoutStartingLaterAdapters() = runBlocking {
+        val provider = authenticatedProvider()
+        val boundaries = mutableListOf<AccountBoundary>()
+        val rejectionHandler = object : AccountAuthenticationRejectionHandler {
+            override suspend fun onAuthenticationRejected(boundary: AccountBoundary): Boolean {
+                boundaries += boundary
+                return true
+            }
+        }
+        val rejected = object : FakeAdapter(
+            local = mutableListOf(),
+            remote = mutableListOf(),
+            collectionName = "categories",
+            order = 0,
+        ) {
+            override suspend fun fetchAllRecords(client: PocketbaseClient): List<FakeRecord> {
+                pullCount += 1
+                throw SyncAdapterException("wrapped rejection", SyncAuthenticationRejectedException())
+            }
+        }
+        val later = FakeAdapter(
+            local = mutableListOf(),
+            remote = mutableListOf(),
+            collectionName = "notes",
+            order = 1,
+        )
+        val service = SyncService(
+            pbProvider = provider,
+            adapters = listOf(rejected, later),
+            accountMutationGate = MutexAccountMutationGate(),
+            authenticationRejectionHandler = rejectionHandler,
+        )
+
+        assertFailsWith<SyncAuthenticationRejectedException> { service.syncAll() }
+
+        assertEquals(1, rejected.pullCount)
+        assertEquals(0, rejected.pushCount)
+        assertEquals(0, later.pullCount)
+        assertEquals(0, later.pushCount)
+        assertEquals(provider.activeBoundary(), boundaries.single())
+        assertEquals(SyncOutcome.ReauthenticationRequired, service.outcome.value)
+    }
+
+    @Test
+    fun initialPullRethrowsAuthenticationRejectionBeforeLaterCollections() = runBlocking {
+        val provider = authenticatedProvider()
+        val rejected = object : FakeAdapter(
+            local = mutableListOf(),
+            remote = mutableListOf(),
+            collectionName = "categories",
+            order = 0,
+        ) {
+            override suspend fun fetchAllRecords(client: PocketbaseClient): List<FakeRecord> {
+                pullCount += 1
+                throw SyncAdapterException("wrapped rejection", SyncAuthenticationRejectedException())
+            }
+        }
+        val later = FakeAdapter(
+            local = mutableListOf(),
+            remote = mutableListOf(),
+            collectionName = "notes",
+            order = 1,
+        )
+        val service = SyncService(
+            pbProvider = provider,
+            adapters = listOf(rejected, later),
+            accountMutationGate = MutexAccountMutationGate(),
+        )
+
+        assertFailsWith<SyncAuthenticationRejectedException> { service.initialPull() }
+
+        assertEquals(1, rejected.pullCount)
+        assertEquals(0, later.pullCount)
+        assertEquals(SyncOutcome.Failed, service.outcome.value)
+    }
+
+    @Test
+    fun syncServiceAllocatesOneGatewayForTheWholePass() = runBlocking {
+        val provider = authenticatedProvider()
+        var gatewayCreations = 0
+        val gatewayFactory = object : PocketBaseRecordGatewayFactory() {
+            override fun create(
+                client: PocketbaseClient,
+                endpoint: PocketBaseEndpoint,
+                binding: CacheBinding,
+            ): PocketBaseRecordGateway {
+                gatewayCreations += 1
+                return super.create(client, endpoint, binding)
+            }
+        }
+        val service = SyncService(
+            pbProvider = provider,
+            adapters = listOf(
+                FakeAdapter(mutableListOf(), mutableListOf(), collectionName = "categories", order = 0),
+                FakeAdapter(mutableListOf(), mutableListOf(), collectionName = "notes", order = 1),
+            ),
+            accountMutationGate = MutexAccountMutationGate(),
+            passContextFactory = SyncPassContextFactory(gatewayFactory = gatewayFactory),
+        )
+
+        service.syncAll()
+
+        assertEquals(1, gatewayCreations)
+    }
+
+    @Test
+    fun initialPullAllocatesOneGatewayForTheWholePass() = runBlocking {
+        val provider = authenticatedProvider()
+        var gatewayCreations = 0
+        val gatewayFactory = object : PocketBaseRecordGatewayFactory() {
+            override fun create(
+                client: PocketbaseClient,
+                endpoint: PocketBaseEndpoint,
+                binding: CacheBinding,
+            ): PocketBaseRecordGateway {
+                gatewayCreations += 1
+                return super.create(client, endpoint, binding)
+            }
+        }
+        val service = SyncService(
+            pbProvider = provider,
+            adapters = listOf(
+                FakeAdapter(mutableListOf(), mutableListOf(), collectionName = "categories", order = 0),
+                FakeAdapter(mutableListOf(), mutableListOf(), collectionName = "notes", order = 1),
+            ),
+            accountMutationGate = MutexAccountMutationGate(),
+            passContextFactory = SyncPassContextFactory(gatewayFactory = gatewayFactory),
+        )
+
+        service.initialPull()
+
+        assertEquals(1, gatewayCreations)
+    }
+
+    @Test
+    fun missingRowWriterFailureFailsGenericPullWithoutSilentlyChangingTheCandidate() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(
+                FakeEntity(
+                    id = "missing",
+                    pbId = "pb-missing",
+                    value = "local",
+                    synced = true,
+                    updatedAt = 30,
+                ),
+            ),
+            remote = mutableListOf(
+                FakeRecord(localId = "other", value = "remote", updatedAt = 30).withId("pb-other"),
+            ),
+        )
+        val pass = SyncPassContext(
+            client = client,
+            gateway = null,
+            writerTransactionRunner = SyncWriterTransactionRunner {
+                throw IllegalStateException("writer transaction failed")
+            },
+        )
+
+        assertFailsWith<SyncAdapterException> { adapter.pullAll(pass) }
+
+        assertTrue(adapter.local.first { it.id == "missing" }.synced)
+    }
+
+    @Test
+    fun missingRowsUseOneWriterTransactionAndRollbackTogetherWhenTheSecondMutationFails() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(
+                FakeEntity(id = "missing-a", pbId = "pb-a", value = "a", synced = true, updatedAt = 30),
+                FakeEntity(id = "missing-b", pbId = "pb-b", value = "b", synced = true, updatedAt = 30),
+            ),
+            remote = mutableListOf(FakeRecord(localId = "remote", value = "remote", updatedAt = 30).withId("pb-remote")),
+            silentlySkippedRemoteIds = setOf("remote"),
+            failMarkUnsyncedOnCall = 2,
+        )
+        var writerTransactionCalls = 0
+        val pass = SyncPassContext(
+            client = client,
+            gateway = null,
+            writerTransactionRunner = SyncWriterTransactionRunner { block ->
+                writerTransactionCalls += 1
+                val snapshot = adapter.local.toList()
+                try {
+                    block()
+                } catch (error: Throwable) {
+                    adapter.local.clear()
+                    adapter.local.addAll(snapshot)
+                    throw error
+                }
+            },
+        )
+
+        assertFailsWith<SyncAdapterException> { adapter.pullAll(pass) }
+
+        assertEquals(1, writerTransactionCalls)
+        assertTrue(adapter.local.first { it.id == "missing-a" }.synced)
+        assertTrue(adapter.local.first { it.id == "missing-b" }.synced)
+    }
+
+    @Test
     fun parentPullFailuresSkipDependentOperations() = runBlocking {
         val provider = authenticatedProvider()
         val categories = FakeAdapter(
@@ -464,6 +680,113 @@ class BaseSyncAdapterTest {
 
         assertEquals(2, adapter.pullCount)
         assertTrue(adapter.local.single().synced)
+    }
+
+    @Test
+    fun syncOutcomeBelongsToTheExecutingSerializedPass() = runBlocking {
+        val provider = authenticatedProvider()
+        lateinit var service: SyncService
+        lateinit var queuedPass: Job
+        val firstPullStarted = CompletableDeferred<Unit>()
+        val queuedPassCreated = CompletableDeferred<Unit>()
+        val releaseFirstPull = CompletableDeferred<Unit>()
+        val secondPullStarted = CompletableDeferred<Unit>()
+        val releaseSecondPull = CompletableDeferred<Unit>()
+        var pullInvocation = 0
+        val adapter = FakeAdapter(
+            local = mutableListOf(),
+            remote = mutableListOf(),
+            onPull = {
+                pullInvocation += 1
+                when (pullInvocation) {
+                    1 -> {
+                        firstPullStarted.complete(Unit)
+                        queuedPass = launch { service.syncAll() }
+                        queuedPassCreated.complete(Unit)
+                        releaseFirstPull.await()
+                    }
+                    2 -> {
+                        secondPullStarted.complete(Unit)
+                        releaseSecondPull.await()
+                    }
+                }
+            },
+        )
+        service = SyncService(provider, listOf(adapter), accountMutationGate = MutexAccountMutationGate())
+
+        val firstPass = launch { service.syncAll() }
+        firstPullStarted.await()
+        queuedPassCreated.await()
+        assertEquals(SyncOutcome.Syncing, service.outcome.value)
+        yield()
+        releaseFirstPull.complete(Unit)
+        secondPullStarted.await()
+
+        assertEquals(SyncOutcome.Syncing, service.outcome.value)
+        firstPass.join()
+        assertEquals(SyncOutcome.Syncing, service.outcome.value)
+
+        releaseSecondPull.complete(Unit)
+        queuedPass.join()
+        assertEquals(SyncOutcome.Success, service.outcome.value)
+    }
+
+    @Test
+    fun cancellingAnActivePassRestoresIdleOutcome() = runBlocking {
+        val provider = authenticatedProvider()
+        val pullStarted = CompletableDeferred<Unit>()
+        val holdPull = CompletableDeferred<Unit>()
+        val adapter = FakeAdapter(
+            local = mutableListOf(),
+            remote = mutableListOf(),
+            onPull = {
+                pullStarted.complete(Unit)
+                holdPull.await()
+            },
+        )
+        val service = SyncService(provider, listOf(adapter), accountMutationGate = MutexAccountMutationGate())
+
+        val activePass = launch { service.syncAll() }
+        pullStarted.await()
+        assertEquals(SyncOutcome.Syncing, service.outcome.value)
+
+        activePass.cancelAndJoin()
+
+        assertEquals(SyncOutcome.Idle, service.outcome.value)
+    }
+
+    @Test
+    fun cancellingAQueuedPassDoesNotChangeTheActiveOutcome() = runBlocking {
+        val provider = authenticatedProvider()
+        lateinit var service: SyncService
+        lateinit var queuedPass: Job
+        val firstPullStarted = CompletableDeferred<Unit>()
+        val queuedPassCreated = CompletableDeferred<Unit>()
+        val releaseFirstPull = CompletableDeferred<Unit>()
+        val adapter = FakeAdapter(
+            local = mutableListOf(),
+            remote = mutableListOf(),
+            onPull = {
+                firstPullStarted.complete(Unit)
+                queuedPass = launch { service.syncAll() }
+                queuedPassCreated.complete(Unit)
+                releaseFirstPull.await()
+            },
+        )
+        service = SyncService(provider, listOf(adapter), accountMutationGate = MutexAccountMutationGate())
+
+        val activePass = launch { service.syncAll() }
+        firstPullStarted.await()
+        queuedPassCreated.await()
+        yield()
+        queuedPass.cancelAndJoin()
+
+        assertEquals(SyncOutcome.Syncing, service.outcome.value)
+
+        releaseFirstPull.complete(Unit)
+        activePass.join()
+        assertEquals(1, adapter.pullCount)
+        assertEquals(SyncOutcome.Success, service.outcome.value)
     }
 
     @Test
@@ -602,11 +925,14 @@ private open class FakeAdapter(
     override val collectionName: String = "fake",
     override val order: Int = 10,
     val invalidRemoteIds: Set<String> = emptySet(),
+    val silentlySkippedRemoteIds: Set<String> = emptySet(),
     val onPull: suspend () -> Unit = {},
+    private val failMarkUnsyncedOnCall: Int? = null,
 ) : BaseSyncAdapter<FakeEntity, FakeRecord>() {
     var hardDeletedCount = 0
     var pullCount = 0
     var pushCount = 0
+    private var markUnsyncedCalls = 0
 
     override fun allowsTestOnlyLegacySdkWrites(): Boolean = true
 
@@ -630,6 +956,10 @@ private open class FakeAdapter(
     }
 
     override suspend fun markUnsynced(localId: String) {
+        markUnsyncedCalls += 1
+        if (markUnsyncedCalls == failMarkUnsyncedOnCall) {
+            throw IllegalStateException("mark unsynced failed")
+        }
         val index = local.indexOfFirst { it.id == localId }
         if (index >= 0) local[index] = local[index].copy(synced = false)
     }
@@ -713,6 +1043,9 @@ private open class FakeAdapter(
         } else {
             null
         }
+
+    override suspend fun skipRemoteRecordSilently(record: FakeRecord): Boolean =
+        record.localId in silentlySkippedRemoteIds
 
     override fun toJsonBody(entity: FakeEntity): String =
         buildJsonObject {

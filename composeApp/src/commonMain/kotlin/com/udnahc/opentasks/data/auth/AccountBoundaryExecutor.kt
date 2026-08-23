@@ -126,7 +126,8 @@ class AccountBoundaryExecutor(
             accountBoundaryGuard.activeBoundary()
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            log.w(error) { "Unable to validate foreground account boundary" }
             return null
         } ?: return null
         if (current.accountId != expected.accountId ||
@@ -149,7 +150,8 @@ class AccountBoundaryExecutor(
             accountRepository.restoreSession()
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            log.w(error) { "Unable to restore active cache session for background account-bound work" }
             return null
         }
         return restored.takeIf { it.activeBindingOrNull()?.isValidActiveBinding() == true }
@@ -169,7 +171,8 @@ class AccountBoundaryExecutor(
             accountBoundaryGuard.activeBoundary()
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            log.w(error) { "Unable to validate restored account boundary" }
             return null
         }
         if (currentBoundary != restoredBoundary) return null

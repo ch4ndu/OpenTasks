@@ -46,6 +46,7 @@ import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
+import com.udnahc.opentasks.domain.usecase.task.EMPTY_CALENDAR_DAY_PROJECTION
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import kotlinx.coroutines.launch
@@ -152,7 +153,7 @@ internal fun DayViewContent(
                             .fillMaxSize()
                             .verticalScroll(timeColumnScrollState),
                     ) {
-                        CalendarDayProjection().timelineHourLabels.forEach { hourLabel ->
+                        EMPTY_CALENDAR_DAY_PROJECTION.timelineHourLabels.forEach { hourLabel ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -187,10 +188,8 @@ internal fun DayViewContent(
                     DayViewTimeline(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
-                        dayTasks = calendarDaysByDay[dayKey(dayMillis)] ?: CalendarDayProjection(
-                            dayKey = dayKey(dayMillis),
-                            isToday = dayMillis == todayMillis,
-                        ),
+                        dayTasks = calendarDaysByDay[dayKey(dayMillis)]
+                            ?: EMPTY_CALENDAR_DAY_PROJECTION,
                         hourHeight = hourHeight,
                         onTimelineScrolled = { scrollValue ->
                             scope.launch { timeColumnScrollState.scrollTo(scrollValue) }

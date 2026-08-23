@@ -10,6 +10,7 @@ import com.udnahc.opentasks.data.extensions.uuid4
     indices = [
         Index("isDeleted", "updatedAt"),
         Index("isDeleted", "status", "deadline"),
+        Index("isDeleted", "deadline"),
         Index("categoryId"),
         Index("sourceExternalId"),
         Index("isSynced"),

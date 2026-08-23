@@ -49,22 +49,25 @@ class CategoryRepositoryImpl(
 
     override suspend fun update(category: Category) = mutationGate.withExclusive {
         log.v { "Updating category: ${category.id}" }
+        val committed = category.copy(
+            isSynced = false,
+            updatedAt = maxOf(localNow(), category.updatedAt),
+        )
         withContext(ioDispatcher) {
-            categoryDao.update(category.withUtcTimestamps().copy(isSynced = false))
+            categoryDao.update(committed.withUtcTimestamps())
         }
         syncTrigger.triggerSync()
     }
 
     override suspend fun delete(category: Category) = mutationGate.withExclusive {
         log.v { "Soft-deleting category: ${category.id}" }
+        val committed = category.copy(
+            isDeleted = true,
+            isSynced = false,
+            updatedAt = maxOf(localNow(), category.updatedAt),
+        )
         withContext(ioDispatcher) {
-            categoryDao.update(
-                category.withUtcTimestamps().copy(
-                    isDeleted = true,
-                    isSynced = false,
-                    updatedAt = localToUtc(localNow()),
-                )
-            )
+            categoryDao.update(committed.withUtcTimestamps())
         }
         syncTrigger.triggerSync()
     }

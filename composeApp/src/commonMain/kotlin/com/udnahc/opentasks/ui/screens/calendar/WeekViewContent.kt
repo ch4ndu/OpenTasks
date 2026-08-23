@@ -39,6 +39,7 @@ import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
+import com.udnahc.opentasks.domain.usecase.task.EMPTY_CALENDAR_DAY_PROJECTION
 import com.udnahc.opentasks.domain.usecase.task.calendarTaskPrefix
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
@@ -72,7 +73,7 @@ internal fun WeekViewContent(
     onDaySelected: (Long) -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
-    val todayWeekSunMillis = remember { startOfWeekLocalMillis(todayMillis) }
+    val todayWeekSunMillis = remember(todayMillis) { startOfWeekLocalMillis(todayMillis) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Spacer(Modifier.height(topBarHeight))
@@ -172,10 +173,7 @@ private fun WeekViewDayPagerContent(
                             dayMillis = dayMillis,
                             todayMillis = todayMillis,
                             dayProjection = calendarDaysByDay[dayKey(dayMillis)]
-                                ?: CalendarDayProjection(
-                                    dayKey = dayKey(dayMillis),
-                                    isToday = dayMillis == todayMillis,
-                                ),
+                                ?: EMPTY_CALENDAR_DAY_PROJECTION,
                             onTaskClick = onTaskClick,
                             isSelected = dayMillis == selectedDayMillis,
                             onDaySelected = onDaySelected,

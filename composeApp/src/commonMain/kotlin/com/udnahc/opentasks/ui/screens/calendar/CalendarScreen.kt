@@ -164,7 +164,6 @@ fun CalendarScreen(
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
-    val tasksByDay by viewModel.tasksByDay.collectAsState()
     val today by viewModel.today.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
     val calendarViewPreference by viewModel.calendarViewPreference.collectAsState()
@@ -172,7 +171,7 @@ fun CalendarScreen(
 
     CalendarContent(
         todayDate = TodayCalendarDate(today.year, today.monthNumber, today.dayOfMonth),
-        tasksByDay = tasksByDay,
+        taskDayKeysFlow = viewModel.taskDayKeys,
         calendarDaysByDayFlow = viewModel.calendarDaysByDay,
         selectedListDayProjectionFlow = viewModel.selectedListDayProjection,
         selectedMonthDayProjectionFlow = viewModel.selectedMonthDayProjection,
@@ -212,7 +211,7 @@ fun CalendarScreen(
 @Composable
 private fun CalendarContent(
     todayDate: TodayCalendarDate,
-    tasksByDay: Map<Long, List<Task>>,
+    taskDayKeysFlow: StateFlow<Set<Long>>,
     calendarDaysByDayFlow: StateFlow<Map<Long, CalendarDayProjection>>,
     selectedListDayProjectionFlow: StateFlow<CalendarDayProjection>,
     selectedMonthDayProjectionFlow: StateFlow<CalendarDayProjection>,
@@ -234,7 +233,6 @@ private fun CalendarContent(
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
-    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
     val density = LocalDensity.current
     val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val navBarHeight = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
@@ -492,6 +490,7 @@ private fun CalendarContent(
         ) {
             when (currentView) {
                 CalendarViewType.LIST -> {
+                    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
                     val selectedListDayProjection by selectedListDayProjectionFlow.collectAsState()
                     val categoryNames by categoryNamesFlow.collectAsState()
                     ListViewContent(
@@ -515,13 +514,14 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.YEAR -> {
+                    val taskDayKeys by taskDayKeysFlow.collectAsState()
                     YearViewContent(
                         pagerState = yearPagerState,
                         centreIndex = YEAR_PAGER_CENTRE,
                         todayYear = todayYear,
                         todayMonth = todayMonth,
                         todayDay = todayDay,
-                        taskDayKeys = tasksByDay.keys,
+                        taskDayKeys = taskDayKeys,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
                         onMonthClick = { year, month -> navigateToMonth(year, month) },
@@ -529,6 +529,7 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.MONTH -> {
+                    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
                     val selectedMonthDayProjection by selectedMonthDayProjectionFlow.collectAsState()
                     val categoryNames by categoryNamesFlow.collectAsState()
                     MonthViewContent(
@@ -562,6 +563,7 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.WEEK -> {
+                    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
                     WeekViewContent(
                         todayMillis = todayMillis,
                         todayYear = todayYear,
@@ -590,6 +592,7 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.THREE_DAY -> {
+                    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
                     ThreeDayViewContent(
                         todayMillis = todayMillis,
                         todayYear = todayYear,
@@ -606,6 +609,7 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.DAY -> {
+                    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
                     DayViewContent(
                         todayMillis = todayMillis,
                         todayYear = todayYear,

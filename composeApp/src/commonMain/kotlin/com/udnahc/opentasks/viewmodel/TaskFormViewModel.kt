@@ -2,6 +2,8 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
 import com.udnahc.opentasks.data.attachment.PickedImage
 import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.Task
@@ -19,6 +21,7 @@ import com.udnahc.opentasks.domain.action.task.TaskWriteResult
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImagesUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
+import com.udnahc.opentasks.data.repository.PostCommitWarning
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -40,22 +43,29 @@ import org.lighthousegames.logging.logging
 private val log = logging("TaskFormViewModel")
 
 sealed class TaskFormSaveEvent {
-    data class Saved(val formData: TaskFormData) : TaskFormSaveEvent()
+    data class Saved(
+        val formData: TaskFormData,
+        val postCommitWarning: PostCommitWarning? = null,
+    ) : TaskFormSaveEvent()
     data class TaskCreatedWithImageError(
         val taskId: String,
         val formData: TaskFormData,
         val failedImages: List<PickedImage>,
         val error: Throwable,
+        val postCommitWarning: PostCommitWarning? = null,
     ) : TaskFormSaveEvent()
 
     data class ImagesFailed(
         val formData: TaskFormData,
         val failedImages: List<PickedImage>,
         val error: Throwable,
+        val postCommitWarning: PostCommitWarning? = null,
     ) : TaskFormSaveEvent()
 
     data class Error(val error: Throwable) : TaskFormSaveEvent()
+    data class DeleteError(val error: Throwable) : TaskFormSaveEvent()
     data class StaleOccurrence(val formData: TaskFormData) : TaskFormSaveEvent()
+    data class Deleted(val postCommitWarning: PostCommitWarning? = null) : TaskFormSaveEvent()
 }
 
 data class PendingFormCompletion(
@@ -76,6 +86,7 @@ class TaskFormViewModel(
     addCategoryAction: AddCategoryAction,
     private val pendingTaskImageHandoff: PendingTaskImageHandoff = PendingTaskImageHandoff(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) : ViewModel() {
 
     private val _taskId = MutableStateFlow<String?>(null)
@@ -89,10 +100,16 @@ class TaskFormViewModel(
     val pendingFormCompletion: StateFlow<PendingFormCompletion?> = _pendingFormCompletion
     private val _retainedFormDraft = MutableStateFlow<TaskFormData?>(null)
     val retainedFormDraft: StateFlow<TaskFormData?> = _retainedFormDraft
+    private val mutationLauncher = ForegroundMutationLauncher(
+        accountBoundaryExecutor,
+        viewModelScope,
+        ioDispatcher,
+    )
     private val categoryPicker = CategoryPickerDelegate(
         observeAllCategories,
         addCategoryAction,
         viewModelScope,
+        accountBoundaryExecutor,
     )
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -148,9 +165,12 @@ class TaskFormViewModel(
 
     fun saveNewTask(formData: TaskFormData) {
         if (!_isSaving.compareAndSet(expect = false, update = true)) return
-        viewModelScope.launch(ioDispatcher) {
+        mutationLauncher.launch(
+            onBoundaryRejected = { handleMutationFailure(AccountBoundaryRejectedException()) },
+            onFailure = ::handleMutationFailure,
+        ) {
             try {
-                val task = addTaskAction(
+                val committed = addTaskAction(
                     title = formData.title,
                     content = formData.content,
                     subtasks = formData.subtasks,
@@ -171,9 +191,10 @@ class TaskFormViewModel(
                     durationReminders = formData.durationReminders,
                     dateReminders = formData.dateReminders,
                 )
+                val task = committed.value
                 val imageResult = savePendingImages(task.id)
                 if (imageResult.failedImages.isEmpty()) {
-                    publishSaveEvent(TaskFormSaveEvent.Saved(formData))
+                    publishSaveEvent(TaskFormSaveEvent.Saved(formData, committed.postCommitWarning))
                 } else {
                     pendingTaskImageHandoff.put(task.id, imageResult.failedImages)
                     publishSaveEvent(
@@ -182,14 +203,10 @@ class TaskFormViewModel(
                             formData = formData,
                             failedImages = imageResult.failedImages,
                             error = imageResult.error,
+                            postCommitWarning = committed.postCommitWarning,
                         )
                     )
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.e(e) { "Failed to save new task" }
-                publishSaveEvent(TaskFormSaveEvent.Error(e))
             } finally {
                 _isSaving.value = false
             }
@@ -199,9 +216,13 @@ class TaskFormViewModel(
     fun saveExistingTask(taskId: String, formData: TaskFormData) {
         if (!_isSaving.compareAndSet(expect = false, update = true)) return
         _retainedFormDraft.value = formData
-        viewModelScope.launch(ioDispatcher) {
+        mutationLauncher.launch(
+            onBoundaryRejected = { handleMutationFailure(AccountBoundaryRejectedException()) },
+            onFailure = ::handleMutationFailure,
+        ) {
             try {
-                when (val result = updateTaskAction(taskId, TaskWriteIntent.FormUpdate(formData))) {
+                val committed = updateTaskAction(taskId, TaskWriteIntent.FormUpdate(formData))
+                when (val result = committed.value) {
                     is TaskWriteResult.CompletionChoiceRequired -> {
                         _pendingFormCompletion.value = PendingFormCompletion(
                             taskId = taskId,
@@ -209,16 +230,15 @@ class TaskFormViewModel(
                             expectedOccurrence = result.expectedOccurrence,
                         )
                     }
-                    is TaskWriteResult.Updated -> finishExistingTaskSave(taskId, formData)
+                    is TaskWriteResult.Updated -> finishExistingTaskSave(
+                        taskId,
+                        formData,
+                        committed.postCommitWarning,
+                    )
                     TaskWriteResult.StaleOccurrence -> publishSaveEvent(TaskFormSaveEvent.StaleOccurrence(formData))
                     TaskWriteResult.Missing -> publishSaveEvent(TaskFormSaveEvent.Error(IllegalStateException("Task no longer exists")))
-                    TaskWriteResult.NoOp -> Unit
+                    TaskWriteResult.NoOp -> publishSaveEvent(TaskFormSaveEvent.Saved(formData, committed.postCommitWarning))
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.e(e) { "Failed to save existing task $taskId" }
-                publishSaveEvent(TaskFormSaveEvent.Error(e))
             } finally {
                 _isSaving.value = false
             }
@@ -240,19 +260,27 @@ class TaskFormViewModel(
             _isSaving.value = false
             return
         }
-        viewModelScope.launch(ioDispatcher) {
+        mutationLauncher.launch(
+            onBoundaryRejected = { handleMutationFailure(AccountBoundaryRejectedException()) },
+            onFailure = ::handleMutationFailure,
+        ) {
             try {
-                when (updateTaskAction(
+                val committed = updateTaskAction(
                     pending.taskId,
                     TaskWriteIntent.ApplyFormAndComplete(
                         pending.formData,
                         pending.expectedOccurrence,
                         scope,
                     ),
-                )) {
+                )
+                when (committed.value) {
                     is TaskWriteResult.Updated -> {
                         _pendingFormCompletion.value = null
-                        finishExistingTaskSave(pending.taskId, pending.formData)
+                        finishExistingTaskSave(
+                            pending.taskId,
+                            pending.formData,
+                            committed.postCommitWarning,
+                        )
                     }
                     TaskWriteResult.StaleOccurrence -> {
                         _pendingFormCompletion.value = null
@@ -264,11 +292,6 @@ class TaskFormViewModel(
                     }
                     else -> Unit
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.e(e) { "Failed to complete pending task form ${pending.taskId}" }
-                publishSaveEvent(TaskFormSaveEvent.Error(e))
             } finally {
                 _isSaving.value = false
             }
@@ -276,14 +299,34 @@ class TaskFormViewModel(
     }
 
     fun deleteTask(taskId: String) {
-        discardPendingImages()
-        _pendingFormCompletion.value = null
-        _retainedFormDraft.value = null
-        viewModelScope.launch(ioDispatcher) { deleteTaskAction(taskId) }
+        if (!_isSaving.compareAndSet(expect = false, update = true)) return
+        mutationLauncher.launch(
+            onBoundaryRejected = { handleDeleteMutationFailure(AccountBoundaryRejectedException()) },
+            onFailure = ::handleDeleteMutationFailure,
+        ) {
+            try {
+                val committed = deleteTaskAction(taskId)
+                when (committed.value) {
+                    is TaskWriteResult.Updated,
+                    TaskWriteResult.Missing,
+                    -> {
+                        discardPendingImages()
+                        _pendingFormCompletion.value = null
+                        _retainedFormDraft.value = null
+                        publishSaveEvent(TaskFormSaveEvent.Deleted(committed.postCommitWarning))
+                    }
+                    else -> handleDeleteMutationFailure(
+                        IllegalStateException("Task could not be deleted"),
+                    )
+                }
+            } finally {
+                _isSaving.value = false
+            }
+        }
     }
 
     fun removeTaskImage(attachment: com.udnahc.opentasks.data.model.Attachment) {
-        viewModelScope.launch(ioDispatcher) { removeTaskImageAction(attachment) }
+        mutationLauncher.launch { removeTaskImageAction(attachment) }
     }
 
     fun addCategory(name: String) {
@@ -317,17 +360,22 @@ class TaskFormViewModel(
         )
     }
 
-    private suspend fun finishExistingTaskSave(taskId: String, formData: TaskFormData) {
+    private suspend fun finishExistingTaskSave(
+        taskId: String,
+        formData: TaskFormData,
+        postCommitWarning: PostCommitWarning?,
+    ) {
         val imageResult = savePendingImages(taskId)
         if (imageResult.failedImages.isEmpty()) {
             _retainedFormDraft.value = null
-            publishSaveEvent(TaskFormSaveEvent.Saved(formData))
+            publishSaveEvent(TaskFormSaveEvent.Saved(formData, postCommitWarning))
         } else {
             publishSaveEvent(
                 TaskFormSaveEvent.ImagesFailed(
                     formData = formData,
                     failedImages = imageResult.failedImages,
                     error = imageResult.error,
+                    postCommitWarning = postCommitWarning,
                 )
             )
         }
@@ -340,5 +388,17 @@ class TaskFormViewModel(
 
     private fun publishSaveEvent(event: TaskFormSaveEvent) {
         _saveEvent.value = event
+    }
+
+    private fun handleMutationFailure(error: Throwable) {
+        log.e(error) { "Task form mutation failed" }
+        _isSaving.value = false
+        publishSaveEvent(TaskFormSaveEvent.Error(error))
+    }
+
+    private fun handleDeleteMutationFailure(error: Throwable) {
+        log.e(error) { "Task form delete failed" }
+        _isSaving.value = false
+        publishSaveEvent(TaskFormSaveEvent.DeleteError(error))
     }
 }

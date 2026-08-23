@@ -1,5 +1,8 @@
 package com.udnahc.opentasks.data.sync
 
+import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
+import com.udnahc.opentasks.data.attachment.AttachmentFileTooLargeException
+import com.udnahc.opentasks.data.auth.CacheBinding
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -14,13 +17,13 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertFailsWith
-import com.udnahc.opentasks.data.auth.CacheBinding
 
 class PocketBaseRecordGatewayTest {
     private val ownerBinding = CacheBinding(
@@ -93,6 +96,114 @@ class PocketBaseRecordGatewayTest {
             assertTrue(requests.any { it.contains("/$collection/records?") })
         }
         assertTrue(requests.any { it.contains("/categories/records?page=2") })
+        assertTrue(
+            requests
+                .filter { request ->
+                    PocketBaseServerInventoryReader.COLLECTIONS.any { collection ->
+                        request.contains("/$collection/records?")
+                    }
+                }
+                .all { it.contains("sort=id") },
+        )
+    }
+
+    @Test
+    fun `authenticated gateway record and capability endpoints surface typed 401`() = runTest {
+        val gateway = PocketBaseRecordGateway(
+            HttpClient(MockEngine { respond("", HttpStatusCode.Unauthorized) }),
+            "https://example.test",
+            ownerBinding = ownerBinding,
+        )
+
+        assertFailsWith<SyncAuthenticationRejectedException> { gateway.getCapability() }
+        assertFailsWith<SyncAuthenticationRejectedException> { gateway.getRecords("tasks", 1, 1) }
+        assertFailsWith<SyncAuthenticationRejectedException> { gateway.getRecord("tasks", "remote-id") }
+        assertFailsWith<SyncAuthenticationRejectedException> {
+            gateway.createJson("tasks", buildJsonObject { put("localId", "task") })
+        }
+        assertFailsWith<SyncAuthenticationRejectedException> {
+            gateway.updateJson("tasks", "remote-id", buildJsonObject { put("localId", "task") })
+        }
+        assertFailsWith<SyncAuthenticationRejectedException> {
+            gateway.deleteOwnedInventoryRecord(
+                "tasks",
+                buildJsonObject {
+                    put("id", "remote-id")
+                    put("account", ownerBinding.accountId)
+                },
+            )
+        }
+    }
+
+    @Test
+    fun `protected file token 401 is typed while first file rejection refreshes once`() = runTest {
+        var tokenRequests = 0
+        var fileRequests = 0
+        val retryingGateway = PocketBaseRecordGateway(
+            HttpClient(MockEngine { request ->
+                when {
+                    request.url.encodedPath.endsWith("/api/files/token") -> {
+                        tokenRequests += 1
+                        respond("""{"token":"token-$tokenRequests"}""", HttpStatusCode.OK)
+                    }
+                    request.url.encodedPath.contains("/api/files/attachments/") -> {
+                        fileRequests += 1
+                        respond("", if (fileRequests == 1) HttpStatusCode.Forbidden else HttpStatusCode.Unauthorized)
+                    }
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }),
+            "https://example.test",
+            ownerBinding = ownerBinding,
+        )
+
+        val response = retryingGateway.downloadProtectedFile("attachment", "image.jpg")
+
+        assertEquals(HttpStatusCode.Unauthorized, response.status)
+        assertEquals(2, tokenRequests)
+        assertEquals(2, fileRequests)
+
+        val rejectedTokenGateway = PocketBaseRecordGateway(
+            HttpClient(MockEngine { request ->
+                assertTrue(request.url.encodedPath.endsWith("/api/files/token"))
+                respond("", HttpStatusCode.Unauthorized)
+            }),
+            "https://example.test",
+            ownerBinding = ownerBinding,
+        )
+        assertFailsWith<SyncAuthenticationRejectedException> {
+            rejectedTokenGateway.downloadProtectedFile("attachment", "image.jpg")
+        }
+    }
+
+    @Test
+    fun `protected downloads enforce the exact attachment byte cap`() = runTest {
+        val exactBytes = ByteArray(AttachmentFilePolicy.MAX_UPLOAD_BYTES.toInt()) { 7 }
+        val exactGateway = protectedDownloadGateway(exactBytes)
+
+        assertEquals(exactBytes.toList(), exactGateway.downloadProtectedFile("attachment", "image.jpg").body?.toList())
+
+        val oversizedGateway = protectedDownloadGateway(
+            ByteArray(AttachmentFilePolicy.MAX_UPLOAD_BYTES.toInt() + 1) { 7 },
+        )
+        assertFailsWith<AttachmentFileTooLargeException> {
+            oversizedGateway.downloadProtectedFile("attachment", "image.jpg")
+        }
+    }
+
+    @Test
+    fun `protected file token cancellation remains transparent`() = runTest {
+        val gateway = PocketBaseRecordGateway(
+            HttpClient(MockEngine {
+                throw CancellationException("cancelled token request")
+            }),
+            "https://example.test",
+            ownerBinding = ownerBinding,
+        )
+
+        assertFailsWith<CancellationException> {
+            gateway.downloadProtectedFile("attachment", "image.jpg")
+        }
     }
 
     @Test
@@ -380,4 +491,19 @@ class PocketBaseRecordGatewayTest {
             )
         }
     }
+
+    private fun protectedDownloadGateway(bytes: ByteArray): PocketBaseRecordGateway =
+        PocketBaseRecordGateway(
+            HttpClient(MockEngine { request ->
+                when {
+                    request.url.encodedPath.endsWith("/api/files/token") ->
+                        respond("""{"token":"file-token"}""", HttpStatusCode.OK)
+                    request.url.encodedPath.contains("/api/files/attachments/") ->
+                        respond(bytes, HttpStatusCode.OK)
+                    else -> error("Unexpected request ${request.url}")
+                }
+            }),
+            "https://example.test",
+            ownerBinding = ownerBinding,
+        )
 }

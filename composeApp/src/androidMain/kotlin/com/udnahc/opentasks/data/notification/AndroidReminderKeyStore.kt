@@ -73,6 +73,8 @@ private class SharedPreferencesReminderKeyStorage(
                 editor.remove(key)
             }
         }.apply(block)
-        check(editor.commit()) { "Unable to persist Android reminder key store" }
+        if (!editor.commit()) {
+            throw ReminderKeyPersistenceException("Unable to persist Android reminder key store")
+        }
     }
 }

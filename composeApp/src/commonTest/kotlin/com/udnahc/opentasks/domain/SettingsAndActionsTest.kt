@@ -101,7 +101,7 @@ class SettingsAndActionsTest {
         assertEquals("New", noteRepository.updated.last().title)
 
         DeleteNoteAction(noteRepository)(note)
-        assertTrue(noteRepository.updated.last().isDeleted)
+        assertTrue(noteRepository.deleted.last().isDeleted)
 
         val tagRepository = FakeTagRepository()
         val tagId = AddTagAction(tagRepository)("Focus", "#00ff00")

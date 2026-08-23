@@ -8,7 +8,6 @@ interface AttachmentRepository {
     fun observeForOwner(ownerType: String, ownerId: String, kind: String): Flow<List<Attachment>>
     fun observeTaskImageSummaries(): Flow<List<AttachmentSummary>>
     suspend fun getByIdAnyState(id: String): Attachment?
-    suspend fun getActiveForOwnerAnyState(ownerType: String, ownerId: String): List<Attachment>
     suspend fun nextSortOrder(ownerType: String, ownerId: String, kind: String): Int
     suspend fun insert(attachment: Attachment): Long
     suspend fun update(attachment: Attachment)

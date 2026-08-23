@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import com.udnahc.opentasks.data.model.SubtaskItem
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.PriorityHigh
@@ -53,7 +54,7 @@ internal fun SubtaskList(
                 focusRequester = if (subtasks.firstOrNull()?.id == subtask.id) firstItemFocusRequester else null,
             )
         }
-        item {
+        item(key = "subtask_add_row") {
             val dimens = OpenTasksTheme.dimens
             Row(
                 modifier = Modifier

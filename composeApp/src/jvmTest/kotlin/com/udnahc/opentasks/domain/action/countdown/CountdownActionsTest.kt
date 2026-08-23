@@ -38,9 +38,10 @@ class CountdownActionsTest {
             ScheduleCountdownRemindersAction(NotificationScheduler(), repository),
         )(countdown)
 
-        val deleted = repository.updated.single()
+        val deleted = repository.deleted.single()
         assertEquals(countdown.id, deleted.id)
         assertTrue(deleted.isDeleted)
         assertNotEquals(countdown.updatedAt, deleted.updatedAt)
+        assertTrue(repository.updated.isEmpty())
     }
 }

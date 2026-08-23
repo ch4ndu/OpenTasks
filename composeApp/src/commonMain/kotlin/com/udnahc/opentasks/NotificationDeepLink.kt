@@ -2,6 +2,11 @@ package com.udnahc.opentasks
 
 import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
+import com.udnahc.opentasks.data.notification.ReminderCommand
+import com.udnahc.opentasks.data.notification.ReminderCommandValidation
+import com.udnahc.opentasks.data.notification.ReminderIdentity
+import com.udnahc.opentasks.data.notification.ReminderKind
+import com.udnahc.opentasks.data.notification.validateReminderCommand
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,23 +39,6 @@ private val _notificationDeepLinkEvent = MutableStateFlow<NotificationDeepLinkEv
 val notificationDeepLinkEvent: StateFlow<NotificationDeepLinkEvent?> =
     _notificationDeepLinkEvent.asStateFlow()
 
-fun publishNotificationDeepLinkEventId(eventId: String) {
-    publishNotificationDeepLinkEvent(eventId, 0L, 0L)
-}
-
-fun publishNotificationDeepLinkEvent(
-    eventId: String,
-    occurrenceDeadlineUtcMillis: Long,
-    notificationAtUtcMillis: Long,
-) {
-    publishNotificationDeepLinkEvent(
-        eventId = eventId,
-        occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
-        notificationAtUtcMillis = notificationAtUtcMillis,
-        semanticKey = null,
-    )
-}
-
 fun publishNotificationDeepLinkEvent(
     eventId: String,
     occurrenceDeadlineUtcMillis: Long,
@@ -59,15 +47,64 @@ fun publishNotificationDeepLinkEvent(
     accountId: String? = null,
     boundaryEpoch: Long = 0L,
 ) {
-    if (eventId.isNotBlank()) {
-        _notificationDeepLinkEvent.value = NotificationDeepLinkEvent(
-            eventId = eventId,
-            occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis.takeIf { it > 0L },
-            notificationAtUtcMillis = notificationAtUtcMillis.takeIf { it > 0L },
-            semanticKey = semanticKey,
-            accountId = accountId,
-            boundaryEpoch = boundaryEpoch,
-        )
+    val command = sharedTapCommand(eventId, semanticKey) ?: return
+    val event = createValidatedNotificationDeepLinkEvent(
+        command = command,
+        eventId = eventId,
+        occurrenceDeadlineUtcMillis = occurrenceDeadlineUtcMillis,
+        notificationAtUtcMillis = notificationAtUtcMillis,
+        semanticKey = semanticKey,
+        accountId = accountId,
+        boundaryEpoch = boundaryEpoch,
+    ) ?: return
+    _notificationDeepLinkEvent.value = event
+}
+
+/**
+ * The only production boundary that turns a notification tap payload into a
+ * navigation event. The semantic reminder identity is authoritative for every
+ * duplicated field, so malformed native payloads cannot be published.
+ */
+fun createValidatedNotificationDeepLinkEvent(
+    command: ReminderCommand,
+    eventId: String?,
+    occurrenceDeadlineUtcMillis: Long?,
+    notificationAtUtcMillis: Long?,
+    semanticKey: String?,
+    accountId: String?,
+    boundaryEpoch: Long,
+): NotificationDeepLinkEvent? {
+    val validation = validateReminderCommand(
+        command = command,
+        semanticKey = semanticKey,
+        eventId = eventId,
+        occurrenceUtcMillis = occurrenceDeadlineUtcMillis,
+        accountId = accountId,
+        boundaryEpoch = boundaryEpoch,
+    )
+    val identity = (validation as? ReminderCommandValidation.Accepted)?.identity ?: return null
+    return NotificationDeepLinkEvent(
+        eventId = identity.eventId,
+        occurrenceDeadlineUtcMillis = identity.occurrenceUtcMillis,
+        notificationAtUtcMillis = notificationAtUtcMillis?.takeIf { it > 0L },
+        semanticKey = identity.semanticKey,
+        accountId = accountId,
+        boundaryEpoch = boundaryEpoch,
+    )
+}
+
+private fun sharedTapCommand(
+    eventId: String,
+    semanticKey: String?,
+): ReminderCommand? {
+    if (eventId.isBlank()) return null
+    val identity = semanticKey?.let(ReminderIdentity::fromSemanticKey) ?: return null
+    return when {
+        identity.kind == ReminderKind.ONGOING && !eventId.startsWith(COUNTDOWN_ID_PREFIX) ->
+            ReminderCommand.ONGOING_TAP
+        identity.kind == ReminderKind.ONGOING -> null
+        eventId.startsWith(COUNTDOWN_ID_PREFIX) -> ReminderCommand.COUNTDOWN_TAP
+        else -> ReminderCommand.TASK_TAP
     }
 }
 

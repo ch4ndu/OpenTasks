@@ -3,12 +3,19 @@ package com.udnahc.opentasks.data.notification
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
+import com.udnahc.opentasks.domain.action.task.DismissTaskNotificationAction
 import com.udnahc.opentasks.domain.action.task.MarkTaskNotificationDoneAction
+import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
+import com.udnahc.opentasks.widget.CalendarWidget
+import com.udnahc.opentasks.widget.TaskWidget
+import com.udnahc.opentasks.widget.WeekWidget
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlin.coroutines.cancellation.CancellationException
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.lighthousegames.logging.logging
@@ -19,64 +26,206 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
 
     private val notificationScheduler: NotificationScheduler by inject()
     private val markTaskNotificationDoneAction: MarkTaskNotificationDoneAction by inject()
-    private val allDayNotificationDismissalStore: AllDayNotificationDismissalStore by inject()
+    private val dismissTaskNotificationAction: DismissTaskNotificationAction by inject()
     private val accountBoundaryExecutor: AccountBoundaryExecutor by inject()
+    private val rebuildReminderQueueAction: RebuildReminderQueueAction by inject()
+    private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
-        val taskId = intent.getStringExtra(NotificationScheduler.EXTRA_TASK_ID) ?: return
-        val semanticKey = intent.getStringExtra(NotificationScheduler.EXTRA_SEMANTIC_KEY) ?: return
-        log.d { "Notification action received: ${intent.action} for task $taskId" }
+        val action = intent.action ?: return
+        val command = when (action) {
+            NotificationScheduler.ACTION_MARK_DONE -> ReminderCommand.MARK_DONE
+            NotificationScheduler.ACTION_GOT_IT -> ReminderCommand.GOT_IT
+            else -> return
+        }
+        val taskId = intent.getStringExtra(NotificationScheduler.EXTRA_TASK_ID)
+        val semanticKey = intent.getStringExtra(NotificationScheduler.EXTRA_SEMANTIC_KEY)
+        val accountId = intent.getStringExtra(NotificationScheduler.EXTRA_ACCOUNT_ID)
+        val boundaryEpoch = intent.getLongExtra(NotificationScheduler.EXTRA_BOUNDARY_EPOCH, 0L)
+        val occurrence = intent.occurrenceDeadlineUtcMillis()
+        val validation = validateReminderCommand(
+            command = command,
+            semanticKey = semanticKey,
+            eventId = taskId,
+            occurrenceUtcMillis = occurrence,
+            accountId = accountId,
+            boundaryEpoch = boundaryEpoch,
+        )
+        val accepted = validation as? ReminderCommandValidation.Accepted
+        if (accepted == null) {
+            log.w { "Rejected notification action because its reminder identity was invalid" }
+            return
+        }
+        val validatedTaskId = taskId ?: return
+        val validatedSemanticKey = semanticKey ?: return
+        val validatedAccountId = accountId ?: return
+        val validatedOccurrence = accepted.identity.occurrenceUtcMillis
 
-        when (intent.action) {
-            NotificationScheduler.ACTION_GOT_IT -> {
-                val pendingResult = goAsync()
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        val handled = accountBoundaryExecutor.withActiveCacheBoundary(
-                            expectedAccountId = intent.accountId(),
-                            expectedBoundaryEpoch = intent.boundaryEpoch(),
-                        ) {
-                            allDayNotificationDismissalStore.dismissToday(taskId)
-                            notificationScheduler.cancel(semanticKey)
+        log.d { "Notification action received: $action for task $validatedTaskId" }
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val boundary = accountBoundaryExecutor.withActiveCacheBoundary(
+                    expectedAccountId = validatedAccountId,
+                    expectedBoundaryEpoch = boundaryEpoch,
+                ) { activeBoundary -> activeBoundary }
+                if (boundary == null) {
+                    log.d { "Skipping notification action without a matching active cache session" }
+                } else {
+                    when (command) {
+                        ReminderCommand.GOT_IT -> accountBoundaryExecutor.withForegroundBoundary(boundary) {
+                            handleGotIt(
+                                taskId = validatedTaskId,
+                                semanticKey = validatedSemanticKey,
+                                occurrenceUtcMillis = validatedOccurrence,
+                                accountId = validatedAccountId,
+                                boundaryEpoch = boundary.boundaryEpoch,
+                            )
                         }
-                        if (handled == null) {
-                            log.d { "Skipping all-day notification dismissal without a matching active cache session for task $taskId" }
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        log.e(e) { "Failed to dismiss all-day notification for task $taskId" }
-                    } finally {
-                        pendingResult.finish()
+                        ReminderCommand.MARK_DONE -> handleMarkDone(
+                            taskId = validatedTaskId,
+                            semanticKey = validatedSemanticKey,
+                            occurrenceUtcMillis = validatedOccurrence,
+                            accountId = validatedAccountId,
+                            boundary = boundary,
+                            context = context,
+                        )
+                        else -> Unit
                     }
                 }
-            }
-            NotificationScheduler.ACTION_MARK_DONE -> {
-                val pendingResult = goAsync()
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        val handled = accountBoundaryExecutor.withActiveCacheBoundary(
-                            expectedAccountId = intent.accountId(),
-                            expectedBoundaryEpoch = intent.boundaryEpoch(),
-                        ) {
-                            markTaskNotificationDoneAction(taskId, intent.occurrenceDeadlineUtcMillis())
-                            notificationScheduler.cancelDisplayedReminders(taskId, exceptSemanticKey = semanticKey)
-                            notificationScheduler.cancel(semanticKey)
-                            notificationScheduler.stopOngoing(taskId)
-                        }
-                        if (handled == null) {
-                            log.d { "Skipping Mark Done action without a matching active cache session for task $taskId" }
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        log.e(e) { "Failed to handle Mark Done action for task $taskId" }
-                    } finally {
-                        pendingResult.finish()
-                    }
-                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                // Boundary, validation, and pre-commit failures intentionally
+                // have no cleanup or widget side effects.
+                log.e(error) { "Failed to handle notification action" }
+            } finally {
+                pendingResult.finish()
             }
         }
+    }
+
+    private suspend fun handleGotIt(
+        taskId: String,
+        semanticKey: String,
+        occurrenceUtcMillis: Long,
+        accountId: String,
+        boundaryEpoch: Long,
+    ) {
+        try {
+            dismissTaskNotificationAction(
+                taskId = taskId,
+                semanticKey = semanticKey,
+                occurrenceDeadlineUtcMillis = occurrenceUtcMillis,
+                accountId = accountId,
+                boundaryEpoch = boundaryEpoch,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.e(error) { "Failed to dismiss all-day notification for $taskId" }
+        }
+    }
+
+    private suspend fun handleMarkDone(
+        taskId: String,
+        semanticKey: String,
+        occurrenceUtcMillis: Long,
+        accountId: String,
+        boundary: AccountBoundary,
+        context: Context,
+    ) {
+        val committed = markTaskNotificationDoneAction(
+            taskId = taskId,
+            occurrenceDeadlineUtcMillis = occurrenceUtcMillis,
+            semanticKey = semanticKey,
+            accountId = accountId,
+            boundaryEpoch = boundary.boundaryEpoch,
+            expectedBoundary = boundary,
+        )
+        accountBoundaryExecutor.withForegroundBoundary(boundary) {
+            val effects = notificationEffectPlan(committed) ?: return@withForegroundBoundary
+            when (effects.cleanup) {
+                NotificationCleanupPlan.OBSOLETE_THROUGH_OCCURRENCE ->
+                    cleanupObsoleteOccurrence(taskId, occurrenceUtcMillis)
+                NotificationCleanupPlan.EXACT_OCCURRENCE ->
+                    cleanupExactOccurrence(taskId, occurrenceUtcMillis)
+                NotificationCleanupPlan.ALL_EVENT_IDENTITIES -> cleanupMissingTask(taskId)
+                NotificationCleanupPlan.EXACT_SEMANTIC_KEY -> cleanupExactSemanticKey(semanticKey)
+            }
+            if (effects.retryReminderMaintenance) {
+                retryTargetedReminderMaintenance(taskId)
+            }
+            if (effects.refreshWidgets) {
+                refreshNotificationWidgets(context, boundary)
+            }
+        }
+    }
+
+    private suspend fun retryTargetedReminderMaintenance(taskId: String) {
+        try {
+            val retryWarning = rebuildReminderQueueAction.afterRecordChangeResult(
+                scheduleDirectly = { scheduleTaskRemindersAction(taskId) },
+            )
+            if (retryWarning != null) {
+                log.w(retryWarning) { "Targeted reminder maintenance retry failed for $taskId" }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.e(error) { "Targeted reminder maintenance retry failed for $taskId" }
+        }
+    }
+
+    private suspend fun cleanupObsoleteOccurrence(taskId: String, occurrenceUtcMillis: Long) {
+        try {
+            notificationScheduler.cancelObsoleteOccurrenceReminders(taskId, occurrenceUtcMillis)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.e(error) { "Failed to clean obsolete reminders for $taskId" }
+        }
+    }
+
+    private suspend fun cleanupExactOccurrence(taskId: String, occurrenceUtcMillis: Long) {
+        try {
+            notificationScheduler.cancelOccurrenceReminders(taskId, occurrenceUtcMillis)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.e(error) { "Failed to clean obsolete occurrence for $taskId" }
+        }
+    }
+
+    private suspend fun cleanupMissingTask(taskId: String) {
+        try {
+            notificationScheduler.cancelAll(taskId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.e(error) { "Failed to clean reminders for missing task $taskId" }
+        }
+    }
+
+    private suspend fun cleanupExactSemanticKey(semanticKey: String) {
+        try {
+            notificationScheduler.cancel(semanticKey)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.e(error) { "Failed to clean stale reminder identity" }
+        }
+    }
+
+    private suspend fun refreshNotificationWidgets(
+        context: Context,
+        boundary: AccountBoundary,
+    ) {
+        refreshNotificationWidgetsIndependently(
+            refreshTaskWidget = { TaskWidget.refreshAllWidgetsWithinBoundary(context, boundary) },
+            refreshCalendarWidget = { CalendarWidget.refreshAllWidgetsWithinBoundary(context, boundary) },
+            refreshWeekWidget = { WeekWidget.refreshAllWidgetsWithinBoundary(context, boundary) },
+        )
     }
 
     private fun Intent.occurrenceDeadlineUtcMillis(): Long? =
@@ -85,9 +234,4 @@ class NotificationActionReceiver : BroadcastReceiver(), KoinComponent {
         } else {
             null
         }
-
-    private fun Intent.accountId(): String? = getStringExtra(NotificationScheduler.EXTRA_ACCOUNT_ID)
-
-    private fun Intent.boundaryEpoch(): Long =
-        getLongExtra(NotificationScheduler.EXTRA_BOUNDARY_EPOCH, 0L)
 }

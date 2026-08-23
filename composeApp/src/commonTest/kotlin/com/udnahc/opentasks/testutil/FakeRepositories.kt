@@ -19,7 +19,10 @@ import com.udnahc.opentasks.data.repository.NoteRepository
 import com.udnahc.opentasks.data.repository.TagRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.data.repository.TaskAttachmentFilePaths
+import com.udnahc.opentasks.data.repository.CommittedMutation
+import com.udnahc.opentasks.data.repository.PostCommitWarningPhase
 import com.udnahc.opentasks.data.repository.TaskGraphDeletionResult
+import com.udnahc.opentasks.data.extensions.localNow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -36,7 +39,10 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
     var graphDeletionFiles: List<TaskAttachmentFilePaths> = emptyList()
     var graphDeletionError: Throwable? = null
     var insertError: Throwable? = null
+    var insertPostCommitWarning: Throwable? = null
     var mutationError: Throwable? = null
+    var mutationPostCommitWarning: Throwable? = null
+    var deleteGraphPostCommitWarning: Throwable? = null
     var allTasksSubscriptionCount = 0
     var getTaskByIdCalls = 0
     var getTaskByIdUtcCalls = 0
@@ -66,38 +72,45 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
         return tasksFlow.value.firstOrNull { it.sourceExternalId == externalId && !it.isDeleted }
     }
 
-    override suspend fun insert(task: Task): Long {
+    override suspend fun insert(task: Task): CommittedMutation<Long> {
         insertError?.let { throw it }
         inserted.add(task)
         tasksFlow.update { tasks -> tasks.filterNot { it.id == task.id } + task }
-        return inserted.size.toLong()
+        return CommittedMutation<Long>(inserted.size.toLong()).withPostCommitWarning(
+            insertPostCommitWarning,
+            PostCommitWarningPhase.SYNC,
+        )
     }
 
     override suspend fun mutateExisting(
         id: String,
         transform: (Task) -> Task?,
-    ): com.udnahc.opentasks.data.repository.TaskMutationResult = writerMutex.withLock {
+    ): CommittedMutation<com.udnahc.opentasks.data.repository.TaskMutationResult> = writerMutex.withLock {
         mutateExistingCalls++
         mutationError?.let { throw it }
         val previous = tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }
-            ?: return@withLock com.udnahc.opentasks.data.repository.TaskMutationResult.Missing
+            ?: return@withLock CommittedMutation(com.udnahc.opentasks.data.repository.TaskMutationResult.Missing)
         val next = transform(previous)
         if (next != null) {
             updated.add(next)
             tasksFlow.update { tasks -> tasks.filterNot { it.id == id } + next }
         }
-        com.udnahc.opentasks.data.repository.TaskMutationResult.Existing(previous, next)
+        CommittedMutation<com.udnahc.opentasks.data.repository.TaskMutationResult>(
+            com.udnahc.opentasks.data.repository.TaskMutationResult.Existing(previous, next),
+        ).withPostCommitWarning(mutationPostCommitWarning, PostCommitWarningPhase.SYNC)
     }
 
-    override suspend fun deleteGraph(id: String): TaskGraphDeletionResult = writerMutex.withLock {
+    override suspend fun deleteGraph(id: String): CommittedMutation<TaskGraphDeletionResult> = writerMutex.withLock {
         deleteGraphCalls++
         val previous = tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }
-            ?: return@withLock TaskGraphDeletionResult.Missing
+            ?: return@withLock CommittedMutation(TaskGraphDeletionResult.Missing)
         graphDeletionError?.let { throw it }
         val deletedTask = previous.copy(isDeleted = true)
         updated.add(deletedTask)
         tasksFlow.update { tasks -> tasks.filterNot { it.id == id } + deletedTask }
-        TaskGraphDeletionResult.Deleted(deletedTask, graphDeletionFiles)
+        CommittedMutation<TaskGraphDeletionResult>(
+            TaskGraphDeletionResult.Deleted(deletedTask, graphDeletionFiles),
+        ).withPostCommitWarning(deleteGraphPostCommitWarning, PostCommitWarningPhase.SYNC)
     }
 
     override suspend fun getTasksWithDeadlines(): List<Task> =
@@ -147,9 +160,6 @@ class FakeAttachmentRepository(initialAttachments: List<Attachment> = emptyList(
 
     override suspend fun getByIdAnyState(id: String): Attachment? =
         attachmentsFlow.value.firstOrNull { it.id == id }
-
-    override suspend fun getActiveForOwnerAnyState(ownerType: String, ownerId: String): List<Attachment> =
-        attachmentsFlow.value.filter { it.ownerType == ownerType && it.ownerId == ownerId && !it.isDeleted }
 
     override suspend fun nextSortOrder(ownerType: String, ownerId: String, kind: String): Int =
         attachmentsFlow.value.count { it.ownerType == ownerType && it.ownerId == ownerId && it.kind == kind }
@@ -264,8 +274,13 @@ class FakeNoteRepository(initialNotes: List<Note> = emptyList()) : NoteRepositor
     }
 
     override suspend fun delete(note: Note) {
-        deleted.add(note)
-        notesFlow.update { notes -> notes.filterNot { it.id == note.id } }
+        val committed = note.copy(
+            isDeleted = true,
+            isSynced = false,
+            updatedAt = maxOf(localNow(), note.updatedAt),
+        )
+        deleted.add(committed)
+        notesFlow.update { notes -> notes.filterNot { it.id == note.id } + committed }
     }
 }
 
@@ -325,6 +340,12 @@ class FakeCountdownRepository(initialCountdowns: List<Countdown> = emptyList()) 
     val inserted = mutableListOf<Countdown>()
     val updated = mutableListOf<Countdown>()
     val deleted = mutableListOf<Countdown>()
+    var insertError: Throwable? = null
+    var updateError: Throwable? = null
+    var deleteError: Throwable? = null
+    var insertPostCommitWarning: Throwable? = null
+    var updatePostCommitWarning: Throwable? = null
+    var deletePostCommitWarning: Throwable? = null
     var getCountdownByIdCalls = 0
     var getCountdownByIdUtcCalls = 0
 
@@ -343,25 +364,45 @@ class FakeCountdownRepository(initialCountdowns: List<Countdown> = emptyList()) 
 
     override suspend fun getCountdownByIdUtc(id: String): Countdown? {
         getCountdownByIdUtcCalls++
-        return countdownsFlow.value.firstOrNull { it.id == id && !it.isDeleted }
+        return countdownsFlow.value.firstOrNull { it.id == id }
     }
 
     override suspend fun getAllCountdownsForReminderReconciliationUtc(): List<Countdown> =
-        countdownsFlow.value.filterNot { it.isDeleted }
+        countdownsFlow.value
 
-    override suspend fun insert(countdown: Countdown) {
+    override suspend fun insert(countdown: Countdown): CommittedMutation<Countdown> {
+        insertError?.let { throw it }
         inserted.add(countdown)
         countdownsFlow.update { countdowns -> countdowns.filterNot { it.id == countdown.id } + countdown }
+        return CommittedMutation(countdown).withPostCommitWarning(
+            insertPostCommitWarning,
+            PostCommitWarningPhase.SYNC,
+        )
     }
 
-    override suspend fun update(countdown: Countdown) {
+    override suspend fun update(countdown: Countdown): CommittedMutation<Countdown> {
+        updateError?.let { throw it }
         updated.add(countdown)
         countdownsFlow.update { countdowns -> countdowns.filterNot { it.id == countdown.id } + countdown }
+        return CommittedMutation(countdown).withPostCommitWarning(
+            updatePostCommitWarning,
+            PostCommitWarningPhase.SYNC,
+        )
     }
 
-    override suspend fun delete(countdown: Countdown) {
-        deleted.add(countdown)
-        countdownsFlow.update { countdowns -> countdowns.filterNot { it.id == countdown.id } }
+    override suspend fun delete(countdown: Countdown): CommittedMutation<Countdown> {
+        deleteError?.let { throw it }
+        val committed = countdown.copy(
+            isDeleted = true,
+            isSynced = false,
+            updatedAt = maxOf(localNow(), countdown.updatedAt),
+        )
+        deleted.add(committed)
+        countdownsFlow.update { countdowns -> countdowns.filterNot { it.id == countdown.id } + committed }
+        return CommittedMutation(committed).withPostCommitWarning(
+            deletePostCommitWarning,
+            PostCommitWarningPhase.SYNC,
+        )
     }
 }
 

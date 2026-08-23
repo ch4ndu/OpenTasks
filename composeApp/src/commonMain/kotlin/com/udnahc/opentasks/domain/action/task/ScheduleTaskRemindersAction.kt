@@ -109,6 +109,38 @@ class ScheduleTaskRemindersAction(
         return requests
     }
 
+    /**
+     * Checks a fired raw-UTC occurrence against the persisted task recurrence.
+     *
+     * This deliberately does not use the next schedulable occurrence: an alarm
+     * may represent a projected future instance while the stored deadline is
+     * in the past. The bounded walk only authorizes exact recurrence members.
+     */
+    fun isValidOccurrence(task: Task, occurrenceDeadlineUtcMillis: Long): Boolean {
+        val storedDeadline = task.deadline ?: return false
+        if (task.status == TaskStatus.DONE || task.isDeleted) return false
+        if (task.recurrenceType == RecurrenceType.NONE) {
+            return occurrenceDeadlineUtcMillis == storedDeadline
+        }
+        if (occurrenceDeadlineUtcMillis < storedDeadline) return false
+
+        var candidate = storedDeadline
+        repeat(MAX_OCCURRENCE_ADVANCES_PER_LOOKUP) {
+            if (candidate >= occurrenceDeadlineUtcMillis) {
+                return candidate == occurrenceDeadlineUtcMillis
+            }
+            val next = computeNextDeadlineUtc(
+                currentDeadlineUtcMillis = candidate,
+                recurrenceType = task.recurrenceType.name,
+                interval = task.recurrenceInterval,
+                anchorDay = task.recurrenceAnchorDay,
+            )
+            if (next <= candidate) return false
+            candidate = next
+        }
+        return false
+    }
+
     private suspend fun Task.requestsForOccurrence(
         occurrence: SchedulingOccurrence,
         now: Long,

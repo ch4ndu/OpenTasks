@@ -2,8 +2,18 @@ package com.udnahc.opentasks.viewmodel
 
 import app.cash.turbine.test
 import app.cash.turbine.ReceiveTurbine
+import app.cash.turbine.expectNoEvents
 import com.udnahc.opentasks.NotificationDeepLinkEvent
+import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.data.auth.AccountBoundaryGuard
+import com.udnahc.opentasks.data.auth.AccountSessionFreshness
+import com.udnahc.opentasks.data.auth.AccountSessionState
+import com.udnahc.opentasks.data.auth.AuthenticatedAccount
+import com.udnahc.opentasks.data.auth.CacheBinding
+import com.udnahc.opentasks.data.auth.CacheMode
+import com.udnahc.opentasks.data.auth.FakeAccountRepository
 import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
+import com.udnahc.opentasks.data.auth.WidgetFakeAccountStateStore
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_HOUR
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.localToUtc
@@ -21,6 +31,8 @@ import com.udnahc.opentasks.data.model.TaskSortOption
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
+import com.udnahc.opentasks.data.notification.ReminderIdentity
+import com.udnahc.opentasks.data.notification.ReminderKind
 import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
@@ -34,6 +46,8 @@ import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAct
 import com.udnahc.opentasks.domain.action.settings.SaveTaskListViewModeAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
+import com.udnahc.opentasks.domain.action.tag.AddTagAction
+import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.action.task.DismissTaskNotificationAction
 import com.udnahc.opentasks.domain.action.task.MarkTaskNotificationDoneAction
@@ -61,12 +75,14 @@ import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.SyncService
 import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
+import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
 import com.udnahc.opentasks.testutil.FakeAttachmentRepository
 import com.udnahc.opentasks.testutil.FakeCategoryRepository
 import com.udnahc.opentasks.testutil.FakeCountdownRepository
 import com.udnahc.opentasks.testutil.FakeNoteRepository
 import com.udnahc.opentasks.testutil.FakeTaskRepository
+import com.udnahc.opentasks.testutil.FakeTagRepository
 import com.udnahc.opentasks.testutil.testCategory
 import com.udnahc.opentasks.testutil.testCountdown
 import com.udnahc.opentasks.testutil.testNote
@@ -153,6 +169,7 @@ class SharedViewModelTest : MainDispatcherRule() {
             saveCalendarViewPreference = SaveCalendarViewPreferenceAction(settingsRepository),
             observeCalendarListDisplayModePreference = ObserveCalendarListDisplayModePreferenceUseCase(settingsRepository),
             saveCalendarListDisplayModePreference = SaveCalendarListDisplayModePreferenceAction(settingsRepository),
+            localDaySignal = LocalDaySignal(),
             ioDispatcher = dispatcher,
         )
 
@@ -200,6 +217,7 @@ class SharedViewModelTest : MainDispatcherRule() {
                 ObserveCalendarListDisplayModePreferenceUseCase(settingsRepository),
             saveCalendarListDisplayModePreference =
                 SaveCalendarListDisplayModePreferenceAction(settingsRepository),
+            localDaySignal = LocalDaySignal(),
             ioDispatcher = dispatcher,
         )
         val unchangedKey = dayKey(unchanged.deadline ?: dayStart)
@@ -227,6 +245,64 @@ class SharedViewModelTest : MainDispatcherRule() {
             cancelAndIgnoreRemainingEvents()
         }
 
+    }
+
+    @Test
+    fun calendarTaskDayKeysSuppressContentEditsAndTrackMembershipChanges() = runTest(dispatcher) {
+        val firstDay = startOfDayLocalMillis(2026, 5, 4)
+        val secondDay = startOfDayLocalMillis(2026, 5, 5)
+        val thirdDay = startOfDayLocalMillis(2026, 5, 6)
+        val fourthDay = startOfDayLocalMillis(2026, 5, 7)
+        val first = testTask(id = "day-keys-first", deadline = firstDay)
+        val second = testTask(id = "day-keys-second", deadline = secondDay)
+        val taskRepository = FakeTaskRepository(listOf(first, second))
+        val settingsRepository = FakeAppSettingsRepository()
+        val viewModel = CalendarViewModel(
+            observeTasksByDay = ObserveTasksByDayUseCase(taskRepository),
+            observeAllCountdowns = ObserveAllCountdownsUseCase(FakeCountdownRepository()),
+            observeAllCategories = ObserveAllCategoriesUseCase(FakeCategoryRepository()),
+            toggleTaskCompleteAction = ToggleTaskCompleteAction(
+                taskRepository,
+                ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository),
+            ),
+            observeCalendarViewPreference = ObserveCalendarViewPreferenceUseCase(settingsRepository),
+            saveCalendarViewPreference = SaveCalendarViewPreferenceAction(settingsRepository),
+            observeCalendarListDisplayModePreference =
+                ObserveCalendarListDisplayModePreferenceUseCase(settingsRepository),
+            saveCalendarListDisplayModePreference =
+                SaveCalendarListDisplayModePreferenceAction(settingsRepository),
+            localDaySignal = LocalDaySignal(),
+            ioDispatcher = dispatcher,
+        )
+        val firstKeys = setOf(dayKey(firstDay), dayKey(secondDay))
+
+        viewModel.taskDayKeys.test {
+            assertEquals(firstKeys, awaitMatching { it == firstKeys })
+
+            taskRepository.replaceTasks(listOf(first.copy(title = "Edited"), second))
+            runCurrent()
+            expectNoEvents()
+
+            taskRepository.replaceTasks(listOf(first, second.copy(deadline = thirdDay)))
+            assertEquals(
+                setOf(dayKey(firstDay), dayKey(thirdDay)),
+                awaitMatching { it == setOf(dayKey(firstDay), dayKey(thirdDay)) },
+            )
+
+            val added = testTask(id = "day-keys-added", deadline = fourthDay)
+            taskRepository.replaceTasks(listOf(first, second.copy(deadline = thirdDay), added))
+            assertEquals(
+                setOf(dayKey(firstDay), dayKey(thirdDay), dayKey(fourthDay)),
+                awaitMatching { it == setOf(dayKey(firstDay), dayKey(thirdDay), dayKey(fourthDay)) },
+            )
+
+            taskRepository.replaceTasks(listOf(second.copy(deadline = thirdDay), added))
+            assertEquals(
+                setOf(dayKey(thirdDay), dayKey(fourthDay)),
+                awaitMatching { it == setOf(dayKey(thirdDay), dayKey(fourthDay)) },
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
@@ -498,10 +574,47 @@ class SharedViewModelTest : MainDispatcherRule() {
             provider,
             SyncService(provider, emptyList(), accountMutationGate = MutexAccountMutationGate()),
         )
+        val binding = CacheBinding(
+            canonicalEndpoint = "https://tasks.example.test",
+            serverInstanceId = "shared-view-model-server",
+            accountId = "shared-view-model-account",
+            capabilityVersion = 1,
+            boundaryEpoch = 1L,
+            mode = CacheMode.POCKETBASE,
+        )
+        val accountGate = MutexAccountMutationGate()
+        val accountRepository = FakeAccountRepository(
+            AccountSessionState.Authenticated(
+                account = AuthenticatedAccount("shared-view-model-account"),
+                binding = binding,
+                freshness = AccountSessionFreshness.ONLINE,
+            ),
+            accountGate,
+        )
+        val accountBoundaryExecutor = AccountBoundaryExecutor(
+            accountRepository = accountRepository,
+            accountBoundaryGuard = AccountBoundaryGuard(WidgetFakeAccountStateStore(binding)),
+            mutationGate = accountGate,
+        )
+        val importTaskRepository = FakeTaskRepository()
+        val importTagRepository = FakeTagRepository()
         val gate = CompletableDeferred<Unit>()
         var syncCount = 0
         val viewModel = AppViewModel(
             triggerSyncAction = trigger,
+            parseIcsUseCase = ParseIcsUseCase(),
+            importCalendarEventsAction = ImportCalendarEventsAction(
+                taskRepository = importTaskRepository,
+                categoryRepository = FakeCategoryRepository(),
+                tagRepository = importTagRepository,
+                addTagAction = AddTagAction(importTagRepository),
+                scheduleTaskRemindersAction = ScheduleTaskRemindersAction(
+                    scheduler = NotificationScheduler(),
+                    taskRepository = importTaskRepository,
+                ),
+                accountBoundaryExecutor = accountBoundaryExecutor,
+            ),
+            accountBoundaryExecutor = accountBoundaryExecutor,
             syncNow = {
                 syncCount += 1
                 gate.await()
@@ -573,7 +686,16 @@ class SharedViewModelTest : MainDispatcherRule() {
         viewModel.setNotificationEvent(
             NotificationDeepLinkEvent(
                 eventId = "notify",
+                occurrenceDeadlineUtcMillis = localToUtc(deadline),
                 notificationAtUtcMillis = localToUtc(deadline),
+                semanticKey = ReminderIdentity(
+                    eventId = "notify",
+                    occurrenceUtcMillis = localToUtc(deadline),
+                    kind = ReminderKind.DATE,
+                    ordinal = 0,
+                ).semanticKey,
+                accountId = "account",
+                boundaryEpoch = 1L,
             )
         )
 
@@ -594,6 +716,106 @@ class SharedViewModelTest : MainDispatcherRule() {
     }
 
     @Test
+    fun taskNotificationViewModelUsesTaskIdentityWhenOngoingIsNavigationContext() = runTest(dispatcher) {
+        val deadline = startOfDayLocalMillis(2026, 5, 4)
+        val taskRepository = FakeTaskRepository(
+            listOf(testTask(id = "ongoing-notify", title = "All day", deadline = deadline, isAllDay = true))
+        )
+        val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
+        val viewModel = TaskNotificationViewModel(
+            observeTaskById = ObserveTaskByIdUseCase(taskRepository),
+            markTaskNotificationDoneAction = MarkTaskNotificationDoneAction(
+                UpdateTaskAction(taskRepository, scheduler),
+            ),
+            dismissTaskNotificationAction = DismissTaskNotificationAction(
+                taskRepository,
+                AllDayNotificationDismissalStore(FakeAppSettingsRepository()),
+                NotificationScheduler(),
+            ),
+            ioDispatcher = dispatcher,
+        )
+
+        val occurrenceUtc = localToUtc(deadline)
+        viewModel.setNotificationEvent(
+            NotificationDeepLinkEvent(
+                eventId = "ongoing-notify",
+                occurrenceDeadlineUtcMillis = occurrenceUtc,
+                notificationAtUtcMillis = occurrenceUtc,
+                semanticKey = ReminderIdentity(
+                    eventId = "ongoing-notify",
+                    occurrenceUtcMillis = occurrenceUtc,
+                    kind = ReminderKind.ONGOING,
+                    ordinal = 0,
+                ).semanticKey,
+                accountId = "account",
+                boundaryEpoch = 1L,
+            )
+        )
+
+        viewModel.uiState.test {
+            awaitMatching { it.task?.id == "ongoing-notify" }
+            var dismissed = false
+            viewModel.gotIt { dismissed = true }
+            advanceUntilIdle()
+            assertTrue(dismissed)
+
+            var completed = false
+            viewModel.markDone { completed = true }
+            advanceUntilIdle()
+
+            assertEquals(true, completed)
+            assertEquals(TaskStatus.DONE, taskRepository.updated.single().status)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun taskNotificationViewModelDismissesAnOrdinaryDateSheetEvent() = runTest(dispatcher) {
+        val deadline = startOfDayLocalMillis(2026, 5, 4) + 9 * MILLIS_PER_HOUR
+        val taskRepository = FakeTaskRepository(
+            listOf(testTask(id = "ordinary-sheet", title = "Ordinary", deadline = deadline)),
+        )
+        val viewModel = TaskNotificationViewModel(
+            observeTaskById = ObserveTaskByIdUseCase(taskRepository),
+            markTaskNotificationDoneAction = MarkTaskNotificationDoneAction(
+                UpdateTaskAction(taskRepository, ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)),
+            ),
+            dismissTaskNotificationAction = DismissTaskNotificationAction(
+                taskRepository,
+                AllDayNotificationDismissalStore(FakeAppSettingsRepository()),
+                NotificationScheduler(),
+            ),
+            ioDispatcher = dispatcher,
+        )
+        val occurrenceUtc = localToUtc(deadline)
+        viewModel.setNotificationEvent(
+            NotificationDeepLinkEvent(
+                eventId = taskRepository.tasks.single().id,
+                occurrenceDeadlineUtcMillis = occurrenceUtc,
+                notificationAtUtcMillis = occurrenceUtc,
+                semanticKey = ReminderIdentity(
+                    eventId = "ordinary-sheet",
+                    occurrenceUtcMillis = occurrenceUtc,
+                    kind = ReminderKind.DATE,
+                    ordinal = 0,
+                ).semanticKey,
+                accountId = "account",
+                boundaryEpoch = 1L,
+            ),
+        )
+
+        viewModel.uiState.test {
+            awaitMatching { it.task?.id == "ordinary-sheet" }
+            var dismissed = false
+            viewModel.gotIt { dismissed = true }
+            advanceUntilIdle()
+            assertTrue(dismissed)
+            assertFalse(viewModel.uiState.value.hasActionError)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun countdownListVisibilityAndOccurrenceUpdateWhenLocalDayChanges() = runTest(dispatcher) {
         var currentDay = LocalDate(2026, 5, 6)
         val localDaySignal = LocalDaySignal(currentDate = { currentDay })
@@ -605,10 +827,8 @@ class SharedViewModelTest : MainDispatcherRule() {
             smartListVisibility = SmartListVisibility.THREE_DAYS_EARLY,
         )
         val repository = FakeCountdownRepository(listOf(countdown))
-        val scheduler = ScheduleCountdownRemindersAction(NotificationScheduler(), repository)
         val viewModel = CountdownViewModel(
             observeAllCountdowns = ObserveAllCountdownsUseCase(repository),
-            deleteCountdownAction = DeleteCountdownAction(repository, scheduler),
             localDaySignal = localDaySignal,
         )
 
@@ -732,10 +952,7 @@ class SharedViewModelTest : MainDispatcherRule() {
         )
         val viewModel = CountdownViewModel(
             observeAllCountdowns = ObserveAllCountdownsUseCase(countdownRepository),
-            deleteCountdownAction = DeleteCountdownAction(
-                countdownRepository,
-                ScheduleCountdownRemindersAction(NotificationScheduler(), countdownRepository),
-            ),
+            localDaySignal = LocalDaySignal(),
         )
 
         viewModel.hasStoredCountdowns.test {

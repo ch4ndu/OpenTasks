@@ -513,6 +513,80 @@ class AccountRepositoryImplTest {
     }
 
     @Test
+    fun syncAuthenticationRejectionTransitionsOnlyTheExactLiveAuthenticatedBoundary() = runTest {
+        val binding = bindingFor("account-a", boundaryEpoch = 7L)
+        val dispatcher = AccountAuthenticationRejectionDispatcher()
+        val fixture = fixture(
+            binding = binding,
+            activeToken = "old-token",
+            refreshResponses = mapOf("old-token" to credential("account-a", "refreshed-token")),
+            authenticationRejectionDispatcher = dispatcher,
+        )
+        fixture.repository.restoreSession()
+
+        assertFalse(dispatcher.onAuthenticationRejected(binding.asAccountBoundary().copy(boundaryEpoch = 8L)))
+        assertTrue(fixture.repository.sessionState.value is AccountSessionState.Authenticated)
+        assertEquals("refreshed-token", fixture.tokens.active)
+        assertEquals(binding, fixture.provider.activeBinding)
+
+        assertTrue(dispatcher.onAuthenticationRejected(binding.asAccountBoundary()))
+
+        val state = fixture.repository.sessionState.value as AccountSessionState.ReauthenticationRequired
+        assertEquals(AccountReauthenticationReason.AUTHENTICATION_REJECTED, state.reason)
+        assertEquals("account-a", state.account?.accountId)
+        assertEquals(binding.canonicalEndpoint, state.canonicalEndpoint)
+        assertEquals(binding, fixture.state.binding)
+        assertNull(fixture.tokens.active)
+        assertNull(fixture.tokens.pending)
+        assertNull(fixture.provider.activeBinding)
+        assertFalse(dispatcher.onAuthenticationRejected(binding.asAccountBoundary()))
+    }
+
+    @Test
+    fun syncAuthenticationRejectionDoesNotAffectLocalOnlyState() = runTest {
+        val binding = localBinding(boundaryEpoch = 7L)
+        val dispatcher = AccountAuthenticationRejectionDispatcher()
+        val fixture = fixture(
+            binding = binding,
+            authenticationRejectionDispatcher = dispatcher,
+        )
+        val session = fixture.repository.restoreSession()
+
+        assertTrue(session is AccountSessionState.LocalOnly)
+        assertFalse(dispatcher.onAuthenticationRejected(binding.asAccountBoundary()))
+
+        assertEquals(session, fixture.repository.sessionState.value)
+        assertEquals(binding, fixture.state.binding)
+        assertNull(fixture.tokens.active)
+        assertNull(fixture.tokens.pending)
+        assertNull(fixture.provider.activeBinding)
+    }
+
+    @Test
+    fun syncAuthenticationRejectionDoesNotAffectMatchingBoundaryWithDurableTransition() = runTest {
+        val binding = bindingFor("account-a", boundaryEpoch = 7L)
+        val dispatcher = AccountAuthenticationRejectionDispatcher()
+        val fixture = fixture(
+            binding = binding,
+            activeToken = "old-token",
+            refreshResponses = mapOf("old-token" to credential("account-a", "refreshed-token")),
+            authenticationRejectionDispatcher = dispatcher,
+        )
+        val session = fixture.repository.restoreSession()
+        val transition = authoritativeTransition(binding, AccountTransitionPhase.NEEDS_ACTIVATION)
+        fixture.state.transition = transition
+
+        assertFalse(dispatcher.onAuthenticationRejected(binding.asAccountBoundary()))
+
+        assertEquals(session, fixture.repository.sessionState.value)
+        assertEquals(binding, fixture.state.binding)
+        assertEquals(transition, fixture.state.transition)
+        assertEquals("refreshed-token", fixture.tokens.active)
+        assertNull(fixture.tokens.pending)
+        assertEquals(binding, fixture.provider.activeBinding)
+    }
+
+    @Test
     fun restoreWithNoActiveTokenDoesNotUsePendingTokenAsAuthenticatedState() = runTest {
         val binding = bindingFor("account-a")
         val fixture = fixture(
@@ -828,6 +902,7 @@ class AccountRepositoryImplTest {
         clearFilesFailure: Throwable? = null,
         replacementExecutor: FakeAuthoritativeReplaceExecutor = FakeAuthoritativeReplaceExecutor(events),
         inventoryResponses: MutableList<PocketBaseServerInventory> = mutableListOf(),
+        authenticationRejectionDispatcher: AccountAuthenticationRejectionDispatcher? = null,
     ): Fixture {
         val state = InMemoryAccountStateStore(binding, transition, legacyIdentity, events)
         replacementExecutor.attach(state)
@@ -868,6 +943,7 @@ class AccountRepositoryImplTest {
                 syncService = sync,
                 reminderScheduler = scheduler,
                 replacementExecutor = replacementExecutor,
+                authenticationRejectionDispatcher = authenticationRejectionDispatcher,
             ),
         )
     }

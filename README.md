@@ -130,6 +130,23 @@ See [docs/README.md](docs/README.md) for feature behavior and technical design n
 ./gradlew :composeApp:run
 ```
 
+### Android Release Signing
+
+`:androidApp:assembleRelease` enables R8 minification and resource shrinking. With no release
+signing inputs it uses the Android debug signing key as a local/test convenience, not a production
+certificate. Provide all four inputs through nonblank Gradle properties or environment variables
+to configure external production signing; a partial tuple fails during configuration and reports
+only the missing input names.
+
+| Gradle property | Environment fallback |
+|---|---|
+| `opentasks.android.signing.storeFile` | `OPENTASKS_ANDROID_KEYSTORE_PATH` |
+| `opentasks.android.signing.storePassword` | `OPENTASKS_ANDROID_KEYSTORE_PASSWORD` |
+| `opentasks.android.signing.keyAlias` | `OPENTASKS_ANDROID_KEY_ALIAS` |
+| `opentasks.android.signing.keyPassword` | `OPENTASKS_ANDROID_KEY_PASSWORD` |
+
+Keystore paths may be absolute or relative to `androidApp/`; keep local signing files out of Git.
+
 ### Bundle a macOS Release
 
 Run the release packaging task on macOS with JDK 17 or newer:

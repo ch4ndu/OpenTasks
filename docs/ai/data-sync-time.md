@@ -53,16 +53,36 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - Android maps semantic keys to persisted positive request IDs in its SharedPreferences-backed reminder store. The store indexes event-to-key and tracks pending/displayed lifecycle; event cancellation must use that index rather than scanning fixed integer slots. Fixed-slot cleanup is permitted only by the versioned one-time legacy migration.
 - Android alarm, tap, and action PendingIntents use the allocated ID plus a unique data URI containing the semantic key and role. Receivers must remove stale, inactive, denied, and action-consumed keys through the scheduler/store APIs.
 - Notification payload times are an approved UTC boundary: scheduler and platform receivers retain occurrence/trigger instants in UTC, then the task notification completion path converts the occurrence to local only when passing it into the persisted-truth task-write boundary. iOS uses an absolute time-interval trigger derived from the UTC instant so a later timezone change does not shift a pending delivery.
+- Android delivery validates the canonical delivery command before asynchronous account or DAO work, then validates raw-UTC persisted task/countdown occurrence truth before posting. Invalid payloads, inactive/stale records, and lookup failures never authorize a display.
+- After persisted truth is current, prior-display cleanup and next-occurrence chaining are independent best-effort maintenance; neither can authorize, retry, or suppress the one current display attempt. Permission denial removes the exact fired key.
+- Android alarm arming, all-day ongoing replacement, and pending-queue replacement hold the active account boundary through cleanup, allocation, PendingIntent construction, and platform arm/post. A queued caller must revalidate its captured boundary inside the shared mutation gate; cancellation-only cleanup remains ungated.
+- Boot, time, and package receivers only enqueue the unique reminder-rebuild worker. The worker restores and holds the active cache boundary, retries rebuild failures after best-effort account-scoped cancellation, and lets cancellation escape.
+- A reminder-key persistence failure prevents an alarm from being armed and propagates through the existing reminder-maintenance/background failure channels.
 
 ## Sync
 
 - Account endpoints require HTTPS for public hosts. HTTP is accepted only for
-  loopback and RFC1918 private IPv4 addresses; Android permits cleartext at the
-  manifest boundary so this shared validation remains the authoritative gate.
-  Operators using private-LAN HTTP accept that credentials, tokens, and task
-  data are not transport-encrypted.
+  loopback and RFC1918 private IPv4 addresses. Every provider string entry
+  delegates to `canonicalizeAccountEndpoint`, which rejects missing/unknown
+  schemes, paths, queries, fragments, userinfo, malformed hosts, and invalid
+  ports. Android intentionally keeps `usesCleartextTraffic="true"` and has no
+  network-security XML because that XML cannot express the RFC1918 CIDR ranges;
+  the shared parser is the authoritative runtime cleartext boundary. Operators
+  using private-LAN HTTP accept that credentials, tokens, and task data are not
+  transport-encrypted.
+- Android disables application backup and device transfer with both legacy and
+  Android 12+ exclusion rules for every app-data domain. iOS ATS permits local
+  networking only; it has no arbitrary-load switch or public exception domain.
+- Android release signing is all-or-nothing and external for production: all
+  four configured signing inputs create the release config, an empty tuple
+  uses the debug signing key only as a local/test convenience, and a partial
+  tuple fails during configuration without printing values. Release builds
+  enable optimized R8 and resource shrinking; add only evidence-backed
+  ProGuard rules. Pull-request/manual CI runs JVM tests, Android unit tests,
+  lint, and a debug assembly without credentials or service fixtures.
 - Normal sync requires an authenticated `PocketBaseClientProvider` binding. Local-only bindings must never activate the provider. Detached clients may perform health, authentication, capability, and owner-scoped inventory preflight; after authoritative replacement is durably confirmed, a detached client bound to that exact destination may perform only the replacement delete/reset/reseed protocol.
 - Every production sync request goes through the structured owner-scoped gateway. It injects the active account into JSON/multipart writes, includes the owner in list/local-ID filters, and rejects missing or mismatched raw owners before model decoding or DAO writes.
+- Each ordinary, initial, and seed pass creates one validated owner-bound gateway whose token provider caches that pass's credential; complete paginated record reads use `sort=id` for stable collection and inventory order.
 - One process-wide `AccountMutationGate` serializes account transitions, sync mutations, repository writes, task graph/attachment writes, and local-clear operations. Reentrant calls reuse the held gate; production code must not create per-repository gates.
 - The single Room cache is authorized by a mode-specific `CacheBinding`: `LOCAL_ONLY` has the reserved local owner, empty server identity, capability 0, and a positive epoch; `POCKETBASE` has canonical endpoint/server/account/capability identity and a positive epoch. A durable transition marker gates UI/sync during switch, logout, local clear, or authoritative replacement.
 - Switch/logout first refresh and sync the source account online and verify all seven unsynced queries are empty. There is no discard-data path. After the cache transaction, the destination binding is authoritative for crash recovery.
@@ -78,14 +98,15 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - Conflict resolution uses last-write-wins by app-managed UTC `updatedAt` / PocketBase `localUpdatedAt`.
 - Pull merges reread and compare inside one Room writer transaction. A collection snapshot may identify missing remote IDs only; it must never authorize an overwrite.
 - PocketBase migration 010 guards every sync collection update with `localUpdatedAt >` the stored timestamp. Equal timestamps are accepted locally only when canonical payloads match; divergent equal-timestamp writes fail closed. Sync-critical mutations use the structured record gateway; do not infer HTTP status from exception text.
+- A structured HTTP 401 from an authenticated gateway endpoint aborts the pass and, only for its exact still-authenticated cache boundary, transitions the account to reauthentication. Protected-file token refresh is distinct: its first 401/403 retries the file token and a second rejection remains an attachment failure.
 - PocketBase migration 012 keeps `capabilityVersion = 2`, adds required `authoritativeReplaceVersion = 1`, and grants delete only when the stored record owner equals the authenticated user. Anonymous/cross-owner deletes remain hidden. Normal app deletes still use tombstones.
 - Candidate PocketBase URLs are classified through detached health/capability and complete paginated seven-collection inventory reads before any provider swap, `syncAll`, local reset, or remote mutation. Persist the canonical URL, server identity, and sync mode in one writer transaction. A populated replacement may only be adopted by fresh local storage; a nonempty local store moving to an empty replacement remains in `EMPTY_SERVER_SEED_PENDING` until the dedicated seed/resume path validates every row and tombstone.
 - Pending empty-server migration is executed by `ServerSeedExecutor` through dependency-ordered guarded adapter writes. It revalidates the committed identity and complete inventory before resume, retains the marker after every failure, and clears it only when a final inventory exactly matches all local active rows and tombstones (with blank files for attachment tombstones). Normal sync must not bypass this executor.
 - A local-authoritative replacement preview contains only endpoint/account/server identity, count projections, attachment count, and opaque fingerprints. The owner fingerprint uses canonical complete record payloads and is stable across collection/page/row ordering; the local fingerprint covers the complete ordered adapter inventory. Under-gate confirmation must refresh both before persisting any transition or deleting remote data.
 - Confirmed replacement persists the destination binding plus `LOCAL_AUTHORITATIVE_REPLACEMENT/REMOTE_DELETE_PENDING` before remote mutation. Recovery deletes the complete owner inventory in reverse dependency order, verifies empty, atomically resets every local `pbId` and sync acknowledgement without deleting content/files, exact-seeds, verifies final inventory equality, and only then activates the session. Any delete/seed/final-verification conflict retries via complete delete/reset/reseed, never normal pull or an unsynced-only subset.
-- Attachment downloads write bytes outside Room, then conditionally install the paths after a writer-boundary reread. A newer local edit or tombstone keeps its metadata and deletes the losing downloaded artifact; equal timestamps only reinstall a retryable download failure.
+- Attachment downloads write bytes outside Room, then conditionally install the paths after a writer-boundary reread. Network and private-file reads, including upload and seed storage reads, enforce `AttachmentFilePolicy.MAX_UPLOAD_BYTES`; a newer local edit or tombstone keeps its metadata and deletes the losing downloaded artifact; equal timestamps only reinstall a retryable download failure.
 - A new attachment tombstone creates JSON metadata without `file` or `file-`. An existing remote attachment is cleared only with the exact `file-` filename, and local remote-file/error cleanup occurs only after a blank-file response and an unchanged local tombstone check.
-- `SyncService` serializes every requested pass: callers wait for their own pass. `TriggerSyncAction` protects debounce replacement with a mutex and `syncNow` cancels pending debounce work before awaiting the service.
+- `SyncService` serializes every requested pass: callers wait for their own pass. The process-lifetime sync outcome is owned only by the executing mutex holder; cancellation of that active pass restores `Idle`, while cancellation before mutex acquisition cannot alter another pass's outcome. `TriggerSyncAction` protects debounce replacement with a mutex and `syncNow` cancels pending debounce work before awaiting the service.
 - Remote rows overwrite local rows, including unsynced local edits, only when remote `localUpdatedAt` is newer.
 - Unsynced local rows update an existing remote row only when their timestamp is strictly newer. At an equal timestamp, mark synced only when the canonical payload matches; divergent payloads fail closed.
 - Normal synced deletes are pushed as durable PocketBase tombstones with `isDeleted = true`; do not hard-delete server rows for app deletes. The only server hard-delete exception is the confirmed owner-scoped authoritative replacement executor.
@@ -94,7 +115,7 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - An active remote attachment with a blank file is degraded sync, not a tombstone; retain local files. Delete attachment files only after a winning remote tombstone is persisted.
 - Attachment hard delete is only valid for rows without a PocketBase identity.
 - Hard-delete locally only for never-synced tombstones with no `pbId`. Before deleting a tag tombstone, retain it when any related `task_tags` row has a remote identity, so the foreign-key cascade cannot discard that durable relation.
-- After a successful non-empty full fetch, physically missing server rows are treated as damage/manual deletion: synced active local rows absent from the remote `localId` set are marked unsynced for recreation.
+- After a successful non-empty full fetch, physically missing server rows are treated as damage/manual deletion: compute the complete absent synced-active candidate set, then reread and conditionally mark it unsynced for recreation in one Room writer transaction. Remote I/O must remain outside that transaction.
 - If a remote collection fetch returns fewer than ten percent of synced active local rows (including zero), treat sync as degraded and skip missing-row recovery; fail that collection's pull so neither it nor dependent collections push during the pass.
 - Remote active `task_tags` rows whose task or tag parent is missing are skipped and reported as degraded sync; remote tombstones with a missing parent are safely skipped so valid links can continue to merge and push.
 - A collection push must be skipped when that collection's pull failed; dependent pushes must also be skipped when parent pulls fail.

@@ -53,19 +53,21 @@ class TaskRepositoryImpl(
     override suspend fun getTaskByExternalId(externalId: String): Task? =
         withContext(ioDispatcher) { taskDao.getTaskByExternalId(externalId)?.withLocalTimestamps() }
 
-    override suspend fun insert(task: Task): Long = mutationGate.withExclusive {
+    override suspend fun insert(task: Task): CommittedMutation<Long> = mutationGate.withExclusive {
         log.v { "Inserting task: ${task.id}" }
         val result = withContext(ioDispatcher) {
             taskDao.insert(task.withDefaultTimestamps().withUtcTimestamps())
         }
-        syncTrigger.triggerSync()
-        result
+        CommittedMutation(result).withPostCommitWarning(
+            triggerSyncAfterCommit(),
+            PostCommitWarningPhase.SYNC,
+        )
     }
 
     override suspend fun mutateExisting(
         id: String,
         transform: (Task) -> Task?,
-    ): TaskMutationResult = mutationGate.withExclusive {
+    ): CommittedMutation<TaskMutationResult> = mutationGate.withExclusive {
         val result = withContext(ioDispatcher) {
             taskDao.mutateActive(id) { stored ->
                 transform(stored.withLocalTimestamps())
@@ -80,11 +82,15 @@ class TaskRepositoryImpl(
                 next = result.next?.withLocalTimestamps(),
             )
         }
-        if (mapped is TaskMutationResult.Existing && mapped.next != null) syncTrigger.triggerSync()
-        mapped
+        val warning = if (mapped is TaskMutationResult.Existing && mapped.next != null) {
+            triggerSyncAfterCommit()
+        } else {
+            null
+        }
+        CommittedMutation(mapped).withPostCommitWarning(warning, PostCommitWarningPhase.SYNC)
     }
 
-    override suspend fun deleteGraph(id: String): TaskGraphDeletionResult = mutationGate.withExclusive {
+    override suspend fun deleteGraph(id: String): CommittedMutation<TaskGraphDeletionResult> = mutationGate.withExclusive {
         val nowUtc = utcNow()
         val result = withContext(ioDispatcher) {
             database.useWriterConnection { connection ->
@@ -117,8 +123,12 @@ class TaskRepositoryImpl(
                 }
             }
         }
-        if (result is TaskGraphDeletionResult.Deleted) syncTrigger.triggerSync()
-        result
+        val warning = if (result is TaskGraphDeletionResult.Deleted) {
+            triggerSyncAfterCommit()
+        } else {
+            null
+        }
+        CommittedMutation(result).withPostCommitWarning(warning, PostCommitWarningPhase.SYNC)
     }
 
     /** Returns tasks with raw UTC timestamps (no local conversion) for notification scheduling.
@@ -148,6 +158,16 @@ class TaskRepositoryImpl(
             createdAt = if (createdAt == 0L) now else createdAt,
             updatedAt = if (updatedAt == 0L) now else updatedAt,
         )
+    }
+
+    private suspend fun triggerSyncAfterCommit(): Throwable? = try {
+        syncTrigger.triggerSync()
+        null
+    } catch (error: kotlinx.coroutines.CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        log.w(error) { "Task write committed, but sync scheduling failed" }
+        error
     }
 
     /** Converts UTC timestamps from the database to local time for presentation. */

@@ -7,6 +7,7 @@ import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
 import com.udnahc.opentasks.data.extensions.localMillisToLocalDateTime
 import com.udnahc.opentasks.data.extensions.localNow
+import com.udnahc.opentasks.data.repository.PostCommitWarning
 import com.udnahc.opentasks.domain.action.task.AddTaskAction
 import com.udnahc.opentasks.domain.usecase.task.ParseQuickTaskInputUseCase
 import com.udnahc.opentasks.domain.usecase.task.QuickTaskCreationContext
@@ -41,7 +42,10 @@ data class QuickAddTaskUiState(
 }
 
 sealed interface QuickAddTaskSaveEvent {
-    data class Saved(val taskId: String) : QuickAddTaskSaveEvent
+    data class Saved(
+        val taskId: String,
+        val postCommitWarning: PostCommitWarning? = null,
+    ) : QuickAddTaskSaveEvent
 }
 
 class QuickAddTaskViewModel(
@@ -84,7 +88,7 @@ class QuickAddTaskViewModel(
             try {
                 val expectedBoundary = openingBoundary ?: throw AccountBoundaryRejectedException()
                 val result = state.parseResult
-                val task = accountBoundaryExecutor.withForegroundBoundary(expectedBoundary) {
+                val committed = accountBoundaryExecutor.withForegroundBoundary(expectedBoundary) {
                     addTaskAction(
                         title = result.cleanedTitle,
                         content = "",
@@ -96,8 +100,9 @@ class QuickAddTaskViewModel(
                         categoryId = context.categoryId,
                     )
                 }
+                val task = committed.value
                 _uiState.update { it.copy(isSaved = true) }
-                _saveEvent.value = QuickAddTaskSaveEvent.Saved(task.id)
+                _saveEvent.value = QuickAddTaskSaveEvent.Saved(task.id, committed.postCommitWarning)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
