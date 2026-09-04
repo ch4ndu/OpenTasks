@@ -53,7 +53,8 @@ fun validateReminderCommand(
 }
 
 private fun ReminderCommand.accepts(identity: ReminderIdentity): Boolean = when (this) {
-    ReminderCommand.MARK_DONE -> identity.kind in TASK_REMINDER_KINDS
+    ReminderCommand.MARK_DONE ->
+        identity.kind in TASK_REMINDER_KINDS || identity.kind == ReminderKind.ONGOING
     ReminderCommand.GOT_IT,
     ReminderCommand.ONGOING_TAP,
     -> identity.kind == ReminderKind.ONGOING

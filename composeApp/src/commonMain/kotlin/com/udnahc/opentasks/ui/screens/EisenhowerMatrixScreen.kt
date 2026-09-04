@@ -70,6 +70,7 @@ fun EisenhowerMatrixScreen(
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
+    onTaskMutationFailure: () -> Unit = {},
 ) {
     val priorityProjections by viewModel.priorityProjections.collectAsState()
     val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
@@ -96,6 +97,12 @@ fun EisenhowerMatrixScreen(
             onDismiss = { viewModel.dismissSeriesChoice() },
         )
     }
+
+    TaskMutationFailureEffect(
+        eventFlow = viewModel.taskMutationFailureEvent,
+        consume = viewModel::consumeTaskMutationFailureEvent,
+        onFailure = onTaskMutationFailure,
+    )
 }
 
 @Composable
@@ -365,6 +372,7 @@ internal fun QuadrantTaskRow(
     onClick: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
+    val isCompleted = task.status == TaskStatus.DONE
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -372,33 +380,37 @@ internal fun QuadrantTaskRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Square checkbox matching screenshot style
-        Box(
-            modifier = Modifier
-                .size(dimens.checkboxSize)
-                .then(
-                    if (task.status == TaskStatus.DONE) {
-                        Modifier.background(
-                            color.copy(alpha = 0.4f),
-                            RoundedCornerShape(dimens.checkboxCorner)
-                        )
-                    } else {
-                        Modifier.border(
-                            dimens.checkboxBorder,
-                            color,
-                            RoundedCornerShape(dimens.checkboxCorner)
-                        )
-                    }
-                )
-                .clickable(onClick = onToggleComplete),
-            contentAlignment = Alignment.Center,
+        TaskSquareCompletionButton(
+            isChecked = isCompleted,
+            onClick = onToggleComplete,
         ) {
-            if (task.status == TaskStatus.DONE) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_check),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(dimens.checkboxIconSize),
-                )
+            Box(
+                modifier = Modifier
+                    .size(dimens.checkboxSize)
+                    .then(
+                        if (isCompleted) {
+                            Modifier.background(
+                                color.copy(alpha = 0.4f),
+                                RoundedCornerShape(dimens.checkboxCorner)
+                            )
+                        } else {
+                            Modifier.border(
+                                dimens.checkboxBorder,
+                                color,
+                                RoundedCornerShape(dimens.checkboxCorner)
+                            )
+                        }
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isCompleted) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_check),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(dimens.checkboxIconSize),
+                    )
+                }
             }
         }
 

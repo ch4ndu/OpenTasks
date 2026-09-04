@@ -47,13 +47,14 @@ class SyncPassContextFactory(
     private val gatewayFactory: PocketBaseRecordGatewayFactory = PocketBaseRecordGatewayFactory(),
 ) {
     fun create(client: PocketbaseClient): SyncPassContext {
-        val binding = PocketBaseClientProvider.bindingFor(client)
+        val metadata = PocketBaseClientProvider.metadataFor(client)
+            ?: throw IllegalStateException("Sync pass requires registered PocketBase client metadata")
+        val binding = metadata.binding
             ?: throw IllegalStateException("Sync pass requires an active authenticated account boundary")
         require(binding.isValidPocketBaseBinding()) {
             "Sync pass requires a valid authenticated account boundary"
         }
-        val endpoint = PocketBaseClientProvider.endpointFor(client)
-            ?: throw IllegalStateException("Sync pass requires a canonical PocketBase endpoint")
+        val endpoint = metadata.endpoint
         require(endpoint.canonicalUrl == binding.canonicalEndpoint) {
             "Sync pass endpoint does not match the active account boundary"
         }

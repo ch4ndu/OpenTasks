@@ -18,6 +18,12 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 - Text must fit its container on mobile and desktop.
 - Do not add nested cards or unrelated decorative surfaces.
 
+## Interaction Targets
+
+- Ordinary actions use the shared 48dp minimum interactive container. Keep that container token separate from icon, checkbox, indicator, and other visual-size tokens so accessibility fixes do not enlarge glyphs.
+- Preserve `CalendarTaskRows` geometry. The two dense inline completion controls used by Day and Three-Day timelines are approved compact measured/semantic exceptions; they rely only on framework-expanded touch hit bounds and must not grow the surrounding timeline rows.
+- A seven-column `SelectableDayGrid` cannot guarantee 48dp measured/semantic cells when its content width is below 336dp. Compact date pickers retain their seven-column geometry and rely only on framework-expanded touch hit bounds; removing this narrow-layout residual requires a separately approved picker redesign.
+
 ## Composable Architecture
 
 - One composable should represent one UI component.

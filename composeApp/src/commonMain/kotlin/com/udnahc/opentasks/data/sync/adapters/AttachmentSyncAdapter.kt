@@ -1,12 +1,13 @@
 package com.udnahc.opentasks.data.sync.adapters
 
 import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
+import com.udnahc.opentasks.data.attachment.AttachmentFileLeaseRecorder
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.attachment.AttachmentFileTooLargeException
 import com.udnahc.opentasks.data.attachment.AttachmentImageDecodeException
+import com.udnahc.opentasks.data.attachment.AttachmentTombstoneFileCleanup
 import com.udnahc.opentasks.data.attachment.StoredAttachmentFile
 import com.udnahc.opentasks.data.dao.AttachmentDao
-import com.udnahc.opentasks.data.dao.AttachmentDownloadInstallResult
 import com.udnahc.opentasks.data.dao.AttachmentTombstoneMergeResult
 import com.udnahc.opentasks.data.dao.TaskDao
 import com.udnahc.opentasks.data.model.ATTACHMENT_KIND_IMAGE
@@ -27,6 +28,8 @@ import com.udnahc.opentasks.data.sync.records.AttachmentRecord
 import com.udnahc.opentasks.data.sync.records.toAttachment
 import com.udnahc.opentasks.data.sync.records.toAttachmentRecord
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -41,10 +44,19 @@ private val log = logging("AttachmentSyncAdapter")
 internal class AttachmentFileDownloadException(val statusCode: Int) :
     IllegalStateException("Attachment file download failed with HTTP $statusCode")
 
+private enum class IncomingRecordDisposition {
+    Process,
+    SkipSilently,
+    SkipDegraded,
+}
+
 open class AttachmentSyncAdapter(
     private val dao: AttachmentDao,
     private val taskDao: TaskDao,
     private val fileStorage: AttachmentFileStorage,
+    private val tombstoneFileCleanup: AttachmentTombstoneFileCleanup =
+        AttachmentTombstoneFileCleanup(dao, fileStorage),
+    private val leaseRecorder: AttachmentFileLeaseRecorder = AttachmentFileLeaseRecorder(dao),
 ) : BaseSyncAdapter<Attachment, AttachmentRecord>() {
 
     override val collectionName = "attachments"
@@ -59,14 +71,28 @@ open class AttachmentSyncAdapter(
     override suspend fun updatePbId(localId: String, pbId: String) = dao.updatePbId(localId, pbId)
     override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
     override suspend fun hardDeleteLocalNeverSynced(entity: Attachment) {
-        dao.delete(entity)
-        deleteFileBestEffort(entity.localPath)
-        deleteFileBestEffort(entity.thumbnailPath)
+        tombstoneFileCleanup.cleanupThenHardDeleteNeverSynced(entity)
     }
 
     override suspend fun upsert(entity: Attachment) = dao.upsert(entity)
     override suspend fun mergeRemoteIfNewer(entity: Attachment): RemoteMergeResult =
-        dao.mergeRemoteIfNewer(entity)
+        if (entity.isDeleted) mergeRemoteTombstoneIfNewer(entity) else dao.mergeRemoteIfNewer(entity)
+
+    private suspend fun mergeRemoteTombstoneIfNewer(entity: Attachment): RemoteMergeResult =
+        when (val merged = dao.mergeRemoteTombstoneIfNewer(entity)) {
+            is AttachmentTombstoneMergeResult.Applied -> {
+                val retained = merged.replaced?.let { previous ->
+                    entity.copy(
+                        localPath = previous.localPath,
+                        thumbnailPath = previous.thumbnailPath,
+                    )
+                } ?: entity
+                tombstoneFileCleanup.retryRetainingRow(retained)
+                RemoteMergeResult.Applied
+            }
+            AttachmentTombstoneMergeResult.KeptLocal -> RemoteMergeResult.KeptLocal
+        }
+
     override fun localId(entity: Attachment) = entity.id
     override fun pbId(entity: Attachment) = entity.pbId
     override fun isDeleted(entity: Attachment) = entity.isDeleted
@@ -99,6 +125,10 @@ open class AttachmentSyncAdapter(
     override suspend fun pullAll(client: PocketbaseClient) = pullAll(standalonePassContext(client))
 
     override suspend fun pullAll(pass: SyncPassContext) {
+        tombstoneFileCleanup.retryAllRetainingRows()
+        val taskSnapshot = taskDao.getAllTasksOnce()
+        val activeTaskIds = taskSnapshot.filterNot { it.isDeleted }.map { it.id }.toSet()
+        val allTaskIds = taskSnapshot.map { it.id }.toSet()
         val client = pass.client
         val remoteRecords = if (allowsTestOnlyLegacySdkWrites()) {
             fetchAllRecords(client)
@@ -108,33 +138,59 @@ open class AttachmentSyncAdapter(
         val gateway = if (allowsTestOnlyLegacySdkWrites()) null else requirePassGateway(pass)
         val localSnapshot = getAllOnce()
         val localById = localSnapshot.associateBy { it.id }
+        var degraded = false
         for (record in remoteRecords) {
             val local = localById[record.localId]
-            if (shouldSkipIncomingRecord(record, local)) continue
+            when (validateIncomingRecord(record, local, activeTaskIds, allTaskIds)) {
+                IncomingRecordDisposition.Process -> Unit
+                IncomingRecordDisposition.SkipSilently -> continue
+                IncomingRecordDisposition.SkipDegraded -> {
+                    log.w { "Attachment pull skipped an invalid remote row" }
+                    degraded = true
+                    continue
+                }
+            }
+            val skipIncoming = try {
+                shouldSkipIncomingRecord(record, local)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: SyncDegradedException) {
+                log.w { "Attachment pull skipped a conflicting remote row" }
+                degraded = true
+                true
+            }
+            if (skipIncoming) continue
             val incoming = record.toAttachment()
             if (record.isDeleted) {
                 upsertRemoteTombstone(incoming, local)
                 continue
             }
             if (record.file.isNullOrBlank()) {
-                log.w { "Active remote attachment ${record.localId} has no file; retaining local files" }
+                log.w { "Active remote attachment has no file; retaining local files" }
                 upsertRemoteDownloadFailure(
                     incoming,
-                    SyncAdapterException("Active remote attachment ${record.localId} has no file"),
+                    SyncAdapterException("Active remote attachment has no file"),
                     local,
                 )
+                degraded = true
                 continue
             }
             if (record.fileSizeBytes > AttachmentFilePolicy.MAX_UPLOAD_BYTES || record.kind != ATTACHMENT_KIND_IMAGE) {
                 upsertRemotePolicyBlock(incoming, local)
                 continue
             }
-            if (local?.remoteFileName == record.file && fileStorage.exists(local.localPath)) {
+            val healthySameFile = local?.let {
+                it.isSynced &&
+                    it.syncState == AttachmentSyncState.SYNCED &&
+                    it.remoteFileName == record.file &&
+                    it.hasCompleteLocalFiles()
+            } == true
+            if (healthySameFile) {
                 upsertRemoteSameFile(incoming)
                 continue
             }
-            runCatching {
-                val recordId = record.id ?: throw SyncAdapterException("Attachment ${record.localId} missing remote id")
+            try {
+                val recordId = record.id ?: throw SyncAdapterException("Remote attachment has no record id")
                 val bytes = if (gateway != null) {
                     val response = gateway.downloadProtectedFile(recordId, record.file)
                     if (!response.isSuccess) throw AttachmentFileDownloadException(response.status.value)
@@ -144,18 +200,54 @@ open class AttachmentSyncAdapter(
                 }
                 val stored = fileStorage.storeRemoteImage(record.file, bytes)
                 upsertRemoteDownloadSuccess(incoming, stored, local)
-            }.onFailure {
-                if (it is CancellationException) throw it
-                it.rethrowSyncAuthenticationRejected()
-                log.e(it) { "Failed to download attachment ${record.localId}" }
-                if (it is AttachmentFileTooLargeException) {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                error.rethrowSyncAuthenticationRejected()
+                log.e { "Attachment download failed" }
+                if (error is AttachmentFileTooLargeException) {
                     upsertRemotePolicyBlock(incoming, local)
                 } else {
-                    upsertRemoteDownloadFailure(incoming, it, local)
+                    upsertRemoteDownloadFailure(incoming, error, local)
                 }
             }
         }
+        if (degraded) {
+            throw SyncDegradedException(ATTACHMENT_PULL_DEGRADED_MESSAGE)
+        }
         recoverMissingRemoteRows(remoteRecords, localSnapshot, pass)
+    }
+
+    private fun validateIncomingRecord(
+        record: AttachmentRecord,
+        local: Attachment?,
+        activeTaskIds: Set<String>,
+        allTaskIds: Set<String>,
+    ): IncomingRecordDisposition {
+        val supported = record.localId.isNotBlank() &&
+            record.ownerType == ATTACHMENT_OWNER_TASK &&
+            record.kind == ATTACHMENT_KIND_IMAGE
+        val identityMatches = local == null ||
+            (local.ownerType == record.ownerType && local.ownerId == record.ownerId && local.kind == record.kind)
+        if (!record.isDeleted) {
+            return if (supported && identityMatches && record.ownerId in activeTaskIds) {
+                IncomingRecordDisposition.Process
+            } else {
+                IncomingRecordDisposition.SkipDegraded
+            }
+        }
+        if (local != null) {
+            return if (supported && identityMatches) {
+                IncomingRecordDisposition.Process
+            } else {
+                IncomingRecordDisposition.SkipDegraded
+            }
+        }
+        return if (supported && record.ownerId in allTaskIds) {
+            IncomingRecordDisposition.Process
+        } else {
+            IncomingRecordDisposition.SkipSilently
+        }
     }
 
     internal suspend fun upsertRemoteDownloadFailure(
@@ -200,34 +292,50 @@ open class AttachmentSyncAdapter(
             width = stored.width,
             height = stored.height,
         ).withSyncState(AttachmentSyncState.SYNCED)
-        when (val installed = dao.installDownloadedRemoteIfNewer(replacement)) {
-            is AttachmentDownloadInstallResult.Applied ->
-                installed.replaced?.let { deleteSupersededLocalFiles(it, replacement) }
-            AttachmentDownloadInstallResult.KeptLocal -> deleteDownloadedFiles(replacement)
+        val candidatePaths = replacement.filePaths()
+        try {
+            leaseRecorder.lease(candidatePaths)
+            dao.installDownloadedRemoteIfNewer(replacement)
+        } catch (error: CancellationException) {
+            resolveDownloadInstall(replacement)
+            throw error
+        } catch (error: Exception) {
+            resolveDownloadInstall(replacement)
+            throw error
+        }
+        when (resolveDownloadInstall(replacement)) {
+            DownloadInstallState.Committed,
+            DownloadInstallState.Kept,
+            -> Unit
+            DownloadInstallState.Unknown ->
+                throw SyncAdapterException("Attachment install state could not be verified")
         }
     }
 
     internal suspend fun shouldSkipIncomingRecord(record: AttachmentRecord, local: Attachment?): Boolean {
         if (record.isDeleted && !record.file.isNullOrBlank()) {
-            throw SyncDegradedException(
-                "attachments ${record.localId} tombstone retained a remote file",
-            )
+            throw SyncDegradedException("Attachment tombstone retained a remote file")
         }
         if (local == null) return false
         if (record.updatedAtUtc < local.updatedAt) return true
         if (record.updatedAtUtc == local.updatedAt && !equalTimestampMetadataMatches(local, record)) {
-            throw SyncDegradedException(
-                "attachments ${record.localId} has an equal-timestamp divergent metadata payload",
-            )
+            throw SyncDegradedException("Attachment has an equal-timestamp divergent metadata payload")
         }
         if (record.updatedAtUtc > local.updatedAt) return false
         val localFileMissing = !local.isDeleted &&
                 !record.isDeleted &&
                 !record.file.isNullOrBlank() &&
-                !fileStorage.exists(local.localPath)
-        val retryRemoteDownload = local.isRemoteOriginDownloadFailure()
+                !local.hasCompleteLocalFiles()
+        val retryRemoteDownload = local.syncState == AttachmentSyncState.NEEDS_DOWNLOAD ||
+            local.isRemoteOriginDownloadFailure()
         return !localFileMissing && !retryRemoteDownload
     }
+
+    private suspend fun Attachment.hasCompleteLocalFiles(): Boolean =
+        localPath.isNotBlank() &&
+            thumbnailPath.isNotBlank() &&
+            fileStorage.exists(localPath) &&
+            fileStorage.exists(thumbnailPath)
 
     /**
      * Attachment bytes and their derived local media details are not stable
@@ -242,40 +350,35 @@ open class AttachmentSyncAdapter(
         JsonObject(toBody().filterKeys { it in CANONICAL_SYNC_METADATA_KEYS })
 
     internal suspend fun upsertRemoteTombstone(incoming: Attachment, local: Attachment?) {
-        when (val merged = dao.mergeRemoteTombstoneIfNewer(incoming.withSyncState(AttachmentSyncState.SYNCED))) {
-            is AttachmentTombstoneMergeResult.Applied -> merged.replaced?.let { deleteLocalFilesFor(it) }
-            AttachmentTombstoneMergeResult.KeptLocal -> Unit
-        }
+        mergeRemoteIfNewer(incoming.withSyncState(AttachmentSyncState.SYNCED))
     }
 
-    private suspend fun deleteLocalFilesFor(attachment: Attachment) {
-        deleteFileBestEffort(attachment.localPath)
-        deleteFileBestEffort(attachment.thumbnailPath)
-    }
-
-    private suspend fun deleteSupersededLocalFiles(previous: Attachment, replacement: Attachment) {
-        if (previous.localPath.isNotBlank() && previous.localPath != replacement.localPath) {
-            deleteFileBestEffort(previous.localPath)
+    private suspend fun resolveDownloadInstall(replacement: Attachment): DownloadInstallState =
+        withContext(NonCancellable) {
+            val persisted = try {
+                dao.findByIdAnyState(replacement.id)
+            } catch (_: Exception) {
+                return@withContext DownloadInstallState.Unknown
+            }
+            val state = when {
+                persisted == replacement -> DownloadInstallState.Committed
+                persisted?.filePaths().orEmpty().none(replacement.filePaths()::contains) ->
+                    DownloadInstallState.Kept
+                else -> DownloadInstallState.Unknown
+            }
+            if (state != DownloadInstallState.Unknown) {
+                tombstoneFileCleanup.retryLeasedPaths(replacement.filePaths())
+                tombstoneFileCleanup.retryRecordedFileCleanup()
+            }
+            state
         }
-        if (previous.thumbnailPath.isNotBlank() && previous.thumbnailPath != replacement.thumbnailPath) {
-            deleteFileBestEffort(previous.thumbnailPath)
-        }
-    }
 
-    private suspend fun deleteDownloadedFiles(attachment: Attachment) {
-        deleteFileBestEffort(attachment.localPath)
-        deleteFileBestEffort(attachment.thumbnailPath)
-    }
+    private fun Attachment.filePaths(): List<String> = listOf(localPath, thumbnailPath)
 
-    private suspend fun deleteFileBestEffort(path: String) {
-        if (path.isBlank()) return
-        try {
-            fileStorage.delete(path)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            // Local cleanup is best effort after the Room decision is durable.
-        }
+    private enum class DownloadInstallState {
+        Committed,
+        Kept,
+        Unknown,
     }
 
     override suspend fun pushAll(client: PocketbaseClient) = pushAll(standalonePassContext(client))
@@ -314,21 +417,44 @@ open class AttachmentSyncAdapter(
         allowRemoteMerge: Boolean,
     ) {
         val failures = mutableListOf<Throwable>()
-        for (attachment in getUnsynced()) {
-            if (!seedMode && attachment.isDeleted && attachment.pbId == null) {
-                hardDeleteLocalNeverSynced(attachment)
-                continue
-            }
-            if (!allowRemoteMerge) validateAttachmentSeedSource(attachment)
-            if (!shouldPush(attachment)) continue
+        for (snapshot in getUnsynced()) {
+            var attachment = snapshot
             try {
+                if (!seedMode && attachment.isDeleted && attachment.pbId == null) {
+                    val gateway = requirePassGateway(pass)
+                    val remote = findAttachmentRecordByLocalId(gateway, attachment.id)
+                    if (remote == null) {
+                        hardDeleteLocalNeverSynced(attachment)
+                        continue
+                    }
+                    val record = recordFromJson(remote)
+                    val remoteId = remote["id"]?.jsonPrimitive?.contentOrNull
+                        ?.takeIf(String::isNotBlank)
+                        ?: throw SyncDegradedException(ATTACHMENT_TOMBSTONE_RECOVERY_DEGRADED_MESSAGE)
+                    val identityMatches = record.localId == attachment.id &&
+                        record.ownerType == attachment.ownerType &&
+                        record.ownerId == attachment.ownerId &&
+                        record.kind == attachment.kind
+                    if (!identityMatches) {
+                        throw SyncDegradedException(ATTACHMENT_TOMBSTONE_RECOVERY_DEGRADED_MESSAGE)
+                    }
+                    val adopted = dao.adoptRemoteIdentityForTombstoneIfUnchanged(
+                        id = attachment.id,
+                        updatedAt = attachment.updatedAt,
+                        pbId = remoteId,
+                    )
+                    if (adopted == 0) continue
+                    attachment = attachment.copy(pbId = remoteId)
+                }
+                if (!allowRemoteMerge) validateAttachmentSeedSource(attachment)
+                if (!shouldPush(attachment)) continue
                 pushOne(pass, attachment, allowRemoteMerge)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 e.rethrowSyncAuthenticationRejected()
                 if (e is AuthoritativeSeedConflictException) throw e
                 if (e is AuthoritativeLocalSeedSourceException) throw e
-                log.e(e) { "Failed to push attachment ${attachment.id}" }
+                log.e { "Attachment push failed" }
                 failures += e
                 dao.markSyncFailed(attachment.id, AttachmentSyncState.FAILED.name, "sync_failed")
             }
@@ -387,11 +513,20 @@ open class AttachmentSyncAdapter(
 
     private suspend fun validateAttachmentSeedSource(attachment: Attachment) {
         if (attachment.isDeleted) return
+        val parent = if (attachment.ownerType == ATTACHMENT_OWNER_TASK) {
+            taskDao.findTaskByIdAnyState(attachment.ownerId)
+        } else {
+            null
+        }
         if (attachment.syncState == AttachmentSyncState.BLOCKED ||
             attachment.syncState == AttachmentSyncState.NEEDS_DOWNLOAD ||
             attachment.isRemoteOriginDownloadFailure() ||
+            attachment.id.isBlank() ||
+            attachment.ownerId.isBlank() ||
             attachment.ownerType != ATTACHMENT_OWNER_TASK ||
-            taskDao.findTaskByIdAnyState(attachment.ownerId) == null
+            attachment.kind != ATTACHMENT_KIND_IMAGE ||
+            parent == null ||
+            parent.isDeleted
         ) {
             throw AuthoritativeLocalSeedSourceException()
         }
@@ -399,7 +534,7 @@ open class AttachmentSyncAdapter(
             fileStorage.readBytes(attachment.localPath, AttachmentFilePolicy.MAX_UPLOAD_BYTES)
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
             throw AuthoritativeLocalSeedSourceException()
         }
         if (bytes == null) throw AuthoritativeLocalSeedSourceException()
@@ -424,8 +559,20 @@ open class AttachmentSyncAdapter(
             return
         }
 
+        if (attachment.id.isBlank() ||
+            attachment.ownerId.isBlank() ||
+            attachment.ownerType != ATTACHMENT_OWNER_TASK ||
+            attachment.kind != ATTACHMENT_KIND_IMAGE
+        ) {
+            if (!allowRemoteMerge) throw AuthoritativeLocalSeedSourceException()
+            throw SyncDegradedException(ATTACHMENT_ACTIVE_IDENTITY_DEGRADED_MESSAGE)
+        }
         val parent = taskDao.findTaskByIdAnyState(attachment.ownerId)
-        if (attachment.ownerType == ATTACHMENT_OWNER_TASK && parent?.pbId == null) {
+        if (parent == null || parent.isDeleted) {
+            if (!allowRemoteMerge) throw AuthoritativeLocalSeedSourceException()
+            throw SyncDegradedException(ATTACHMENT_ACTIVE_PARENT_DEGRADED_MESSAGE)
+        }
+        if (parent.pbId.isNullOrBlank()) {
             if (!allowRemoteMerge) throw AuthoritativeLocalSeedSourceException()
             return
         }
@@ -434,7 +581,7 @@ open class AttachmentSyncAdapter(
             fileStorage.readBytes(attachment.localPath, AttachmentFilePolicy.MAX_UPLOAD_BYTES)
         } catch (error: CancellationException) {
             throw error
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             if (!allowRemoteMerge) throw AuthoritativeLocalSeedSourceException()
             throw error
         }
@@ -455,7 +602,7 @@ open class AttachmentSyncAdapter(
             pbId = remoteId,
             remoteFileName = updated["file"]?.jsonPrimitive?.contentOrNull,
         )
-        if (changed == 0) log.w { "Attachment ${attachment.id} changed during multipart upload; leaving it unsynced" }
+        if (changed == 0) log.w { "Attachment changed during multipart upload; leaving it unsynced" }
     }
 
     /**
@@ -472,16 +619,16 @@ open class AttachmentSyncAdapter(
         val preflight = attachment.pbId?.let { gateway.getRecord(collectionName, it) }
         if (preflight?.isSuccess == true) {
             val remote = preflight.body
-                ?: throw SyncAdapterException("Attachment ${attachment.id} preflight returned no record")
+                ?: throw SyncAdapterException("Attachment preflight returned no record")
             return reconcileActiveAttachment(gateway, attachment, body, bytes, remote, allowRemoteMerge)
         }
         if (preflight != null && !preflight.isNotFound) {
-            throw SyncAdapterException("Attachment ${attachment.id} preflight failed with HTTP ${preflight.status.value}")
+            throw SyncAdapterException("Attachment preflight failed with HTTP ${preflight.status.value}")
         }
 
         val lookup = gateway.findByLocalId(collectionName, attachment.id)
         if (!lookup.isSuccess) {
-            throw SyncAdapterException("Attachment ${attachment.id} lookup failed with HTTP ${lookup.status.value}")
+            throw SyncAdapterException("Attachment lookup failed with HTTP ${lookup.status.value}")
         }
         val existing = lookup.body
         if (existing == null) {
@@ -514,13 +661,12 @@ open class AttachmentSyncAdapter(
                         "Authoritative seed rejected a newer remote attachment row",
                     )
                 }
-                mergeRemoteIfNewer(record.toAttachment())
-                return null
+                throw SyncDegradedException(ATTACHMENT_PUSH_REQUIRES_PULL_MESSAGE)
             }
             record.updatedAtUtc == attachment.updatedAt && canonicalPayloadEquals(body, remote) -> return remote
             record.updatedAtUtc < attachment.updatedAt -> {
                 val remoteId = remote["id"]?.jsonPrimitive?.contentOrNull
-                    ?: throw SyncAdapterException("Attachment ${attachment.id} recovery has no record id")
+                    ?: throw SyncAdapterException("Attachment recovery has no record id")
                 val retried = gateway.updateAttachment(remoteId, body, attachment.fileName, bytes)
                 if (retried.isSuccess) return retried.body
             }
@@ -530,7 +676,7 @@ open class AttachmentSyncAdapter(
                 "Authoritative seed found a divergent remote attachment row",
             )
         }
-        throw SyncAdapterException("Attachment ${attachment.id} guarded write conflict was not safely resolvable")
+        throw SyncAdapterException("Attachment guarded write conflict was not safely resolvable")
     }
 
     private suspend fun pushAttachmentTombstone(
@@ -546,7 +692,7 @@ open class AttachmentSyncAdapter(
                 preflight.isSuccess -> preflight.body
                 preflight.isNotFound -> null
                 else -> throw SyncAdapterException(
-                    "Attachment ${attachment.id} tombstone preflight failed with HTTP ${preflight.status.value}",
+                    "Attachment tombstone preflight failed with HTTP ${preflight.status.value}",
                 )
             }
         }
@@ -562,7 +708,7 @@ open class AttachmentSyncAdapter(
             }
         }
         val current = currentRecord
-            ?: throw SyncAdapterException("Unable to resolve attachment ${attachment.id} before tombstone")
+            ?: throw SyncAdapterException("Unable to resolve attachment before tombstone")
         val updated = reconcileAttachmentTombstone(
             gateway, attachment, body, current, allowRemoteMerge = allowRemoteMerge,
         ) ?: return
@@ -570,11 +716,12 @@ open class AttachmentSyncAdapter(
         if (!returnedFile.isNullOrBlank()) {
             throw SyncAdapterException("Attachment tombstone retained a remote file")
         }
-        dao.confirmTombstoneSyncedIfUnchanged(
+        val confirmed = dao.confirmTombstoneSyncedIfUnchanged(
             id = attachment.id,
             updatedAt = attachment.updatedAt,
             pbId = updated["id"]?.jsonPrimitive?.contentOrNull,
         )
+        if (confirmed > 0) tombstoneFileCleanup.retryRetainingRow(attachment)
     }
 
     private suspend fun findAttachmentRecordByLocalId(
@@ -583,7 +730,7 @@ open class AttachmentSyncAdapter(
     ): JsonObject? {
         val lookup = gateway.findByLocalId(collectionName, localId)
         if (!lookup.isSuccess) {
-            throw SyncAdapterException("Attachment $localId lookup failed with HTTP ${lookup.status.value}")
+            throw SyncAdapterException("Attachment lookup failed with HTTP ${lookup.status.value}")
         }
         return lookup.body
     }
@@ -605,6 +752,9 @@ open class AttachmentSyncAdapter(
                         "Authoritative seed rejected a newer remote attachment tombstone",
                     )
                 }
+                if (!remoteRecord.isDeleted) {
+                    throw SyncDegradedException(ATTACHMENT_PUSH_REQUIRES_PULL_MESSAGE)
+                }
                 mergeRemoteIfNewer(remoteRecord.toAttachment())
                 null
             }
@@ -618,7 +768,7 @@ open class AttachmentSyncAdapter(
                     )
                 }
                 throw SyncAdapterException(
-                    "Attachment ${attachment.id} equal-timestamp tombstone payload differs remotely",
+                    "Attachment equal-timestamp tombstone payload differs remotely",
                 )
             }
             !mayWrite -> {
@@ -628,12 +778,12 @@ open class AttachmentSyncAdapter(
                     )
                 }
                 throw SyncAdapterException(
-                    "Attachment ${attachment.id} tombstone write was rejected without a safely newer remote row",
+                    "Attachment tombstone write was rejected without a safely newer remote row",
                 )
             }
             else -> {
                 val remoteId = remote["id"]?.jsonPrimitive?.contentOrNull
-                    ?: throw SyncAdapterException("Resolved attachment ${attachment.id} has no record id")
+                    ?: throw SyncAdapterException("Resolved attachment has no record id")
                 val response = gateway.updateAttachmentTombstone(
                     remoteId,
                     body,
@@ -681,8 +831,8 @@ open class AttachmentSyncAdapter(
             .map { it.id }
             .filterNot(remoteIds::contains)
             .toSet()
-        missingCandidateIds.forEach { id ->
-            log.w { "Recovering missing $collectionName $id: server row absent, marking unsynced for recreation" }
+        if (missingCandidateIds.isNotEmpty()) {
+            log.w { "Recovering ${missingCandidateIds.size} missing attachment row(s)" }
         }
         if (missingCandidateIds.isEmpty()) return
         val recover: suspend () -> Unit = {
@@ -714,6 +864,15 @@ open class AttachmentSyncAdapter(
         )
 
     private companion object {
+        const val ATTACHMENT_PULL_DEGRADED_MESSAGE = "Attachment pull was degraded"
+        const val ATTACHMENT_ACTIVE_IDENTITY_DEGRADED_MESSAGE =
+            "Attachment push found an unsupported active identity"
+        const val ATTACHMENT_ACTIVE_PARENT_DEGRADED_MESSAGE =
+            "Attachment push found an invalid active parent relation"
+        const val ATTACHMENT_TOMBSTONE_RECOVERY_DEGRADED_MESSAGE =
+            "Attachment tombstone recovery found a divergent remote identity"
+        const val ATTACHMENT_PUSH_REQUIRES_PULL_MESSAGE =
+            "Attachment push found a newer remote row and requires pull reconciliation"
         const val MISSING_ROW_RECOVERY_MIN_RATIO = 0.1
         val CANONICAL_SYNC_METADATA_KEYS = setOf(
             "localId",

@@ -79,17 +79,21 @@ class PocketBaseServerInventoryReader(
         if (meta.capabilityVersion != CAPABILITY_VERSION || meta.serverInstanceId.isBlank()) {
             throw PocketBaseConnectionException("PocketBase sync capability is unsupported")
         }
-        val inventories = COLLECTIONS.associateWith { collection -> readAll(collection) }
+        val inventories = COLLECTIONS.associateWith { collection ->
+            readAll(collection)
+        }
         return PocketBaseServerInventory(meta.serverInstanceId, inventories, gateway.ownerAccountId)
     }
 
     private suspend fun readAll(collection: String): List<JsonObject> {
         val rows = mutableListOf<JsonObject>()
+        val pagination = PocketBasePaginationGuard(PAGE_SIZE)
         var page = 1
         do {
             val response = gateway.getRecords(collection, page, PAGE_SIZE)
             val result = response.body
                 ?: throw PocketBaseConnectionException("Unable to inventory $collection (HTTP ${response.status.value})")
+            pagination.accept(page, result)
             rows += result.items
             page += 1
         } while (page <= result.totalPages)

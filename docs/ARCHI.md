@@ -88,7 +88,7 @@ The root project contains two Gradle modules:
 - `composeApp` applies Kotlin Multiplatform, the AGP 9 KMP Android library plugin, Compose, serialization, KSP, Room, Kover, and desktop packaging plugins. It targets Android, `iosArm64`, `iosSimulatorArm64`, and JVM.
 - `androidApp` is the Android application shell. It owns the stable application ID, version, manifest, Android components, and APK build types while depending on `composeApp`.
 
-Required local tools are JDK 17 or newer, Android Studio/SDK for Android, and Xcode for iOS. The Gradle wrapper pins Gradle 9.4.1.
+Required local tools are JDK 17, Android Studio/SDK for Android, and Xcode for iOS. Both JVM modules pin the JDK 17 toolchain. The Gradle wrapper pins Gradle 9.4.1 and verifies the distribution with SHA-256 `2ab2958f2a1e51120c326cad6f385153bb11ee93b3c216c5fccebfdfbb7ec6cb`.
 
 Common commands:
 
@@ -123,7 +123,7 @@ PocketBase configuration is optional for Local only mode. When a user signs in o
 
 Signed-out users may choose Use without sync or enter a server URL and sign in. The endpoint is read-only while authenticated and may change only after logout. Detached authentication and capability validation occur before a normal client activation. Local-only connect uses a detached, count-only replacement preflight and does not change the active cache until explicit confirmation succeeds under the mutation gate.
 
-The iOS host reads product identity and versions from `iosApp/Configuration/Config.xcconfig`; Xcode project and plist files declare notification, background refresh, URL handling, and share-extension capabilities. Android permissions and exported components are declared in `androidApp/src/main/AndroidManifest.xml`.
+The iOS host reads product identity and versions from `iosApp/Configuration/Config.xcconfig`; its minimum deployment target remains iOS 18.2, and the static shared framework declares bundle ID `com.udnahc.opentasks.composeapp`. Xcode project, entitlement, and plist files declare notification, fetch-only background refresh, App Group share handoff, URL handling, and share-extension capabilities. Android permissions and exported components are declared in `androidApp/src/main/AndroidManifest.xml`.
 
 ### Version surfaces
 
@@ -162,11 +162,11 @@ Each application host initializes Koin once:
 - iOS: `MainViewController()` before composing the UIKit controller.
 - Desktop: `main()` before opening the Compose window.
 
-External boundaries are validated before expensive work. File/share inputs use bounded byte reads and strict UTF-8, typed rejections, and stale-generation checks. Temporary PocketBase sessions and clients own one close/unregister path, while failed candidate setup leaves the active client usable. Coroutine cancellation remains cancellation across imports, attachments, sync, Settings, and export handoff. JVM Calendar processes are run through a timeout- and 16 MiB-output-bounded runner that cleans up children on timeout, cancellation, and overflow.
+External boundaries are validated before expensive work. File/share inputs use bounded byte reads and strict UTF-8, typed rejections, and stale-generation checks. The iOS share extension transports content through a bounded, single-use App Group envelope; the custom URL carries only its random nonce, and the app proves the claimed envelope deleted before publishing it to shared code. Temporary PocketBase sessions and clients own one close/unregister path, while failed candidate setup leaves the active client usable. Coroutine cancellation remains cancellation across imports, attachments, sync, Settings, and export handoff. JVM Calendar processes are run through a timeout- and 16 MiB-output-bounded runner that cleans up children on timeout, cancellation, and overflow.
 
 ## 10. Persistence and Offline Data
 
-Room database `opentasks.db` is currently schema version 13. Its entities are `Task`, `Category`, `Note`, `Tag`, `TaskTag`, `AppSettings`, `Countdown`, and `Attachment`. Exported schemas live under `composeApp/schemas/`, and explicit migrations cover each version from 1 through 13. Tasks include an `(isDeleted, deadline)` index for active deadline queries. Destructive migration fallback is not part of the design.
+Room database `opentasks.db` is currently schema version 14. Its entities are `Task`, `Category`, `Note`, `Tag`, `TaskTag`, `AppSettings`, `Countdown`, `Attachment`, and `AttachmentFileCleanup`. Exported schemas live under `composeApp/schemas/`, and explicit migrations cover each version from 1 through 14. Tasks include an `(isDeleted, deadline)` index for active deadline queries. Destructive migration fallback is not part of the design.
 
 DAOs expose observable reads and suspend writes. Repository implementations:
 
@@ -212,7 +212,7 @@ Local clear and local-to-PocketBase connect use separate typed durable transitio
 
 After confirmation, the durable destination binding and `REMOTE_DELETE_PENDING` marker are written before owner-scoped hard deletion. Records are deleted in reverse dependency order, the complete owner inventory must be empty, and one Room writer transaction resets all local PocketBase IDs/sync acknowledgements without deleting content or attachment files. `ServerSeedExecutor` then exact-seeds the preserved snapshot and verifies final active/tombstone inventory equality before token promotion and provider activation. Failure or process death resumes from the marker; a concurrent destination add/update/delete returns recovery to full delete/reset/reseed. Migration 012 grants hard delete only to the stored authenticated owner. Normal in-app deletion remains tombstone-based, and other owners never enter the inventory or delete requests.
 
-Tokens use Android Keystore, iOS Keychain, and the macOS login keychain. Windows/Linux use an owner-only app-private fallback and surface a weaker-storage warning. Passwords are request-local and are never persisted. Protected attachment downloads use short-lived file tokens and retry once only after confirmed token rejection.
+Tokens use Android Keystore, iOS Keychain, and the macOS login keychain. Windows/Linux use an owner-only app-private fallback and surface a weaker-storage warning. That fallback rejects symlinks and non-regular targets, requires the app directory to be POSIX `0700` and token/temp files `0600`, and otherwise applies and verifies an equivalent single-owner ACL before access. Passwords are request-local and are never persisted. Protected attachment downloads use short-lived file tokens and retry once only after confirmed token rejection.
 
 ## 12. Date, Recurrence, and Reminder Architecture
 
@@ -240,11 +240,11 @@ The activity converts Android intents into shared events for notifications, widg
 
 The SwiftUI `iOSApp` hosts the shared Compose UI through `MainViewController`. `AppDelegate` integrates background refresh and user notifications. Kotlin supplies the shared sync/reminder work; Swift arbitrates background-task expiration and exactly-once completion.
 
-The share extension accepts bounded shared content and hands it to the containing app through the `opentasks://share` custom URL path. There is deliberately no App Group handoff; the extension validates URL/payload limits and keeps its UI visible with local feedback when opening the containing app fails. Platform source code supplies iOS calendar, file, attachment, notification, and theme implementations.
+The share extension accepts bounded shared content and stores one owner-only envelope in the `group.com.udnahc.opentasks` App Group. The `opentasks://share` URL carries only a single-use 32-byte random nonce. A native lock serializes temporary, pending, and claimed states; interrupted claims are retired rather than replayed, and the app deletes and syncs a claimed envelope before publishing it to shared code. ICS content then waits for explicit user confirmation before parsing or persistence. The extension keeps its UI visible with local feedback and retires the pending envelope when opening the containing app fails. Platform source code supplies iOS calendar, file, attachment, notification, and theme implementations.
 
 ### JVM Desktop
 
-`composeApp/src/jvmMain/.../main.kt` opens one Compose Desktop window; there is no multi-process renderer or IPC layer. JVM actual implementations use native file dialogs/filesystem APIs where needed. The Room database and attachment storage live in per-user application data locations selected by the platform module.
+`composeApp/src/jvmMain/.../main.kt` acquires `.opentasks/instance.lock` before Koin or application storage initialization and holds its channel and operating-system lock for the complete blocking Compose lifetime. Contention or an ordinary lock-acquisition failure exits before startup with one fixed diagnostic; there is no multi-process renderer or IPC layer. JVM actual implementations use native file dialogs/filesystem APIs where needed. The Room database and attachment storage live in per-user application data locations selected by the platform module.
 
 Desktop packages target DMG, MSI, and DEB. Release ProGuard shrinking remains enabled while optimization is disabled; `proguard-desktop-release.pro` preserves generated, reflective, service-loaded, and JNI surfaces required at runtime. Calendar commands use a shared process runner that drains merged output without deadlock, enforces a timeout, caps output at 16 MiB, and destroys/forcibly destroys children on timeout, cancellation, or overflow.
 
@@ -356,16 +356,16 @@ persisted in application settings or logged.
 
 Local-only mode stores no PocketBase credentials and performs no server requests. The local Room/SQLite database and platform attachment files remain unencrypted. PocketBase endpoints require HTTPS except for loopback and RFC1918 private IPv4 HTTP; every provider string is validated by the shared strict parser. Android deliberately keeps cleartext enabled at the manifest boundary because Android XML cannot express the required RFC1918 CIDR ranges, so the parser—not a static network-security config—is the runtime authority. Deployments still require HTTPS for public servers, appropriate reverse-proxy/access-control hardening, and reliable database and attachment-storage backups. This is an explicitly bounded two-account deployment model, not arbitrary multi-tenant registration or shared task hosting.
 
-Native entrypoints must validate external intents, URLs, files, and shared payloads. Exported Android components and the iOS custom-URL extension capability should remain as narrow as their workflows permit.
+Native entrypoints must validate external intents, URLs, files, and shared payloads. Exported Android components and the iOS custom-URL extension capability should remain as narrow as their workflows permit; a custom URL is only a wake-up signal and must not carry user content or authorize an import by itself.
 
 ## 20. Packaging and Distribution
 
-- **Android:** `:androidApp:assembleDebug` builds the development APK. `:androidApp:assembleRelease` uses optimized R8 and resource shrinking. Release signing is external and all-or-nothing for production: a complete four-input tuple configures signing, no inputs use the debug key only as a local/test convenience, and a partial tuple fails during configuration. `androidApp/proguard-rules.pro` starts empty of broad rules; add only concrete R8 evidence. Pull-request/manual CI runs JVM tests, Android unit tests, lint, and debug assembly without credentials or service fixtures.
-- **iOS:** build the `iosApp` scheme in Xcode. Team ID, signing, provisioning, and store distribution are environment/project configuration concerns.
+- **Android:** `:androidApp:assembleDebug` builds the development APK. `:androidApp:assembleRelease` uses optimized R8 and resource shrinking. Release signing is external and all-or-nothing for production: a complete four-input tuple configures signing, no inputs use the debug key only as a local/test convenience, and a partial tuple fails during configuration with only the missing input names. `androidApp/proguard-rules.pro` starts empty of broad rules; add only concrete R8 evidence. Pull-request/manual CI runs JVM tests, Android unit tests, lint, and debug assembly without credentials or service fixtures.
+- **iOS:** build the `iosApp` scheme in Xcode with the retained iOS 18.2 minimum. The app plist declares only `fetch` in `UIBackgroundModes`; the permitted background-task identifier remains separate. Team ID, signing, provisioning, and store distribution are environment/project configuration concerns.
 - **Desktop:** Compose native distributions produce DMG, MSI, and DEB artifacts. The documented macOS task is `:composeApp:packageReleaseDmg`; signing and notarization are not configured.
 - **PocketBase:** JavaScript migrations in `pocketbase/pb_migrations/` create and harden the server collections. The server is deployed separately from the clients and its SQLite data requires independent backups.
 
-Application releases must preserve the stable identifiers and data locations used by Room, notifications, WorkManager, widgets, the iOS custom URL, and desktop packages.
+Application releases must preserve the stable identifiers and data locations used by Room, notifications, WorkManager, widgets, the iOS custom URL and App Group, and desktop packages.
 
 ## 21. Known Constraints and Maintenance Boundaries
 

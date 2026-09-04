@@ -839,6 +839,38 @@ class AccountRepositoryImplTest {
     }
 
     @Test
+    fun needsActivationRecoveryReportsInitialPullFailureWhileKeepingTransitionRetryable() = runTest {
+        val destinationBinding = bindingFor("account-b", boundaryEpoch = 8L)
+        val needsActivation = AccountTransition(
+            sourceAccountId = "account-a",
+            destinationAccountId = "account-b",
+            canonicalEndpoint = destinationBinding.canonicalEndpoint,
+            serverInstanceId = destinationBinding.serverInstanceId,
+            capabilityVersion = destinationBinding.capabilityVersion,
+            boundaryEpoch = destinationBinding.boundaryEpoch,
+            phase = AccountTransitionPhase.NEEDS_ACTIVATION,
+        )
+        val pullFailure = IllegalStateException("initial pull failed")
+        val fixture = fixture(
+            binding = destinationBinding,
+            transition = needsActivation,
+            pendingToken = "destination-token",
+            refreshResponses = mapOf(
+                "destination-token" to credential("account-b", "destination-refreshed-token"),
+            ),
+            initialPullFailure = pullFailure,
+        )
+
+        val thrown = assertFailsWith<IllegalStateException> {
+            fixture.repository.restoreSession()
+        }
+
+        assertEquals(pullFailure.message, thrown.message)
+        assertEquals(needsActivation, fixture.state.transition)
+        assertTrue(fixture.repository.sessionState.value is AccountSessionState.Transitioning)
+    }
+
+    @Test
     fun accountBoundarySerializationRoundTripsWithoutSecrets() {
         val binding = bindingFor("account-a")
         val transition = AccountTransition(
@@ -900,6 +932,7 @@ class AccountRepositoryImplTest {
         legacyIdentity: LegacyCacheIdentity = LegacyCacheIdentity(null, null),
         replaceFailure: Throwable? = null,
         clearFilesFailure: Throwable? = null,
+        initialPullFailure: Throwable? = null,
         replacementExecutor: FakeAuthoritativeReplaceExecutor = FakeAuthoritativeReplaceExecutor(events),
         inventoryResponses: MutableList<PocketBaseServerInventory> = mutableListOf(),
         authenticationRejectionDispatcher: AccountAuthenticationRejectionDispatcher? = null,
@@ -919,7 +952,9 @@ class AccountRepositoryImplTest {
             this.replaceFailure = replaceFailure
             clearAttachmentFailure = clearFilesFailure
         }
-        val sync = FakeAccountSyncCoordinator(events)
+        val sync = FakeAccountSyncCoordinator(events).apply {
+            this.initialPullFailure = initialPullFailure
+        }
         val scheduler = FakeReminderScheduler()
         val provider = PocketBaseClientProvider()
         if (binding != null && state.installationEndpoint == null) {
@@ -1301,6 +1336,7 @@ private class FakeAccountSyncCoordinator(
 ) : AccountSyncCoordinator {
     var syncCalls = 0
     var initialPullCalls = 0
+    var initialPullFailure: Throwable? = null
 
     override suspend fun syncAllWithinMutation(client: PocketbaseClient) {
         syncCalls += 1
@@ -1310,6 +1346,7 @@ private class FakeAccountSyncCoordinator(
     override suspend fun initialPullWithinMutation(client: PocketbaseClient) {
         initialPullCalls += 1
         events += "initial-pull"
+        initialPullFailure?.let { throw it }
     }
 }
 

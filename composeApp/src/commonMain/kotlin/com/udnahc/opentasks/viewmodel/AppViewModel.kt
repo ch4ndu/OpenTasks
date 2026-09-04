@@ -35,7 +35,6 @@ sealed interface SharedIcsImportResult {
 
     data class Failed(
         override val payloadId: Long,
-        val cause: Throwable? = null,
     ) : SharedIcsImportResult
 }
 
@@ -57,7 +56,10 @@ class AppViewModel(
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
     private val _sharedIcsImportResult = MutableStateFlow<SharedIcsImportResult?>(null)
     val sharedIcsImportResult: StateFlow<SharedIcsImportResult?> = _sharedIcsImportResult.asStateFlow()
+    private val _sharedIcsImportConfirmation = MutableStateFlow<Long?>(null)
+    val sharedIcsImportConfirmation: StateFlow<Long?> = _sharedIcsImportConfirmation.asStateFlow()
     private val sharedIcsPayloadIds = mutableSetOf<Long>()
+    private val pendingSharedIcsConfirmations = ArrayDeque<PendingSharedIcs>()
     private val pendingSharedIcs = ArrayDeque<PendingSharedIcs>()
     private var activeSharedIcs: PendingSharedIcs? = null
     private var sharedIcsImportJob: Job? = null
@@ -70,13 +72,43 @@ class AppViewModel(
      * to the process-global handoff when this ViewModel is cleared.
      */
     fun importSharedIcs(payload: SharedTaskPayload) {
-        if (!isEpochAlive || !sharedIcsPayloadIds.add(payload.id)) return
-
-        // Capture before queueing or coroutine dispatch: every claimed
-        // payload gets its own exact account/epoch boundary.
-        val expectedBoundary = accountBoundaryExecutor.captureForegroundBoundary()
-        pendingSharedIcs += PendingSharedIcs(payload, expectedBoundary)
+        val pending = captureSharedIcs(payload) ?: return
+        pendingSharedIcs += pending
         startNextSharedIcsIfIdle()
+    }
+
+    /**
+     * Retires the process-global handoff into this account epoch but waits for
+     * explicit user confirmation before parsing or importing its ICS content.
+     */
+    fun requestSharedIcsImport(payload: SharedTaskPayload) {
+        val pending = captureSharedIcs(payload) ?: return
+        pendingSharedIcsConfirmations += pending
+        showNextSharedIcsConfirmationIfIdle()
+    }
+
+    fun confirmSharedIcsImport(payloadId: Long): Boolean {
+        if (!isEpochAlive || _sharedIcsImportConfirmation.value != payloadId) return false
+        val pending = pendingSharedIcsConfirmations.firstOrNull() ?: return false
+        if (pending.payload.id != payloadId) return false
+
+        pendingSharedIcsConfirmations.removeFirst()
+        _sharedIcsImportConfirmation.value = null
+        pendingSharedIcs += pending
+        startNextSharedIcsIfIdle()
+        showNextSharedIcsConfirmationIfIdle()
+        return true
+    }
+
+    fun dismissSharedIcsImport(payloadId: Long): Boolean {
+        if (!isEpochAlive || _sharedIcsImportConfirmation.value != payloadId) return false
+        val pending = pendingSharedIcsConfirmations.firstOrNull() ?: return false
+        if (pending.payload.id != payloadId) return false
+
+        pendingSharedIcsConfirmations.removeFirst()
+        _sharedIcsImportConfirmation.value = null
+        showNextSharedIcsConfirmationIfIdle()
+        return true
     }
 
     fun consumeSharedIcsImportResult(result: SharedIcsImportResult): Boolean {
@@ -97,7 +129,6 @@ class AppViewModel(
         if (boundary == null) {
             _sharedIcsImportResult.value = SharedIcsImportResult.Failed(
                 payloadId = next.payload.id,
-                cause = AccountBoundaryRejectedException(),
             )
             return
         }
@@ -120,15 +151,31 @@ class AppViewModel(
                 )
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                log.e(e) { "Shared ICS import failed" }
-                publishSharedIcsResult(SharedIcsImportResult.Failed(payloadId, e))
+            } catch (_: Exception) {
+                log.e { "Shared ICS import failed" }
+                publishSharedIcsResult(SharedIcsImportResult.Failed(payloadId))
             } finally {
                 withContext(NonCancellable) {
                     finishSharedIcs(payloadId)
                 }
             }
         }
+    }
+
+    private fun captureSharedIcs(payload: SharedTaskPayload): PendingSharedIcs? {
+        if (!isEpochAlive || !sharedIcsPayloadIds.add(payload.id)) return null
+
+        // Capture before queueing or coroutine dispatch: every claimed
+        // payload gets its own exact account/epoch boundary.
+        return PendingSharedIcs(
+            payload = payload,
+            expectedBoundary = accountBoundaryExecutor.captureForegroundBoundary(),
+        )
+    }
+
+    private fun showNextSharedIcsConfirmationIfIdle() {
+        if (!isEpochAlive || _sharedIcsImportConfirmation.value != null) return
+        _sharedIcsImportConfirmation.value = pendingSharedIcsConfirmations.firstOrNull()?.payload?.id
     }
 
     private suspend fun publishSharedIcsResult(result: SharedIcsImportResult) {
@@ -156,8 +203,10 @@ class AppViewModel(
 
     override fun onCleared() {
         isEpochAlive = false
+        pendingSharedIcsConfirmations.clear()
         pendingSharedIcs.clear()
         activeSharedIcs = null
+        _sharedIcsImportConfirmation.value = null
         _sharedIcsImportResult.value = null
         sharedIcsImportJob?.cancel()
         sharedIcsImportJob = null
@@ -178,8 +227,8 @@ class AppViewModel(
                 throw e
             } catch (_: AccountBoundaryRejectedException) {
                 log.w { "Pull-to-refresh skipped because the foreground account boundary changed" }
-            } catch (e: Exception) {
-                log.e(e) { "Pull-to-refresh sync failed" }
+            } catch (_: Exception) {
+                log.e { "Pull-to-refresh sync failed" }
             } finally {
                 _isRefreshing.value = false
             }

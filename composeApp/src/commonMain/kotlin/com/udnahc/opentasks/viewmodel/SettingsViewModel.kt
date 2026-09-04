@@ -2,10 +2,12 @@ package com.udnahc.opentasks.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.udnahc.opentasks.ExternalLaunchResult
 import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
 import com.udnahc.opentasks.data.model.TextSizePreference
 import com.udnahc.opentasks.data.model.ThemeMode
 import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
+import com.udnahc.opentasks.data.notification.NotificationCapability
 import com.udnahc.opentasks.data.sync.SyncOutcome
 import com.udnahc.opentasks.domain.action.settings.ClearLocalDataAction
 import com.udnahc.opentasks.domain.action.settings.SaveTextSizePreferenceAction
@@ -44,6 +46,16 @@ sealed class ExportResult {
 
 enum class ClearLocalDataStatus { IDLE, CLEARING, ERROR }
 
+enum class SettingsLaunchTarget {
+    NOTIFICATION_SETTINGS,
+    EXACT_REMINDER_SETTINGS,
+}
+
+data class SettingsLaunchFailureEvent(
+    val id: Long,
+    val target: SettingsLaunchTarget,
+)
+
 class SettingsViewModel(
     observeThemePreference: ObserveThemePreferenceUseCase,
     observeTextSizePreference: ObserveTextSizePreferenceUseCase,
@@ -69,6 +81,7 @@ class SettingsViewModel(
 
     private val _notificationGranted = MutableStateFlow(true)
     val notificationGranted: StateFlow<Boolean> = _notificationGranted.asStateFlow()
+    val notificationCapability: NotificationCapability = checkNotificationPermission.capability
 
     private val _exactReminderStatus = MutableStateFlow(ExactReminderPermissionStatus.NOT_REQUIRED)
     val exactReminderStatus: StateFlow<ExactReminderPermissionStatus> =
@@ -76,6 +89,11 @@ class SettingsViewModel(
 
     private val _calendarGranted = MutableStateFlow(false)
     val calendarGranted: StateFlow<Boolean> = _calendarGranted.asStateFlow()
+
+    private val _settingsLaunchFailure = MutableStateFlow<SettingsLaunchFailureEvent?>(null)
+    val settingsLaunchFailure: StateFlow<SettingsLaunchFailureEvent?> =
+        _settingsLaunchFailure.asStateFlow()
+    private var nextSettingsLaunchFailureId = 0L
 
     private val _exportResult = MutableStateFlow<ExportResult>(ExportResult.Idle)
     val exportResult: StateFlow<ExportResult> = _exportResult.asStateFlow()
@@ -87,10 +105,6 @@ class SettingsViewModel(
     val clearLocalDataStatus: StateFlow<ClearLocalDataStatus> =
         _clearLocalDataStatus.asStateFlow()
 
-    init {
-        recheckPermissions()
-    }
-
     fun triggerSync() {
         log.d { "Manual sync triggered" }
         viewModelScope.launch(Dispatchers.IO) {
@@ -98,8 +112,8 @@ class SettingsViewModel(
                 triggerSyncAction.syncNow()
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                log.e(e) { "Sync failed" }
+            } catch (_: Exception) {
+                log.e { "Sync failed" }
             }
         }
     }
@@ -113,17 +127,33 @@ class SettingsViewModel(
     }
 
     fun openNotificationSettings() {
-        checkNotificationPermission.openSettings()
+        if (notificationCapability != NotificationCapability.SUPPORTED || _notificationGranted.value) return
+        publishSettingsLaunchResult(
+            target = SettingsLaunchTarget.NOTIFICATION_SETTINGS,
+            result = checkNotificationPermission.openSettings(),
+        )
     }
 
     fun openExactReminderSettings() {
-        checkNotificationPermission.openExactReminderSettings()
+        if (
+            notificationCapability != NotificationCapability.SUPPORTED ||
+            _exactReminderStatus.value != ExactReminderPermissionStatus.NOT_GRANTED
+        ) return
+        publishSettingsLaunchResult(
+            target = SettingsLaunchTarget.EXACT_REMINDER_SETTINGS,
+            result = checkNotificationPermission.openExactReminderSettings(),
+        )
     }
+
+    fun consumeSettingsLaunchFailure(event: SettingsLaunchFailureEvent): Boolean =
+        _settingsLaunchFailure.compareAndSet(expect = event, update = null)
 
     fun recheckPermissions() {
         viewModelScope.launch(Dispatchers.IO) {
-            _notificationGranted.value = checkNotificationPermission()
-            _exactReminderStatus.value = checkNotificationPermission.exactReminderStatus()
+            if (notificationCapability == NotificationCapability.SUPPORTED) {
+                _notificationGranted.value = checkNotificationPermission()
+                _exactReminderStatus.value = checkNotificationPermission.exactReminderStatus()
+            }
             _calendarGranted.value = checkCalendarPermission() == CalendarPermissionStatus.GRANTED
         }
     }
@@ -146,9 +176,9 @@ class SettingsViewModel(
             } catch (e: CancellationException) {
                 if (!handedOff) resetExportPreparation()
                 throw e
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 if (handedOff) return@launch
-                log.e(e) { "CSV export failed" }
+                log.e { "CSV export failed" }
                 _exportResult.value = ExportResult.Error
                 resetExportPreparation()
             }
@@ -169,9 +199,9 @@ class SettingsViewModel(
             } catch (e: CancellationException) {
                 if (!handedOff) resetExportPreparation()
                 throw e
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 if (handedOff) return@launch
-                log.e(e) { "ICS export failed" }
+                log.e { "ICS export failed" }
                 _exportResult.value = ExportResult.Error
                 resetExportPreparation()
             }
@@ -201,8 +231,8 @@ class SettingsViewModel(
                 _clearLocalDataStatus.value = ClearLocalDataStatus.IDLE
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                log.e(e) { "Clear local data failed" }
+            } catch (_: Exception) {
+                log.e { "Clear local data failed" }
                 _clearLocalDataStatus.value = ClearLocalDataStatus.ERROR
             } finally {
                 if (_clearLocalDataStatus.value == ClearLocalDataStatus.CLEARING) {
@@ -214,6 +244,18 @@ class SettingsViewModel(
 
     fun clearLocalDataErrorShown() {
         _clearLocalDataStatus.value = ClearLocalDataStatus.IDLE
+    }
+
+    private fun publishSettingsLaunchResult(
+        target: SettingsLaunchTarget,
+        result: ExternalLaunchResult,
+    ) {
+        if (result == ExternalLaunchResult.SUCCESS) return
+        nextSettingsLaunchFailureId += 1
+        _settingsLaunchFailure.value = SettingsLaunchFailureEvent(
+            id = nextSettingsLaunchFailureId,
+            target = target,
+        )
     }
 }
 

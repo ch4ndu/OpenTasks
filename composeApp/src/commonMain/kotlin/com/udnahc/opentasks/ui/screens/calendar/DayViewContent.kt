@@ -71,6 +71,7 @@ internal fun DayViewContent(
     navBarHeight: Dp,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
+    timelineHourLabels: List<String> = EMPTY_CALENDAR_DAY_PROJECTION.timelineHourLabels,
 ) {
     val dimens = OpenTasksTheme.dimens
     val timeColumnWidth = dimens.calendarTimeColumnWidth
@@ -153,7 +154,7 @@ internal fun DayViewContent(
                             .fillMaxSize()
                             .verticalScroll(timeColumnScrollState),
                     ) {
-                        EMPTY_CALENDAR_DAY_PROJECTION.timelineHourLabels.forEach { hourLabel ->
+                        timelineHourLabels.forEach { hourLabel ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()

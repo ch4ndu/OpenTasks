@@ -7,19 +7,18 @@ import com.udnahc.opentasks.data.auth.canonicalizeAccountEndpoint
 import com.udnahc.opentasks.data.auth.isValidPocketBaseBinding
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.ktor.http.URLProtocol
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.lighthousegames.logging.logging
 
 private val log = logging("PocketBaseClientProvider")
 
 class PocketBaseClientProvider {
-    private var _client: PocketbaseClient? = null
-    val client: PocketbaseClient? get() = _client
-    private var _endpoint: PocketBaseEndpoint? = null
-    val endpoint: PocketBaseEndpoint? get() = _endpoint
-    private var _activeBinding: CacheBinding? = null
-    val activeBinding: CacheBinding? get() = _activeBinding
+    private val activeMetadataState = MutableStateFlow<PocketBaseClientMetadata?>(null)
+    val client: PocketbaseClient? get() = activeMetadataState.value?.client
+    val endpoint: PocketBaseEndpoint? get() = activeMetadataState.value?.endpoint
+    val activeBinding: CacheBinding? get() = activeMetadataState.value?.binding
 
-    val isConfigured: Boolean get() = _client != null
+    val isConfigured: Boolean get() = activeMetadataState.value != null
 
     fun configure(url: String) {
         val endpoint = parsePocketBaseEndpoint(url)
@@ -27,30 +26,45 @@ class PocketBaseClientProvider {
     }
 
     fun configure(endpoint: PocketBaseEndpoint) {
-        val activeBinding = _activeBinding
+        val activeBinding = activeMetadataState.value?.binding
         if (activeBinding != null) {
             if (activeBinding.canonicalEndpoint != endpoint.canonicalUrl) {
                 throw IllegalStateException("Cannot replace an active account client without a durable account transition")
             }
             return
         }
-        val previous = _client
         val candidate = createClient(endpoint)
-        _client = candidate
-        _endpoint = endpoint
-        _activeBinding = null
-        previous?.let(::releaseClient)
+        val candidateMetadata = metadataFor(candidate) ?: run {
+            releaseClient(candidate)
+            error("PocketBase candidate has no registered metadata")
+        }
+        val publication = publishConfiguredCandidate(candidateMetadata)
+        if (!publication.published) {
+            releaseClient(candidate)
+            val blockingBinding = publication.previous?.binding
+                ?: error("PocketBase candidate publication was rejected without an active binding")
+            if (blockingBinding.canonicalEndpoint != endpoint.canonicalUrl) {
+                throw IllegalStateException("Cannot replace an active account client without a durable account transition")
+            }
+            return
+        }
+        publication.previous?.client
+            ?.takeIf { it !== candidate }
+            ?.let(::releaseClient)
         log.d { "PocketBase client configured" }
     }
 
     fun createClient(url: String): PocketbaseClient = createClient(parsePocketBaseEndpoint(url))
 
-    internal fun createClient(endpoint: PocketBaseEndpoint): PocketbaseClient =
-        PocketbaseClient({
+    internal fun createClient(endpoint: PocketBaseEndpoint): PocketbaseClient {
+        val client = PocketbaseClient({
             protocol = endpoint.protocol
             host = endpoint.host
             port = endpoint.port
-        }).also { knownEndpoints[it] = endpoint }
+        })
+        registerClient(PocketBaseClientMetadata(client, endpoint, null))
+        return client
+    }
 
     /**
      * Creates an authenticated, owner-bound candidate without publishing it as
@@ -68,7 +82,7 @@ class PocketBaseClientProvider {
         val client = createClient(parsePocketBaseEndpoint(binding.canonicalEndpoint))
         try {
             client.authStore.save(token)
-            knownBindings[client] = binding
+            bindRegisteredClient(client, binding)
         } catch (error: Throwable) {
             releaseClient(client)
             throw error
@@ -110,75 +124,160 @@ class PocketBaseClientProvider {
             "PocketBase activation requires a valid remote cache binding"
         }
         val endpoint = parsePocketBaseEndpoint(binding.canonicalEndpoint)
-        val client = createClient(endpoint)
-        try {
-            client.authStore.save(token)
-            knownBindings[client] = binding
+        val client = createDetachedBoundClient(binding, token)
+        val candidateMetadata = try {
+            val metadata = metadataFor(client)
+                ?: error("PocketBase candidate has no registered metadata")
+            check(metadata.endpoint == endpoint && metadata.binding == binding) {
+                "PocketBase candidate metadata does not match the activation boundary"
+            }
+            metadata
         } catch (error: Throwable) {
             releaseClient(client)
             throw error
         }
-        val previous = _client
-        _client = client
-        _endpoint = endpoint
-        _activeBinding = binding
-        previous?.takeIf { it !== client }?.let(::releaseClient)
+        val previous = publishActive(candidateMetadata)
+        previous?.client?.takeIf { it !== client }?.let(::releaseClient)
         return client
     }
 
-    fun activeBoundary(): AccountBoundary? = _activeBinding?.let { binding ->
-        AccountBoundary(
-            canonicalEndpoint = binding.canonicalEndpoint,
-            serverInstanceId = binding.serverInstanceId,
-            accountId = binding.accountId,
-            capabilityVersion = binding.capabilityVersion,
-            boundaryEpoch = binding.boundaryEpoch,
-            mode = binding.mode,
-        )
+    fun activeClientMetadata(): PocketBaseClientMetadata? = activeMetadataState.value
+
+    fun activeBoundary(): AccountBoundary? = activeMetadataState.value?.boundary
+
+    fun requireActiveClientMetadata(client: PocketbaseClient): PocketBaseClientMetadata {
+        val metadata = activeMetadataState.value
+        if (metadata?.client !== client) {
+            throw IllegalStateException("PocketBase client is not the active account client")
+        }
+        if (metadata.binding == null) {
+            throw IllegalStateException("PocketBase client has no active authenticated account")
+        }
+        return metadata
     }
 
     fun requireActiveBinding(client: PocketbaseClient): CacheBinding {
-        if (_client !== client) {
-            throw IllegalStateException("PocketBase client is not the active account client")
-        }
-        return _activeBinding
-            ?: throw IllegalStateException("PocketBase client has no active authenticated account")
+        return requireActiveClientMetadata(client).binding
+            ?: error("Active PocketBase metadata has no authenticated binding")
     }
 
     fun disconnect() {
-        val client = _client
-        if (client != null) {
-            releaseClient(client)
-        } else {
-            _endpoint = null
-            _activeBinding = null
-        }
+        clearActiveClient()?.client?.let(::releaseClient)
     }
 
     private fun releaseClient(client: PocketbaseClient) {
-        val wasActive = _client === client
-        val hadEndpoint = knownEndpoints.remove(client) != null
-        val hadBinding = knownBindings.remove(client) != null
-        if (!wasActive && !hadEndpoint && !hadBinding) return
+        clearActiveClient(client)
+        if (unregisterClient(client)) client.httpClient.close()
+    }
 
-        if (wasActive) {
-            _client = null
-            _endpoint = null
-            _activeBinding = null
+    private fun publishConfiguredCandidate(candidate: PocketBaseClientMetadata): ActivePublication {
+        while (true) {
+            val current = activeMetadataState.value
+            if (current?.binding != null) return ActivePublication(published = false, previous = current)
+            if (activeMetadataState.compareAndSet(current, candidate)) {
+                return ActivePublication(published = true, previous = current)
+            }
         }
-        client.httpClient.close()
+    }
+
+    private fun publishActive(candidate: PocketBaseClientMetadata): PocketBaseClientMetadata? {
+        while (true) {
+            val current = activeMetadataState.value
+            if (activeMetadataState.compareAndSet(current, candidate)) return current
+        }
+    }
+
+    private fun clearActiveClient(): PocketBaseClientMetadata? {
+        while (true) {
+            val current = activeMetadataState.value ?: return null
+            if (activeMetadataState.compareAndSet(current, null)) return current
+        }
+    }
+
+    private fun clearActiveClient(client: PocketbaseClient) {
+        while (true) {
+            val current = activeMetadataState.value
+            if (current?.client !== client) return
+            if (activeMetadataState.compareAndSet(current, null)) return
+        }
     }
 
     companion object {
-        private val knownEndpoints = mutableMapOf<PocketbaseClient, PocketBaseEndpoint>()
-        private val knownBindings = mutableMapOf<PocketbaseClient, CacheBinding>()
+        private val registeredClients = MutableStateFlow<List<PocketBaseClientMetadata>>(emptyList())
+
+        private fun registerClient(metadata: PocketBaseClientMetadata) {
+            while (true) {
+                val current = registeredClients.value
+                check(current.none { it.client === metadata.client }) {
+                    "PocketBase client is already registered"
+                }
+                val updated = current + metadata
+                if (registeredClients.compareAndSet(current, updated)) return
+            }
+        }
+
+        private fun bindRegisteredClient(
+            client: PocketbaseClient,
+            binding: CacheBinding,
+        ): PocketBaseClientMetadata {
+            while (true) {
+                val current = registeredClients.value
+                val existing = current.firstOrNull { it.client === client }
+                    ?: error("PocketBase client is not registered")
+                val updatedMetadata = PocketBaseClientMetadata(
+                    client = existing.client,
+                    endpoint = existing.endpoint,
+                    binding = binding,
+                )
+                val updated = current.map { metadata ->
+                    if (metadata.client === client) updatedMetadata else metadata
+                }
+                if (registeredClients.compareAndSet(current, updated)) return updatedMetadata
+            }
+        }
+
+        private fun unregisterClient(client: PocketbaseClient): Boolean {
+            while (true) {
+                val current = registeredClients.value
+                if (current.none { it.client === client }) return false
+                val updated = current.filterNot { it.client === client }
+                if (registeredClients.compareAndSet(current, updated)) return true
+            }
+        }
+
+        /** One-read endpoint and binding metadata for active or detached clients. */
+        fun metadataFor(client: PocketbaseClient): PocketBaseClientMetadata? =
+            registeredClients.value.firstOrNull { it.client === client }
 
         /** The canonical endpoint used to construct a client, including detached candidates. */
-        fun endpointFor(client: PocketbaseClient): PocketBaseEndpoint? = knownEndpoints[client]
+        fun endpointFor(client: PocketbaseClient): PocketBaseEndpoint? = metadataFor(client)?.endpoint
 
         /** The owner boundary for the currently activated client, if any. */
-        fun bindingFor(client: PocketbaseClient): CacheBinding? = knownBindings[client]
+        fun bindingFor(client: PocketbaseClient): CacheBinding? = metadataFor(client)?.binding
     }
+
+    private data class ActivePublication(
+        val published: Boolean,
+        val previous: PocketBaseClientMetadata?,
+    )
+}
+
+class PocketBaseClientMetadata(
+    val client: PocketbaseClient,
+    val endpoint: PocketBaseEndpoint,
+    val binding: CacheBinding?,
+) {
+    val boundary: AccountBoundary?
+        get() = binding?.let { cacheBinding ->
+            AccountBoundary(
+                canonicalEndpoint = cacheBinding.canonicalEndpoint,
+                serverInstanceId = cacheBinding.serverInstanceId,
+                accountId = cacheBinding.accountId,
+                capabilityVersion = cacheBinding.capabilityVersion,
+                boundaryEpoch = cacheBinding.boundaryEpoch,
+                mode = cacheBinding.mode,
+            )
+        }
 }
 
 data class PocketBaseEndpoint(

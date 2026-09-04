@@ -72,14 +72,14 @@ class ImportIcsViewModel(
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                log.e(e) { "ICS import failed" }
+            } catch (_: Exception) {
+                log.e { "ICS import failed" }
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         error = ImportErrorState(
                             type = ImportErrorType.GENERIC,
-                            detail = e.message,
+                            detail = null,
                         ),
                     )
                 }
@@ -103,7 +103,7 @@ class ImportIcsViewModel(
                     } else {
                         ImportErrorType.GENERIC
                     },
-                    detail = detail,
+                    detail = null,
                 ),
             )
         }

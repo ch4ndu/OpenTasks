@@ -1,13 +1,18 @@
 package com.udnahc.opentasks.data.calendar
 
 import com.udnahc.opentasks.data.model.CalendarEvent
+import com.udnahc.opentasks.data.model.CalendarEventSourceKind
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.minus
 import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import org.lighthousegames.logging.logging
+import kotlin.time.Instant
 
 private val log = logging("IcsParser")
 
@@ -43,17 +48,17 @@ object IcsParser {
 
     private fun unfold(content: String): List<String> {
         val lines = content.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-        val result = mutableListOf<String>()
+        val result = mutableListOf<StringBuilder>()
         for (line in lines) {
             if (line.startsWith(" ") || line.startsWith("\t")) {
                 if (result.isNotEmpty()) {
-                    result[result.lastIndex] = result.last() + line.substring(1)
+                    result.last().append(line, 1, line.length)
                 }
             } else {
-                result.add(line)
+                result.add(StringBuilder(line))
             }
         }
-        return result
+        return result.map(StringBuilder::toString)
     }
 
     private fun extractCalendarName(lines: List<String>): String {
@@ -84,9 +89,9 @@ object IcsParser {
             val colonIdx = findPropertyColon(line)
             if (colonIdx < 0) continue
 
-            val fullKey = line.substring(0, colonIdx).uppercase()
+            val fullKey = line.substring(0, colonIdx)
             val value = line.substring(colonIdx + 1)
-            val propertyName = fullKey.split(";").first()
+            val propertyName = fullKey.substringBefore(";").trim().uppercase()
             val params = parseParams(fullKey)
 
             when (propertyName) {
@@ -100,12 +105,12 @@ object IcsParser {
                 "STATUS" -> status = value.trim().lowercase().replaceFirstChar { it.uppercase() }
                 "ORGANIZER" -> {
                     // Extract CN= display name if present, otherwise use the value (usually mailto:)
-                    val cn = params["CN"]?.removeSurrounding("\"")
+                    val cn = params["CN"]
                     organizer = cn ?: value.trim().removePrefix("mailto:").removePrefix("MAILTO:")
                 }
 
                 "ATTENDEE" -> {
-                    val cn = params["CN"]?.removeSurrounding("\"")
+                    val cn = params["CN"]
                     val name = cn ?: value.trim().removePrefix("mailto:").removePrefix("MAILTO:")
                     if (name.isNotBlank()) attendees.add(name)
                 }
@@ -113,14 +118,37 @@ object IcsParser {
         }
 
         if (summary.isBlank() || dtStart == null) return null
-        if (uid.isBlank()) uid = "no_uid_${summary.hashCode()}_${dtStart.first}"
+        val rawUid = uid.trim().ifBlank { null }
+        val legacyUid = rawUid ?: "no_uid_${summary.hashCode()}_${dtStart.first}"
+        val inclusiveEnd = dtEnd?.let { parsedEnd ->
+            if (!parsedEnd.second) {
+                parsedEnd.first
+            } else {
+                Instant.fromEpochMilliseconds(parsedEnd.first)
+                    .toLocalDateTime(TimeZone.currentSystemDefault())
+                    .date
+                    .minus(1, DateTimeUnit.DAY)
+                    .atStartOfDayIn(TimeZone.currentSystemDefault())
+                    .toEpochMilliseconds()
+                    .takeIf { it >= dtStart.first }
+            }
+        }
+        val occurrenceToken = if (dtStart.second) {
+            Instant.fromEpochMilliseconds(dtStart.first)
+                .toLocalDateTime(TimeZone.currentSystemDefault())
+                .date
+                .toEpochDays()
+                .toLong()
+        } else {
+            dtStart.first
+        }
 
         return CalendarEvent(
-            externalId = "ics_$uid",
+            externalId = "ics_$legacyUid",
             title = summary,
             description = description,
             startTimeUtcMillis = dtStart.first,
-            endTimeUtcMillis = dtEnd?.first,
+            endTimeUtcMillis = inclusiveEnd,
             calendarName = calendarName,
             isAllDay = dtStart.second,
             location = location,
@@ -128,6 +156,9 @@ object IcsParser {
             organizer = organizer,
             status = status,
             attendees = attendees,
+            sourceKind = CalendarEventSourceKind.ICS,
+            rawUid = rawUid,
+            occurrenceToken = occurrenceToken,
         )
     }
 
@@ -144,13 +175,39 @@ object IcsParser {
     }
 
     private fun parseParams(fullKey: String): Map<String, String> {
-        val parts = fullKey.split(";")
         val params = mutableMapOf<String, String>()
-        for (i in 1 until parts.size) {
-            val eqIdx = parts[i].indexOf('=')
-            if (eqIdx > 0) {
-                params[parts[i].substring(0, eqIdx).uppercase()] = parts[i].substring(eqIdx + 1)
+        var segmentStart = fullKey.indexOf(';')
+        if (segmentStart < 0) return params
+        segmentStart += 1
+        var inQuotes = false
+        var index = segmentStart
+
+        while (index <= fullKey.length) {
+            val atEnd = index == fullKey.length
+            if (!atEnd && fullKey[index] == '"') {
+                inQuotes = !inQuotes
             }
+            if (atEnd || (!inQuotes && fullKey[index] == ';')) {
+                val segment = fullKey.substring(segmentStart, index)
+                val eqIdx = segment.indexOf('=')
+                if (eqIdx > 0) {
+                    val name = segment.substring(0, eqIdx).trim().uppercase()
+                    if (name.isNotEmpty()) {
+                        val rawValue = segment.substring(eqIdx + 1).trim()
+                        params[name] = if (
+                            rawValue.length >= 2 &&
+                            rawValue.first() == '"' &&
+                            rawValue.last() == '"'
+                        ) {
+                            rawValue.substring(1, rawValue.lastIndex)
+                        } else {
+                            rawValue
+                        }
+                    }
+                }
+                segmentStart = index + 1
+            }
+            index += 1
         }
         return params
     }

@@ -39,6 +39,7 @@ import com.udnahc.opentasks.data.model.Attachment
 import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
 import com.udnahc.opentasks.ui.util.AttachmentImageContentMode
 import com.udnahc.opentasks.ui.util.LocalAttachmentImage
 import opentasks.composeapp.generated.resources.Res
@@ -145,19 +146,10 @@ private fun ExistingImageThumbnail(
             state = image.syncState,
             modifier = Modifier.align(Alignment.BottomStart).padding(dimens.paddingTiny),
         )
-        IconButton(
+        ThumbnailRemoveButton(
             onClick = onRemove,
-            modifier = Modifier.align(Alignment.TopEnd).size(dimens.touchTargetSmall),
-        ) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_close),
-                contentDescription = stringResource(Res.string.delete),
-                tint = Color.White,
-                modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(dimens.cornerSmall))
-                    .padding(dimens.paddingTiny),
-            )
-        }
+            modifier = Modifier.align(Alignment.TopEnd),
+        )
     }
 }
 
@@ -188,19 +180,32 @@ private fun PendingImageThumbnail(
             state = AttachmentSyncState.LOCAL_ONLY,
             modifier = Modifier.align(Alignment.BottomStart).padding(dimens.paddingTiny),
         )
-        IconButton(
+        ThumbnailRemoveButton(
             onClick = onRemove,
-            modifier = Modifier.align(Alignment.TopEnd).size(dimens.touchTargetSmall),
-        ) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_close),
-                contentDescription = stringResource(Res.string.delete),
-                tint = Color.White,
-                modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(dimens.cornerSmall))
-                    .padding(dimens.paddingTiny),
-            )
-        }
+            modifier = Modifier.align(Alignment.TopEnd),
+        )
+    }
+}
+
+@Composable
+private fun ThumbnailRemoveButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val dimens = OpenTasksTheme.dimens
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.minimumInteractiveTargetSize(),
+    ) {
+        Icon(
+            painter = painterResource(Res.drawable.ic_close),
+            contentDescription = stringResource(Res.string.delete),
+            tint = Color.White,
+            modifier = Modifier
+                .size(dimens.touchTargetSmall)
+                .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(dimens.cornerSmall))
+                .padding(dimens.paddingTiny),
+        )
     }
 }
 

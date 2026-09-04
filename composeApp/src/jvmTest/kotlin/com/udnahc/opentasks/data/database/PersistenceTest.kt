@@ -34,6 +34,7 @@ import com.udnahc.opentasks.data.repository.PostCommitWarningPhase
 import com.udnahc.opentasks.data.repository.TagRepositoryImpl
 import com.udnahc.opentasks.data.repository.TaskRepositoryImpl
 import com.udnahc.opentasks.data.sync.SyncTrigger
+import com.udnahc.opentasks.data.sync.SyncAdapterException
 import com.udnahc.opentasks.data.sync.SyncDegradedException
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.SyncService
@@ -946,7 +947,7 @@ class PersistenceTest {
     }
 
     @Test
-    fun attachmentPushHardDeletesNeverSyncedTombstoneBeforeParentGate() = runTest {
+    fun attachmentPushRetainsNeverSyncedTombstoneWhenRemoteAbsenceCannotBeProven() = runTest {
         database.attachmentDao().insert(
             testAttachment(
                 id = "deleted-local-only",
@@ -963,9 +964,11 @@ class PersistenceTest {
             fileStorage = FakeAttachmentFileStorage(),
         )
 
-        adapter.pushAll(PocketBaseClientProvider().createClient("http://localhost:8090"))
+        assertFailsWith<SyncAdapterException> {
+            adapter.pushAll(PocketBaseClientProvider().createClient("http://localhost:8090"))
+        }
 
-        assertNull(database.attachmentDao().findByIdAnyState("deleted-local-only"))
+        assertNotNull(database.attachmentDao().findByIdAnyState("deleted-local-only"))
     }
 
     @Test

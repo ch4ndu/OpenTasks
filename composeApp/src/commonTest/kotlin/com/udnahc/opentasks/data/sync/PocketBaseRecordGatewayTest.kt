@@ -271,7 +271,7 @@ class PocketBaseRecordGatewayTest {
     }
 
     @Test
-    fun `failure summary exposes only validation field names and codes`() {
+    fun `failure summary exposes only validation structure`() {
         val rawBody = """
             {
               "message":"must-not-be-logged",
@@ -283,7 +283,7 @@ class PocketBaseRecordGatewayTest {
         """.trimIndent()
 
         assertEquals(
-            "validation=content:validation_invalid_value,localUpdatedAt:validation_invalid_number",
+            "validation=present,count=2",
             safePocketBaseFailureSummary(rawBody),
         )
         assertEquals("validation=unavailable", safePocketBaseFailureSummary("not-json"))

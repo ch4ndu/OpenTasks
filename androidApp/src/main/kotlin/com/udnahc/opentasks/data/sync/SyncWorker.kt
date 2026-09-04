@@ -55,8 +55,8 @@ class SyncWorker(
             Result.success()
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            log.e(e) { "SyncWorker failed, retrying" }
+        } catch (_: Exception) {
+            log.e { "SyncWorker failed, retrying" }
             Result.retry()
         }
     }

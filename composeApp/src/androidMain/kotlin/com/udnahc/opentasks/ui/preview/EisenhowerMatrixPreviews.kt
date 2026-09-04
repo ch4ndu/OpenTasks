@@ -24,7 +24,7 @@ private fun EisenhowerMatrixScreenPreview() {
                 MatrixViewModel.PriorityProjection(
                     tasks = tasks,
                     visibleTasks = tasks.take(6),
-                    hasMore = tasks.size > 6,
+                    totalCount = tasks.size,
                 )
             },
             onTaskClick = {},
@@ -44,7 +44,12 @@ private fun QuadrantCardPreview() {
             color = PriorityHigh,
             priorityProjection = MatrixViewModel.PriorityProjection(
                 tasks = PreviewSampleData.sampleTasks.filter { it.priority == TaskPriority.HIGH },
-                visibleTasks = PreviewSampleData.sampleTasks.filter { it.priority == TaskPriority.HIGH }.take(6),
+                visibleTasks = PreviewSampleData.sampleTasks
+                    .filter { it.priority == TaskPriority.HIGH }
+                    .take(6),
+                totalCount = PreviewSampleData.sampleTasks.count {
+                    it.priority == TaskPriority.HIGH
+                },
             ),
             onTaskClick = {},
             onToggleComplete = {},

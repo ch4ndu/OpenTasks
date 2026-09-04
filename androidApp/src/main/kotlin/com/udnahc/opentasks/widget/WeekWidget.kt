@@ -21,21 +21,16 @@ import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.WidgetAccountGate
+import com.udnahc.opentasks.domain.time.LocalizedDateTimeFormatter
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.lighthousegames.logging.logging
+import kotlin.coroutines.cancellation.CancellationException
 
 private val log = logging("WeekWidget")
 
 private val WEEK_REFRESH_TRIGGER_KEY = longPreferencesKey("week_refresh_trigger")
 private val WEEK_OFFSET_KEY = intPreferencesKey("week_offset")
-
-private val MONTH_NAMES_SHORT = arrayOf(
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-)
-
-private val DAY_OF_WEEK_NAMES = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
 data class WeekDay(
     val year: Int,
@@ -102,8 +97,10 @@ class WeekWidget : GlanceAppWidget() {
                     refreshAllWidgetsWithinBoundary(context, boundary)
                 }
                 if (refreshed == null) log.d { "Skipped week widget refresh without an active cache boundary" }
-            } catch (e: Exception) {
-                log.e(e) { "Failed to refresh all week widgets" }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                log.e { "Week widget family refresh failed" }
             }
         }
 
@@ -113,32 +110,44 @@ class WeekWidget : GlanceAppWidget() {
         ) {
             val manager = GlanceAppWidgetManager(context)
             manager.getGlanceIds(WeekWidget::class.java).forEach { glanceId ->
-                updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-                    prefs.toMutablePreferences().apply {
-                        WidgetBoundaryMarker.write(this, boundary)
-                        this[WEEK_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
-                            this[WEEK_REFRESH_TRIGGER_KEY] ?: 0L,
-                            System.currentTimeMillis(),
-                        )
+                try {
+                    updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                        prefs.toMutablePreferences().apply {
+                            WidgetBoundaryMarker.write(this, boundary)
+                            this[WEEK_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
+                                this[WEEK_REFRESH_TRIGGER_KEY] ?: 0L,
+                                System.currentTimeMillis(),
+                            )
+                        }
                     }
+                    instance.update(context, glanceId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    log.e { "Week widget instance refresh failed" }
                 }
-                instance.update(context, glanceId)
             }
         }
 
         internal suspend fun blankAllWidgets(context: Context) {
             val manager = GlanceAppWidgetManager(context)
             manager.getGlanceIds(WeekWidget::class.java).forEach { glanceId ->
-                updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-                    prefs.toMutablePreferences().apply {
-                        WidgetBoundaryMarker.clear(this)
-                        this[WEEK_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
-                            this[WEEK_REFRESH_TRIGGER_KEY] ?: 0L,
-                            System.currentTimeMillis(),
-                        )
+                try {
+                    updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                        prefs.toMutablePreferences().apply {
+                            WidgetBoundaryMarker.clear(this)
+                            this[WEEK_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
+                                this[WEEK_REFRESH_TRIGGER_KEY] ?: 0L,
+                                System.currentTimeMillis(),
+                            )
+                        }
                     }
+                    instance.update(context, glanceId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    log.e { "Week widget instance blanking failed" }
                 }
-                instance.update(context, glanceId)
             }
         }
 
@@ -165,6 +174,7 @@ class WeekWidget : GlanceAppWidget() {
     }
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val dateTimeFormatter = LocalizedDateTimeFormatter(context)
         val appWidgetId = try {
             GlanceAppWidgetManager(context).getAppWidgetId(id)
         } catch (e: Exception) {
@@ -207,14 +217,15 @@ class WeekWidget : GlanceAppWidget() {
                                     year = extractYear(dayMillis),
                                     month = extractMonth(dayMillis),
                                     dayOfMonth = extractDay(dayMillis),
-                                    dayOfWeekLabel = DAY_OF_WEEK_NAMES[i],
+                                    dayOfWeekLabel = dateTimeFormatter.formatShortWeekday(dayMillis),
                                     tasks = tasksByDayIndex[i].orEmpty(),
                                 )
                             }
 
-                            val startDay = days.first()
-                            val endDay = days.last()
-                            val weekLabel = formatWeekLabel(startDay, endDay)
+                            val weekLabel = dateTimeFormatter.formatWeekRange(
+                                weekStartMillis,
+                                weekStartMillis + 6 * MILLIS_PER_DAY,
+                            )
 
                             log.v { "Week widget $appWidgetId: $weekLabel, offset=$weekOffset" }
                             WeekWidgetData.Ready(
@@ -265,15 +276,5 @@ class WeekWidget : GlanceAppWidget() {
                 }
             }
         }
-    }
-}
-
-private fun formatWeekLabel(start: WeekDay, end: WeekDay): String {
-    val startMonth = MONTH_NAMES_SHORT[start.month - 1]
-    return if (start.month == end.month) {
-        "$startMonth ${start.dayOfMonth} - ${end.dayOfMonth}"
-    } else {
-        val endMonth = MONTH_NAMES_SHORT[end.month - 1]
-        "$startMonth ${start.dayOfMonth} - $endMonth ${end.dayOfMonth}"
     }
 }

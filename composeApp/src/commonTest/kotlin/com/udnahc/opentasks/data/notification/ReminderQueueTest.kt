@@ -84,7 +84,7 @@ class ReminderQueueTest {
         assertAccepted(ReminderCommand.COUNTDOWN_TAP, countdown)
         assertAccepted(ReminderCommand.COUNTDOWN_DELIVERY, countdown)
 
-        assertRejectedFields(ReminderCommand.MARK_DONE, ongoing)
+        assertAccepted(ReminderCommand.MARK_DONE, ongoing)
         assertRejectedFields(ReminderCommand.TASK_TAP, countdown)
         assertRejectedFields(ReminderCommand.GOT_IT, task)
         assertRejectedFields(ReminderCommand.SHEET_DISMISS, countdown)

@@ -7,9 +7,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -19,31 +23,35 @@ actual fun rememberFileExportLauncher(
 ): (FileExportRequest) -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val currentOnResult = rememberUpdatedState(onResult)
     var pendingCsv by remember { mutableStateOf<FileExportRequest?>(null) }
     var pendingIcs by remember { mutableStateOf<FileExportRequest?>(null) }
 
     fun writePending(request: FileExportRequest?, uri: android.net.Uri?) {
         if (uri == null) {
-            onResult(FileExportResult.Cancelled)
+            currentOnResult.value(FileExportResult.Cancelled)
             return
         }
         if (request == null) {
-            onResult(FileExportResult.Error("Missing export content"))
+            currentOnResult.value(FileExportResult.Error())
             return
         }
         scope.launch {
-            val result = runCatching {
+            try {
                 withContext(Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri, "w")?.bufferedWriter()?.use { writer ->
                         writer.write(request.content)
                         writer.flush()
                     } ?: error("Unable to open the selected destination")
                 }
-            }.fold(
-                onSuccess = { FileExportResult.Completed },
-                onFailure = { FileExportResult.Error(it.message) },
-            )
-            onResult(result)
+                currentCoroutineContext().ensureActive()
+                currentOnResult.value(FileExportResult.Completed)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                currentCoroutineContext().ensureActive()
+                currentOnResult.value(FileExportResult.Error())
+            }
         }
     }
 

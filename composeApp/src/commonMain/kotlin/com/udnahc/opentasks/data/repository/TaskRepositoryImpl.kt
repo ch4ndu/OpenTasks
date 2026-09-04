@@ -136,6 +136,9 @@ class TaskRepositoryImpl(
     override suspend fun getTasksWithDeadlines(): List<Task> =
         withContext(ioDispatcher) { taskDao.getTasksWithDeadlines() }
 
+    override suspend fun getAllTasksForReminderReconciliationUtc(): List<Task> =
+        withContext(ioDispatcher) { taskDao.getAllTasksOnce() }
+
     /** Returns a single task with raw UTC timestamps for notification scheduling. */
     override suspend fun getTaskByIdUtc(id: String): Task? =
         withContext(ioDispatcher) { taskDao.getTaskById(id) }

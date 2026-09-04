@@ -26,6 +26,9 @@ interface TaskRepository {
     suspend fun deleteGraph(id: String): CommittedMutation<TaskGraphDeletionResult>
     suspend fun getTasksWithDeadlines(): List<Task>
 
+    /** Returns every task row with raw UTC timestamps for reminder reconciliation. */
+    suspend fun getAllTasksForReminderReconciliationUtc(): List<Task>
+
     /** Returns task with raw UTC timestamps for notification scheduling. */
     suspend fun getTaskByIdUtc(id: String): Task?
 

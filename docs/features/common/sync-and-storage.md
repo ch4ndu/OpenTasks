@@ -8,11 +8,11 @@ The first multi-user release supports two pre-created PocketBase accounts. Every
 
 ## Local Storage
 
-The shared database is `AppDatabase`, backed by Room and `BundledSQLiteDriver`. Entities include tasks, categories, notes, tags, task-tag assignments, app settings, countdowns, and attachments.
+The shared database is `AppDatabase`, backed by Room and `BundledSQLiteDriver`. Entities include tasks, categories, notes, tags, task-tag assignments, app settings, countdowns, attachments, and the attachment file-cleanup ledger.
 
 Repositories wrap DAOs for normal app reads and writes. Repositories convert between local app timestamps and UTC database timestamps. DAOs are used directly only at explicit boundary layers such as sync and Android widgets.
 
-Schema changes require explicit Room migrations. The current Room schema is version 13. Account ownership does not add an account column to every local entity; one durable `CacheBinding` authorizes the installation's single active cache. Its mode is either `LOCAL_ONLY`, using the reserved local owner marker and no server identity, or `POCKETBASE`, using canonical endpoint/server/account/capability identity. Both modes carry a positive boundary epoch.
+Schema changes require explicit Room migrations. The current Room schema is version 14. Account ownership does not add an account column to every local entity; one durable `CacheBinding` authorizes the installation's single active cache. Its mode is either `LOCAL_ONLY`, using the reserved local owner marker and no server identity, or `POCKETBASE`, using canonical endpoint/server/account/capability identity. Both modes carry a positive boundary epoch.
 
 ## Soft Deletes
 

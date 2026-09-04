@@ -21,6 +21,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -29,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.text.KeyboardActions
@@ -43,6 +45,7 @@ import com.udnahc.opentasks.data.auth.LocalServerReplacementPreview
 import com.udnahc.opentasks.data.model.TextSizePreference
 import com.udnahc.opentasks.data.model.ThemeMode
 import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
+import com.udnahc.opentasks.data.notification.NotificationCapability
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
@@ -53,6 +56,8 @@ import com.udnahc.opentasks.viewmodel.AccountOperation
 import com.udnahc.opentasks.viewmodel.AccountUiError
 import com.udnahc.opentasks.viewmodel.ExportResult
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
+import com.udnahc.opentasks.viewmodel.SettingsLaunchFailureEvent
+import com.udnahc.opentasks.viewmodel.SettingsLaunchTarget
 import com.udnahc.opentasks.viewmodel.SyncStatus
 import com.udnahc.opentasks.viewmodel.displayLabel
 import opentasks.composeapp.generated.resources.Res
@@ -116,12 +121,15 @@ import opentasks.composeapp.generated.resources.replacement_preview_changed
 import opentasks.composeapp.generated.resources.loading
 import opentasks.composeapp.generated.resources.not_configured
 import opentasks.composeapp.generated.resources.notifications
+import opentasks.composeapp.generated.resources.external_launch_failed
+import opentasks.composeapp.generated.resources.not_supported
 import opentasks.composeapp.generated.resources.permission_granted
 import opentasks.composeapp.generated.resources.permission_not_granted
 import opentasks.composeapp.generated.resources.permissions
 import opentasks.composeapp.generated.resources.pocketbase_url
 import opentasks.composeapp.generated.resources.pocketbase_url_hint
 import opentasks.composeapp.generated.resources.save
+import opentasks.composeapp.generated.resources.retry
 import opentasks.composeapp.generated.resources.settings
 import opentasks.composeapp.generated.resources.sync
 import opentasks.composeapp.generated.resources.syncing
@@ -138,6 +146,7 @@ import opentasks.composeapp.generated.resources.notes
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -166,12 +175,14 @@ fun SettingsScreen(
     val notificationGranted by viewModel.notificationGranted.collectAsState()
     val exactReminderStatus by viewModel.exactReminderStatus.collectAsState()
     val calendarGranted by viewModel.calendarGranted.collectAsState()
+    val settingsLaunchFailure by viewModel.settingsLaunchFailure.collectAsState()
+    val notificationCapability = viewModel.notificationCapability
 
     val exportResult by viewModel.exportResult.collectAsState()
     val exportInProgress by viewModel.exportInProgress.collectAsState()
     val clearLocalDataStatus by viewModel.clearLocalDataStatus.collectAsState()
 
-    val requestNotification = rememberNotificationPermissionLauncher { granted ->
+    val requestNotification = rememberNotificationPermissionLauncher {
         viewModel.recheckPermissions()
     }
     val requestCalendar = rememberCalendarPermissionLauncher { granted ->
@@ -192,8 +203,10 @@ fun SettingsScreen(
         themePreference = themePreference,
         textSizePreference = textSizePreference,
         notificationGranted = notificationGranted,
+        notificationCapability = notificationCapability,
         exactReminderStatus = exactReminderStatus,
         calendarGranted = calendarGranted,
+        settingsLaunchFailure = settingsLaunchFailure,
         exportResult = exportResult,
         exportInProgress = exportInProgress,
         clearLocalDataStatus = clearLocalDataStatus,
@@ -206,9 +219,18 @@ fun SettingsScreen(
         onThemeChanged = { viewModel.saveThemePreference(it) },
         onTextSizeChanged = { viewModel.saveTextSizePreference(it) },
         onRequestNotificationPermission = {
-            requestNotification()
+            if (notificationCapability == NotificationCapability.SUPPORTED) {
+                requestNotification()
+            }
         },
         onRequestExactReminderSettings = { viewModel.openExactReminderSettings() },
+        onSettingsLaunchFailureConsumed = viewModel::consumeSettingsLaunchFailure,
+        onRetrySettingsLaunch = { target ->
+            when (target) {
+                SettingsLaunchTarget.NOTIFICATION_SETTINGS -> viewModel.openNotificationSettings()
+                SettingsLaunchTarget.EXACT_REMINDER_SETTINGS -> viewModel.openExactReminderSettings()
+            }
+        },
         onRequestCalendarPermission = requestCalendar,
         onImportCalendar = onImportCalendar,
         onImportIcs = onImportIcs,
@@ -240,8 +262,10 @@ internal fun SettingsContent(
     themePreference: ThemeMode = ThemeMode.SYSTEM,
     textSizePreference: TextSizePreference = TextSizePreference.SMALL,
     notificationGranted: Boolean = true,
+    notificationCapability: NotificationCapability = NotificationCapability.SUPPORTED,
     exactReminderStatus: ExactReminderPermissionStatus = ExactReminderPermissionStatus.NOT_REQUIRED,
     calendarGranted: Boolean = false,
+    settingsLaunchFailure: SettingsLaunchFailureEvent? = null,
     exportResult: ExportResult = ExportResult.Idle,
     exportInProgress: Boolean = false,
     clearLocalDataStatus: ClearLocalDataStatus = ClearLocalDataStatus.IDLE,
@@ -255,6 +279,8 @@ internal fun SettingsContent(
     onTextSizeChanged: (TextSizePreference) -> Unit = {},
     onRequestNotificationPermission: () -> Unit = {},
     onRequestExactReminderSettings: () -> Unit = {},
+    onSettingsLaunchFailureConsumed: (SettingsLaunchFailureEvent) -> Boolean = { true },
+    onRetrySettingsLaunch: (SettingsLaunchTarget) -> Unit = {},
     onRequestCalendarPermission: () -> Unit = {},
     onImportCalendar: () -> Unit = {},
     onImportIcs: () -> Unit = {},
@@ -280,6 +306,7 @@ internal fun SettingsContent(
     var showClearLocalDataConfirm by remember { mutableStateOf(false) }
     var showConnectToPocketBase by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
     val accountControls = accountControlAvailability(currentAccount, isLocalOnly, accountOperation)
 
     LaunchedEffect(replacementPreview) {
@@ -309,6 +336,20 @@ internal fun SettingsContent(
         if (clearLocalDataStatus == ClearLocalDataStatus.ERROR) {
             snackbarHostState.showSnackbar(getString(Res.string.clear_local_data_error))
             onClearLocalDataErrorShown()
+        }
+    }
+
+    LaunchedEffect(settingsLaunchFailure) {
+        val failure = settingsLaunchFailure ?: return@LaunchedEffect
+        if (!onSettingsLaunchFailureConsumed(failure)) return@LaunchedEffect
+        snackbarScope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = getString(Res.string.external_launch_failed),
+                actionLabel = getString(Res.string.retry),
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                onRetrySettingsLaunch(failure.target)
+            }
         }
     }
 
@@ -357,27 +398,45 @@ internal fun SettingsContent(
                 SettingsCategoryHeader(stringResource(Res.string.permissions))
             }
             item(key = "perm_notifications") {
+                val notificationSupported = notificationCapability == NotificationCapability.SUPPORTED
                 SettingsRow(
                     title = stringResource(Res.string.notifications),
-                    summary = if (notificationGranted) stringResource(Res.string.permission_granted)
-                    else stringResource(Res.string.permission_not_granted),
-                    onClick = { if (!notificationGranted) onRequestNotificationPermission() },
+                    summary = when {
+                        !notificationSupported -> stringResource(Res.string.not_supported)
+                        notificationGranted -> stringResource(Res.string.permission_granted)
+                        else -> stringResource(Res.string.permission_not_granted)
+                    },
+                    onClick = {
+                        if (notificationSupported && !notificationGranted) {
+                            onRequestNotificationPermission()
+                        }
+                    },
+                    enabled = notificationSupported,
                 )
             }
             item(key = "perm_exact_reminders") {
-                val exactSummary = when (exactReminderStatus) {
-                    ExactReminderPermissionStatus.GRANTED -> stringResource(Res.string.exact_reminder_available)
-                    ExactReminderPermissionStatus.NOT_GRANTED -> stringResource(Res.string.exact_reminder_permission_needed)
-                    ExactReminderPermissionStatus.NOT_REQUIRED -> stringResource(Res.string.exact_reminder_not_required)
+                val notificationSupported = notificationCapability == NotificationCapability.SUPPORTED
+                val exactSummary = if (!notificationSupported) {
+                    stringResource(Res.string.not_supported)
+                } else {
+                    when (exactReminderStatus) {
+                        ExactReminderPermissionStatus.GRANTED -> stringResource(Res.string.exact_reminder_available)
+                        ExactReminderPermissionStatus.NOT_GRANTED -> stringResource(Res.string.exact_reminder_permission_needed)
+                        ExactReminderPermissionStatus.NOT_REQUIRED -> stringResource(Res.string.exact_reminder_not_required)
+                    }
                 }
                 SettingsRow(
                     title = stringResource(Res.string.exact_reminder_timing),
                     summary = exactSummary,
                     onClick = {
-                        if (exactReminderStatus == ExactReminderPermissionStatus.NOT_GRANTED) {
+                        if (
+                            notificationSupported &&
+                            exactReminderStatus == ExactReminderPermissionStatus.NOT_GRANTED
+                        ) {
                             onRequestExactReminderSettings()
                         }
                     },
+                    enabled = notificationSupported,
                 )
             }
             item(key = "perm_calendar") {

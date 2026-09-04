@@ -91,14 +91,16 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     ): Record?
 
     /** Production clients always have a canonical endpoint and therefore use guarded HTTP writes. */
-    open fun recordGateway(client: PocketbaseClient): PocketBaseRecordGateway =
-        PocketBaseRecordGatewayFactory().create(
+    open fun recordGateway(client: PocketbaseClient): PocketBaseRecordGateway {
+        val metadata = PocketBaseClientProvider.metadataFor(client)
+            ?: error("PocketBase client has no registered metadata")
+        return PocketBaseRecordGatewayFactory().create(
             client,
-            PocketBaseClientProvider.endpointFor(client)
-                ?: error("PocketBase client has no canonical endpoint"),
-            PocketBaseClientProvider.bindingFor(client)
+            metadata.endpoint,
+            metadata.binding
                 ?: error("PocketBase client has no active authenticated account"),
         )
+    }
 
     /** Only in-memory test adapters may opt into the legacy SDK fake seam. */
     protected open fun allowsTestOnlyLegacySdkWrites(): Boolean = false
@@ -136,6 +138,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
      */
     protected suspend fun fetchAllRecordsThroughGateway(gateway: PocketBaseRecordGateway): List<Record> {
         val rows = mutableListOf<Record>()
+        val pagination = PocketBasePaginationGuard(PAGE_SIZE)
         var page = 1
         var totalPages: Int
         do {
@@ -144,6 +147,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 ?: throw SyncAdapterException(
                     "Unable to fetch $collectionName through the owner-scoped gateway (HTTP ${response.status.value})",
                 )
+            pagination.accept(page, result)
             rows += result.items.map { recordFromJson(it) }
             totalPages = result.totalPages
             page += 1
@@ -193,7 +197,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                     if (result == PushResolution.Pushed) {
                         markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
                     } else if (result == PushResolution.Failed) {
-                        failures += SyncAdapterException("Failed to update $collectionName $entityLocalId")
+                        failures += SyncAdapterException("Failed to update a $collectionName record")
                     }
                 } else {
                     when (createOrRecover(pass, entityLocalId, entityUpdatedAt, body)) {
@@ -201,13 +205,13 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                         markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
                         }
                         PushResolution.RemoteWon -> Unit
-                        PushResolution.Failed -> failures += SyncAdapterException("Failed to create $collectionName $entityLocalId")
+                        PushResolution.Failed -> failures += SyncAdapterException("Failed to create a $collectionName record")
                     }
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 e.rethrowSyncAuthenticationRejected()
-                log.e(e) { "Failed to push $collectionName ${localId(entity)}" }
+                log.e { "Failed to push a $collectionName record" }
                 failures += e
             }
         }
@@ -305,15 +309,16 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                     if (skipRemoteRecordSilently(record)) continue
                     val validationMessage = validateRemoteRecord(record)
                     if (validationMessage != null) {
-                        log.w { validationMessage }
-                        degradedMessages += validationMessage
+                        val message = "Remote $collectionName record failed validation"
+                        log.w { message }
+                        degradedMessages += message
                         continue
                     }
                     when (mergeRemoteAndValidate(pass, record)) {
                         RemoteMergeResult.Applied,
                         RemoteMergeResult.KeptLocal -> Unit
                         RemoteMergeResult.MissingParent -> {
-                            val message = "Skipping orphan $collectionName ${recordLocalId(record)}: missing local parent"
+                            val message = "Skipping orphan $collectionName record with a missing local parent"
                             log.w { message }
                             degradedMessages += message
                         }
@@ -341,10 +346,10 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                     .map(::localId)
                     .filterNot(remoteIds::contains)
                     .toSet()
-                missingCandidateIds.forEach { localId ->
-                    log.w { "Recovering missing $collectionName $localId: server row absent, marking unsynced for recreation" }
-                }
                 if (missingCandidateIds.isNotEmpty()) {
+                    log.w {
+                        "Recovering ${missingCandidateIds.size} missing $collectionName record(s) for recreation"
+                    }
                     recoverMissingRowsAtWriterBoundary(pass, missingCandidateIds)
                 }
             }
@@ -358,7 +363,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             throw e
         } catch (e: Exception) {
             e.rethrowSyncAuthenticationRejected()
-            log.e(e) { "Failed to pull $collectionName" }
+            log.e { "Failed to pull $collectionName" }
             throw SyncAdapterException("Failed to pull $collectionName", e)
         }
     }
@@ -389,15 +394,15 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
 
             val current = getById(recordLocalId(record))
                 ?: throw SyncDegradedException(
-                    "$collectionName ${recordLocalId(record)} disappeared while validating an equal-timestamp remote row",
+                    "$collectionName record disappeared while validating an equal-timestamp remote row",
                 )
             when {
                 updatedAt(current) > recordUpdatedAt(record) -> Unit
                 updatedAt(current) < recordUpdatedAt(record) -> throw SyncDegradedException(
-                    "$collectionName ${recordLocalId(record)} changed while validating a remote row",
+                    "$collectionName record changed while validating a remote row",
                 )
                 !normalizedPayloadEquals(current, remote) -> throw SyncDegradedException(
-                    "$collectionName ${recordLocalId(record)} has an equal-timestamp divergent payload",
+                    "$collectionName record has an equal-timestamp divergent payload",
                 )
             }
         }
@@ -439,9 +444,8 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         return try {
             recordGateway(client)
         } catch (error: IllegalStateException) {
-            if (PocketBaseClientProvider.endpointFor(client) == null ||
-                PocketBaseClientProvider.bindingFor(client) == null
-            ) {
+            val metadata = PocketBaseClientProvider.metadataFor(client)
+            if (metadata == null || metadata.binding == null) {
                 null
             } else {
                 throw error
@@ -483,7 +487,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         val existing = runCatching { findRecordByLocalId(client, localId) }
             .onFailure { lookupError ->
                 if (lookupError is CancellationException) throw lookupError
-                log.e(lookupError) { "Test-only localId lookup failed for $collectionName $localId" }
+                log.e { "Test-only local-id lookup failed for $collectionName" }
             }
             .getOrNull()
             ?: return PushResolution.Failed
@@ -506,7 +510,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 updateRecord(client, recoveredPbId, body)
             }.onFailure { retryError ->
                 if (retryError is CancellationException) throw retryError
-                log.e(retryError) { "Test-only recovered update failed for $collectionName $localId" }
+                log.e { "Test-only recovered update failed for $collectionName" }
             }.fold(
                 onSuccess = {
                     updatePbIdSafely(localId, recoveredPbId)
@@ -550,11 +554,11 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             created.getOrNull()?.id?.let { updatePbIdSafely(localId, it) }
             return PushResolution.Pushed
         }
-        log.w { "Create failed for $collectionName $localId; looking up existing server row by localId" }
+        log.w { "Create failed for $collectionName; looking up an existing server row by local id" }
         val existing = runCatching { findRecordByLocalId(client, localId) }
             .onFailure {
                 if (it is CancellationException) throw it
-                log.e(it) { "Failed localId lookup after create failure for $collectionName $localId" }
+                log.e { "Local-id lookup after create failure failed for $collectionName" }
             }
             .getOrNull()
             ?: return PushResolution.Failed
@@ -571,7 +575,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 updateRecord(client, serverId, body)
             }.onFailure {
                 if (it is CancellationException) throw it
-                log.e(it) { "Test-only SDK update failed for $collectionName $localId after create conflict" }
+                log.e { "Test-only SDK update failed for $collectionName after a create conflict" }
             }.fold(
                 onSuccess = {
                     updatePbIdSafely(localId, serverId)
@@ -764,11 +768,11 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         try {
             val changed = markSyncedIfUnchanged(localId, updatedAt, isDeleted)
             if (changed == 0) {
-                log.w { "Skipped markSynced for $collectionName $localId: local row changed during push" }
+                log.w { "Skipped mark-synced for $collectionName because the local row changed during push" }
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            log.w(e) { "Failed to markSynced for $collectionName $localId (will retry)" }
+            log.w { "Failed to mark a $collectionName record as synced; it will be retried" }
         }
     }
 
@@ -780,7 +784,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             updatePbId(localId, pbId)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            log.e(e) { "Failed to save pbId for $collectionName $localId" }
+            log.e { "Failed to save the remote id for a $collectionName record" }
         }
     }
 

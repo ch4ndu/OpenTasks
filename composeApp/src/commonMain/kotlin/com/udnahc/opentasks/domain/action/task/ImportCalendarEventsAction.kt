@@ -2,8 +2,6 @@ package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
-import com.udnahc.opentasks.data.extensions.formatDateShort
-import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.CalendarEvent
@@ -15,6 +13,8 @@ import com.udnahc.opentasks.data.repository.TagRepository
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.domain.action.tag.AddTagAction
 import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
+import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
+import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.calendar_import_all_day_event
 import opentasks.composeapp.generated.resources.calendar_import_calendar_name
@@ -31,6 +31,7 @@ class ImportCalendarEventsAction(
     private val scheduleTaskRemindersAction: ScheduleTaskRemindersAction,
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
     internal val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
+    private val dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
 ) {
     private val taskWriteCoordinator = TaskWriteCoordinator(taskRepository)
 
@@ -59,11 +60,21 @@ class ImportCalendarEventsAction(
             val now = localNow()
             var importedCount = 0
             val importedTaskIds = mutableListOf<String>()
+            val identityBatch = ImportedIdentityBatch()
+            val consumedLegacyAliases = mutableSetOf<String>()
 
             for (event in events) {
-                // Skip duplicates
-                if (taskRepository.getTaskByExternalId(event.externalId) != null) {
+                val identity = identityBatch.nextCalendar(event)
+                if (taskRepository.getTaskByExternalId(identity.canonicalId) != null) {
                     log.v { "Skipping duplicate calendar event" }
+                    continue
+                }
+                val legacyMatch = identity.legacyAlias != identity.canonicalId &&
+                        identity.legacyAlias !in consumedLegacyAliases &&
+                        taskRepository.getTaskByExternalId(identity.legacyAlias) != null
+                if (legacyMatch) {
+                    consumedLegacyAliases.add(identity.legacyAlias)
+                    log.v { "Skipping legacy calendar event duplicate" }
                     continue
                 }
 
@@ -77,7 +88,7 @@ class ImportCalendarEventsAction(
                     deadline = utcToLocal(event.startTimeUtcMillis),
                     endDeadline = event.endTimeUtcMillis?.let { utcToLocal(it) },
                     isAllDay = event.isAllDay,
-                    sourceExternalId = event.externalId,
+                    sourceExternalId = identity.canonicalId,
                     categoryId = category.id,
                     location = event.location,
                     url = event.url,
@@ -110,12 +121,12 @@ class ImportCalendarEventsAction(
         } else {
             // Convert external UTC to local millis for display formatting
             val startLocal = utcToLocal(event.startTimeUtcMillis)
-            val startDate = formatDateShort(startLocal)
-            val startTime = formatTimeFromLocalMillis(startLocal)
+            val startDate = dateTimeFormatter.formatShortDate(startLocal)
+            val startTime = dateTimeFormatter.formatTime(startLocal)
             if (event.endTimeUtcMillis != null) {
                 val endLocal = utcToLocal(event.endTimeUtcMillis)
-                val endDate = formatDateShort(endLocal)
-                val endTime = formatTimeFromLocalMillis(endLocal)
+                val endDate = dateTimeFormatter.formatShortDate(endLocal)
+                val endTime = dateTimeFormatter.formatTime(endLocal)
                 if (endDate == startDate) {
                     parts.add("$startDate $startTime – $endTime")
                 } else {

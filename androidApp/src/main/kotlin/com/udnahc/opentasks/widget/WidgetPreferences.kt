@@ -27,26 +27,23 @@ data class WidgetPreferences(
             val sp = context.getSharedPreferences(prefsName(widgetId), Context.MODE_PRIVATE)
             return WidgetPreferences(
                 widgetId = widgetId,
-                theme = WidgetTheme.valueOf(
-                    sp.getString("theme", WidgetTheme.DARK.name) ?: WidgetTheme.DARK.name
-                ),
-                fontSize = WidgetFontSize.valueOf(
-                    sp.getString("fontSize", WidgetFontSize.NORMAL.name)
-                        ?: WidgetFontSize.NORMAL.name
-                ),
-                filterType = WidgetFilterType.valueOf(
-                    sp.getString("filterType", WidgetFilterType.ALL.name)
-                        ?: WidgetFilterType.ALL.name
-                ),
+                theme = WidgetTheme.entries.firstOrNull {
+                    it.name == sp.getString("theme", WidgetTheme.DARK.name)
+                } ?: WidgetTheme.DARK,
+                fontSize = WidgetFontSize.entries.firstOrNull {
+                    it.name == sp.getString("fontSize", WidgetFontSize.NORMAL.name)
+                } ?: WidgetFontSize.NORMAL,
+                filterType = WidgetFilterType.entries.firstOrNull {
+                    it.name == sp.getString("filterType", WidgetFilterType.ALL.name)
+                } ?: WidgetFilterType.ALL,
                 filterCategoryId = sp.getString("filterCategoryId", null),
-                sortBy = WidgetSortBy.valueOf(
-                    sp.getString("sortBy", WidgetSortBy.DATE.name) ?: WidgetSortBy.DATE.name
-                ),
+                sortBy = WidgetSortBy.entries.firstOrNull {
+                    it.name == sp.getString("sortBy", WidgetSortBy.DATE.name)
+                } ?: WidgetSortBy.DATE,
                 hideDueDate = sp.getBoolean("hideDueDate", false),
-                onClickAction = WidgetClickAction.valueOf(
-                    sp.getString("onClickAction", WidgetClickAction.OPEN_TASK.name)
-                        ?: WidgetClickAction.OPEN_TASK.name
-                ),
+                onClickAction = WidgetClickAction.entries.firstOrNull {
+                    it.name == sp.getString("onClickAction", WidgetClickAction.OPEN_TASK.name)
+                } ?: WidgetClickAction.OPEN_TASK,
             )
         }
 

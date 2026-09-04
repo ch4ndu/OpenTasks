@@ -16,6 +16,7 @@ import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskListViewModeAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
 import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
+import com.udnahc.opentasks.domain.action.task.TaskWriteResult
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
@@ -97,11 +98,22 @@ class TaskListViewModel(
         accountBoundaryExecutor,
         viewModelScope,
     )
+    private val taskMutationFailureEvents = TaskMutationFailureEventStore()
+    val taskMutationFailureEvent = taskMutationFailureEvents.event
     private val completionHandler = TaskCompletionHandler(
         toggleTaskCompleteAction,
         viewModelScope,
         accountBoundaryExecutor,
         mutationLauncher::launch,
+        onMutationBoundaryRejected = {
+            taskMutationFailureEvents.publish(TaskMutationFailureReason.BOUNDARY_CHANGED)
+        },
+        onMutationFailure = {
+            taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+        },
+        onMutationRejected = {
+            taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+        },
     )
     val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
 
@@ -238,8 +250,27 @@ class TaskListViewModel(
     fun completeSeries() = completionHandler.completeSeries()
     fun dismissSeriesChoice() = completionHandler.dismissSeriesChoice()
 
+    fun consumeTaskMutationFailureEvent(event: TaskMutationFailureEvent): Boolean =
+        taskMutationFailureEvents.consume(event)
+
     fun toggleStar(task: Task) {
-        mutationLauncher.launch { toggleTaskStarredAction(task.id) }
+        mutationLauncher.launch(
+            onBoundaryRejected = {
+                taskMutationFailureEvents.publish(TaskMutationFailureReason.BOUNDARY_CHANGED)
+            },
+            onFailure = {
+                taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+            },
+        ) {
+            when (toggleTaskStarredAction(task.id)) {
+                is TaskWriteResult.Updated -> Unit
+                is TaskWriteResult.CompletionChoiceRequired,
+                TaskWriteResult.Missing,
+                TaskWriteResult.NoOp,
+                TaskWriteResult.StaleOccurrence,
+                -> taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+            }
+        }
     }
 
     fun addCategory(name: String) {
@@ -271,7 +302,23 @@ class TaskListViewModel(
         if (targetStatus == TaskStatus.DONE && task.status != TaskStatus.DONE) {
             toggleComplete(task)
         } else {
-            mutationLauncher.launch { updateTaskStatusAction(task.id, targetStatus) }
+            mutationLauncher.launch(
+                onBoundaryRejected = {
+                    taskMutationFailureEvents.publish(TaskMutationFailureReason.BOUNDARY_CHANGED)
+                },
+                onFailure = {
+                    taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+                },
+            ) {
+                when (updateTaskStatusAction(task.id, targetStatus).value) {
+                    is TaskWriteResult.Updated -> Unit
+                    is TaskWriteResult.CompletionChoiceRequired,
+                    TaskWriteResult.Missing,
+                    TaskWriteResult.NoOp,
+                    TaskWriteResult.StaleOccurrence,
+                    -> taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+                }
+            }
         }
     }
 

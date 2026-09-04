@@ -2,30 +2,42 @@ package com.udnahc.opentasks.data.attachment
 
 import com.udnahc.opentasks.data.extensions.uuid4
 import kotlinx.cinterop.BetaInteropApi
+import kotlinx.cinterop.BooleanVar
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.LongVar
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.alloc
 import kotlinx.cinterop.cValuesOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.value
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 import platform.CoreFoundation.CFDataCreate
 import platform.CoreFoundation.CFDataCreateMutable
 import platform.CoreFoundation.CFDataGetBytePtr
 import platform.CoreFoundation.CFDataGetLength
 import platform.CoreFoundation.CFDataRef
 import platform.CoreFoundation.CFDictionaryCreateMutable
+import platform.CoreFoundation.CFDictionaryGetValue
 import platform.CoreFoundation.CFDictionaryRef
 import platform.CoreFoundation.CFDictionarySetValue
 import platform.CoreFoundation.CFNumberCreate
+import platform.CoreFoundation.CFNumberGetValue
 import platform.CoreFoundation.CFRelease
 import platform.CoreFoundation.kCFNumberDoubleType
 import platform.CoreFoundation.kCFNumberIntType
+import platform.CoreFoundation.kCFNumberLongLongType
 import platform.CoreFoundation.kCFBooleanTrue
 import platform.CoreGraphics.CGImageGetHeight
 import platform.CoreGraphics.CGImageGetWidth
@@ -46,7 +58,11 @@ import platform.ImageIO.CGImageDestinationCreateWithData
 import platform.ImageIO.CGImageDestinationFinalize
 import platform.ImageIO.CGImageSourceCreateThumbnailAtIndex
 import platform.ImageIO.CGImageSourceCreateWithData
+import platform.ImageIO.CGImageSourceCopyPropertiesAtIndex
+import platform.ImageIO.CGImageSourceRef
 import platform.ImageIO.kCGImageDestinationLossyCompressionQuality
+import platform.ImageIO.kCGImagePropertyPixelHeight
+import platform.ImageIO.kCGImagePropertyPixelWidth
 import platform.ImageIO.kCGImageSourceCreateThumbnailFromImageAlways
 import platform.ImageIO.kCGImageSourceCreateThumbnailWithTransform
 import platform.ImageIO.kCGImageSourceThumbnailMaxPixelSize
@@ -54,6 +70,7 @@ import platform.ImageIO.kCGImageSourceThumbnailMaxPixelSize
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 class PlatformAttachmentFileStorage(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val leaseRecorder: AttachmentFileLeaseRecorder? = null,
 ) : AttachmentFileStorage {
     private val directory: String by lazy {
         val documentDirectory = NSFileManager.defaultManager
@@ -90,51 +107,115 @@ class PlatformAttachmentFileStorage(
     }
 
     override suspend fun clearAll() {
-        NSFileManager.defaultManager.removeItemAtPath(directory, null)
+        try {
+            withContext(ioDispatcher) {
+                val fileManager = NSFileManager.defaultManager
+                if (fileManager.fileExistsAtPath(directory)) {
+                    fileManager.removeItemAtPath(directory, null)
+                }
+                if (fileManager.fileExistsAtPath(directory)) throw AttachmentFileOperationException()
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            throw AttachmentFileOperationException()
+        }
     }
 
-    private suspend fun storeBytes(fileName: String, bytes: ByteArray): StoredAttachmentFile =
-        withContext(ioDispatcher) {
-            val fileManager = NSFileManager.defaultManager
-            val directoryReady = fileManager.createDirectoryAtPath(directory, true, null, null) ||
-                fileManager.fileExistsAtPath(directory)
-            if (!directoryReady) {
-                throw IllegalStateException("Attachment directory creation failed")
+    private suspend fun storeBytes(fileName: String, bytes: ByteArray): StoredAttachmentFile {
+        var leasedPaths = emptyList<String>()
+        try {
+            return withContext(ioDispatcher) {
+                if (bytes.size.toLong() > AttachmentFilePolicy.MAX_SOURCE_BYTES) {
+                    throw AttachmentFileTooLargeException(AttachmentFilePolicy.MAX_SOURCE_BYTES)
+                }
+                if (bytes.isEmpty()) throw AttachmentImageDecodeException()
+                val fileManager = NSFileManager.defaultManager
+                val directoryReady = fileManager.createDirectoryAtPath(directory, true, null, null) ||
+                    directoryIsReady(fileManager)
+                if (!directoryReady || !directoryIsReady(fileManager)) throw AttachmentFileOperationException()
+                val sourceData = bytes.toCFData() ?: throw AttachmentImageDecodeException()
+                var source: CGImageSourceRef? = null
+                try {
+                    source = CGImageSourceCreateWithData(sourceData, null)
+                        ?: throw AttachmentImageDecodeException()
+                    validateSourceDimensions(source)
+                    val optimized = source.scaleAndEncode(AttachmentFilePolicy.MAX_LONG_EDGE)
+                    val thumbnail = source.scaleAndEncode(AttachmentFilePolicy.THUMBNAIL_LONG_EDGE)
+                    val localFileName = "${uuid4()}.jpg"
+                    val thumbFileName = "${localFileName.substringBeforeLast(".")}_thumb.jpg"
+                    val localPath = "$directory/$localFileName"
+                    val thumbnailPath = "$directory/$thumbFileName"
+                    if (fileManager.fileExistsAtPath(localPath) || fileManager.fileExistsAtPath(thumbnailPath)) {
+                        throw AttachmentFileOperationException()
+                    }
+                    leasedPaths = listOf(localPath, thumbnailPath)
+                    leaseRecorder?.lease(leasedPaths)
+                    currentCoroutineContext().ensureActive()
+                    if (!optimized.bytes.toNSData().writeToFile(localPath, true)) {
+                        throw AttachmentFileOperationException()
+                    }
+                    if (!fileManager.fileExistsAtPath(localPath)) throw AttachmentFileOperationException()
+                    if (!thumbnail.bytes.toNSData().writeToFile(thumbnailPath, true)) {
+                        throw AttachmentFileOperationException()
+                    }
+                    if (!fileManager.fileExistsAtPath(thumbnailPath)) throw AttachmentFileOperationException()
+                    StoredAttachmentFile(
+                        localPath = localPath,
+                        thumbnailPath = thumbnailPath,
+                        fileName = localFileName,
+                        mimeType = JPEG_MIME_TYPE,
+                        fileSizeBytes = optimized.bytes.size.toLong(),
+                        width = optimized.width,
+                        height = optimized.height,
+                    )
+                } finally {
+                    source?.let { CFRelease(it) }
+                    CFRelease(sourceData)
+                }
             }
-            val optimized = bytes.scaleAndEncode(AttachmentFilePolicy.MAX_LONG_EDGE)
-            val thumbnail = bytes.scaleAndEncode(AttachmentFilePolicy.THUMBNAIL_LONG_EDGE)
-            val localFileName = "${uuid4()}.jpg"
-            val thumbFileName = "${localFileName.substringBeforeLast(".")}_thumb.jpg"
-            val localPath = "$directory/$localFileName"
-            val thumbnailPath = "$directory/$thumbFileName"
-            if (!optimized.bytes.toNSData().writeToFile(localPath, true)) {
-                throw IllegalStateException("Attachment image write failed")
-            }
-            if (!thumbnail.bytes.toNSData().writeToFile(thumbnailPath, true)) {
-                fileManager.removeItemAtPath(localPath, null)
-                throw IllegalStateException("Attachment thumbnail write failed")
-            }
-            StoredAttachmentFile(
-                localPath = localPath,
-                thumbnailPath = thumbnailPath,
-                fileName = localFileName,
-                mimeType = JPEG_MIME_TYPE,
-                fileSizeBytes = optimized.bytes.size.toLong(),
-                width = optimized.width,
-                height = optimized.height,
-            )
+        } catch (error: CancellationException) {
+            compensateFailedStore(leasedPaths)
+            throw error
+        } catch (error: Exception) {
+            compensateFailedStore(leasedPaths)
+            throw error.asAttachmentStorageFailure()
         }
+    }
 
-    private fun ByteArray.scaleAndEncode(longEdge: Int): EncodedImage {
-        val sourceData = toCFData()
-            ?: throw AttachmentImageDecodeException()
-        var source: platform.ImageIO.CGImageSourceRef? = null
+    private fun directoryIsReady(fileManager: NSFileManager): Boolean = memScoped {
+        val isDirectory = alloc<BooleanVar>()
+        fileManager.fileExistsAtPath(directory, isDirectory.ptr) && isDirectory.value
+    }
+
+    private suspend fun compensateFailedStore(paths: List<String>) {
+        withContext(NonCancellable + ioDispatcher) {
+            val fileManager = NSFileManager.defaultManager
+            for (path in paths) {
+                val absent = try {
+                    if (fileManager.fileExistsAtPath(path)) {
+                        fileManager.removeItemAtPath(path, null)
+                    }
+                    !fileManager.fileExistsAtPath(path)
+                } catch (_: Exception) {
+                    false
+                }
+                if (absent) {
+                    try {
+                        leaseRecorder?.release(path)
+                    } catch (_: Exception) {
+                        // The durable entry remains available for a later retry.
+                    }
+                }
+            }
+        }
+    }
+
+    private fun CGImageSourceRef.scaleAndEncode(longEdge: Int): EncodedImage {
         var thumbnail: platform.CoreGraphics.CGImageRef? = null
         try {
-            source = CGImageSourceCreateWithData(sourceData, null)
-                ?: throw AttachmentImageDecodeException()
             thumbnail = withThumbnailOptions(longEdge) { options ->
-                CGImageSourceCreateThumbnailAtIndex(source, 0u, options)
+                CGImageSourceCreateThumbnailAtIndex(this, 0u, options)
             } ?: throw AttachmentImageDecodeException()
             val encodedBytes = encodeJpeg(thumbnail)
             return EncodedImage(
@@ -144,9 +225,34 @@ class PlatformAttachmentFileStorage(
             )
         } finally {
             thumbnail?.let { CFRelease(it) }
-            source?.let { CFRelease(it) }
-            CFRelease(sourceData)
         }
+    }
+
+    private fun validateSourceDimensions(source: CGImageSourceRef) {
+        val properties = CGImageSourceCopyPropertiesAtIndex(source, 0u, null)
+            ?: throw AttachmentImageDecodeException()
+        try {
+            val width = properties.dimensionValue(kCGImagePropertyPixelWidth)
+            val height = properties.dimensionValue(kCGImagePropertyPixelHeight)
+            if (width !in 1..Int.MAX_VALUE.toLong() ||
+                height !in 1..Int.MAX_VALUE.toLong() ||
+                !AttachmentFilePolicy.acceptsSourceDimensions(width.toInt(), height.toInt())
+            ) {
+                throw AttachmentImageDecodeException()
+            }
+        } finally {
+            CFRelease(properties)
+        }
+    }
+
+    private fun CFDictionaryRef.dimensionValue(key: platform.CoreFoundation.CFStringRef?): Long = memScoped {
+        val number = CFDictionaryGetValue(this@dimensionValue, key)
+            ?: throw AttachmentImageDecodeException()
+        val value = alloc<LongVar>()
+        if (!CFNumberGetValue(number.reinterpret(), kCFNumberLongLongType, value.ptr)) {
+            throw AttachmentImageDecodeException()
+        }
+        value.value
     }
 
     private fun ByteArray.toCFData(): CFDataRef? =
@@ -180,32 +286,36 @@ class PlatformAttachmentFileStorage(
 
     private inline fun <T> withThumbnailOptions(longEdge: Int, block: (CFDictionaryRef?) -> T): T = memScoped {
         val options = CFDictionaryCreateMutable(null, 0, null, null)
-            ?: return@memScoped block(null)
+            ?: throw AttachmentImageDecodeException()
         val maxPixel = CFNumberCreate(null, kCFNumberIntType, cValuesOf(longEdge))
-        if (maxPixel != null) {
-            CFDictionarySetValue(options, kCGImageSourceThumbnailMaxPixelSize, maxPixel)
+        if (maxPixel == null) {
+            CFRelease(options)
+            throw AttachmentImageDecodeException()
         }
+        CFDictionarySetValue(options, kCGImageSourceThumbnailMaxPixelSize, maxPixel)
         CFDictionarySetValue(options, kCGImageSourceCreateThumbnailFromImageAlways, kCFBooleanTrue)
         CFDictionarySetValue(options, kCGImageSourceCreateThumbnailWithTransform, kCFBooleanTrue)
         try {
             block(options)
         } finally {
-            maxPixel?.let { CFRelease(it) }
+            CFRelease(maxPixel)
             CFRelease(options)
         }
     }
 
     private inline fun <T> withJpegEncodeOptions(block: (CFDictionaryRef?) -> T): T = memScoped {
         val options = CFDictionaryCreateMutable(null, 0, null, null)
-            ?: return@memScoped block(null)
+            ?: throw IllegalArgumentException("Attachment image encode failed")
         val qualityNumber = CFNumberCreate(null, kCFNumberDoubleType, cValuesOf(JPEG_QUALITY))
-        if (qualityNumber != null) {
-            CFDictionarySetValue(options, kCGImageDestinationLossyCompressionQuality, qualityNumber)
+        if (qualityNumber == null) {
+            CFRelease(options)
+            throw IllegalArgumentException("Attachment image encode failed")
         }
+        CFDictionarySetValue(options, kCGImageDestinationLossyCompressionQuality, qualityNumber)
         try {
             block(options)
         } finally {
-            qualityNumber?.let { CFRelease(it) }
+            CFRelease(qualityNumber)
             CFRelease(options)
         }
     }
@@ -235,6 +345,14 @@ class PlatformAttachmentFileStorage(
         val width: Int,
         val height: Int,
     )
+
+    private fun Exception.asAttachmentStorageFailure(): Exception = when (this) {
+        is AttachmentFileOperationException,
+        is AttachmentFileTooLargeException,
+        is AttachmentImageDecodeException,
+        -> this
+        else -> AttachmentFileOperationException()
+    }
 
     private companion object {
         const val JPEG_MIME_TYPE = "image/jpeg"

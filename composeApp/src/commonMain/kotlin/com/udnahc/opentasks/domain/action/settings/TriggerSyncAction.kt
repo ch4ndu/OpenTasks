@@ -73,8 +73,8 @@ class TriggerSyncAction(
                     runSyncPass()
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: Exception) {
-                    log.e(error) { "Debounced sync failed" }
+                } catch (_: Exception) {
+                    log.e { "Debounced sync failed" }
                 }
             }
             pendingDelayJob = job

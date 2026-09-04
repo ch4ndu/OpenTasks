@@ -49,13 +49,13 @@ object CsvParser {
 
         // Find column header row and determine indices
         val headerIndex = rows.indexOfFirst { row ->
-            row.any { it.equals("Title", ignoreCase = true) } &&
-                    row.any { it.equals("Due Date", ignoreCase = true) }
+            val normalized = row.map(::normalizeHeader)
+            "TITLE" in normalized && "DUE DATE" in normalized
         }
         if (headerIndex < 0) return emptyList()
 
         val header = rows[headerIndex]
-        val colMap = header.withIndex().associate { (i, name) -> name.trim() to i }
+        val colMap = header.withIndex().associate { (i, name) -> normalizeHeader(name) to i }
 
         val tasks = mutableListOf<CsvTask>()
         for (i in (headerIndex + 1) until rows.size) {
@@ -70,20 +70,20 @@ object CsvParser {
         fields: List<String>,
         col: Map<String, Int>
     ): CsvTask? {
-        val title = fields.getOrNull(col["Title"] ?: -1)?.trim() ?: return null
+        val title = fields.getOrNull(col["TITLE"] ?: -1)?.trim() ?: return null
         if (title.isBlank()) return null
 
-        val content = fields.getOrNull(col["Content"] ?: -1)?.trim() ?: ""
-        val listName = fields.getOrNull(col["List Name"] ?: -1)?.trim() ?: "Inbox"
-        val startDateStr = fields.getOrNull(col["Start Date"] ?: -1)?.trim() ?: ""
-        val dueDateStr = fields.getOrNull(col["Due Date"] ?: -1)?.trim() ?: ""
-        val isAllDayStr = fields.getOrNull(col["Is All Day"] ?: -1)?.trim() ?: "false"
-        val priorityStr = fields.getOrNull(col["Priority"] ?: -1)?.trim() ?: "0"
-        val statusStr = fields.getOrNull(col["Status"] ?: -1)?.trim() ?: "0"
-        val reminderStr = fields.getOrNull(col["Reminder"] ?: -1)?.trim() ?: ""
-        val repeatStr = fields.getOrNull(col["Repeat"] ?: -1)?.trim() ?: ""
-        val createdStr = fields.getOrNull(col["Created Time"] ?: -1)?.trim() ?: ""
-        val completedStr = fields.getOrNull(col["Completed Time"] ?: -1)?.trim() ?: ""
+        val content = fields.getOrNull(col["CONTENT"] ?: -1)?.trim() ?: ""
+        val listName = fields.getOrNull(col["LIST NAME"] ?: -1)?.trim() ?: "Inbox"
+        val startDateStr = fields.getOrNull(col["START DATE"] ?: -1)?.trim() ?: ""
+        val dueDateStr = fields.getOrNull(col["DUE DATE"] ?: -1)?.trim() ?: ""
+        val isAllDayStr = fields.getOrNull(col["IS ALL DAY"] ?: -1)?.trim() ?: "false"
+        val priorityStr = fields.getOrNull(col["PRIORITY"] ?: -1)?.trim() ?: "0"
+        val statusStr = fields.getOrNull(col["STATUS"] ?: -1)?.trim() ?: "0"
+        val reminderStr = fields.getOrNull(col["REMINDER"] ?: -1)?.trim() ?: ""
+        val repeatStr = fields.getOrNull(col["REPEAT"] ?: -1)?.trim() ?: ""
+        val createdStr = fields.getOrNull(col["CREATED TIME"] ?: -1)?.trim() ?: ""
+        val completedStr = fields.getOrNull(col["COMPLETED TIME"] ?: -1)?.trim() ?: ""
 
         return CsvTask(
             title = title,
@@ -100,6 +100,8 @@ object CsvParser {
             createdAt = parseIso8601(createdStr) ?: Instant.DISTANT_PAST.toEpochMilliseconds(),
         )
     }
+
+    private fun normalizeHeader(value: String): String = value.trim().uppercase()
 
     // ── CSV row parsing (handles quoted fields with embedded newlines/commas) ──
 

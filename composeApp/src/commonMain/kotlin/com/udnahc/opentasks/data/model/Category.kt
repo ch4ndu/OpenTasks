@@ -25,3 +25,15 @@ data class Category(
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
 )
+
+/** The installation-created placeholder may yield to an authoritative remote Inbox. */
+internal fun Category.isPristineInboxPlaceholder(): Boolean =
+    id == AppConstants.DEFAULT_INBOX_ID &&
+        name == "Inbox" &&
+        icon == "inbox" &&
+        sortOrder == 0 &&
+        pbId == null &&
+        !isSynced &&
+        !isDeleted &&
+        createdAt == 0L &&
+        updatedAt == 0L

@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
 import com.udnahc.opentasks.data.calendar.CalendarPermissionStatus
+import com.udnahc.opentasks.data.calendar.CalendarProviderException
+import com.udnahc.opentasks.data.calendar.CalendarProviderFailure
 import com.udnahc.opentasks.data.extensions.nowUtcMillis
 import com.udnahc.opentasks.domain.action.task.ImportCalendarEventsAction
 import com.udnahc.opentasks.domain.usecase.settings.CheckCalendarPermissionUseCase
@@ -55,6 +57,8 @@ class ImportCalendarViewModel(
     private val importInProgress = MutableStateFlow(false)
 
     val isAvailable: Boolean = fetchCalendarEvents.isAvailable()
+    val supportsExplicitImportWithoutPermissionRequest: Boolean =
+        fetchCalendarEvents.supportsExplicitImportWithoutPermissionRequest()
 
     fun checkPermission() {
         viewModelScope.launch(ioDispatcher) {
@@ -73,11 +77,18 @@ class ImportCalendarViewModel(
     }
 
     fun updateRangeValue(value: Int) {
-        _uiState.update { it.copy(rangeValue = value.coerceIn(1, 99)) }
+        _uiState.update { state ->
+            state.copy(rangeValue = value.coerceIn(1, state.rangeUnit.maximumValue))
+        }
     }
 
     fun updateRangeUnit(unit: ImportRangeUnit) {
-        _uiState.update { it.copy(rangeUnit = unit) }
+        _uiState.update { state ->
+            state.copy(
+                rangeUnit = unit,
+                rangeValue = state.rangeValue.coerceIn(1, unit.maximumValue),
+            )
+        }
     }
 
     fun importEvents() {
@@ -92,8 +103,8 @@ class ImportCalendarViewModel(
                 val now = nowUtcMillisProvider()
                 val (startUtcMillis, endUtcMillis) = computeRangeBoundsUtcMillis(
                     nowUtcMillis = now,
-                    value = _uiState.value.rangeValue,
-                    unit = _uiState.value.rangeUnit,
+                    value = selectedEvents.rangeValue,
+                    unit = selectedEvents.rangeUnit,
                 )
                 val events = fetchCalendarEvents(startUtcMillis, endUtcMillis)
                 val count = accountBoundaryExecutor.withForegroundActionBoundary(expectedBoundary) {
@@ -102,14 +113,25 @@ class ImportCalendarViewModel(
                 _uiState.update { it.copy(isLoading = false, importedCount = count) }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                log.e(e) { "Calendar import failed" }
+            } catch (error: CalendarProviderException) {
+                log.e { "Calendar import failed" }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        error = ImportErrorState(
+                            type = error.failure.toImportErrorType(),
+                            detail = null,
+                        ),
+                    )
+                }
+            } catch (_: Exception) {
+                log.e { "Calendar import failed" }
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         error = ImportErrorState(
                             type = ImportErrorType.GENERIC,
-                            detail = e.message,
+                            detail = null,
                         ),
                     )
                 }
@@ -130,19 +152,20 @@ class ImportCalendarViewModel(
         value: Int,
         unit: ImportRangeUnit,
     ): Pair<Long, Long> {
+        val safeValue = value.coerceIn(1, unit.maximumValue)
         val timeZone = TimeZone.currentSystemDefault()
         val nowLocal = Instant.fromEpochMilliseconds(nowUtcMillis).toLocalDateTime(timeZone)
         val startDate = when (unit) {
-            ImportRangeUnit.DAYS -> nowLocal.date.minus(value, DateTimeUnit.DAY)
-            ImportRangeUnit.WEEKS -> nowLocal.date.minus(value * 7, DateTimeUnit.DAY)
-            ImportRangeUnit.MONTHS -> nowLocal.date.minus(value, DateTimeUnit.MONTH)
-            ImportRangeUnit.YEARS -> nowLocal.date.minus(value, DateTimeUnit.YEAR)
+            ImportRangeUnit.DAYS -> nowLocal.date.minus(safeValue, DateTimeUnit.DAY)
+            ImportRangeUnit.WEEKS -> nowLocal.date.minus(safeValue * 7, DateTimeUnit.DAY)
+            ImportRangeUnit.MONTHS -> nowLocal.date.minus(safeValue, DateTimeUnit.MONTH)
+            ImportRangeUnit.YEARS -> nowLocal.date.minus(safeValue, DateTimeUnit.YEAR)
         }
         val endDate = when (unit) {
-            ImportRangeUnit.DAYS -> nowLocal.date.plus(value, DateTimeUnit.DAY)
-            ImportRangeUnit.WEEKS -> nowLocal.date.plus(value * 7, DateTimeUnit.DAY)
-            ImportRangeUnit.MONTHS -> nowLocal.date.plus(value, DateTimeUnit.MONTH)
-            ImportRangeUnit.YEARS -> nowLocal.date.plus(value, DateTimeUnit.YEAR)
+            ImportRangeUnit.DAYS -> nowLocal.date.plus(safeValue, DateTimeUnit.DAY)
+            ImportRangeUnit.WEEKS -> nowLocal.date.plus(safeValue * 7, DateTimeUnit.DAY)
+            ImportRangeUnit.MONTHS -> nowLocal.date.plus(safeValue, DateTimeUnit.MONTH)
+            ImportRangeUnit.YEARS -> nowLocal.date.plus(safeValue, DateTimeUnit.YEAR)
         }
         val startUtcMillis = LocalDateTime(startDate, nowLocal.time)
             .toInstant(timeZone)
@@ -152,4 +175,14 @@ class ImportCalendarViewModel(
             .toEpochMilliseconds()
         return startUtcMillis to endUtcMillis
     }
+}
+
+private val ImportRangeUnit.maximumValue: Int
+    get() = if (this == ImportRangeUnit.YEARS) 10 else 99
+
+private fun CalendarProviderFailure.toImportErrorType(): ImportErrorType = when (this) {
+    CalendarProviderFailure.ACCESS_DENIED -> ImportErrorType.CALENDAR_ACCESS_DENIED
+    CalendarProviderFailure.TRANSPORT -> ImportErrorType.CALENDAR_TRANSPORT
+    CalendarProviderFailure.INVALID_RESPONSE -> ImportErrorType.CALENDAR_INVALID_RESPONSE
+    CalendarProviderFailure.TOO_MANY_EVENTS -> ImportErrorType.CALENDAR_TOO_MANY_EVENTS
 }

@@ -8,6 +8,7 @@ import androidx.room.Update
 import androidx.room.Upsert
 import androidx.room.Transaction
 import com.udnahc.opentasks.data.model.Attachment
+import com.udnahc.opentasks.data.model.AttachmentFileCleanup
 import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import kotlinx.coroutines.flow.Flow
@@ -91,7 +92,14 @@ interface AttachmentDao {
         if (local != null && local.updatedAt >= remote.updatedAt) {
             return AttachmentTombstoneMergeResult.KeptLocal
         }
-        upsert(remote)
+        upsert(
+            local?.let {
+                remote.copy(
+                    localPath = it.localPath,
+                    thumbnailPath = it.thumbnailPath,
+                )
+            } ?: remote
+        )
         return AttachmentTombstoneMergeResult.Applied(local)
     }
 
@@ -112,9 +120,44 @@ interface AttachmentDao {
                 (local.updatedAt == remote.updatedAt && !isEqualTimestampDownloadRetry))) {
             return AttachmentDownloadInstallResult.KeptLocal
         }
+        val replacementPaths = setOf(remote.localPath, remote.thumbnailPath)
+        val predecessorCleanup = local
+            ?.let { listOf(it.localPath, it.thumbnailPath) }
+            .orEmpty()
+            .filter { it.isNotBlank() && it !in replacementPaths }
+            .distinct()
+            .map(::AttachmentFileCleanup)
+        if (predecessorCleanup.isNotEmpty()) {
+            upsertAttachmentFileCleanup(predecessorCleanup)
+        }
         upsert(remote)
+        if (findByIdAnyState(remote.id) != remote) {
+            throw IllegalStateException("Attachment remote install verification failed")
+        }
         return AttachmentDownloadInstallResult.Applied(local)
     }
+
+    @Upsert
+    suspend fun upsertAttachmentFileCleanup(entries: List<AttachmentFileCleanup>)
+
+    @Query("SELECT path FROM attachment_file_cleanup ORDER BY path ASC")
+    suspend fun getAttachmentFileCleanupPaths(): List<String>
+
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1 FROM attachments
+            WHERE localPath = :path OR thumbnailPath = :path
+        )
+        """
+    )
+    suspend fun isAttachmentFilePathReferenced(path: String): Boolean
+
+    @Query("DELETE FROM attachment_file_cleanup WHERE path = :path")
+    suspend fun deleteAttachmentFileCleanupPath(path: String): Int
+
+    @Query("DELETE FROM attachment_file_cleanup")
+    suspend fun deleteAllAttachmentFileCleanup()
 
     @Query(
         """
@@ -162,6 +205,23 @@ interface AttachmentDao {
     @Query("UPDATE attachments SET pbId = :pbId WHERE id = :id")
     suspend fun updatePbId(id: String, pbId: String)
 
+    /** Recovers a committed remote create without acknowledging or replacing the local deletion. */
+    @Query(
+        """
+        UPDATE attachments
+        SET pbId = :pbId
+        WHERE id = :id
+            AND updatedAt = :updatedAt
+            AND isDeleted = 1
+            AND pbId IS NULL
+        """
+    )
+    suspend fun adoptRemoteIdentityForTombstoneIfUnchanged(
+        id: String,
+        updatedAt: Long,
+        pbId: String,
+    ): Int
+
     /** Keeps local file paths intact while moving an attachment to a new server. */
     @Query("UPDATE attachments SET pbId = NULL, remoteFileName = NULL, isSynced = 0, syncState = 'LOCAL_ONLY', lastSyncError = NULL")
     suspend fun resetSyncMetadataForServerSeed()
@@ -187,6 +247,43 @@ interface AttachmentDao {
 
     @Query("UPDATE attachments SET isDeleted = 1, isSynced = 0, syncState = 'LOCAL_ONLY', lastSyncError = NULL, updatedAt = :updatedAt WHERE ownerType = :ownerType AND ownerId = :ownerId AND isDeleted = 0")
     suspend fun tombstoneActiveForOwner(ownerType: String, ownerId: String, updatedAt: Long)
+
+    @Query("SELECT * FROM attachments WHERE isDeleted = 1 AND (localPath != '' OR thumbnailPath != '')")
+    suspend fun getTombstonesWithRetainedFilePaths(): List<Attachment>
+
+    @Query(
+        """
+        UPDATE attachments
+        SET localPath = '', thumbnailPath = ''
+        WHERE id = :id
+            AND isDeleted = 1
+            AND updatedAt = :updatedAt
+            AND localPath = :expectedLocalPath
+            AND thumbnailPath = :expectedThumbnailPath
+        """
+    )
+    suspend fun clearTombstoneFilePathsIfUnchanged(
+        id: String,
+        updatedAt: Long,
+        expectedLocalPath: String,
+        expectedThumbnailPath: String,
+    ): Int
+
+    @Query(
+        """
+        DELETE FROM attachments
+        WHERE id = :id
+            AND isDeleted = 1
+            AND updatedAt = :updatedAt
+            AND pbId IS NULL
+            AND localPath = ''
+            AND thumbnailPath = ''
+        """
+    )
+    suspend fun hardDeleteNeverSyncedTombstoneIfUnchanged(
+        id: String,
+        updatedAt: Long,
+    ): Int
 
     @Query("DELETE FROM attachments")
     suspend fun deleteAll()

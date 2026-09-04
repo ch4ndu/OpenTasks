@@ -51,6 +51,7 @@ import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
 import com.udnahc.opentasks.ui.screens.SelectedOptionRow
 import com.udnahc.opentasks.ui.screens.SyncPullToRefresh
+import com.udnahc.opentasks.ui.screens.TaskMutationFailureEffect
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import kotlinx.coroutines.flow.StateFlow
@@ -163,6 +164,7 @@ fun CalendarScreen(
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
+    onTaskMutationFailure: () -> Unit = {},
 ) {
     val today by viewModel.today.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
@@ -176,6 +178,7 @@ fun CalendarScreen(
         selectedListDayProjectionFlow = viewModel.selectedListDayProjection,
         selectedMonthDayProjectionFlow = viewModel.selectedMonthDayProjection,
         categoryNamesFlow = viewModel.categoryNames,
+        timelineHourLabels = viewModel.timelineHourLabels,
         currentView = calendarViewPreference.toCalendarViewType(),
         listDisplayMode = listDisplayModePreference.toListDisplayMode(),
         onCalendarViewChanged = { viewModel.saveCalendarViewPreference(it.toPreference()) },
@@ -203,6 +206,12 @@ fun CalendarScreen(
             onDismiss = { viewModel.dismissSeriesChoice() },
         )
     }
+
+    TaskMutationFailureEffect(
+        eventFlow = viewModel.taskMutationFailureEvent,
+        consume = viewModel::consumeTaskMutationFailureEvent,
+        onFailure = onTaskMutationFailure,
+    )
 }
 
 // ── Main Content ────────────────────────────────────────────────────────────
@@ -216,6 +225,7 @@ private fun CalendarContent(
     selectedListDayProjectionFlow: StateFlow<CalendarDayProjection>,
     selectedMonthDayProjectionFlow: StateFlow<CalendarDayProjection>,
     categoryNamesFlow: StateFlow<Map<String, String>>,
+    timelineHourLabels: List<String>,
     currentView: CalendarViewType,
     listDisplayMode: ListDisplayMode,
     onCalendarViewChanged: (CalendarViewType) -> Unit,
@@ -605,6 +615,7 @@ private fun CalendarContent(
                         navBarHeight = navBarHeight,
                         onTaskClick = onTaskClick,
                         onToggleComplete = onToggleComplete,
+                        timelineHourLabels = timelineHourLabels,
                     )
                 }
 
@@ -622,6 +633,7 @@ private fun CalendarContent(
                         navBarHeight = navBarHeight,
                         onTaskClick = onTaskClick,
                         onToggleComplete = onToggleComplete,
+                        timelineHourLabels = timelineHourLabels,
                     )
                 }
             }

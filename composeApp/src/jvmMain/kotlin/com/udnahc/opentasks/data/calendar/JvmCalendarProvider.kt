@@ -1,18 +1,23 @@
 package com.udnahc.opentasks.data.calendar
 
 import com.udnahc.opentasks.data.model.CalendarEvent
+import com.udnahc.opentasks.data.model.CalendarEventSourceKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 
-import org.lighthousegames.logging.logging
-
-private val log = logging("JvmCalendarProvider")
 private val IS_MAC = System.getProperty("os.name").orEmpty().startsWith("Mac", ignoreCase = true)
 
 class JvmCalendarProvider internal constructor(
@@ -21,12 +26,10 @@ class JvmCalendarProvider internal constructor(
 
     override fun isAvailable(): Boolean = IS_MAC
 
-    override suspend fun checkPermission(): CalendarPermissionStatus {
-        // Addressing Calendar through AppleScript activates the Calendar app. Keep passive
-        // permission refreshes side-effect-free and resolve automation consent only when the
-        // user explicitly imports calendar events from Settings.
-        return if (IS_MAC) CalendarPermissionStatus.GRANTED else CalendarPermissionStatus.NOT_AVAILABLE
-    }
+    override fun supportsExplicitImportWithoutPermissionRequest(): Boolean = IS_MAC
+
+    override suspend fun checkPermission(): CalendarPermissionStatus =
+        if (IS_MAC) CalendarPermissionStatus.NOT_DETERMINED else CalendarPermissionStatus.NOT_AVAILABLE
 
     override suspend fun requestPermission(): CalendarPermissionStatus = checkPermission()
 
@@ -35,114 +38,253 @@ class JvmCalendarProvider internal constructor(
         endUtcMillis: Long,
     ): List<CalendarEvent> {
         if (!IS_MAC) return emptyList()
-        if (checkPermission() != CalendarPermissionStatus.GRANTED) return emptyList()
 
         return withContext(Dispatchers.IO) {
-            try {
-                val startDate = formatForAppleScript(startUtcMillis)
-                val endDate = formatForAppleScript(endUtcMillis)
-
-                // AppleScript that outputs tab-separated fields per event, one per line
-                // Fields: uid \t summary \t description \t startEpoch \t endEpoch \t calendarName \t isAllDay \t location \t url
-                val script = """
-                    set output to ""
-                    tell application "Calendar"
-                        repeat with cal in calendars
-                            set calName to name of cal
-                            set evtList to (every event of cal whose start date >= date "$startDate" and start date <= date "$endDate")
-                            repeat with evt in evtList
-                                set evtUid to uid of evt
-                                set evtSummary to summary of evt
-                                set evtDesc to ""
-                                try
-                                    set evtDesc to description of evt
-                                end try
-                                set evtLoc to ""
-                                try
-                                    set evtLoc to location of evt
-                                end try
-                                set evtUrl to ""
-                                try
-                                    set evtUrl to url of evt
-                                end try
-                                set evtStart to ((start date of evt) - (date "Thursday, January 1, 1970 at 12:00:00 AM")) div 1
-                                set evtEnd to ((end date of evt) - (date "Thursday, January 1, 1970 at 12:00:00 AM")) div 1
-                                set evtAllDay to allday event of evt
-                                set output to output & evtUid & tab & evtSummary & tab & evtDesc & tab & evtStart & tab & evtEnd & tab & calName & tab & evtAllDay & tab & evtLoc & tab & evtUrl & linefeed
-                            end repeat
-                        end repeat
-                    end tell
-                    return output
-                """.trimIndent()
-
-                val result = processRunner.run(
-                    command = listOf("osascript", "-e", script),
+            val result = try {
+                processRunner.run(
+                    command = listOf(
+                        "osascript",
+                        "-l",
+                        "JavaScript",
+                        "-e",
+                        CALENDAR_JXA,
+                        "--",
+                        startUtcMillis.toString(),
+                        endUtcMillis.toString(),
+                    ),
                     timeoutMillis = FETCH_TIMEOUT_MILLIS,
                 )
-                if (result !is JvmProcessResult.Completed || result.exitCode != 0) {
-                    log.d { "Calendar fetch did not complete (${result.diagnosticName()})" }
-                    return@withContext emptyList()
-                }
-
-                parseAppleScriptOutput(result.output)
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
-                log.e { "Calendar fetch failed" }
-                emptyList()
+            }
+
+            when (result) {
+                is JvmProcessResult.Completed -> {
+                    if (result.exitCode != 0) {
+                        throw CalendarProviderException(CalendarProviderFailure.TRANSPORT)
+                    }
+                    parseJxaOutput(result.output)
+                }
+
+                JvmProcessResult.TimedOut,
+                JvmProcessResult.OutputTooLarge,
+                is JvmProcessResult.Failed ->
+                    throw CalendarProviderException(CalendarProviderFailure.TRANSPORT)
+
+                JvmProcessResult.InvalidUtf8 ->
+                    throw CalendarProviderException(CalendarProviderFailure.INVALID_RESPONSE)
             }
         }
     }
 
-    private fun parseAppleScriptOutput(output: String): List<CalendarEvent> {
-        return output.lines()
-            .filter { it.contains("\t") }
-            .mapNotNull { line ->
-                val parts = line.split("\t")
-                if (parts.size < 7) return@mapNotNull null
-                val title = parts[1].trim()
-                if (title.isBlank()) return@mapNotNull null
+    private suspend fun parseJxaOutput(output: String): List<CalendarEvent> {
+        currentCoroutineContext().ensureActive()
+        val root = try {
+            Json.parseToJsonElement(output).jsonObject
+        } catch (_: Exception) {
+            throw CalendarProviderException(CalendarProviderFailure.INVALID_RESPONSE)
+        }
 
-                val startEpochSeconds = parts[3].trim().toLongOrNull() ?: return@mapNotNull null
-                val endEpochSeconds = parts[4].trim().toLongOrNull()
+        val version = root.requiredInt("version")
+        if (version != RESPONSE_VERSION) invalidResponse()
 
-                CalendarEvent(
-                    externalId = "mac_${parts[0].trim()}",
-                    title = title,
-                    description = parts[2].trim(),
-                    startTimeUtcMillis = localEpochSecondsToUtcMillis(startEpochSeconds),
-                    endTimeUtcMillis = endEpochSeconds?.let(::localEpochSecondsToUtcMillis),
-                    calendarName = parts[5].trim(),
-                    isAllDay = parts[6].trim().equals("true", ignoreCase = true),
-                    location = parts.getOrNull(7)?.trim() ?: "",
-                    url = parts.getOrNull(8)?.trim() ?: "",
-                )
+        if (root.containsKey("error")) {
+            root.requireExactKeys(setOf("version", "error"))
+            when (root.requiredString("error")) {
+                "denied" -> throw CalendarProviderException(CalendarProviderFailure.ACCESS_DENIED)
+                "overflow" -> throw CalendarProviderException(CalendarProviderFailure.TOO_MANY_EVENTS)
+                "transport" -> throw CalendarProviderException(CalendarProviderFailure.TRANSPORT)
+                else -> invalidResponse()
             }
+        }
+
+        root.requireExactKeys(setOf("version", "events"))
+        val rows = try {
+            root.getValue("events").jsonArray
+        } catch (_: Exception) {
+            invalidResponse()
+        }
+        if (rows.size > MAX_CALENDAR_PROVIDER_EVENTS) {
+            throw CalendarProviderException(CalendarProviderFailure.TOO_MANY_EVENTS)
+        }
+
+        currentCoroutineContext().ensureActive()
+        val events = ArrayList<CalendarEvent>(rows.size)
+        for (element in rows) {
+            currentCoroutineContext().ensureActive()
+            events.add(parseEvent(element))
+        }
+        val sorted = events.sortedWith(CALENDAR_PROVIDER_EVENT_ORDER)
+        currentCoroutineContext().ensureActive()
+        return sorted
     }
 
-    private fun formatForAppleScript(utcMillis: Long): String {
-        // Format as AppleScript-compatible date string in the local timezone
-        val instant = Instant.ofEpochMilli(utcMillis)
-        val formatter = DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy 'at' h:mm:ss a")
-            .withZone(ZoneId.systemDefault())
-        return formatter.format(instant)
-    }
+    private fun parseEvent(element: JsonElement): CalendarEvent {
+        val row = try {
+            element.jsonObject
+        } catch (_: Exception) {
+            invalidResponse()
+        }
+        row.requireExactKeys(EVENT_KEYS)
+        val uid = row.requiredString("uid")
+        val title = row.requiredString("title")
+        if (title.isBlank()) invalidResponse()
+        val startMillis = row.requiredLong("startMillis")
+        val endMillis = row.nullableLong("endMillis")
+        val isAllDay = row.requiredBoolean("isAllDay")
+        val occurrenceToken = if (isAllDay) row.requiredLong("occurrenceDay") else startMillis
 
-    /** AppleScript's date subtraction uses local 1970 midnight, not UTC epoch. */
-    private fun localEpochSecondsToUtcMillis(seconds: Long): Long =
-        LocalDateTime.ofInstant(Instant.ofEpochSecond(seconds), ZoneOffset.UTC)
-            .atZone(ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
+        return CalendarEvent(
+            externalId = "mac_$uid",
+            title = title,
+            description = row.requiredString("description"),
+            startTimeUtcMillis = startMillis,
+            endTimeUtcMillis = endMillis,
+            calendarName = row.requiredString("calendarName"),
+            isAllDay = isAllDay,
+            location = row.requiredString("location"),
+            url = row.requiredString("url"),
+            sourceKind = CalendarEventSourceKind.MACOS,
+            rawUid = uid.ifBlank { null },
+            occurrenceToken = occurrenceToken,
+        )
+    }
 
     private companion object {
         const val FETCH_TIMEOUT_MILLIS = 30_000L
+        const val RESPONSE_VERSION = 1
+
+        val EVENT_KEYS = setOf(
+            "uid",
+            "title",
+            "description",
+            "startMillis",
+            "endMillis",
+            "calendarName",
+            "isAllDay",
+            "occurrenceDay",
+            "location",
+            "url",
+        )
+
+        val CALENDAR_JXA = """
+            function run(argv) {
+                function fixedError(code) {
+                    return JSON.stringify({version: 1, error: code});
+                }
+                function safeString(read) {
+                    try {
+                        var value = read();
+                        return value == null ? "" : String(value);
+                    } catch (_) {
+                        return "";
+                    }
+                }
+                function localEpochDay(date) {
+                    var millisPerDay = 24 * 60 * 60 * 1000;
+                    return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / millisPerDay);
+                }
+
+                if (argv.length !== 2 || !/^-?\d+$/.test(argv[0]) || !/^-?\d+$/.test(argv[1])) {
+                    return fixedError("transport");
+                }
+                var lower = Number(argv[0]);
+                var upper = Number(argv[1]);
+                if (!Number.isSafeInteger(lower) || !Number.isSafeInteger(upper) || lower > upper) {
+                    return fixedError("transport");
+                }
+
+                try {
+                    var calendarApplication = Application("Calendar");
+                    var calendars = calendarApplication.calendars();
+                    var rows = [];
+                    for (var calendarIndex = 0; calendarIndex < calendars.length; calendarIndex++) {
+                        var calendar = calendars[calendarIndex];
+                        var calendarName = safeString(function () { return calendar.name(); });
+                        var matchingEvents = calendar.events.whose({_and: [
+                            {startDate: {_greaterThanEquals: new Date(lower)}},
+                            {startDate: {_lessThanEquals: new Date(upper)}}
+                        ]});
+                        for (var eventIndex = 0; ; eventIndex++) {
+                            var event = matchingEvents.at(eventIndex);
+                            if (!event.exists()) {
+                                break;
+                            }
+                            var startDate = event.startDate();
+                            if (!(startDate instanceof Date)) {
+                                return fixedError("transport");
+                            }
+                            var startMillis = startDate.getTime();
+                            var title = safeString(function () { return event.summary(); });
+                            if (title.trim().length === 0) {
+                                continue;
+                            }
+                            if (rows.length === 10000) {
+                                return fixedError("overflow");
+                            }
+                            var endDate = null;
+                            try { endDate = event.endDate(); } catch (_) {}
+                            var isAllDay = false;
+                            try { isAllDay = Boolean(event.alldayEvent()); } catch (_) {}
+                            rows.push({
+                                uid: safeString(function () { return event.uid(); }),
+                                title: title,
+                                description: safeString(function () { return event.description(); }),
+                                startMillis: startMillis,
+                                endMillis: endDate instanceof Date ? endDate.getTime() : null,
+                                calendarName: calendarName,
+                                isAllDay: isAllDay,
+                                occurrenceDay: localEpochDay(startDate),
+                                location: safeString(function () { return event.location(); }),
+                                url: safeString(function () { return event.url(); })
+                            });
+                        }
+                    }
+                    return JSON.stringify({version: 1, events: rows});
+                } catch (error) {
+                    var errorNumber = Number(error && error.number);
+                    return fixedError(errorNumber === -1743 ? "denied" : "transport");
+                }
+            }
+        """.trimIndent()
     }
 }
 
-private fun JvmProcessResult.diagnosticName(): String = when (this) {
-    is JvmProcessResult.Completed -> "completed"
-    JvmProcessResult.TimedOut -> "timed out"
-    JvmProcessResult.OutputTooLarge -> "output limit exceeded"
-    is JvmProcessResult.Failed -> "process failure"
+private fun JsonObject.requireExactKeys(expected: Set<String>) {
+    if (keys != expected) invalidResponse()
 }
+
+private fun JsonObject.requiredString(key: String): String {
+    val primitive = this[key] as? JsonPrimitive ?: invalidResponse()
+    if (!primitive.isString) invalidResponse()
+    return primitive.content
+}
+
+private fun JsonObject.requiredInt(key: String): Int {
+    val primitive = this[key] as? JsonPrimitive ?: invalidResponse()
+    if (primitive.isString) invalidResponse()
+    return primitive.intOrNull ?: invalidResponse()
+}
+
+private fun JsonObject.requiredLong(key: String): Long {
+    val primitive = this[key] as? JsonPrimitive ?: invalidResponse()
+    if (primitive.isString) invalidResponse()
+    return primitive.longOrNull ?: invalidResponse()
+}
+
+private fun JsonObject.nullableLong(key: String): Long? {
+    val element = this[key] ?: invalidResponse()
+    if (element === JsonNull) return null
+    val primitive = element as? JsonPrimitive ?: invalidResponse()
+    if (primitive.isString) invalidResponse()
+    return primitive.longOrNull ?: invalidResponse()
+}
+
+private fun JsonObject.requiredBoolean(key: String): Boolean {
+    val primitive = this[key] as? JsonPrimitive ?: invalidResponse()
+    if (primitive.isString) invalidResponse()
+    return primitive.booleanOrNull ?: invalidResponse()
+}
+
+private fun invalidResponse(): Nothing =
+    throw CalendarProviderException(CalendarProviderFailure.INVALID_RESPONSE)

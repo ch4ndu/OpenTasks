@@ -12,11 +12,17 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.roundToInt
 
 class PlatformAttachmentFileStorage(
     context: Context,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val leaseRecorder: AttachmentFileLeaseRecorder? = null,
 ) : AttachmentFileStorage {
     private val directory = File(context.filesDir, "attachments/images")
 
@@ -37,32 +43,94 @@ class PlatformAttachmentFileStorage(
     }
 
     override suspend fun clearAll() {
-        withContext(ioDispatcher) { directory.deleteRecursively() }
+        try {
+            withContext(ioDispatcher) {
+                if (directory.exists() && !directory.deleteRecursively()) {
+                    throw AttachmentFileOperationException()
+                }
+                if (directory.exists()) throw AttachmentFileOperationException()
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            throw AttachmentFileOperationException()
+        }
     }
 
-    private suspend fun storeImage(fileName: String, bytes: ByteArray): StoredAttachmentFile =
-        withContext(ioDispatcher) {
-            directory.mkdirs()
-            val original = decodeOrientedBitmap(bytes)
-                ?: throw AttachmentImageDecodeException()
-            val optimized = original.scaleAndEncode(AttachmentFilePolicy.MAX_LONG_EDGE)
-            val thumb = original.scaleAndEncode(AttachmentFilePolicy.THUMBNAIL_LONG_EDGE)
-            val id = uuid4()
-            val localFile = File(directory, "$id.${optimized.extension}")
-            val thumbFile = File(directory, "${id}_thumb.${thumb.extension}")
-            localFile.writeBytes(optimized.bytes)
-            thumbFile.writeBytes(thumb.bytes)
-            original.recycle()
-            StoredAttachmentFile(
-                localPath = localFile.absolutePath,
-                thumbnailPath = thumbFile.absolutePath,
-                fileName = localFile.name,
-                mimeType = optimized.mimeType,
-                fileSizeBytes = optimized.bytes.size.toLong(),
-                width = optimized.width,
-                height = optimized.height,
-            )
+    private suspend fun storeImage(fileName: String, bytes: ByteArray): StoredAttachmentFile {
+        var leasedPaths = emptyList<String>()
+        try {
+            return withContext(ioDispatcher) {
+                if (bytes.size.toLong() > AttachmentFilePolicy.MAX_SOURCE_BYTES) {
+                    throw AttachmentFileTooLargeException(AttachmentFilePolicy.MAX_SOURCE_BYTES)
+                }
+                val original = decodeOrientedBitmap(bytes)
+                val encoded = try {
+                    OptimizedPair(
+                        fullSize = original.scaleAndEncode(AttachmentFilePolicy.MAX_LONG_EDGE),
+                        thumbnail = original.scaleAndEncode(AttachmentFilePolicy.THUMBNAIL_LONG_EDGE),
+                    )
+                } finally {
+                    original.recycle()
+                }
+                currentCoroutineContext().ensureActive()
+                if ((!directory.exists() && !directory.mkdirs()) || !directory.isDirectory) {
+                    throw AttachmentFileOperationException()
+                }
+                val id = uuid4()
+                val localFile = File(directory, "$id.${encoded.fullSize.extension}")
+                val thumbFile = File(directory, "${id}_thumb.${encoded.thumbnail.extension}")
+                if (localFile.exists() || thumbFile.exists()) throw AttachmentFileOperationException()
+                leasedPaths = listOf(localFile.absolutePath, thumbFile.absolutePath)
+                leaseRecorder?.lease(leasedPaths)
+                currentCoroutineContext().ensureActive()
+                localFile.writeBytes(encoded.fullSize.bytes)
+                if (!localFile.isFile || localFile.length() != encoded.fullSize.bytes.size.toLong()) {
+                    throw AttachmentFileOperationException()
+                }
+                thumbFile.writeBytes(encoded.thumbnail.bytes)
+                if (!thumbFile.isFile || thumbFile.length() != encoded.thumbnail.bytes.size.toLong()) {
+                    throw AttachmentFileOperationException()
+                }
+                StoredAttachmentFile(
+                    localPath = localFile.absolutePath,
+                    thumbnailPath = thumbFile.absolutePath,
+                    fileName = localFile.name,
+                    mimeType = encoded.fullSize.mimeType,
+                    fileSizeBytes = encoded.fullSize.bytes.size.toLong(),
+                    width = encoded.fullSize.width,
+                    height = encoded.fullSize.height,
+                )
+            }
+        } catch (error: CancellationException) {
+            compensateFailedStore(leasedPaths)
+            throw error
+        } catch (error: Exception) {
+            compensateFailedStore(leasedPaths)
+            throw error.asAttachmentStorageFailure()
         }
+    }
+
+    private suspend fun compensateFailedStore(paths: List<String>) {
+        withContext(NonCancellable + ioDispatcher) {
+            for (path in paths) {
+                val file = File(path)
+                val absent = try {
+                    file.delete()
+                    !file.exists()
+                } catch (_: Exception) {
+                    false
+                }
+                if (absent) {
+                    try {
+                        leaseRecorder?.release(path)
+                    } catch (_: Exception) {
+                        // The durable entry remains available for a later retry.
+                    }
+                }
+            }
+        }
+    }
 
     private fun File.readBoundedBytes(maxBytes: Long): ByteArray? {
         if (!isFile) return null
@@ -84,8 +152,17 @@ class PlatformAttachmentFileStorage(
         }
     }
 
-    private fun decodeOrientedBitmap(bytes: ByteArray): Bitmap? {
-        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+    private fun decodeOrientedBitmap(bytes: ByteArray): Bitmap {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (!AttachmentFilePolicy.acceptsSourceDimensions(bounds.outWidth, bounds.outHeight)) {
+            throw AttachmentImageDecodeException()
+        }
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight)
+        }
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            ?: throw AttachmentImageDecodeException()
         val orientation = runCatching {
             ExifInterface(ByteArrayInputStream(bytes)).getAttributeInt(
                 ExifInterface.TAG_ORIENTATION,
@@ -109,18 +186,36 @@ class PlatformAttachmentFileStorage(
             ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(-90f)
             else -> return decoded
         }
-        return runCatching {
+        return try {
             Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
-        }.getOrNull()?.also { oriented ->
-            if (oriented !== decoded) decoded.recycle()
-        } ?: decoded
+                .also { oriented ->
+                    if (oriented !== decoded) decoded.recycle()
+                }
+        } catch (_: Exception) {
+            decoded.recycle()
+            throw AttachmentImageDecodeException()
+        }
+    }
+
+    private fun calculateInSampleSize(width: Int, height: Int): Int {
+        val maxDimension = maxOf(width, height)
+        var sampleSize = 1
+        while (maxDimension / (sampleSize * 2) >= AttachmentFilePolicy.MAX_LONG_EDGE) {
+            sampleSize *= 2
+        }
+        return sampleSize
     }
 
     private fun Bitmap.scaleAndEncode(longEdge: Int): Encoded {
         val maxDimension = maxOf(width, height)
         val scaled = if (maxDimension > longEdge) {
             val ratio = longEdge.toFloat() / maxDimension.toFloat()
-            Bitmap.createScaledBitmap(this, (width * ratio).toInt(), (height * ratio).toInt(), true)
+            Bitmap.createScaledBitmap(
+                this,
+                (width * ratio).roundToInt().coerceAtLeast(1),
+                (height * ratio).roundToInt().coerceAtLeast(1),
+                true,
+            )
         } else {
             this
         }
@@ -131,12 +226,15 @@ class PlatformAttachmentFileStorage(
         }
         val extension = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "webp" else "jpg"
         val mimeType = if (extension == "webp") "image/webp" else "image/jpeg"
-        val output = ByteArrayOutputStream()
-        scaled.compress(format, AttachmentFilePolicy.QUALITY, output)
-        val scaledWidth = scaled.width
-        val scaledHeight = scaled.height
-        if (scaled !== this) scaled.recycle()
-        return Encoded(output.toByteArray(), extension, mimeType, scaledWidth, scaledHeight)
+        return try {
+            val output = ByteArrayOutputStream()
+            if (!scaled.compress(format, AttachmentFilePolicy.QUALITY, output)) {
+                throw AttachmentImageDecodeException()
+            }
+            Encoded(output.toByteArray(), extension, mimeType, scaled.width, scaled.height)
+        } finally {
+            if (scaled !== this) scaled.recycle()
+        }
     }
 
     private data class Encoded(
@@ -146,4 +244,17 @@ class PlatformAttachmentFileStorage(
         val width: Int,
         val height: Int,
     )
+
+    private data class OptimizedPair(
+        val fullSize: Encoded,
+        val thumbnail: Encoded,
+    )
+
+    private fun Exception.asAttachmentStorageFailure(): Exception = when (this) {
+        is AttachmentFileOperationException,
+        is AttachmentFileTooLargeException,
+        is AttachmentImageDecodeException,
+        -> this
+        else -> AttachmentFileOperationException()
+    }
 }

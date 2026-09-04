@@ -32,6 +32,9 @@ class TaskCompletionHandler(
     private val scope: CoroutineScope,
     accountBoundaryExecutor: AccountBoundaryExecutor? = null,
     private val launchMutationDelegate: TaskMutationLauncher? = null,
+    private val onMutationBoundaryRejected: () -> Unit = {},
+    private val onMutationFailure: (Throwable) -> Unit = {},
+    private val onMutationRejected: () -> Unit = {},
 ) {
     private val _taskPendingSeriesChoice = MutableStateFlow<TaskCompletionChoice?>(null)
     val taskPendingSeriesChoice: StateFlow<TaskCompletionChoice?> = _taskPendingSeriesChoice.asStateFlow()
@@ -48,9 +51,12 @@ class TaskCompletionHandler(
             _taskPendingSeriesChoice.value = TaskCompletionChoice(taskId, occurrenceDeadlineLocalMillis)
         } else {
             launchMutation(
-                onBoundaryRejected = {},
-                onFailure = {},
-                action = { toggleTaskCompleteAction(taskId) },
+                onBoundaryRejected = onMutationBoundaryRejected,
+                onFailure = onMutationFailure,
+                action = {
+                    val result = toggleTaskCompleteAction(taskId).value
+                    handleResult(taskId, result)
+                },
             )
         }
     }
@@ -59,15 +65,21 @@ class TaskCompletionHandler(
         val pending = _taskPendingSeriesChoice.value ?: return
         if (!completionInFlight.compareAndSet(expect = false, update = true)) return
         launchMutation(
-            onBoundaryRejected = { completionInFlight.value = false },
-            onFailure = { completionInFlight.value = false },
+            onBoundaryRejected = {
+                completionInFlight.value = false
+                onMutationBoundaryRejected()
+            },
+            onFailure = { error ->
+                completionInFlight.value = false
+                onMutationFailure(error)
+            },
         ) {
             try {
-                toggleTaskCompleteAction(
+                val result = toggleTaskCompleteAction(
                     pending.taskId,
                     occurrenceDeadlineLocalMillis = pending.expectedOccurrence,
-                )
-                _taskPendingSeriesChoice.value = null
+                ).value
+                handleResult(pending.taskId, result, completedChoice = pending)
             } finally {
                 completionInFlight.value = false
             }
@@ -78,16 +90,22 @@ class TaskCompletionHandler(
         val pending = _taskPendingSeriesChoice.value ?: return
         if (!completionInFlight.compareAndSet(expect = false, update = true)) return
         launchMutation(
-            onBoundaryRejected = { completionInFlight.value = false },
-            onFailure = { completionInFlight.value = false },
+            onBoundaryRejected = {
+                completionInFlight.value = false
+                onMutationBoundaryRejected()
+            },
+            onFailure = { error ->
+                completionInFlight.value = false
+                onMutationFailure(error)
+            },
         ) {
             try {
-                toggleTaskCompleteAction(
+                val result = toggleTaskCompleteAction(
                     pending.taskId,
                     completeSeries = true,
                     occurrenceDeadlineLocalMillis = pending.expectedOccurrence,
-                )
-                _taskPendingSeriesChoice.value = null
+                ).value
+                handleResult(pending.taskId, result, completedChoice = pending)
             } finally {
                 completionInFlight.value = false
             }
@@ -97,6 +115,30 @@ class TaskCompletionHandler(
     fun dismissSeriesChoice() {
         if (completionInFlight.value) return
         _taskPendingSeriesChoice.value = null
+    }
+
+    private fun handleResult(
+        taskId: String,
+        result: TaskWriteResult,
+        completedChoice: TaskCompletionChoice? = null,
+    ) {
+        when (result) {
+            is TaskWriteResult.Updated -> {
+                if (completedChoice != null) {
+                    _taskPendingSeriesChoice.compareAndSet(completedChoice, null)
+                }
+            }
+            is TaskWriteResult.CompletionChoiceRequired -> {
+                _taskPendingSeriesChoice.value = TaskCompletionChoice(
+                    taskId = taskId,
+                    expectedOccurrence = result.expectedOccurrence,
+                )
+            }
+            TaskWriteResult.Missing,
+            TaskWriteResult.NoOp,
+            TaskWriteResult.StaleOccurrence,
+            -> onMutationRejected()
+        }
     }
 
     private fun launchMutation(
@@ -129,7 +171,7 @@ class TaskCompletionHandler(
                 log.w { "Task completion skipped because the account boundary changed" }
                 onBoundaryRejected()
             } catch (error: Exception) {
-                log.e(error) { "Task completion failed" }
+                log.e { "Task completion failed" }
                 onFailure(error)
             }
         }

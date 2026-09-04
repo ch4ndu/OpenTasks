@@ -33,6 +33,8 @@ if (releaseSigningInputs.values.any { it != null } && !isReleaseSigningConfigure
 val releaseStoreFile = releaseSigningInputs.getValue("storeFile")?.let(::file)
 
 kotlin {
+    jvmToolchain(17)
+
     target {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)

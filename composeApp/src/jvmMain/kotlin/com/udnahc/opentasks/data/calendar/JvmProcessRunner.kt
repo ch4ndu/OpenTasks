@@ -15,6 +15,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 import java.util.concurrent.TimeUnit
 
 internal sealed interface JvmProcessResult {
@@ -25,7 +28,8 @@ internal sealed interface JvmProcessResult {
 
     data object TimedOut : JvmProcessResult
     data object OutputTooLarge : JvmProcessResult
-    data class Failed(val cause: Throwable) : JvmProcessResult
+    data object InvalidUtf8 : JvmProcessResult
+    data class Failed(val cause: Exception) : JvmProcessResult
 }
 
 /** Runs one bounded child process without allowing its output or lifetime to escape. */
@@ -72,16 +76,18 @@ internal class JvmProcessRunner(
                     val (exitCode, output) = completion
                     JvmProcessResult.Completed(
                         exitCode = exitCode,
-                        output = output.toString(Charsets.UTF_8),
+                        output = decodeUtf8Strict(output),
                     )
                 }
             } catch (error: OutputTooLargeException) {
                 terminateProcess = true
                 JvmProcessResult.OutputTooLarge
+            } catch (_: InvalidUtf8Exception) {
+                JvmProcessResult.InvalidUtf8
             } catch (error: CancellationException) {
                 terminateProcess = true
                 throw error
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 terminateProcess = true
                 JvmProcessResult.Failed(error)
             } finally {
@@ -173,6 +179,17 @@ internal class JvmProcessRunner(
     }
 
     private class OutputTooLargeException : IllegalStateException()
+    private class InvalidUtf8Exception : IllegalArgumentException()
+
+    private fun decodeUtf8Strict(bytes: ByteArray): String = try {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
+    } catch (_: CharacterCodingException) {
+        throw InvalidUtf8Exception()
+    }
 
     private companion object {
         const val DEFAULT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024

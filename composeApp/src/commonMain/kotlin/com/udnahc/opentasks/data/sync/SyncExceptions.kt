@@ -36,7 +36,7 @@ class SyncException(
     failures.joinToString(
         prefix = "Sync failed: ",
         separator = "; ",
-    ) { "${it.operation} ${it.collectionName}: ${it.cause.message ?: it.cause::class.simpleName}" },
+    ) { it.safeDiagnosticLabel() },
     failures.firstOrNull()?.cause,
 )
 
@@ -56,3 +56,20 @@ internal fun Throwable.findSyncAuthenticationRejected(): SyncAuthenticationRejec
 internal fun Throwable.rethrowSyncAuthenticationRejected() {
     findSyncAuthenticationRejected()?.let { throw it }
 }
+
+private fun SyncCollectionFailure.safeDiagnosticLabel(): String {
+    val safeOperation = operation.takeIf(SAFE_SYNC_OPERATIONS::contains) ?: "operation"
+    val safeCollection = collectionName.takeIf(SAFE_SYNC_COLLECTIONS::contains) ?: "collection"
+    return "$safeOperation $safeCollection"
+}
+
+private val SAFE_SYNC_OPERATIONS = setOf("initial_pull", "pull", "push", "verify")
+private val SAFE_SYNC_COLLECTIONS = setOf(
+    "categories",
+    "tags",
+    "tasks",
+    "attachments",
+    "task_tags",
+    "notes",
+    "countdowns",
+)

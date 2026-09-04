@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
-import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.model.CalendarListDisplayModePreference
 import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.Task
@@ -15,6 +14,8 @@ import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAct
 import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.time.LocalDaySignal
+import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
+import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownCalendarTasks
@@ -50,8 +51,11 @@ class CalendarViewModel(
     localDaySignal: LocalDaySignal,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     accountBoundaryExecutor: AccountBoundaryExecutor? = null,
+    private val dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
 ) : ViewModel() {
 
+    private val taskMutationFailureEvents = TaskMutationFailureEventStore()
+    val taskMutationFailureEvent = taskMutationFailureEvents.event
     private val mutationLauncher = ForegroundMutationLauncher(
         accountBoundaryExecutor,
         viewModelScope,
@@ -62,8 +66,18 @@ class CalendarViewModel(
         viewModelScope,
         accountBoundaryExecutor,
         mutationLauncher::launch,
+        onMutationBoundaryRejected = {
+            taskMutationFailureEvents.publish(TaskMutationFailureReason.BOUNDARY_CHANGED)
+        },
+        onMutationFailure = {
+            taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+        },
+        onMutationRejected = {
+            taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+        },
     )
     val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
+    val timelineHourLabels: List<String> = (0..23).map(dateTimeFormatter::formatHour)
     private val _listSelectedDayKey = MutableStateFlow<Long?>(null)
     private val _monthSelectedDayKey = MutableStateFlow<Long?>(null)
     private val saveCalendarViewPreferenceAction = saveCalendarViewPreference
@@ -87,7 +101,7 @@ class CalendarViewModel(
 
     /** The sole calendar-facing source of the local civil day. */
     val today = localDaySignal.dates
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), todayLocal())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), localDaySignal.snapshot())
 
     val categoryNames: StateFlow<Map<String, String>> = observeAllCategories()
         .map { cats -> cats.associate { it.id to it.name } }
@@ -128,7 +142,12 @@ class CalendarViewModel(
     ) { byDay, todayDate ->
         val todayDayKey = dayKeyFromDate(todayDate.year, todayDate.monthNumber, todayDate.dayOfMonth)
         byDay.mapValues { (day, tasks) ->
-            projectCalendarDay(tasks, targetDayKey = day, todayDayKey = todayDayKey)
+            projectCalendarDay(
+                tasks,
+                targetDayKey = day,
+                todayDayKey = todayDayKey,
+                dateTimeFormatter = dateTimeFormatter,
+            )
         }
     }
         .scan(emptyMap<Long, CalendarDayProjection>()) { previous, next ->
@@ -146,13 +165,23 @@ class CalendarViewModel(
     ) { byDay, selectedKey, todayDate ->
         val todayDayKey = dayKeyFromDate(todayDate.year, todayDate.monthNumber, todayDate.dayOfMonth)
         val day = selectedKey ?: todayDayKey
-        byDay[day] ?: projectCalendarDay(emptyList(), targetDayKey = day, todayDayKey = todayDayKey)
+        byDay[day] ?: projectCalendarDay(
+            emptyList(),
+            targetDayKey = day,
+            todayDayKey = todayDayKey,
+            dateTimeFormatter = dateTimeFormatter,
+        )
     }
         .flowOn(Dispatchers.Default)
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
-            projectCalendarDay(emptyList(), dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth), dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth)),
+            projectCalendarDay(
+                emptyList(),
+                dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth),
+                dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth),
+                dateTimeFormatter,
+            ),
         )
 
     val selectedMonthDayProjection: StateFlow<CalendarDayProjection> = combine(
@@ -162,13 +191,23 @@ class CalendarViewModel(
     ) { byDay, selectedKey, todayDate ->
         val todayDayKey = dayKeyFromDate(todayDate.year, todayDate.monthNumber, todayDate.dayOfMonth)
         val day = selectedKey ?: todayDayKey
-        byDay[day] ?: projectCalendarDay(emptyList(), targetDayKey = day, todayDayKey = todayDayKey)
+        byDay[day] ?: projectCalendarDay(
+            emptyList(),
+            targetDayKey = day,
+            todayDayKey = todayDayKey,
+            dateTimeFormatter = dateTimeFormatter,
+        )
     }
         .flowOn(Dispatchers.Default)
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
-            projectCalendarDay(emptyList(), dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth), dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth)),
+            projectCalendarDay(
+                emptyList(),
+                dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth),
+                dayKeyFromDate(today.value.year, today.value.monthNumber, today.value.dayOfMonth),
+                dateTimeFormatter,
+            ),
         )
 
     val selectedListDayTasks: StateFlow<List<Task>> = selectedListDayProjection
@@ -222,4 +261,7 @@ class CalendarViewModel(
     fun completeOccurrence() = completionHandler.completeOccurrence()
     fun completeSeries() = completionHandler.completeSeries()
     fun dismissSeriesChoice() = completionHandler.dismissSeriesChoice()
+
+    fun consumeTaskMutationFailureEvent(event: TaskMutationFailureEvent): Boolean =
+        taskMutationFailureEvents.consume(event)
 }

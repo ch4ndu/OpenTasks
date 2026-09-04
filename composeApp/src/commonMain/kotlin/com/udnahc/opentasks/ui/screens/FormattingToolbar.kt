@@ -1,11 +1,13 @@
 package com.udnahc.opentasks.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +21,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.bold
 import opentasks.composeapp.generated.resources.bullet_list
@@ -42,10 +45,12 @@ import org.jetbrains.compose.resources.stringResource
 fun FormattingToolbar(
     richTextState: RichTextState,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val dimens = OpenTasksTheme.dimens
     Row(
         modifier = modifier
+            .horizontalScroll(rememberScrollState())
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = dimens.paddingSmall, vertical = dimens.paddingSmall),
         verticalAlignment = Alignment.CenterVertically,
@@ -55,6 +60,7 @@ fun FormattingToolbar(
             icon = Res.drawable.ic_format_bold,
             contentDescription = stringResource(Res.string.bold),
             isActive = richTextState.currentSpanStyle.fontWeight == FontWeight.Bold,
+            enabled = enabled,
             onClick = { richTextState.toggleSpanStyle(SpanStyle(fontWeight = FontWeight.Bold)) },
         )
         // Italic
@@ -62,6 +68,7 @@ fun FormattingToolbar(
             icon = Res.drawable.ic_format_italic,
             contentDescription = stringResource(Res.string.italic),
             isActive = richTextState.currentSpanStyle.fontStyle == FontStyle.Italic,
+            enabled = enabled,
             onClick = { richTextState.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic)) },
         )
         // Underline
@@ -69,6 +76,7 @@ fun FormattingToolbar(
             icon = Res.drawable.ic_format_underline,
             contentDescription = stringResource(Res.string.underline),
             isActive = richTextState.currentSpanStyle.textDecoration?.contains(TextDecoration.Underline) == true,
+            enabled = enabled,
             onClick = { richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.Underline)) },
         )
         // Strikethrough
@@ -76,6 +84,7 @@ fun FormattingToolbar(
             icon = Res.drawable.ic_format_strikethrough,
             contentDescription = stringResource(Res.string.strikethrough),
             isActive = richTextState.currentSpanStyle.textDecoration?.contains(TextDecoration.LineThrough) == true,
+            enabled = enabled,
             onClick = { richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) },
         )
 
@@ -86,6 +95,7 @@ fun FormattingToolbar(
             icon = Res.drawable.ic_format_list_bulleted,
             contentDescription = stringResource(Res.string.bullet_list),
             isActive = richTextState.isUnorderedList,
+            enabled = enabled,
             onClick = { richTextState.toggleUnorderedList() },
         )
         // Numbered list
@@ -93,6 +103,7 @@ fun FormattingToolbar(
             icon = Res.drawable.ic_format_list_numbered,
             contentDescription = stringResource(Res.string.numbered_list),
             isActive = richTextState.isOrderedList,
+            enabled = enabled,
             onClick = { richTextState.toggleOrderedList() },
         )
         // Code span
@@ -100,6 +111,7 @@ fun FormattingToolbar(
             icon = Res.drawable.ic_code,
             contentDescription = stringResource(Res.string.code),
             isActive = richTextState.isCodeSpan,
+            enabled = enabled,
             onClick = { richTextState.toggleCodeSpan() },
         )
     }
@@ -110,12 +122,14 @@ private fun FormattingToolbarButton(
     icon: DrawableResource,
     contentDescription: String?,
     isActive: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(dimens.touchTargetMedium),
+        enabled = enabled,
+        modifier = Modifier.minimumInteractiveTargetSize(),
     ) {
         Icon(
             painter = painterResource(icon),

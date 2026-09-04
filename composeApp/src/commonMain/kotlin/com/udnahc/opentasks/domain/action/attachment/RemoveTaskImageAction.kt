@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.domain.action.attachment
 
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
+import com.udnahc.opentasks.data.attachment.AttachmentTombstoneFileCleanup
 import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.Attachment
@@ -15,6 +16,7 @@ class RemoveTaskImageAction(
     private val repository: AttachmentRepository,
     private val fileStorage: AttachmentFileStorage,
     private val mutationGate: AccountMutationGate,
+    private val tombstoneFileCleanup: AttachmentTombstoneFileCleanup? = null,
 ) {
     suspend operator fun invoke(attachment: Attachment) = mutationGate.withExclusive {
         val deleted = attachment.copy(
@@ -22,6 +24,10 @@ class RemoveTaskImageAction(
             updatedAt = localNow(),
         ).withSyncState(AttachmentSyncState.LOCAL_ONLY)
         repository.update(deleted)
+        tombstoneFileCleanup?.let {
+            it.retryAllRetainingRows()
+            return@withExclusive
+        }
         currentCoroutineContext().ensureActive()
         try {
             fileStorage.delete(attachment.localPath)

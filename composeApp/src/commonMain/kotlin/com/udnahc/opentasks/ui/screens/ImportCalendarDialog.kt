@@ -61,6 +61,8 @@ fun ImportCalendarDialog(
     ImportCalendarDialogContent(
         uiState = uiState,
         isAvailable = viewModel.isAvailable,
+        supportsExplicitImportWithoutPermissionRequest =
+            viewModel.supportsExplicitImportWithoutPermissionRequest,
         onRangeValueChange = { viewModel.updateRangeValue(it) },
         onRangeUnitChange = { viewModel.updateRangeUnit(it) },
         onRequestPermission = requestPermission,
@@ -82,8 +84,12 @@ internal fun ImportCalendarDialogContent(
     onRequestPermission: () -> Unit,
     onImport: () -> Unit,
     onDismiss: () -> Unit,
+    supportsExplicitImportWithoutPermissionRequest: Boolean = false,
 ) {
     val dimens = OpenTasksTheme.dimens
+    val canImport = uiState.permissionStatus == CalendarPermissionStatus.GRANTED ||
+            (supportsExplicitImportWithoutPermissionRequest &&
+                    uiState.permissionStatus == CalendarPermissionStatus.NOT_DETERMINED)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -107,7 +113,7 @@ internal fun ImportCalendarDialogContent(
                         ImportErrorText(stringResource(Res.string.calendar_permission_denied))
                     }
 
-                    uiState.permissionStatus != CalendarPermissionStatus.GRANTED -> {
+                    !canImport -> {
                         Text(
                             text = stringResource(Res.string.grant_calendar_permission),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -173,7 +179,7 @@ internal fun ImportCalendarDialogContent(
                     ImportDoneButton(onDismiss)
                 }
 
-                uiState.permissionStatus != CalendarPermissionStatus.GRANTED -> {
+                !canImport -> {
                     PrimaryDialogTextButton(
                         text = stringResource(Res.string.grant_calendar_permission),
                         onClick = onRequestPermission,

@@ -234,3 +234,11 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
         connection.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_isDeleted_deadline ON tasks(isDeleted, deadline)")
     }
 }
+
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `attachment_file_cleanup` (`path` TEXT NOT NULL, PRIMARY KEY(`path`))"
+        )
+    }
+}

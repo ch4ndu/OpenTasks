@@ -4,12 +4,10 @@ import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayKeyToMillis
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
-import com.udnahc.opentasks.data.extensions.formatDateLabel
-import com.udnahc.opentasks.data.extensions.formatDateShort
-import com.udnahc.opentasks.data.extensions.formatTime12Hr
-import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.isCountdownItem
+import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
+import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
 
 data class CalendarDayTasks(
     val allDayTasks: List<Task> = emptyList(),
@@ -19,7 +17,7 @@ data class CalendarDayTasks(
 )
 
 private val CALENDAR_TIMELINE_HOUR_LABELS = (0..23).map { hour ->
-    formatTime12Hr(hour, 0).replace(":00 ", " ")
+    EnglishDateTimeFormatter.formatHour(hour)
 }
 
 data class CalendarTaskRowProjection(
@@ -74,25 +72,31 @@ fun projectCalendarDay(
     tasks: List<Task>,
     targetDayKey: Long,
     todayDayKey: Long,
+    dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
 ): CalendarDayProjection {
-    val rows = sortCalendarTasksForDay(tasks).map { it.toCalendarTaskRowProjection() }
+    val rows = sortCalendarTasksForDay(tasks).map {
+        it.toCalendarTaskRowProjection(dateTimeFormatter)
+    }
     val (allDayRows, timedRows) = rows.partition { it.isAllDay }
     return CalendarDayProjection(
         dayKey = targetDayKey,
-        formattedDate = formatDateLabel(dayKeyToMillis(targetDayKey)),
-        monthDateText = formatDateShort(dayKeyToMillis(targetDayKey)).uppercase(),
+        formattedDate = dateTimeFormatter.formatDateLabel(dayKeyToMillis(targetDayKey)),
+        monthDateText = dateTimeFormatter.formatShortDate(dayKeyToMillis(targetDayKey)).uppercase(),
         isToday = targetDayKey == todayDayKey,
         rows = rows,
         allDayRows = allDayRows,
         timedRows = timedRows,
         allDayPreview = calendarTaskPrefix(allDayRows, maxVisible = 3),
         monthPreview = calendarTaskPrefix(rows, maxVisible = 5),
-        timelineHourLabels = CALENDAR_TIMELINE_HOUR_LABELS,
+        timelineHourLabels = (0..23).map(dateTimeFormatter::formatHour),
     )
 }
 
 /** Compatibility transform retained for non-calendar projection callers. */
-fun splitCalendarDayTasks(tasks: List<Task>): CalendarDayTasks {
+fun splitCalendarDayTasks(
+    tasks: List<Task>,
+    dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
+): CalendarDayTasks {
     val (allDayTasks, timedTasks) = splitAllDayAndTimed(tasks)
     return CalendarDayTasks(
         allDayTasks = allDayTasks,
@@ -105,7 +109,8 @@ fun splitCalendarDayTasks(tasks: List<Task>): CalendarDayTasks {
             val deadline = task.deadline ?: return@mapNotNull null
             val hour = extractHour(deadline)
             val minute = extractMinute(deadline)
-            task.id.takeIf { hour != 0 || minute != 0 }?.let { it to formatTimeFromLocalMillis(deadline) }
+            task.id.takeIf { hour != 0 || minute != 0 }
+                ?.let { it to dateTimeFormatter.formatTime(deadline) }
         }.toMap(),
     )
 }
@@ -123,7 +128,9 @@ fun calendarTaskPrefix(
     return CalendarTaskPrefix(rows = visible, overflowCount = rows.size - visible.size)
 }
 
-private fun Task.toCalendarTaskRowProjection(): CalendarTaskRowProjection {
+private fun Task.toCalendarTaskRowProjection(
+    dateTimeFormatter: DateTimeTextFormatter,
+): CalendarTaskRowProjection {
     val deadline = deadline
     val isAllDay = isCalendarAllDay()
     val startMinutes = deadline?.let { extractHour(it) * 60 + extractMinute(it) } ?: 0
@@ -131,9 +138,9 @@ private fun Task.toCalendarTaskRowProjection(): CalendarTaskRowProjection {
         task = this,
         isAllDay = isAllDay,
         startMinutes = startMinutes,
-        timelineTimeText = deadline?.takeUnless { isAllDay }?.let(::formatTimeFromLocalMillis),
-        cardDateText = deadline?.let(::formatDateShort).orEmpty(),
-        cardTimeText = deadline?.let(::formatTimeFromLocalMillis).orEmpty(),
+        timelineTimeText = deadline?.takeUnless { isAllDay }?.let(dateTimeFormatter::formatTime),
+        cardDateText = deadline?.let(dateTimeFormatter::formatShortDate).orEmpty(),
+        cardTimeText = deadline?.let(dateTimeFormatter::formatTime).orEmpty(),
     )
 }
 

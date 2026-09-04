@@ -1,5 +1,13 @@
 package com.udnahc.opentasks.data.model
 
+enum class CalendarEventSourceKind {
+    LEGACY,
+    ANDROID,
+    IOS,
+    MACOS,
+    ICS,
+}
+
 data class CalendarEvent(
     val externalId: String,
     val title: String,
@@ -13,4 +21,7 @@ data class CalendarEvent(
     val organizer: String = "",
     val status: String = "",
     val attendees: List<String> = emptyList(),
+    val sourceKind: CalendarEventSourceKind = CalendarEventSourceKind.LEGACY,
+    val rawUid: String? = null,
+    val occurrenceToken: Long? = null,
 )

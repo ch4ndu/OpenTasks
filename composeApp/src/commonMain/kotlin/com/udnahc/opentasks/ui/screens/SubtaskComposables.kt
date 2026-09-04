@@ -1,6 +1,8 @@
 package com.udnahc.opentasks.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,10 +25,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
 import com.udnahc.opentasks.data.model.SubtaskItem
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.PriorityHigh
+import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_subtask
 import opentasks.composeapp.generated.resources.delete
@@ -60,6 +64,7 @@ internal fun SubtaskList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(onClick = onAddSubtask)
+                    .minimumInteractiveTargetSize()
                     .padding(vertical = dimens.paddingMedium),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -95,15 +100,26 @@ private fun SubtaskRow(
             .padding(vertical = dimens.paddingSmall),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(
-            checked = subtask.isChecked,
-            onCheckedChange = onCheckedChange,
-            colors = CheckboxDefaults.colors(
-                uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                checkedColor = PrimaryBlue,
-            ),
-            modifier = Modifier.size(dimens.priorityIndicatorSize),
-        )
+        Box(
+            modifier = Modifier
+                .minimumInteractiveTargetSize()
+                .toggleable(
+                    value = subtask.isChecked,
+                    role = Role.Checkbox,
+                    onValueChange = onCheckedChange,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Checkbox(
+                checked = subtask.isChecked,
+                onCheckedChange = null,
+                colors = CheckboxDefaults.colors(
+                    uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    checkedColor = PrimaryBlue,
+                ),
+                modifier = Modifier.size(dimens.priorityIndicatorSize),
+            )
+        }
         Spacer(Modifier.width(dimens.spacerLarge))
         BasicTextField(
             value = subtask.text,
@@ -113,7 +129,7 @@ private fun SubtaskRow(
             modifier = Modifier.weight(1f)
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
         )
-        IconButton(onClick = onDelete, modifier = Modifier.size(dimens.iconXLarge)) {
+        IconButton(onClick = onDelete, modifier = Modifier.minimumInteractiveTargetSize()) {
             Icon(
                 painter = painterResource(Res.drawable.ic_close),
                 contentDescription = stringResource(Res.string.delete),

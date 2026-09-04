@@ -106,8 +106,8 @@ class ImportExportParsersTest {
         assertEquals(true, event.isAllDay)
         assertEquals("2026-05-04", localMillisToLocalDate(utcToLocal(event.startTimeUtcMillis)).toString())
         assertEquals("Room; A", event.location)
-        assertEquals("MURALI", event.organizer)
-        assertEquals(listOf("ALEX"), event.attendees)
+        assertEquals("Murali", event.organizer)
+        assertEquals(listOf("Alex"), event.attendees)
         assertEquals("Confirmed", event.status)
     }
 

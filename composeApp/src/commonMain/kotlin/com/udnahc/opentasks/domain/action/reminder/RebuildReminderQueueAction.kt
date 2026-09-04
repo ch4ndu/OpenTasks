@@ -43,7 +43,7 @@ class RebuildReminderQueueAction(
     }
 
     suspend operator fun invoke() {
-        val tasks = taskRepository.getTasksWithDeadlines()
+        val tasks = taskRepository.getAllTasksForReminderReconciliationUtc()
         val countdowns = countdownRepository.getAllCountdownsForReminderReconciliationUtc()
         val limit = pendingQueueLimit()
         if (limit == null) {

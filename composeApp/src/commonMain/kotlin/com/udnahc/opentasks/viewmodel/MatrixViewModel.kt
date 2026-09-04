@@ -11,6 +11,7 @@ import com.udnahc.opentasks.data.model.TaskListViewMode
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
+import com.udnahc.opentasks.domain.action.task.TaskWriteResult
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
@@ -55,14 +56,28 @@ class MatrixViewModel(
         val tasks: List<Task>
     )
 
-    data class PriorityProjection(
-        val tasks: List<Task> = emptyList(),
+    class PriorityProjection(
+        tasks: List<Task> = emptyList(),
         val visibleTasks: List<Task> = emptyList(),
-        val hasMore: Boolean = false,
-    )
+        val totalCount: Int = tasks.size,
+    ) {
+        @Deprecated("Compatibility only; production consumers use visibleTasks or selected-priority flows")
+        val tasks: List<Task> = tasks
+
+        val hasMore: Boolean get() = totalCount > visibleTasks.size
+
+        override fun equals(other: Any?): Boolean =
+            other is PriorityProjection &&
+                visibleTasks == other.visibleTasks &&
+                totalCount == other.totalCount
+
+        override fun hashCode(): Int = 31 * visibleTasks.hashCode() + totalCount
+    }
 
     private val _selectedPriority = MutableStateFlow(TaskPriority.HIGH)
     private val _viewMode = MutableStateFlow(TaskListViewMode.LIST)
+    private val taskMutationFailureEvents = TaskMutationFailureEventStore()
+    val taskMutationFailureEvent = taskMutationFailureEvents.event
     private val mutationLauncher = ForegroundMutationLauncher(
         accountBoundaryExecutor,
         viewModelScope,
@@ -72,6 +87,15 @@ class MatrixViewModel(
         viewModelScope,
         accountBoundaryExecutor,
         mutationLauncher::launch,
+        onMutationBoundaryRejected = {
+            taskMutationFailureEvents.publish(TaskMutationFailureReason.BOUNDARY_CHANGED)
+        },
+        onMutationFailure = {
+            taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+        },
+        onMutationRejected = {
+            taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+        },
     )
     val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
     val viewMode: StateFlow<TaskListViewMode> = _viewMode
@@ -101,7 +125,7 @@ class MatrixViewModel(
                 PriorityProjection(
                     tasks = tasks,
                     visibleTasks = tasks.take(MATRIX_VISIBLE_TASK_LIMIT),
-                    hasMore = tasks.size > MATRIX_VISIBLE_TASK_LIMIT,
+                    totalCount = tasks.size,
                 )
             }
         }
@@ -113,10 +137,23 @@ class MatrixViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val taskDueTextById: StateFlow<Map<String, String>> = tasksByPriority
-        .map { tasksByPriority ->
-            tasksByPriority.values.flatten().associate { task -> task.id to taskDueTextProvider.matrixDueText(task) }
-        }
+    val taskDueTextById: StateFlow<Map<String, String>> = combine(
+        priorityProjections,
+        localDaySignal.dates,
+    ) { projections, _ ->
+        projections.values
+            .flatMap(PriorityProjection::visibleTasks)
+            .associate { task -> task.id to taskDueTextProvider.matrixDueText(task) }
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val selectedPriorityTaskDueTextById: StateFlow<Map<String, String>> = combine(
+        tasksForSelectedPriority,
+        localDaySignal.dates,
+    ) { tasks, _ ->
+        tasks.associate { task -> task.id to taskDueTextProvider.matrixDueText(task) }
+    }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
@@ -168,6 +205,9 @@ class MatrixViewModel(
     fun completeSeries() = completionHandler.completeSeries()
     fun dismissSeriesChoice() = completionHandler.dismissSeriesChoice()
 
+    fun consumeTaskMutationFailureEvent(event: TaskMutationFailureEvent): Boolean =
+        taskMutationFailureEvents.consume(event)
+
     fun moveTaskToStatus(
         task: Task,
         targetStatus: TaskStatus
@@ -176,12 +216,44 @@ class MatrixViewModel(
         if (targetStatus == TaskStatus.DONE && task.status != TaskStatus.DONE) {
             toggleComplete(task)
         } else {
-            mutationLauncher.launch { updateTaskStatusAction(task.id, targetStatus) }
+            mutationLauncher.launch(
+                onBoundaryRejected = {
+                    taskMutationFailureEvents.publish(TaskMutationFailureReason.BOUNDARY_CHANGED)
+                },
+                onFailure = {
+                    taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+                },
+            ) {
+                when (updateTaskStatusAction(task.id, targetStatus).value) {
+                    is TaskWriteResult.Updated -> Unit
+                    is TaskWriteResult.CompletionChoiceRequired,
+                    TaskWriteResult.Missing,
+                    TaskWriteResult.NoOp,
+                    TaskWriteResult.StaleOccurrence,
+                    -> taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+                }
+            }
         }
     }
 
     fun toggleStar(task: Task) {
-        mutationLauncher.launch { toggleTaskStarredAction(task.id) }
+        mutationLauncher.launch(
+            onBoundaryRejected = {
+                taskMutationFailureEvents.publish(TaskMutationFailureReason.BOUNDARY_CHANGED)
+            },
+            onFailure = {
+                taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+            },
+        ) {
+            when (toggleTaskStarredAction(task.id)) {
+                is TaskWriteResult.Updated -> Unit
+                is TaskWriteResult.CompletionChoiceRequired,
+                TaskWriteResult.Missing,
+                TaskWriteResult.NoOp,
+                TaskWriteResult.StaleOccurrence,
+                -> taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+            }
+        }
     }
 
     private fun categorize(

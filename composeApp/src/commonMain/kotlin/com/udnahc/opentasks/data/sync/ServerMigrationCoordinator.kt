@@ -4,7 +4,7 @@ import androidx.room.immediateTransaction
 import androidx.room.useWriterConnection
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.AppSettings
-import com.udnahc.opentasks.data.model.AppConstants
+import com.udnahc.opentasks.data.model.isPristineInboxPlaceholder
 import com.udnahc.opentasks.data.auth.AccountTransition
 import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.settings.AccountStateStore
@@ -21,17 +21,7 @@ class ServerMigrationCoordinator(
 ) {
     suspend fun classifyLocalStorage(): LocalStorageState = withContext(ioDispatcher) {
         val categories = database.categoryDao().getAllCategoriesOnce()
-        val hasOnlyPristineInbox = categories.singleOrNull()?.let { category ->
-            category.id == AppConstants.DEFAULT_INBOX_ID &&
-                category.name == "Inbox" &&
-                category.icon == "inbox" &&
-                category.sortOrder == 0 &&
-                category.pbId == null &&
-                !category.isSynced &&
-                !category.isDeleted &&
-                category.createdAt == 0L &&
-                category.updatedAt == 0L
-        } == true
+        val hasOnlyPristineInbox = categories.singleOrNull()?.isPristineInboxPlaceholder() == true
         val noOtherRows = database.taskDao().getAllTasksOnce().isEmpty() &&
             database.tagDao().getAllTagsOnce().isEmpty() &&
             database.tagDao().getAllTaskTagsOnce().isEmpty() &&

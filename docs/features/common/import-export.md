@@ -10,7 +10,9 @@ Calendar import reads events from the platform calendar after permission is gran
 
 On macOS, passive permission refreshes must not execute AppleScript because addressing the Calendar application activates it. OpenTasks queries Calendar only after the user explicitly starts a calendar import from Settings; macOS resolves any Automation consent at that point.
 
-`ImportCalendarEventsAction` skips duplicates using the event external id. Event metadata such as location, URL, organizer, status, attendees, all-day state, and time range is preserved on the task where supported by the task model.
+`ImportCalendarEventsAction` assigns a deterministic identity from the first 16 bytes of a platform SHA-256 digest to each occurrence. A source UID is paired with its occurrence token; UID-less rows use the complete normalized record plus a stable identical-row ordinal. Existing legacy external ids remain one-use compatibility aliases within each import batch, so a canonical match never consumes an alias and formerly colliding rows can import canonically. Event metadata such as location, URL, organizer, status, attendees, all-day state, and time range is preserved on the task where supported by the task model.
+
+Platform calendar providers return at most 10,000 eligible events in deterministic order. A 10,001st event is a typed, localized overflow rather than a truncated import. Android converts all-day UTC civil dates to local civil starts and makes the exclusive end date inclusive. macOS keeps passive permission checks side-effect-free and uses a bounded, structurally validated JXA JSON response only after the explicit Import action.
 
 ## ICS Import and Export
 
@@ -18,17 +20,17 @@ ICS import parses calendar data and creates tasks through the same calendar impo
 
 ## CSV Import and Export
 
-CSV import supports TickTick-style task CSV files. Parsed rows become tasks through `ImportCsvTasksAction`.
+CSV import supports TickTick-style task CSV files. Header matching is locale-independent, and parsed rows become tasks through `ImportCsvTasksAction` with canonical SHA-256 identities and the same one-use legacy-alias compatibility rule.
 
 CSV export writes task data using `GenerateCsvExportAction` and the platform file saver.
 
 ## System Share Intake
 
-System share intake supports text, URLs, and calendar payloads. Text and URLs prefill Create Task fields. ICS payloads route to the ICS import flow.
+System share intake supports text, URLs, and calendar payloads. Text and URLs prefill Create Task fields. ICS payloads require explicit confirmation before the shared import path parses or persists them.
 
 On Android, the main activity handles `ACTION_SEND` and `ACTION_SEND_MULTIPLE`. Shared text becomes a task description, the first URL found in shared text fills the task URL field, and calendar MIME streams or raw ICS text route to ICS import.
 
-On iOS, the Share Extension accepts text, URLs, and calendar event payloads. It opens the containing app with the custom `opentasks://share` URL and these query names: `description`, `url`, `ics`, `icsFileName`, or typed `error` values. The receiver validates the encoded URL and decoded payload again before publishing a `SharedTaskPayload`; it either opens Create Task or imports ICS content. The extension keeps its UI visible and shows local failure feedback when opening the containing app is rejected. This transport deliberately uses the custom URL only; there is no App Group handoff or shared-container dependency.
+On iOS, the Share Extension accepts text, URLs, and calendar event payloads. It writes one bounded, owner-only envelope to the `group.com.udnahc.opentasks` App Group and opens the containing app with an exact `opentasks://share?nonce=<64-lowercase-hex>` wake-up URL. The URL contains no shared content. The app atomically claims and deletes the single-use envelope before publishing a `SharedTaskPayload`; text and URLs open Create Task, while ICS requires explicit confirmation before parsing or persistence. Legacy content-bearing share URLs and forged, duplicate, or additional query parameters are ignored. The extension keeps its UI visible and removes its exact pending envelope when opening the containing app is rejected.
 
 ## Boundary limits and rejection
 
@@ -36,7 +38,8 @@ External data is bounded before parsing or navigation:
 
 - File imports accept at most 5 MiB. Android `ContentResolver` metadata is only an early rejection; the bounded stream read remains authoritative. JVM and iOS file readers use the same limit.
 - Android accepts at most eight share providers/URIs. The ninth item is rejected as `too_many_items`.
-- A shared payload is at most 32 KiB in cumulative UTF-8 bytes across description, URL, ICS text, and filename; the ICS filename is at most 255 UTF-8 bytes. The iOS custom URL, including percent encoding, is at most 64 KiB.
+- A shared payload is at most 32 KiB in cumulative UTF-8 bytes across description, URL, ICS text, and filename; the ICS filename is at most 255 UTF-8 bytes.
+- An iOS App Group envelope is at most 64 KiB. The pending queue is limited to 64 envelopes and 4 MiB, envelopes expire after 10 minutes, and timestamps more than 60 seconds in the future are rejected. Temporary, pending, and claimed files are serialized under one native file lock and fail closed on unknown or unsafe entries.
 - Malformed or unmappable UTF-8 is rejected as `invalid_utf8`, never replaced. Other typed failures are `too_large`, `too_many_items`, `invalid_file_type`, and `unreadable` where the boundary supports them. Rejections are carried through the one-shot event boundary and localized by the app; platform exception text is not shown.
 
 Cancellation remains cancellation: bounded Android/iOS reads and shared ICS import do not publish an ordinary error or continue later work after the caller is cancelled. A newer Android intent cancels the previous bounded read and rejects any late result by generation/current-job checks.

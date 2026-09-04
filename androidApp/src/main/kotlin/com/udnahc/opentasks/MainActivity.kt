@@ -77,9 +77,11 @@ class MainActivity : ComponentActivity(), KoinComponent {
         )
         super.onCreate(savedInstanceState)
 
-        publishShareIntent(intent)
-        handleDeepLinkIntent(intent)
-        publishWidgetNavigationIntent(intent)
+        if (savedInstanceState == null) {
+            publishShareIntent(intent)
+            handleDeepLinkIntent(intent)
+            publishWidgetNavigationIntent(intent)
+        }
 
         setContent {
             App(
@@ -107,26 +109,48 @@ class MainActivity : ComponentActivity(), KoinComponent {
 
     private suspend fun refreshWidgetsAndScheduleSync(binding: CacheBinding?) {
         if (binding == null) {
-            WorkManager.getInstance(this).cancelUniqueWork("sync_and_schedule")
-            TaskWidget.blankAllWidgets(this)
-            CalendarWidget.blankAllWidgets(this)
-            WeekWidget.blankAllWidgets(this)
+            try {
+                WorkManager.getInstance(this).cancelUniqueWork("sync_and_schedule")
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                log.e { "Periodic sync cancellation failed during account boundary reset" }
+            }
+            refreshNotificationWidgetsIndependently(
+                refreshTaskWidget = { TaskWidget.blankAllWidgets(this) },
+                refreshCalendarWidget = { CalendarWidget.blankAllWidgets(this) },
+                refreshWeekWidget = { WeekWidget.blankAllWidgets(this) },
+            )
             return
         }
         try {
             widgetAccountGate.withForegroundBoundary { currentBoundary ->
                 if (!currentBoundary.matches(binding)) return@withForegroundBoundary
 
-                TaskWidget.refreshAllWidgetsWithinBoundary(this, currentBoundary)
-                CalendarWidget.refreshAllWidgetsWithinBoundary(this, currentBoundary)
-                WeekWidget.refreshAllWidgetsWithinBoundary(this, currentBoundary)
-                val workManager = WorkManager.getInstance(this)
-                val syncRequest = periodicSyncRequest(binding)
-                workManager.enqueueUniquePeriodicWork(
-                    "sync_and_schedule",
-                    ExistingPeriodicWorkPolicy.UPDATE,
-                    syncRequest,
+                refreshNotificationWidgetsIndependently(
+                    refreshTaskWidget = {
+                        TaskWidget.refreshAllWidgetsWithinBoundary(this, currentBoundary)
+                    },
+                    refreshCalendarWidget = {
+                        CalendarWidget.refreshAllWidgetsWithinBoundary(this, currentBoundary)
+                    },
+                    refreshWeekWidget = {
+                        WeekWidget.refreshAllWidgetsWithinBoundary(this, currentBoundary)
+                    },
                 )
+                try {
+                    val workManager = WorkManager.getInstance(this)
+                    val syncRequest = periodicSyncRequest(binding)
+                    workManager.enqueueUniquePeriodicWork(
+                        "sync_and_schedule",
+                        ExistingPeriodicWorkPolicy.UPDATE,
+                        syncRequest,
+                    )
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    log.e { "Periodic sync scheduling failed during account boundary refresh" }
+                }
             }
         } catch (_: AccountBoundaryRejectedException) {
             log.w { "Widget refresh skipped because the foreground account boundary changed" }

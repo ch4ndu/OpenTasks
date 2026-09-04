@@ -5,9 +5,25 @@ import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.CancellationSignal
+import android.os.OperationCanceledException
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 import com.udnahc.opentasks.data.model.CalendarEvent
+import com.udnahc.opentasks.data.model.CalendarEventSourceKind
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
+import kotlin.coroutines.CoroutineContext
+import kotlin.time.Instant
 
 class AndroidCalendarProvider(private val context: Context) : CalendarProvider {
 
@@ -32,12 +48,57 @@ class AndroidCalendarProvider(private val context: Context) : CalendarProvider {
         startUtcMillis: Long,
         endUtcMillis: Long,
     ): List<CalendarEvent> {
-        if (checkPermission() != CalendarPermissionStatus.GRANTED) return emptyList()
+        if (checkPermission() != CalendarPermissionStatus.GRANTED) {
+            throw CalendarProviderException(CalendarProviderFailure.ACCESS_DENIED)
+        }
 
+        return withContext(Dispatchers.IO) {
+            try {
+                suspendCancellableCoroutine { continuation ->
+                    val cancellationSignal = CancellationSignal()
+                    continuation.invokeOnCancellation { cancellationSignal.cancel() }
+                    try {
+                        val events = queryEvents(
+                            contentResolver = context.contentResolver,
+                            startUtcMillis = startUtcMillis,
+                            endUtcMillis = endUtcMillis,
+                            cancellationSignal = cancellationSignal,
+                            queryContext = continuation.context,
+                        )
+                        if (continuation.isActive) {
+                            continuation.resumeWith(Result.success(events))
+                        }
+                    } catch (error: Exception) {
+                        if (continuation.isActive) {
+                            continuation.resumeWith(Result.failure(error))
+                        }
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: CalendarProviderException) {
+                throw error
+            } catch (_: SecurityException) {
+                throw CalendarProviderException(CalendarProviderFailure.ACCESS_DENIED)
+            } catch (_: OperationCanceledException) {
+                currentCoroutineContext().ensureActive()
+                throw CalendarProviderException(CalendarProviderFailure.TRANSPORT)
+            } catch (_: Exception) {
+                throw CalendarProviderException(CalendarProviderFailure.TRANSPORT)
+            }
+        }
+    }
+
+    private fun queryEvents(
+        contentResolver: ContentResolver,
+        startUtcMillis: Long,
+        endUtcMillis: Long,
+        cancellationSignal: CancellationSignal,
+        queryContext: CoroutineContext,
+    ): List<CalendarEvent> {
         val events = mutableListOf<CalendarEvent>()
-        val contentResolver: ContentResolver = context.contentResolver
 
-        // Use Instances table which expands recurring events into individual occurrences
+        // Instances expands recurring events into individual occurrences.
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
             .let { ContentUris.appendId(it, startUtcMillis) }
             .let { ContentUris.appendId(it, endUtcMillis) }
@@ -56,16 +117,16 @@ class AndroidCalendarProvider(private val context: Context) : CalendarProvider {
             CalendarContract.Instances.STATUS,
         )
 
-        val sortOrder = "${CalendarContract.Instances.BEGIN} ASC"
-
-        // No selection needed — the URI already filters by time range
-        contentResolver.query(
+        val cursor = contentResolver.query(
             uri,
             projection,
             null,
             null,
-            sortOrder,
-        )?.use { cursor ->
+            "${CalendarContract.Instances.BEGIN} ASC, ${CalendarContract.Instances.EVENT_ID} ASC",
+            cancellationSignal,
+        ) ?: throw CalendarProviderException(CalendarProviderFailure.INVALID_RESPONSE)
+
+        cursor.use {
             val eventIdIdx = cursor.getColumnIndex(CalendarContract.Instances.EVENT_ID)
             val titleIdx = cursor.getColumnIndex(CalendarContract.Instances.TITLE)
             val descIdx = cursor.getColumnIndex(CalendarContract.Instances.DESCRIPTION)
@@ -78,37 +139,89 @@ class AndroidCalendarProvider(private val context: Context) : CalendarProvider {
             val statusIdx = cursor.getColumnIndex(CalendarContract.Instances.STATUS)
 
             while (cursor.moveToNext()) {
-                val eventId = cursor.getLong(eventIdIdx)
+                queryContext.ensureActive()
                 val title = cursor.getString(titleIdx) ?: ""
-                if (title.isBlank()) continue
+                if (title.isBlank() || cursor.isNull(beginIdx)) continue
+                if (events.size == MAX_CALENDAR_PROVIDER_EVENTS) {
+                    throw CalendarProviderException(CalendarProviderFailure.TOO_MANY_EVENTS)
+                }
 
-                val begin = cursor.getLong(beginIdx)
+                val eventId = cursor.getLong(eventIdIdx)
+                val rawBegin = cursor.getLong(beginIdx)
+                val rawEnd = if (cursor.isNull(endIdx)) null else cursor.getLong(endIdx)
+                val isAllDay = cursor.getInt(allDayIdx) == 1
+                val start = if (isAllDay) utcCivilDateAsLocalStart(rawBegin) else rawBegin
+                val end = if (isAllDay) {
+                    inclusiveAllDayEndOrNull(rawBegin, rawEnd, start)
+                } else {
+                    rawEnd
+                }
                 val statusInt = if (statusIdx >= 0) cursor.getInt(statusIdx) else -1
-                val statusStr = when (statusInt) {
+                val status = when (statusInt) {
                     CalendarContract.Events.STATUS_TENTATIVE -> "Tentative"
                     CalendarContract.Events.STATUS_CONFIRMED -> "Confirmed"
                     CalendarContract.Events.STATUS_CANCELED -> "Cancelled"
                     else -> ""
                 }
+                val occurrenceToken = if (isAllDay) {
+                    Instant.fromEpochMilliseconds(rawBegin)
+                        .toLocalDateTime(TimeZone.UTC)
+                        .date
+                        .toEpochDays()
+                        .toLong()
+                } else {
+                    rawBegin
+                }
 
                 events.add(
                     CalendarEvent(
-                        // Include begin time in externalId to disambiguate recurring instances
-                        externalId = "android_${eventId}_$begin",
+                        // Preserve the raw BEGIN-based legacy alias for one-batch compatibility.
+                        externalId = "android_${eventId}_$rawBegin",
                         title = title,
                         description = cursor.getString(descIdx) ?: "",
-                        startTimeUtcMillis = begin,
-                        endTimeUtcMillis = if (!cursor.isNull(endIdx)) cursor.getLong(endIdx) else null,
+                        startTimeUtcMillis = start,
+                        endTimeUtcMillis = end,
                         calendarName = cursor.getString(calNameIdx) ?: "",
-                        isAllDay = cursor.getInt(allDayIdx) == 1,
+                        isAllDay = isAllDay,
                         location = if (locationIdx >= 0) cursor.getString(locationIdx) ?: "" else "",
                         organizer = if (organizerIdx >= 0) cursor.getString(organizerIdx) ?: "" else "",
-                        status = statusStr,
+                        status = status,
+                        sourceKind = CalendarEventSourceKind.ANDROID,
+                        rawUid = eventId.toString(),
+                        occurrenceToken = occurrenceToken,
                     )
                 )
             }
         }
 
-        return events
+        queryContext.ensureActive()
+        val sorted = events.sortedWith(CALENDAR_PROVIDER_EVENT_ORDER)
+        queryContext.ensureActive()
+        return sorted
+    }
+
+    private fun utcCivilDateAsLocalStart(rawUtcMillis: Long): Long {
+        val civilDate = Instant.fromEpochMilliseconds(rawUtcMillis)
+            .toLocalDateTime(TimeZone.UTC)
+            .date
+        return civilDate
+            .atStartOfDayIn(TimeZone.currentSystemDefault())
+            .toEpochMilliseconds()
+    }
+
+    private fun inclusiveAllDayEndOrNull(
+        rawBegin: Long,
+        rawEnd: Long?,
+        localStart: Long,
+    ): Long? {
+        if (rawEnd == null || rawEnd <= rawBegin) return null
+        val inclusiveCivilDate = Instant.fromEpochMilliseconds(rawEnd)
+            .toLocalDateTime(TimeZone.UTC)
+            .date
+            .minus(1, DateTimeUnit.DAY)
+        return inclusiveCivilDate
+            .atStartOfDayIn(TimeZone.currentSystemDefault())
+            .toEpochMilliseconds()
+            .takeIf { it >= localStart }
     }
 }

@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
+import com.udnahc.opentasks.data.attachment.AttachmentTombstoneFileCleanup
 import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.repository.TaskAttachmentFilePaths
@@ -22,6 +23,7 @@ class DeleteTaskAction(
     private val rebuildReminderQueueAction: RebuildReminderQueueAction? = null,
     private val mutationGate: AccountMutationGate,
     internal val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
+    private val tombstoneFileCleanup: AttachmentTombstoneFileCleanup? = null,
 ) {
     private val coordinator = TaskWriteCoordinator(repository)
 
@@ -34,7 +36,11 @@ class DeleteTaskAction(
         }
         val reminderWarning = when (val deletion = deleted.value) {
             is TaskGraphDeletionResult.Deleted -> {
-                cleanupNeverUploadedAttachmentFiles(deletion.neverUploadedFilePaths)
+                if (tombstoneFileCleanup != null) {
+                    tombstoneFileCleanup.retryAllRetainingRows()
+                } else {
+                    cleanupNeverUploadedAttachmentFiles(deletion.neverUploadedFilePaths)
+                }
                 if (rebuildReminderQueueAction != null) {
                     rebuildReminderQueueAction.afterRecordChangeResult(
                         scheduleDirectly = { scheduleTaskRemindersAction(taskId) },

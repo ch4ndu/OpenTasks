@@ -13,6 +13,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.AccountBoundaryGuard
 import com.udnahc.opentasks.data.auth.AccountMutationGate
+import com.udnahc.opentasks.shared.R
 import org.lighthousegames.logging.logging
 
 private val log = logging("NotificationScheduler")
@@ -37,20 +38,20 @@ actual class NotificationScheduler(
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
-            context.appString("notification_channel_task_reminders"),
+            context.getString(R.string.notification_channel_task_reminders),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = context.appString("notification_channel_task_reminders_description")
+            description = context.getString(R.string.notification_channel_task_reminders_description)
         }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(channel)
 
         val ongoingChannel = NotificationChannel(
             ONGOING_CHANNEL_ID,
-            context.appString("notification_channel_all_day_tasks"),
+            context.getString(R.string.notification_channel_all_day_tasks),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = context.appString("notification_channel_all_day_tasks_description")
+            description = context.getString(R.string.notification_channel_all_day_tasks_description)
         }
         manager.createNotificationChannel(ongoingChannel)
     }
@@ -319,26 +320,26 @@ actual class NotificationScheduler(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(context, ONGOING_CHANNEL_ID)
-            .setSmallIcon(context.appDrawable("ic_notification"))
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
-            .setContentText(context.appString("notification_all_day_task_in_progress"))
+            .setContentText(context.getString(R.string.notification_all_day_task_in_progress))
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(tapPendingIntent)
             .addAction(
                 0,
-                context.appString("notification_action_mark_done"),
+                context.getString(R.string.notification_action_mark_done),
                 markDonePendingIntent(
                     context,
                     identity.eventId,
-                    identity.taskWriteSemanticKey(),
+                    identity.semanticKey,
                     notificationId,
                     identity.occurrenceUtcMillis,
                     boundary.accountId,
                     boundary.boundaryEpoch,
                 ),
             )
-            .addAction(0, context.appString("notification_action_got_it"), gotItPendingIntent)
+            .addAction(0, context.getString(R.string.notification_action_got_it), gotItPendingIntent)
             .build()
     }
 
@@ -411,19 +412,5 @@ private fun Intent.putBoundary(boundary: AccountBoundary) {
     putExtra(NotificationScheduler.EXTRA_BOUNDARY_EPOCH, boundary.boundaryEpoch)
 }
 
-private fun ReminderIdentity.taskWriteSemanticKey(): String = ReminderIdentity(
-    eventId = eventId,
-    occurrenceUtcMillis = occurrenceUtcMillis,
-    kind = ReminderKind.DATE,
-    ordinal = 0,
-).semanticKey
-
 private fun Context.appComponentIntent(className: String): Intent =
     Intent().setClassName(packageName, className)
-
-private fun Context.appString(name: String): String = getString(appResourceId("string", name))
-
-private fun Context.appDrawable(name: String): Int = appResourceId("drawable", name)
-
-private fun Context.appResourceId(type: String, name: String): Int =
-    resources.getIdentifier(name, type, packageName)

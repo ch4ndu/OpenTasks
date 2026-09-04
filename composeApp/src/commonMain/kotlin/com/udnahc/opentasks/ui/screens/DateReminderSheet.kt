@@ -40,6 +40,7 @@ import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
 import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.all_day
@@ -614,14 +615,17 @@ private fun DurationTabContent(
             onClick = onShowReminderDialog,
             trailingContent = {
                 if (hasReminders) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_close),
-                        contentDescription = stringResource(Res.string.clear_reminder),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .size(dimens.iconSmall)
-                            .clickable(onClick = onClearReminders),
-                    )
+                    IconButton(
+                        onClick = onClearReminders,
+                        modifier = Modifier.minimumInteractiveTargetSize(),
+                    ) {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_close),
+                            contentDescription = stringResource(Res.string.clear_reminder),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(dimens.iconSmall),
+                        )
+                    }
                 } else {
                     Icon(
                         painter = painterResource(Res.drawable.ic_chevron_right),

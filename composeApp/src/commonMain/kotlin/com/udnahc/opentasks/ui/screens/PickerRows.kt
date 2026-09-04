@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.ic_check
 import opentasks.composeapp.generated.resources.ic_chevron_right
@@ -37,6 +38,7 @@ internal fun SelectedOptionRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
+            .minimumInteractiveTargetSize()
             .padding(vertical = dimens.listRowCompletedVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -134,6 +136,7 @@ internal fun LabelValueNavigationRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
+            .minimumInteractiveTargetSize()
             .padding(vertical = dimens.paddingLarge),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -183,6 +186,7 @@ internal fun NoIconLabelValueNavigationRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
+            .minimumInteractiveTargetSize()
             .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
         verticalAlignment = Alignment.CenterVertically,
     ) {

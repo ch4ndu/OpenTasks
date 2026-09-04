@@ -73,6 +73,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        MainViewControllerKt.initializeOpenTasksKoin()
         UNUserNotificationCenter.current().delegate = self
 
         BGTaskScheduler.shared.register(
@@ -189,7 +190,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
-            print("Could not schedule background sync: \(error)")
+            print("Background sync scheduling failed")
         }
     }
 

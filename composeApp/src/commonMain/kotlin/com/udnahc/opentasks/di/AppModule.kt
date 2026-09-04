@@ -17,6 +17,7 @@ import com.udnahc.opentasks.data.database.MIGRATION_9_10
 import com.udnahc.opentasks.data.database.MIGRATION_10_11
 import com.udnahc.opentasks.data.database.MIGRATION_11_12
 import com.udnahc.opentasks.data.database.MIGRATION_12_13
+import com.udnahc.opentasks.data.database.MIGRATION_13_14
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.auth.AccountCacheInspector
 import com.udnahc.opentasks.data.auth.AccountCacheInspectorContract
@@ -33,6 +34,8 @@ import com.udnahc.opentasks.data.auth.AccountSyncCoordinator
 import com.udnahc.opentasks.data.auth.AuthTokenStore
 import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
 import com.udnahc.opentasks.data.auth.PocketBaseAccountAuthenticator
+import com.udnahc.opentasks.data.attachment.AttachmentTombstoneFileCleanup
+import com.udnahc.opentasks.data.attachment.AttachmentFileLeaseRecorder
 import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.notification.LocalizedReminderTextProvider
@@ -81,6 +84,7 @@ import com.udnahc.opentasks.domain.action.account.ConfirmLocalServerReplacementA
 import com.udnahc.opentasks.domain.action.account.CancelLocalServerReplacementPreparationAction
 import com.udnahc.opentasks.domain.action.attachment.AddTaskImageAction
 import com.udnahc.opentasks.domain.action.attachment.RemoveTaskImageAction
+import com.udnahc.opentasks.domain.action.attachment.RetryAttachmentTombstoneFileCleanupAction
 import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.ScheduleCountdownRemindersAction
@@ -148,6 +152,7 @@ import com.udnahc.opentasks.domain.usecase.task.LocalizedTaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskReminderEligibilityUseCase
 import com.udnahc.opentasks.viewmodel.AppViewModel
+import com.udnahc.opentasks.viewmodel.AppearanceViewModel
 import com.udnahc.opentasks.viewmodel.AuthViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
 import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
@@ -171,7 +176,7 @@ expect val platformModule: Module
 val sharedModule = module {
     single<AccountMutationGate> { MutexAccountMutationGate() }
     single<ReminderTextProvider> { LocalizedReminderTextProvider() }
-    single<TaskDueTextProvider> { LocalizedTaskDueTextProvider() }
+    single<TaskDueTextProvider> { LocalizedTaskDueTextProvider(get()) }
     single<AppDatabase> {
         get<androidx.room.RoomDatabase.Builder<AppDatabase>>()
             .addMigrations(
@@ -187,6 +192,7 @@ val sharedModule = module {
                 MIGRATION_10_11,
                 MIGRATION_11_12,
                 MIGRATION_12_13,
+                MIGRATION_13_14,
             )
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
@@ -210,6 +216,7 @@ val sharedModule = module {
     single { get<AppDatabase>().appSettingsDao() }
     single { get<AppDatabase>().countdownDao() }
     single { get<AppDatabase>().attachmentDao() }
+    single { AttachmentFileLeaseRecorder(get()) }
     single { PendingTaskImageHandoff() }
     single<CountdownRepository> { CountdownRepositoryImpl(get(), get(), mutationGate = get()) }
     single<TagRepository> { TagRepositoryImpl(get(), get(), mutationGate = get()) }
@@ -285,10 +292,12 @@ val sharedModule = module {
     single {
         DeleteTaskAction(
             get(), get(), get(), get(), get<AccountMutationGate>(), get<AccountBoundaryExecutor>(),
+            tombstoneFileCleanup = get(),
         )
     }
-    single { AddTaskImageAction(get(), get(), get()) }
-    single { RemoveTaskImageAction(get(), get(), get()) }
+    single { AddTaskImageAction(get(), get(), get(), get()) }
+    single { RemoveTaskImageAction(get(), get(), get(), get()) }
+    single { RetryAttachmentTombstoneFileCleanupAction(get(), get<AccountMutationGate>()) }
     single { ToggleTaskCompleteAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
     single { MarkTaskNotificationDoneAction(get()) }
     single { DismissTaskNotificationAction(get(), get(), get<NotificationScheduler>()) }
@@ -304,7 +313,7 @@ val sharedModule = module {
     single { TagTaskAction(get()) }
     single {
         ImportCalendarEventsAction(
-            get(), get(), get(), get(), get(), get(), get<AccountBoundaryExecutor>(),
+            get(), get(), get(), get(), get(), get(), get<AccountBoundaryExecutor>(), get(),
         )
     }
     single { ImportCsvTasksAction(get(), get(), get(), get(), get<AccountBoundaryExecutor>()) }
@@ -337,7 +346,8 @@ val sharedModule = module {
     single { SyncPassContextFactory(get()) }
     single { ServerMigrationCoordinator(get(), get<AccountStateStore>()) }
     single { TaskSyncAdapter(get(), get(), get()) }
-    single { AttachmentSyncAdapter(get(), get(), get()) }
+    single { AttachmentTombstoneFileCleanup(get(), get(), get()) }
+    single { AttachmentSyncAdapter(get(), get(), get(), get(), get()) }
     single { CategorySyncAdapter(get()) }
     single { TagSyncAdapter(get()) }
     single { TaskTagSyncAdapter(get(), get()) }
@@ -437,6 +447,7 @@ val sharedModule = module {
     viewModel {
         TaskNotificationViewModel(
             get(), get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+            dateTimeFormatter = get(),
         )
     }
     viewModel {
@@ -477,11 +488,13 @@ val sharedModule = module {
             saveCalendarListDisplayModePreference = get(),
             localDaySignal = get(),
             accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+            dateTimeFormatter = get(),
         )
     }
     viewModel {
         NoteViewModel(
             get(), get(), get(), get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+            dateTimeFormatter = get(),
         )
     }
     viewModel {
@@ -509,6 +522,12 @@ val sharedModule = module {
             observeCountdownByIdUseCase = get(),
             localDaySignal = get(),
             accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
+    viewModel {
+        AppearanceViewModel(
+            observeThemePreference = get(),
+            observeTextSizePreference = get(),
         )
     }
     viewModel {

@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.cancel
@@ -368,6 +369,7 @@ private fun CollapsibleSectionHeader(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
+            .minimumInteractiveTargetSize()
             .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
         verticalAlignment = Alignment.CenterVertically,
     ) {

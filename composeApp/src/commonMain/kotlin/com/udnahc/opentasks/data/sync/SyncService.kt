@@ -38,24 +38,24 @@ class SyncService(
             log.d { "Sync skipped: local data reset in progress" }
             return@withExclusive
         }
-        val client = pbProvider.client ?: run {
+        val activeMetadata = pbProvider.activeClientMetadata() ?: run {
             log.d { "Sync skipped: no PocketBase client" }
             return@withExclusive
         }
-        if (pbProvider.activeBinding == null) {
+        if (activeMetadata.binding == null) {
             log.d { "Sync skipped: no active authenticated account boundary" }
             return@withExclusive
         }
-        if (!hasStableBoundary(client, allowTransition = false)) {
+        if (!hasStableBoundary(activeMetadata, allowTransition = false)) {
             log.d { "Sync skipped: active client does not match the durable account boundary" }
             return@withExclusive
         }
-        syncAllWithinMutation(client)
+        syncAllWithinMutation(activeMetadata.client)
     }
 
     suspend fun syncAll(client: PocketbaseClient) = accountMutationGate.withExclusive {
-        pbProvider.requireActiveBinding(client)
-        check(hasStableBoundary(client, allowTransition = false)) {
+        val activeMetadata = pbProvider.requireActiveClientMetadata(client)
+        check(hasStableBoundary(activeMetadata, allowTransition = false)) {
             "PocketBase sync client does not match the durable account boundary"
         }
         syncAllWithinMutation(client)
@@ -71,41 +71,37 @@ class SyncService(
             log.d { "Sync skipped: local data reset in progress" }
             return false
         }
-        val client = pbProvider.client ?: run {
+        val activeMetadata = pbProvider.activeClientMetadata() ?: run {
             log.d { "Sync skipped: no PocketBase client" }
             return false
         }
-        val activeBinding = pbProvider.activeBinding ?: run {
+        if (activeMetadata.binding == null) {
             log.d { "Sync skipped: no active authenticated account boundary" }
             return false
         }
-        if (PocketBaseClientProvider.bindingFor(client) != activeBinding) {
-            log.d { "Sync skipped: active client has no stable account binding" }
-            return false
-        }
-        if (!hasStableBoundary(client, allowTransition = false)) {
+        if (!hasStableBoundary(activeMetadata, allowTransition = false)) {
             log.d { "Sync skipped: active client does not match the durable account boundary" }
             return false
         }
-        syncAllWithinMutation(client)
+        syncAllWithinMutation(activeMetadata.client)
         return true
     }
 
     /** Pulls a newly activated account without pushing the replacement cache. */
     suspend fun initialPull(client: PocketbaseClient = pbProvider.client ?: error("No active PocketBase client")) =
         accountMutationGate.withExclusive {
-            pbProvider.requireActiveBinding(client)
+            pbProvider.requireActiveClientMetadata(client)
             initialPullWithinMutation(client)
         }
 
     /** Used by account transitions that already hold AccountMutationGate. */
     override suspend fun initialPullWithinMutation(client: PocketbaseClient) {
-        pbProvider.requireActiveBinding(client)
-        check(hasStableBoundary(client, allowTransition = true)) {
+        val activeMetadata = pbProvider.requireActiveClientMetadata(client)
+        check(hasStableBoundary(activeMetadata, allowTransition = true)) {
             "PocketBase initial-pull client does not match the durable account boundary"
         }
         if (resetInProgress.value) return
-        val startingBoundary = pbProvider.activeBoundary()
+        val startingBoundary = activeMetadata.boundary
             ?: throw IllegalStateException("PocketBase initial pull has no active account boundary")
         syncMutex.withLock {
             runWithOutcome(startingBoundary) {
@@ -128,7 +124,7 @@ class SyncService(
                             .onFailure {
                                 if (it is CancellationException) throw it
                                 it.rethrowSyncAuthenticationRejected()
-                                log.e(it) { "Initial pull $collectionName failed" }
+                                log.e { "Initial pull $collectionName failed" }
                                 failedPulls += collectionName
                                 failures += SyncCollectionFailure(collectionName, "initial_pull", it, startingBoundary)
                             }
@@ -140,15 +136,15 @@ class SyncService(
     }
 
     override suspend fun syncAllWithinMutation(client: PocketbaseClient) {
-        pbProvider.requireActiveBinding(client)
-        check(hasStableBoundary(client, allowTransition = false)) {
+        val activeMetadata = pbProvider.requireActiveClientMetadata(client)
+        check(hasStableBoundary(activeMetadata, allowTransition = false)) {
             "PocketBase sync client does not match the durable account boundary"
         }
         if (resetInProgress.value) {
             log.d { "Sync skipped: local data reset in progress" }
             return
         }
-        val startingBoundary = pbProvider.activeBoundary()
+        val startingBoundary = activeMetadata.boundary
             ?: throw IllegalStateException("PocketBase sync has no active account boundary")
         syncMutex.withLock {
             runWithOutcome(startingBoundary) {
@@ -224,7 +220,7 @@ class SyncService(
                     .onFailure {
                         if (it is CancellationException) throw it
                         it.rethrowSyncAuthenticationRejected()
-                        log.e(it) { "Pull $collectionName failed" }
+                        log.e { "Pull $collectionName failed" }
                         failedPulls += collectionName
                         failures += SyncCollectionFailure(collectionName, "pull", it, boundary)
                     }
@@ -237,7 +233,7 @@ class SyncService(
                     .onFailure {
                         if (it is CancellationException) throw it
                         it.rethrowSyncAuthenticationRejected()
-                        log.e(it) { "Push $collectionName failed" }
+                        log.e { "Push $collectionName failed" }
                         failures += SyncCollectionFailure(collectionName, "push", it, boundary)
                     }
             }
@@ -265,7 +261,7 @@ class SyncService(
                     _outcome.value = SyncOutcome.Idle
                     throw callbackError
                 } catch (callbackError: Throwable) {
-                    log.e(callbackError) { "Failed to apply the sync authentication-rejection transition" }
+                    log.e { "Failed to apply the sync authentication-rejection transition" }
                     false
                 }
                 _outcome.value = if (transitioned) {
@@ -299,12 +295,12 @@ class SyncService(
                         (COLLECTION_TASKS in failedPulls || COLLECTION_TAGS in failedPulls))
 
     private suspend fun hasStableBoundary(
-        client: PocketbaseClient,
+        clientMetadata: PocketBaseClientMetadata,
         allowTransition: Boolean,
     ): Boolean {
         val stateStore = accountStateStore ?: return true
         val binding = stateStore.readCacheBinding() ?: return false
-        if (PocketBaseClientProvider.bindingFor(client) != binding) return false
+        if (clientMetadata.binding != binding) return false
         val transition = stateStore.readTransition()
         if (transition == null) return true
         return allowTransition &&

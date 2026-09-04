@@ -34,6 +34,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.ensureActive
@@ -65,7 +67,14 @@ sealed class TaskFormSaveEvent {
     data class Error(val error: Throwable) : TaskFormSaveEvent()
     data class DeleteError(val error: Throwable) : TaskFormSaveEvent()
     data class StaleOccurrence(val formData: TaskFormData) : TaskFormSaveEvent()
+    data object Missing : TaskFormSaveEvent()
     data class Deleted(val postCommitWarning: PostCommitWarning? = null) : TaskFormSaveEvent()
+}
+
+sealed interface TaskFormDestinationState {
+    data object Loading : TaskFormDestinationState
+    data class Ready(val task: Task) : TaskFormDestinationState
+    data object Missing : TaskFormDestinationState
 }
 
 data class PendingFormCompletion(
@@ -113,11 +122,28 @@ class TaskFormViewModel(
     )
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val editTask: StateFlow<Task?> = _taskId
+    val destinationState: StateFlow<TaskFormDestinationState> = _taskId
         .flatMapLatest { id ->
-            if (id != null) observeTaskByIdUseCase(id) else flowOf(null)
+            if (id == null) {
+                flowOf(TaskFormDestinationState.Loading)
+            } else {
+                observeTaskByIdUseCase(id)
+                    .map { task ->
+                        task?.let(TaskFormDestinationState::Ready)
+                            ?: TaskFormDestinationState.Missing
+                    }
+                    .onStart { emit(TaskFormDestinationState.Loading) }
+            }
         }
         .flowOn(Dispatchers.Default)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            TaskFormDestinationState.Loading,
+        )
+
+    val editTask: StateFlow<Task?> = destinationState
+        .map { state -> (state as? TaskFormDestinationState.Ready)?.task }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -236,7 +262,7 @@ class TaskFormViewModel(
                         committed.postCommitWarning,
                     )
                     TaskWriteResult.StaleOccurrence -> publishSaveEvent(TaskFormSaveEvent.StaleOccurrence(formData))
-                    TaskWriteResult.Missing -> publishSaveEvent(TaskFormSaveEvent.Error(IllegalStateException("Task no longer exists")))
+                    TaskWriteResult.Missing -> publishSaveEvent(TaskFormSaveEvent.Missing)
                     TaskWriteResult.NoOp -> publishSaveEvent(TaskFormSaveEvent.Saved(formData, committed.postCommitWarning))
                 }
             } finally {
@@ -288,7 +314,7 @@ class TaskFormViewModel(
                     }
                     TaskWriteResult.Missing -> {
                         _pendingFormCompletion.value = null
-                        publishSaveEvent(TaskFormSaveEvent.Error(IllegalStateException("Task no longer exists")))
+                        publishSaveEvent(TaskFormSaveEvent.Missing)
                     }
                     else -> Unit
                 }
@@ -391,13 +417,13 @@ class TaskFormViewModel(
     }
 
     private fun handleMutationFailure(error: Throwable) {
-        log.e(error) { "Task form mutation failed" }
+        log.e { "Task form mutation failed" }
         _isSaving.value = false
         publishSaveEvent(TaskFormSaveEvent.Error(error))
     }
 
     private fun handleDeleteMutationFailure(error: Throwable) {
-        log.e(error) { "Task form delete failed" }
+        log.e { "Task form delete failed" }
         _isSaving.value = false
         publishSaveEvent(TaskFormSaveEvent.DeleteError(error))
     }

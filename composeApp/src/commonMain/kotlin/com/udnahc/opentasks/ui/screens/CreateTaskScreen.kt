@@ -30,12 +30,17 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,8 +54,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.mohamedrejeb.richeditor.model.RichTextState
-import com.mohamedrejeb.richeditor.model.rememberRichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
+import com.udnahc.opentasks.ExternalLaunchResult
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
 import com.udnahc.opentasks.data.extensions.extractDay
 import com.udnahc.opentasks.data.extensions.extractHour
@@ -72,6 +77,7 @@ import com.udnahc.opentasks.data.model.toSubtasksJson
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.PriorityHigh
+import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
 import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.ui.util.PlatformBackHandler
 import com.udnahc.opentasks.ui.util.rememberTaskImagePickerActions
@@ -102,12 +108,54 @@ import opentasks.composeapp.generated.resources.priority
 import opentasks.composeapp.generated.resources.ok
 import opentasks.composeapp.generated.resources.select
 import opentasks.composeapp.generated.resources.subtasks
-import opentasks.composeapp.generated.resources.task_completed
 import opentasks.composeapp.generated.resources.title_hint
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlinx.datetime.LocalDate
 import opentasks.composeapp.generated.resources.weekly_with_day
+
+private fun <T : Enum<T>> enumStateSaver(
+    entries: List<T>,
+    fallback: T,
+): Saver<MutableState<T>, String> = Saver(
+    save = { state -> state.value.name },
+    restore = { name ->
+        mutableStateOf(entries.firstOrNull { it.name == name } ?: fallback)
+    },
+)
+
+private val reminderStateSaver: Saver<MutableState<Set<ReminderOption>>, String> = Saver(
+    save = { state -> state.value.toRemindersString() },
+    restore = { serialized -> mutableStateOf(serialized.toReminderSet()) },
+)
+
+private val subtaskListSaver = listSaver<SnapshotStateList<SubtaskItem>, Any>(
+    save = { items ->
+        buildList(items.size * SUBTASK_SAVED_FIELD_COUNT) {
+            items.forEach { item ->
+                add(item.id)
+                add(item.text)
+                add(item.isChecked)
+            }
+        }
+    },
+    restore = { values ->
+        if (values.size % SUBTASK_SAVED_FIELD_COUNT != 0) {
+            return@listSaver mutableStateListOf()
+        }
+        val restored = mutableStateListOf<SubtaskItem>()
+        for (index in values.indices step SUBTASK_SAVED_FIELD_COUNT) {
+            val id = values[index] as? String ?: return@listSaver mutableStateListOf()
+            val text = values[index + 1] as? String ?: return@listSaver mutableStateListOf()
+            val isChecked = values[index + 2] as? Boolean
+                ?: return@listSaver mutableStateListOf()
+            restored.add(SubtaskItem(id = id, text = text, isChecked = isChecked))
+        }
+        restored
+    },
+)
+
+private const val SUBTASK_SAVED_FIELD_COUNT = 3
 
 @Composable
 fun CreateTaskScreen(
@@ -139,6 +187,7 @@ fun CreateTaskScreen(
     onBackRequestChanged: (owner: Any, onBack: (() -> Unit)?) -> Unit = { _, _ -> },
     onRemoveTaskImage: (Attachment) -> Unit = {},
     onDelete: (() -> Unit)? = null,
+    onExternalLaunchFailure: () -> Unit = {},
 ) {
     CreateTaskContent(
         onBack = onBack,
@@ -169,6 +218,7 @@ fun CreateTaskScreen(
         onBackRequestChanged = onBackRequestChanged,
         onRemoveTaskImage = onRemoveTaskImage,
         onDelete = onDelete,
+        onExternalLaunchFailure = onExternalLaunchFailure,
     )
 }
 
@@ -203,6 +253,7 @@ private fun CreateTaskContent(
     onBackRequestChanged: (owner: Any, onBack: (() -> Unit)?) -> Unit = { _, _ -> },
     onRemoveTaskImage: (Attachment) -> Unit = {},
     onDelete: (() -> Unit)? = null,
+    onExternalLaunchFailure: () -> Unit = {},
 ) {
     val stateKey = editTask?.id ?: listOf(
         initialPriority.name,
@@ -215,30 +266,53 @@ private fun CreateTaskContent(
         initialYear.toString(),
     ).joinToString("|")
     val seededFormData = retainedFormData ?: editTask?.toTaskFormData()
-    var title by remember(stateKey) { mutableStateOf(seededFormData?.title ?: initialTitle) }
-    var description by remember(stateKey) { mutableStateOf(seededFormData?.content ?: initialDescription) }
-    var priority by remember(stateKey) { mutableStateOf(seededFormData?.priority ?: initialPriority) }
-    var isCompleted by remember(stateKey) { mutableStateOf(seededFormData?.status == TaskStatus.DONE) }
-    var selectedCategoryId by remember(stateKey) {
+    val initialPriorityValue = seededFormData?.priority ?: initialPriority
+    val initialRecurrenceValue = seededFormData?.recurrence ?: RecurrenceType.NONE
+    val initialContent = seededFormData?.content ?: initialDescription
+    var title by rememberSaveable(stateKey) { mutableStateOf(seededFormData?.title ?: initialTitle) }
+    var description by rememberSaveable(stateKey) { mutableStateOf(initialContent) }
+    var priority by rememberSaveable(
+        stateKey,
+        saver = enumStateSaver(TaskPriority.entries, initialPriorityValue),
+    ) {
+        mutableStateOf(initialPriorityValue)
+    }
+    var isCompleted by rememberSaveable(stateKey) {
+        mutableStateOf(seededFormData?.status == TaskStatus.DONE)
+    }
+    var selectedCategoryId by rememberSaveable(stateKey) {
         mutableStateOf(
             seededFormData?.categoryId ?: initialCategoryId
         )
     }
-    var section by remember(stateKey) { mutableStateOf(seededFormData?.section ?: "") }
+    var section by rememberSaveable(stateKey) { mutableStateOf(seededFormData?.section ?: "") }
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showPriorityMenu by remember { mutableStateOf(false) }
-    var isSubtaskMode by remember(stateKey) { mutableStateOf(seededFormData?.subtasks?.isNotBlank() == true) }
+    var isSubtaskMode by rememberSaveable(stateKey) {
+        mutableStateOf(seededFormData?.subtasks?.isNotBlank() == true)
+    }
     var subtaskToggleCount by remember { mutableIntStateOf(0) }
-    val subtasks = remember(stateKey) { mutableStateListOf<SubtaskItem>() }
-    var location by remember(stateKey) { mutableStateOf(seededFormData?.location ?: "") }
-    var taskUrl by remember(stateKey) { mutableStateOf(seededFormData?.url ?: initialUrl) }
-    var organizer by remember(stateKey) { mutableStateOf(seededFormData?.organizer ?: "") }
-    var eventStatus by remember(stateKey) { mutableStateOf(seededFormData?.eventStatus ?: "") }
-    var attendees by remember(stateKey) { mutableStateOf(seededFormData?.attendees ?: "") }
+    val subtasks = rememberSaveable(stateKey, saver = subtaskListSaver) {
+        mutableStateListOf<SubtaskItem>().apply {
+            addAll(seededFormData?.subtasks?.toSubtaskItems().orEmpty())
+            if (isSubtaskMode && isEmpty()) add(SubtaskItem())
+        }
+    }
+    var location by rememberSaveable(stateKey) { mutableStateOf(seededFormData?.location ?: "") }
+    var taskUrl by rememberSaveable(stateKey) {
+        mutableStateOf(seededFormData?.url ?: initialUrl)
+    }
+    var organizer by rememberSaveable(stateKey) { mutableStateOf(seededFormData?.organizer ?: "") }
+    var eventStatus by rememberSaveable(stateKey) { mutableStateOf(seededFormData?.eventStatus ?: "") }
+    var attendees by rememberSaveable(stateKey) { mutableStateOf(seededFormData?.attendees ?: "") }
     var showDiscardPendingImagesConfirm by remember { mutableStateOf(false) }
     val descriptionFocusRequester = remember { FocusRequester() }
     val subtaskFocusRequester = remember { FocusRequester() }
-    val richTextState = rememberRichTextState()
+    val richTextState = rememberSaveable(stateKey, saver = RichTextState.Saver) {
+        RichTextState().apply {
+            if (initialContent.isNotBlank()) setHtml(initialContent)
+        }
+    }
     val backHandlerOwner = remember(stateKey) { Any() }
     val inboxName = stringResource(Res.string.inbox)
     val selectedCategoryName = remember(categories, selectedCategoryId, inboxName) {
@@ -273,18 +347,6 @@ private fun CreateTaskContent(
         onBack = { requestBack() },
     )
 
-    LaunchedEffect(stateKey) {
-        val initialContent = seededFormData?.content ?: initialDescription
-        if (initialContent.isNotBlank()) {
-            richTextState.setHtml(initialContent)
-        }
-        subtasks.clear()
-        subtasks.addAll(seededFormData?.subtasks?.toSubtaskItems().orEmpty())
-        if (isSubtaskMode && subtasks.isEmpty()) {
-            subtasks.add(SubtaskItem())
-        }
-    }
-
     fun syncDescriptionToSubtasks() {
         subtasks.clear()
         val lines = description.split("\n").filter { it.isNotBlank() }
@@ -303,42 +365,42 @@ private fun CreateTaskContent(
 
     // Date & Reminder state
     var showDateSheet by remember { mutableStateOf(false) }
-    var selectedDay by remember(stateKey) {
+    var selectedDay by rememberSaveable(stateKey) {
         mutableIntStateOf(seededFormData?.deadline?.let {
             extractDay(
                 it
             )
         } ?: initialDay)
     }
-    var selectedMonth by remember(stateKey) {
+    var selectedMonth by rememberSaveable(stateKey) {
         mutableIntStateOf(seededFormData?.deadline?.let {
             extractMonth(
                 it
             )
         } ?: initialMonth)
     }
-    var selectedYear by remember(stateKey) {
+    var selectedYear by rememberSaveable(stateKey) {
         mutableIntStateOf(seededFormData?.deadline?.let {
             extractYear(
                 it
             )
         } ?: initialYear)
     }
-    var selectedHour by remember(stateKey) {
+    var selectedHour by rememberSaveable(stateKey) {
         mutableIntStateOf(seededFormData?.deadline?.let {
             extractHour(
                 it
             )
         } ?: 8)
     }
-    var selectedMinute by remember(stateKey) {
+    var selectedMinute by rememberSaveable(stateKey) {
         mutableIntStateOf(seededFormData?.deadline?.let {
             extractMinute(
                 it
             )
         } ?: 0)
     }
-    var selectedReminders by remember(stateKey) {
+    var selectedReminders by rememberSaveable(stateKey, saver = reminderStateSaver) {
         val initial = if (seededFormData?.durationReminders?.isNotBlank() == true) {
             seededFormData.durationReminders.toReminderSet()
         } else {
@@ -346,24 +408,25 @@ private fun CreateTaskContent(
         }
         mutableStateOf(initial.ifEmpty { setOf(ReminderOption.ON_TIME) })
     }
-    var selectedRecurrence by remember(stateKey) {
-        mutableStateOf(
-            seededFormData?.recurrence ?: RecurrenceType.NONE
-        )
+    var selectedRecurrence by rememberSaveable(
+        stateKey,
+        saver = enumStateSaver(RecurrenceType.entries, initialRecurrenceValue),
+    ) {
+        mutableStateOf(initialRecurrenceValue)
     }
-    val reminderDays = remember(stateKey) { seededFormData?.reminderDays ?: 0 }
-    var durationReminders by remember(stateKey) {
+    val reminderDays = rememberSaveable(stateKey) { seededFormData?.reminderDays ?: 0 }
+    var durationReminders by rememberSaveable(stateKey) {
         mutableStateOf(
             seededFormData?.durationReminders ?: ""
         )
     }
-    var endHour by remember(stateKey) {
+    var endHour by rememberSaveable(stateKey) {
         mutableIntStateOf(seededFormData?.endDeadline?.let { extractHour(it) } ?: -1)
     }
-    var endMinute by remember(stateKey) {
+    var endMinute by rememberSaveable(stateKey) {
         mutableIntStateOf(seededFormData?.endDeadline?.let { extractMinute(it) } ?: 0)
     }
-    var isAllDay by remember(stateKey) {
+    var isAllDay by rememberSaveable(stateKey) {
         mutableStateOf(seededFormData?.isAllDay ?: false)
     }
 
@@ -568,7 +631,11 @@ private fun CreateTaskContent(
             onSectionChange = { section = it },
             location = location,
             onLocationChange = { location = it },
-            onOpenInMaps = { openInMaps(location) },
+            onOpenInMaps = {
+                if (openInMaps(location) == ExternalLaunchResult.FAILURE) {
+                    onExternalLaunchFailure()
+                }
+            },
             taskUrl = taskUrl,
             onUrlChange = { taskUrl = it },
             organizer = organizer,
@@ -837,7 +904,9 @@ internal fun CreateTaskTopBar(
             val dimens = OpenTasksTheme.dimens
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable(onClick = onListClick),
+                modifier = Modifier
+                    .clickable(onClick = onListClick)
+                    .minimumInteractiveTargetSize(),
             ) {
                 Text(
                     text = listName,
@@ -944,43 +1013,47 @@ internal fun DateReminderRow(
     val hasRecurrence = selectedRecurrence != RecurrenceType.NONE
 
     val dimens = OpenTasksTheme.dimens
-
     if (!hasDate) {
         // No date selected -- show placeholder row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
+                .minimumInteractiveTargetSize()
                 .padding(vertical = dimens.paddingMedium),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(dimens.priorityIndicatorSize)
-                    .then(
-                        if (isCompleted) {
-                            Modifier.background(
-                                PriorityHigh,
-                                RoundedCornerShape(dimens.cornerMedium)
-                            )
-                        } else {
-                            Modifier.border(
-                                dimens.priorityIndicatorBorder,
-                                PriorityHigh,
-                                RoundedCornerShape(dimens.cornerMedium)
-                            )
-                        }
-                    )
-                    .clickable(onClick = onToggleComplete),
-                contentAlignment = Alignment.Center,
+            TaskSquareCompletionButton(
+                isChecked = isCompleted,
+                onClick = onToggleComplete,
             ) {
-                if (isCompleted) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_check),
-                        contentDescription = stringResource(Res.string.task_completed),
-                        tint = Color.White,
-                        modifier = Modifier.size(dimens.iconSmall),
-                    )
+                Box(
+                    modifier = Modifier
+                        .size(dimens.priorityIndicatorSize)
+                        .then(
+                            if (isCompleted) {
+                                Modifier.background(
+                                    PriorityHigh,
+                                    RoundedCornerShape(dimens.cornerMedium)
+                                )
+                            } else {
+                                Modifier.border(
+                                    dimens.priorityIndicatorBorder,
+                                    PriorityHigh,
+                                    RoundedCornerShape(dimens.cornerMedium)
+                                )
+                            }
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (isCompleted) {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_check),
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(dimens.iconSmall),
+                        )
+                    }
                 }
             }
             Spacer(Modifier.width(dimens.spacerXLarge))
@@ -996,6 +1069,7 @@ internal fun DateReminderRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
+                .minimumInteractiveTargetSize()
                 .padding(vertical = dimens.paddingMedium),
         ) {
             // Line 1: Date + Time + reminder icon

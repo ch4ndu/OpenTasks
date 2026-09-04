@@ -1,6 +1,5 @@
 package com.udnahc.opentasks.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,20 +21,23 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
-import com.mohamedrejeb.richeditor.model.rememberRichTextState
+import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
+import com.udnahc.opentasks.viewmodel.NoteMutationOperation
+import com.udnahc.opentasks.viewmodel.NoteMutationState
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.cancel
@@ -50,9 +52,6 @@ import opentasks.composeapp.generated.resources.note_title_hint
 import opentasks.composeapp.generated.resources.save
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import org.lighthousegames.logging.logging
-
-private val log = logging("CreateNoteBottomSheet")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,13 +59,17 @@ fun CreateNoteBottomSheet(
     sheetState: SheetState,
     onDismiss: () -> Unit,
     editNote: Note? = null,
+    requestToken: Long = 0L,
+    mutationState: NoteMutationState = NoteMutationState.Idle,
     onSave: (title: String, content: String) -> Unit,
     onDelete: (() -> Unit)? = null,
 ) {
+    val isBusy = mutationState.isOwnedBy(requestToken, editNote?.id)
     ModalBottomSheet(
         sheetState = sheetState,
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isBusy) onDismiss() },
         dragHandle = null,
+        sheetGesturesEnabled = !isBusy,
         containerColor = MaterialTheme.colorScheme.background,
     ) {
         CreateNoteBottomSheetContent(
@@ -74,6 +77,7 @@ fun CreateNoteBottomSheet(
             onDismiss = onDismiss,
             onSave = onSave,
             onDelete = onDelete,
+            isBusy = isBusy,
         )
     }
 }
@@ -84,35 +88,36 @@ internal fun CreateNoteBottomSheetContent(
     onDismiss: () -> Unit,
     onSave: (title: String, content: String) -> Unit,
     onDelete: (() -> Unit)? = null,
+    isBusy: Boolean = false,
 ) {
-    val stateKey = editNote?.id ?: 0L
-    var title by remember(stateKey) { mutableStateOf(editNote?.title ?: "") }
-    val richTextState = rememberRichTextState()
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-
-    LaunchedEffect(stateKey) {
-        if (editNote != null) {
-            log.d { "Loading note content" }
-            richTextState.setHtml(editNote.content)
+    val stateKey = editNote?.id ?: CREATE_NOTE_STATE_KEY
+    var title by rememberSaveable(stateKey) { mutableStateOf(editNote?.title ?: "") }
+    val richTextState = rememberSaveable(stateKey, saver = RichTextState.Saver) {
+        RichTextState().apply {
+            val initialContent = editNote?.content.orEmpty()
+            if (initialContent.isNotBlank()) setHtml(initialContent)
         }
     }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     if (showDeleteConfirm && onDelete != null) {
         AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
+            onDismissRequest = { if (!isBusy) showDeleteConfirm = false },
             title = { Text(stringResource(Res.string.delete_note_title)) },
             text = { Text(stringResource(Res.string.delete_note_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
                     onDelete()
-                    onDismiss()
-                }) {
+                }, enabled = !isBusy) {
                     Text(stringResource(Res.string.delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
+                TextButton(
+                    onClick = { showDeleteConfirm = false },
+                    enabled = !isBusy,
+                ) {
                     Text(stringResource(Res.string.cancel))
                 }
             },
@@ -125,20 +130,21 @@ internal fun CreateNoteBottomSheetContent(
             .imePadding(),
     ) {
         CreateNoteTopBar(
-            onBack = onDismiss,
+            onBack = { if (!isBusy) onDismiss() },
             onSave = {
                 val content = richTextState.toHtml()
-                log.d { "Saving note content" }
                 if (title.isNotBlank() || content.isNotBlank()) {
                     onSave(title, content)
+                } else {
+                    onDismiss()
                 }
-                onDismiss()
             },
             onDelete = if (editNote != null) {
                 { showDeleteConfirm = true }
             } else {
                 null
             },
+            isBusy = isBusy,
         )
 
         val dimens = OpenTasksTheme.dimens
@@ -147,6 +153,7 @@ internal fun CreateNoteBottomSheetContent(
         BasicTextField(
             value = title,
             onValueChange = { title = it },
+            readOnly = isBusy,
             textStyle = MaterialTheme.typography.titleLarge.copy(
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Bold,
@@ -177,6 +184,7 @@ internal fun CreateNoteBottomSheetContent(
         // Rich text editor
         BasicRichTextEditor(
             state = richTextState,
+            readOnly = isBusy,
             textStyle = MaterialTheme.typography.titleMedium.copy(
                 color = MaterialTheme.colorScheme.onBackground,
             ),
@@ -193,6 +201,7 @@ internal fun CreateNoteBottomSheetContent(
         // Markdown formatting toolbar
         FormattingToolbar(
             richTextState = richTextState,
+            enabled = !isBusy,
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -203,6 +212,7 @@ internal fun CreateNoteTopBar(
     onBack: () -> Unit,
     onSave: () -> Unit,
     onDelete: (() -> Unit)?,
+    isBusy: Boolean = false,
 ) {
     val dimens = OpenTasksTheme.dimens
     Row(
@@ -211,7 +221,7 @@ internal fun CreateNoteTopBar(
             .padding(horizontal = dimens.paddingSmall, vertical = dimens.paddingSmall),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) {
+        IconButton(onClick = onBack, enabled = !isBusy) {
             Icon(
                 painter = painterResource(Res.drawable.ic_arrow_back),
                 contentDescription = stringResource(Res.string.back),
@@ -231,18 +241,21 @@ internal fun CreateNoteTopBar(
 
         Spacer(Modifier.weight(1f))
 
-        Text(
-            text = stringResource(Res.string.save),
-            style = MaterialTheme.typography.labelLarge,
-            color = PrimaryBlue,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .clickable(onClick = onSave)
-                .padding(horizontal = dimens.paddingMedium, vertical = dimens.paddingSmall),
-        )
+        TextButton(
+            onClick = onSave,
+            enabled = !isBusy,
+            modifier = Modifier.minimumInteractiveTargetSize(),
+        ) {
+            Text(
+                text = stringResource(Res.string.save),
+                style = MaterialTheme.typography.labelLarge,
+                color = PrimaryBlue,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
 
         if (onDelete != null) {
-            IconButton(onClick = onDelete) {
+            IconButton(onClick = onDelete, enabled = !isBusy) {
                 Icon(
                     painter = painterResource(Res.drawable.ic_delete),
                     contentDescription = stringResource(Res.string.delete_note),
@@ -254,3 +267,22 @@ internal fun CreateNoteTopBar(
     }
 }
 
+private fun NoteMutationState.isOwnedBy(
+    requestToken: Long,
+    editNoteId: String?,
+): Boolean {
+    val operation = when (this) {
+        is NoteMutationState.Busy -> operation
+        is NoteMutationState.Success -> operation
+        is NoteMutationState.Error -> operation
+        NoteMutationState.Idle -> return false
+    }
+    if (operation.requestToken != requestToken) return false
+    return when (operation) {
+        is NoteMutationOperation.Create -> editNoteId == null
+        is NoteMutationOperation.Update -> operation.noteId == editNoteId
+        is NoteMutationOperation.Delete -> operation.note.id == editNoteId
+    }
+}
+
+private const val CREATE_NOTE_STATE_KEY = "create-note"

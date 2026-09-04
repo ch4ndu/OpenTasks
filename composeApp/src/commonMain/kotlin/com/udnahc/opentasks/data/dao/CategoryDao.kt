@@ -8,6 +8,7 @@ import androidx.room.Update
 import androidx.room.Upsert
 import androidx.room.Transaction
 import com.udnahc.opentasks.data.model.Category
+import com.udnahc.opentasks.data.model.isPristineInboxPlaceholder
 import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import kotlinx.coroutines.flow.Flow
 
@@ -67,7 +68,9 @@ interface CategoryDao {
     @Transaction
     suspend fun mergeRemoteIfNewer(remote: Category): RemoteMergeResult {
         val local = findCategoryByIdAnyState(remote.id)
-        if (local != null && local.updatedAt >= remote.updatedAt) return RemoteMergeResult.KeptLocal
+        if (local != null && !shouldApplyRemoteCategory(local, remote)) {
+            return RemoteMergeResult.KeptLocal
+        }
         upsert(remote)
         return RemoteMergeResult.Applied
     }
@@ -78,3 +81,7 @@ interface CategoryDao {
     @Query("DELETE FROM categories")
     suspend fun deleteAll()
 }
+
+internal fun shouldApplyRemoteCategory(local: Category, remote: Category): Boolean =
+    remote.updatedAt > local.updatedAt ||
+        (remote.updatedAt == local.updatedAt && local.isPristineInboxPlaceholder())

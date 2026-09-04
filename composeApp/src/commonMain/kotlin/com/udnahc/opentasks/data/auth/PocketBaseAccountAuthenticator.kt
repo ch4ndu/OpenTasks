@@ -3,16 +3,18 @@ package com.udnahc.opentasks.data.auth
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.PocketBaseEndpoint
 import com.udnahc.opentasks.data.sync.PocketBaseOwnerMismatchException
+import com.udnahc.opentasks.data.sync.PocketBasePaginationGuard
 import com.udnahc.opentasks.data.sync.PocketBaseRecordGateway
 import com.udnahc.opentasks.data.sync.PocketBaseServerInventoryReader
 import com.udnahc.opentasks.data.sync.PocketBaseServerInventory
+import com.udnahc.opentasks.data.sync.POCKETBASE_JSON_BODY_MAX_BYTES
 import com.udnahc.opentasks.data.sync.SyncAuthenticationRejectedException
 import com.udnahc.opentasks.data.sync.canonicalUrl
+import com.udnahc.opentasks.data.sync.readPocketBaseUtf8Body
 import io.ktor.client.HttpClient
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.path
@@ -63,7 +65,7 @@ internal class AccountCredential(
     fun withCapability(capability: AccountCapability): AccountCredential =
         AccountCredential(account, endpoint, token, capability)
 
-    override fun toString(): String = "AccountCredential(accountId=${account.accountId})"
+    override fun toString(): String = "AccountCredential(redacted)"
 }
 
 class AccountAuthenticationRejectedException(cause: Throwable? = null) : IllegalStateException(
@@ -88,9 +90,8 @@ internal fun classifyAccountHttpFailure(
     phase: AccountHttpRequestPhase,
     statusCode: Int,
 ): IllegalStateException {
-    val diagnostic = IllegalStateException(
-        "PocketBase ${phase.diagnosticName} failed with HTTP $statusCode",
-    )
+    val diagnosticMessage = "PocketBase ${phase.diagnosticName} failed with HTTP $statusCode"
+    val diagnostic = IllegalStateException(diagnosticMessage)
     if (statusCode == 408 || statusCode == 425 || statusCode == 429 || statusCode in 500..599) {
         return AccountConnectivityException(diagnostic)
     }
@@ -98,7 +99,7 @@ internal fun classifyAccountHttpFailure(
         phase == AccountHttpRequestPhase.AUTHENTICATION && statusCode in 400..499 ->
             AccountAuthenticationRejectedException(diagnostic)
         phase == AccountHttpRequestPhase.AUTHENTICATION -> AccountConnectivityException(diagnostic)
-        else -> AccountCapabilityRejectedException(diagnostic.message.orEmpty())
+        else -> AccountCapabilityRejectedException(diagnosticMessage)
     }
 }
 
@@ -223,7 +224,7 @@ internal class PocketBaseAccountAuthenticator(
             )
         }
         val rawBody = try {
-            response.bodyAsText()
+            readPocketBaseUtf8Body(response, POCKETBASE_JSON_BODY_MAX_BYTES)
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             throw AccountConnectivityException(error)
@@ -376,6 +377,7 @@ internal class PocketBaseAccountAuthenticator(
         collection: String,
     ): List<JsonObject> {
         val rows = mutableListOf<JsonObject>()
+        val pagination = PocketBasePaginationGuard(INVENTORY_PAGE_SIZE)
         var page = 1
         do {
             val response = try {
@@ -395,6 +397,7 @@ internal class PocketBaseAccountAuthenticator(
                     AccountHttpRequestPhase.OWNER_INVENTORY,
                     response.status.value,
                 )
+            pagination.accept(page, result)
             rows += result.items
             page += 1
         } while (page <= result.totalPages)

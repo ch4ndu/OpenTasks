@@ -63,6 +63,7 @@ internal fun ThreeDayViewContent(
     navBarHeight: Dp,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
+    timelineHourLabels: List<String> = EMPTY_CALENDAR_DAY_PROJECTION.timelineHourLabels,
 ) {
     val dimens = OpenTasksTheme.dimens
     val timeColumnWidth = dimens.calendarTimeColumnWidth
@@ -99,7 +100,7 @@ internal fun ThreeDayViewContent(
                             .fillMaxSize()
                             .verticalScroll(scrollState),
                     ) {
-                        EMPTY_CALENDAR_DAY_PROJECTION.timelineHourLabels.forEach { hourLabel ->
+                        timelineHourLabels.forEach { hourLabel ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()

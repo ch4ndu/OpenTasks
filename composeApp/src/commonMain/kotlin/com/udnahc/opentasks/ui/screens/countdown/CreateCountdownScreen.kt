@@ -24,10 +24,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -113,6 +116,21 @@ private fun String.toCountdownReminderSet(): Set<CountdownReminderOption> {
         .toSet()
 }
 
+private fun <T : Enum<T>> enumStateSaver(
+    entries: List<T>,
+    fallback: T,
+): Saver<MutableState<T>, String> = Saver(
+    save = { state -> state.value.name },
+    restore = { name ->
+        mutableStateOf(entries.firstOrNull { it.name == name } ?: fallback)
+    },
+)
+
+private val reminderStateSaver: Saver<MutableState<Set<CountdownReminderOption>>, String> = Saver(
+    save = { state -> state.value.toRemindersString() },
+    restore = { serialized -> mutableStateOf(serialized.toCountdownReminderSet()) },
+)
+
 @Composable
 private fun Set<CountdownReminderOption>.displayText(): String {
     if (isEmpty()) return stringResource(Res.string.none)
@@ -194,31 +212,48 @@ internal fun CreateCountdownContent(
 ) {
     val dimens = OpenTasksTheme.dimens
     val stateKey = editCountdown?.id ?: ""
+    val initialRecurrenceValue = editCountdown?.recurrenceType ?: RecurrenceType.NONE
+    val initialTypeValue = editCountdown?.countdownType ?: initialType
+    val initialCountingModeValue = editCountdown?.countingMode ?: CountingMode.COUNTDOWN
+    val initialSmartListValue =
+        editCountdown?.smartListVisibility ?: SmartListVisibility.ON_THE_DAY
 
-    var name by remember(stateKey) { mutableStateOf(editCountdown?.title ?: "") }
-    var selectedDay by remember(stateKey) {
+    var name by rememberSaveable(stateKey) { mutableStateOf(editCountdown?.title ?: "") }
+    var selectedDay by rememberSaveable(stateKey) {
         mutableIntStateOf(editCountdown?.targetDate?.let { extractDay(it) } ?: currentDate.dayOfMonth)
     }
-    var selectedMonth by remember(stateKey) {
+    var selectedMonth by rememberSaveable(stateKey) {
         mutableIntStateOf(editCountdown?.targetDate?.let { extractMonth(it) } ?: currentDate.monthNumber)
     }
-    var selectedYear by remember(stateKey) {
+    var selectedYear by rememberSaveable(stateKey) {
         mutableIntStateOf(editCountdown?.targetDate?.let { extractYear(it) } ?: currentDate.year)
     }
-    var selectedReminders by remember(stateKey) {
+    var selectedReminders by rememberSaveable(stateKey, saver = reminderStateSaver) {
         mutableStateOf(editCountdown?.reminders?.toCountdownReminderSet() ?: emptySet())
     }
-    var selectedRecurrence by remember(stateKey) {
-        mutableStateOf(editCountdown?.recurrenceType ?: RecurrenceType.NONE)
+    var selectedRecurrence by rememberSaveable(
+        stateKey,
+        saver = enumStateSaver(RecurrenceType.entries, initialRecurrenceValue),
+    ) {
+        mutableStateOf(initialRecurrenceValue)
     }
-    var selectedType by remember(stateKey) {
-        mutableStateOf(editCountdown?.countdownType ?: initialType)
+    var selectedType by rememberSaveable(
+        stateKey,
+        saver = enumStateSaver(CountdownType.entries, initialTypeValue),
+    ) {
+        mutableStateOf(initialTypeValue)
     }
-    var selectedCountingMode by remember(stateKey) {
-        mutableStateOf(editCountdown?.countingMode ?: CountingMode.COUNTDOWN)
+    var selectedCountingMode by rememberSaveable(
+        stateKey,
+        saver = enumStateSaver(CountingMode.entries, initialCountingModeValue),
+    ) {
+        mutableStateOf(initialCountingModeValue)
     }
-    var selectedSmartList by remember(stateKey) {
-        mutableStateOf(editCountdown?.smartListVisibility ?: SmartListVisibility.ON_THE_DAY)
+    var selectedSmartList by rememberSaveable(
+        stateKey,
+        saver = enumStateSaver(SmartListVisibility.entries, initialSmartListValue),
+    ) {
+        mutableStateOf(initialSmartListValue)
     }
 
     // Dialog visibility

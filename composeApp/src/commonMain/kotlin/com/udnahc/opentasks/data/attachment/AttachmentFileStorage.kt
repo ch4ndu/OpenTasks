@@ -20,6 +20,8 @@ data class StoredAttachmentFile(
 
 class AttachmentImageDecodeException : IllegalArgumentException("Attachment image decode failed")
 
+class AttachmentFileOperationException : IllegalStateException("Attachment file operation failed")
+
 class AttachmentFileTooLargeException(
     val maxBytes: Long,
 ) : IllegalArgumentException("Attachment file exceeds the configured byte limit")

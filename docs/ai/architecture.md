@@ -85,7 +85,8 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 ## External boundaries and cleanup
 
 - External file/share data is bounded by byte count and decoded with strict UTF-8 before parsing or navigation. Rejections are typed and localized; raw platform exception text and user-authored content do not enter diagnostics.
-- Every temporary or replaced native resource has one owner and one idempotent cleanup path. This includes PocketBase clients, `AccountClientSession` HTTP engines, attachment files, and JVM Calendar child processes.
+- Native share handoffs carry user content through a bounded, single-use platform container. Wake-up URLs may carry only an unguessable nonce; the receiver must validate the exact URL shape, atomically claim and retire the envelope before publication, and require confirmation before importing shared calendar data.
+- Every temporary or replaced native resource has one owner and one idempotent cleanup path. This includes PocketBase clients, `AccountClientSession` HTTP engines, attachment files, and JVM Calendar child processes. Attachment file ownership is durably leased in Room before the first write; exact row rereads transfer a referenced lease, while deletion must prove absence before releasing an unreferenced lease.
 - Cancellation remains cancellation across file import, export handoff, attachment work, sync, Settings, and authenticator sessions. Do not convert `CancellationException` into ordinary failure state or continue destructive work after cancellation.
 - JVM Calendar commands use a timeout- and 16 MiB-output-bounded process runner that drains merged output without deadlock and destroys/forcibly destroys children on timeout, cancellation, or overflow.
 

@@ -5,9 +5,10 @@ import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 
 open class PocketBaseRecordGatewayFactory {
     open fun create(client: PocketbaseClient): PocketBaseRecordGateway {
-        val endpoint = PocketBaseClientProvider.endpointFor(client)
-            ?: error("PocketBase client has no canonical endpoint")
-        val binding = PocketBaseClientProvider.bindingFor(client)
+        val metadata = PocketBaseClientProvider.metadataFor(client)
+            ?: error("PocketBase client has no registered metadata")
+        val endpoint = metadata.endpoint
+        val binding = metadata.binding
         return if (binding == null) {
             create(client, endpoint)
         } else {

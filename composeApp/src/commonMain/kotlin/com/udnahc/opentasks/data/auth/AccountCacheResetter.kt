@@ -4,6 +4,7 @@ import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.database.AppDatabase
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.Category
+import com.udnahc.opentasks.data.model.isPristineInboxPlaceholder
 import com.udnahc.opentasks.data.settings.AccountStateStore
 import com.udnahc.opentasks.data.sync.SyncService
 import kotlinx.coroutines.CoroutineDispatcher
@@ -43,21 +44,12 @@ internal class AccountCacheInspector(
             countdownDao.getUnsynced().size
 
         val categories = categoryDao.getAllCategoriesOnce()
-        val isPristineInboxOnly = categories.singleOrNull()?.let { category ->
-            category.id == AppConstants.DEFAULT_INBOX_ID &&
-                category.name == "Inbox" &&
-                category.icon == "inbox" &&
-                category.sortOrder == 0 &&
-                category.pbId == null &&
-                !category.isSynced &&
-                !category.isDeleted &&
-                category.createdAt == 0L &&
-                category.updatedAt == 0L
-        } == true &&
+        val isPristineInboxOnly = categories.singleOrNull()?.isPristineInboxPlaceholder() == true &&
             taskDao.getAllTasksOnce().isEmpty() &&
             tagDao.getAllTagsOnce().isEmpty() &&
             tagDao.getAllTaskTagsOnce().isEmpty() &&
             attachmentDao.getAllOnce().isEmpty() &&
+            attachmentDao.getAttachmentFileCleanupPaths().isEmpty() &&
             noteDao.getAllNotesOnce().isEmpty() &&
             countdownDao.getAllCountdownsOnce().isEmpty()
 
@@ -134,6 +126,7 @@ internal class AccountCacheResetter(
     ) {
         stateStore.replaceCacheAndPersist(binding, transition) {
             database.tagDao().deleteAllTaskTags()
+            database.attachmentDao().deleteAllAttachmentFileCleanup()
             database.attachmentDao().deleteAll()
             database.countdownDao().deleteAll()
             database.tagDao().deleteAllTags()

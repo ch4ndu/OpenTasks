@@ -88,6 +88,8 @@ plugins {
 }
 
 kotlin {
+    jvmToolchain(17)
+
     android {
         namespace = "com.udnahc.opentasks.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -106,6 +108,7 @@ kotlin {
     ).forEach { iosTarget ->
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
+            binaryOption("bundleId", "com.udnahc.opentasks.composeapp")
             isStatic = true
         }
     }

@@ -3,6 +3,7 @@
     <string name="app_name">OpenTasks</string>
     <string name="inbox">Inbox</string>
     <string name="matrix">Matrix</string>
+    <string name="tasks">Tasks</string>
     <string name="calendar">Calendar</string>
     <string name="settings">Settings</string>
     <string name="no_tasks">No tasks yet</string>
@@ -27,8 +28,8 @@
     <string name="close">Close</string>
     <string name="confirm">Confirm</string>
     <string name="none">None</string>
-    <string name="custom">Custom</string>
     <string name="back">Back</string>
+    <string name="retry">Retry</string>
     <string name="save">Save</string>
     <string name="select">Select</string>
     <string name="more">More</string>
@@ -80,6 +81,8 @@
     <string name="image_add_failed">Could not add image</string>
     <string name="image_save_partial_failed">Task saved, but some images were not added</string>
     <string name="task_save_failed">Could not save task</string>
+    <string name="task_update_failed">Could not update task</string>
+    <string name="task_not_found">Task not found</string>
     <string name="discard_pending_images_title">Discard pending images?</string>
     <string name="discard_pending_images_message">The task is already saved. Leaving now will discard image retries that have not been added.</string>
     <string name="discard">Discard</string>
@@ -104,6 +107,7 @@
     <string name="previous_year">Previous year</string>
     <string name="next_year">Next year</string>
     <string name="clear_reminder">Clear reminder</string>
+    <string name="external_launch_failed">Could not open the requested app.</string>
     <string name="task_reminder_due_now">Due now</string>
     <string name="task_reminder_due_in_minutes">Due in %1$d min</string>
     <string name="task_reminder_due_in_hour">Due in %1$d hour</string>
@@ -129,6 +133,7 @@
     <string name="countdown_save_failed">Could not save countdown</string>
     <string name="countdown_delete_failed">Could not delete countdown</string>
     <string name="countdown_saved_warning">Countdown change was saved, but follow-up maintenance could not finish.</string>
+    <string name="countdown_not_found">Countdown not found</string>
     <string name="task_notification_obsolete">This task is already complete or this reminder is obsolete.</string>
     <string name="task_notification_task_missing">Task no longer exists.</string>
     <string name="task_notification_stale">Task changed; this reminder is no longer current.</string>
@@ -242,6 +247,9 @@
     <string name="note_title_hint">Note title</string>
     <string name="empty_notes">No notes yet</string>
     <string name="delete_note">Delete note</string>
+    <string name="note_save_failed">Could not save note</string>
+    <string name="note_delete_failed">Could not delete note</string>
+    <string name="note_mutation_saved_warning">Note change was saved locally. Sync will retry automatically.</string>
 
     <!-- Formatting toolbar -->
     <string name="bold">Bold</string>
@@ -267,8 +275,14 @@
     <string name="shared_content_too_large">Shared content is too large</string>
     <string name="shared_content_too_many_items">Too many shared items</string>
     <string name="shared_content_invalid">Shared content could not be read</string>
+    <string name="shared_ics_import_confirmation_title">Import shared calendar?</string>
+    <string name="shared_ics_import_confirmation_message">Import the shared calendar file into OpenTasks?</string>
     <string name="grant_calendar_permission">Grant calendar permission to import events</string>
     <string name="calendar_permission_denied">Calendar permission was denied. Please enable it in Settings.</string>
+    <string name="calendar_access_denied_import">Calendar access was denied. Allow access in System Settings, then try again.</string>
+    <string name="calendar_import_transport_failed">Calendar could not be read. Please try again.</string>
+    <string name="calendar_import_invalid_response">Calendar returned data that could not be imported.</string>
+    <string name="calendar_import_too_many_events">This range contains more than 10,000 calendar events. Choose a smaller range.</string>
     <string name="calendar_not_available">Calendar import is not available on this platform</string>
     <string name="import_button">Import</string>
     <string name="calendar_import_all_day_event">All day event</string>
@@ -320,6 +334,7 @@
     <string name="calendar_access">Calendar</string>
     <string name="permission_granted">Granted</string>
     <string name="permission_not_granted">Not granted</string>
+    <string name="not_supported">Not supported</string>
     <string name="permission_not_required">Not required</string>
     <string name="exact_reminder_available">Available. Android may not list auto-granted access under Alarms &amp; reminders.</string>
     <string name="exact_reminder_permission_needed">Permission needed</string>

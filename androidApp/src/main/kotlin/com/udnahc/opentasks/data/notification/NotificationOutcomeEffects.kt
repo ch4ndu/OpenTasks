@@ -73,7 +73,7 @@ private suspend fun runWidgetRefresh(
         refresh()
     } catch (error: CancellationException) {
         throw error
-    } catch (error: Exception) {
-        log.e(error) { "Notification-driven $name widget refresh failed" }
+    } catch (_: Exception) {
+        log.e { "Notification-driven $name widget refresh failed" }
     }
 }

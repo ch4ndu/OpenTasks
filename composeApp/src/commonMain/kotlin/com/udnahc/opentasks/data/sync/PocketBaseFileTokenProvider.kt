@@ -2,7 +2,6 @@ package com.udnahc.opentasks.data.sync
 
 import io.ktor.client.HttpClient
 import io.ktor.client.request.post
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -33,17 +32,17 @@ internal class PocketBaseFileTokenProvider(
         if (response.status == HttpStatusCode.Unauthorized) {
             throw SyncAuthenticationRejectedException()
         }
-        if (response.status.value !in 200..299) {
-            throw PocketBaseConnectionException(
-                "PocketBase protected-file token request failed with HTTP ${response.status.value}",
-            )
-        }
         val rawBody = try {
-            response.bodyAsText()
+            readPocketBaseUtf8Body(response, POCKETBASE_SMALL_BODY_MAX_BYTES)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
             throw PocketBaseConnectionException("PocketBase protected-file token response was unreadable", error)
+        }
+        if (response.status.value !in 200..299) {
+            throw PocketBaseConnectionException(
+                "PocketBase protected-file token request failed with HTTP ${response.status.value}",
+            )
         }
         val token = try {
             json.parseToJsonElement(rawBody)

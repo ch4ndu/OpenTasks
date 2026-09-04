@@ -811,6 +811,7 @@ internal class AccountRepositoryImpl(
         } catch (error: Throwable) {
             log.w { "Account transition recovery remains pending" }
             publish(AccountSessionState.Transitioning(transition))
+            throw error
         }
     }
 

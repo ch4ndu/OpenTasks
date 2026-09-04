@@ -14,6 +14,7 @@ import com.udnahc.opentasks.data.dao.TagDao
 import com.udnahc.opentasks.data.dao.TaskDao
 import com.udnahc.opentasks.data.model.AppSettings
 import com.udnahc.opentasks.data.model.Attachment
+import com.udnahc.opentasks.data.model.AttachmentFileCleanup
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.Note
@@ -22,8 +23,8 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskTag
 
 @Database(
-    entities = [Task::class, Category::class, Note::class, Tag::class, TaskTag::class, AppSettings::class, Countdown::class, Attachment::class],
-    version = 13
+    entities = [Task::class, Category::class, Note::class, Tag::class, TaskTag::class, AppSettings::class, Countdown::class, Attachment::class, AttachmentFileCleanup::class],
+    version = 14
 )
 @TypeConverters(Converters::class)
 @ConstructedBy(AppDatabaseConstructor::class)

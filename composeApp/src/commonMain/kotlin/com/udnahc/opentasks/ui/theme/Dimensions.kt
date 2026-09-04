@@ -1,6 +1,9 @@
 package com.udnahc.opentasks.ui.theme
 
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -42,6 +45,7 @@ data class OpenTasksDimensions(
     val touchTargetSmall: Dp,   // 20.dp (priority badge, small indicators)
     val touchTargetMedium: Dp,  // 32.dp (icon buttons, checkboxes)
     val touchTargetLarge: Dp,   // 36.dp (calendar day circles, large buttons)
+    val minimumInteractiveTargetSize: Dp, // 48.dp (ordinary interactive container minimum)
 
     // ── Corner radii ─────────────────────────────────────────────────────
     val cornerTiny: Dp,         // 2.dp
@@ -130,6 +134,7 @@ fun compactDimensions() = OpenTasksDimensions(
     touchTargetSmall = 20.dp,
     touchTargetMedium = 32.dp,
     touchTargetLarge = 36.dp,
+    minimumInteractiveTargetSize = 48.dp,
     // Corners
     cornerTiny = 2.dp,
     cornerSmall = 3.dp,
@@ -211,6 +216,7 @@ fun mediumDimensions() = OpenTasksDimensions(
     touchTargetSmall = 23.dp,
     touchTargetMedium = 37.dp,
     touchTargetLarge = 41.dp,
+    minimumInteractiveTargetSize = 48.dp,
     // Corners
     cornerTiny = 3.dp,
     cornerSmall = 4.dp,
@@ -292,6 +298,7 @@ fun expandedDimensions() = OpenTasksDimensions(
     touchTargetSmall = 26.dp,
     touchTargetMedium = 42.dp,
     touchTargetLarge = 46.dp,
+    minimumInteractiveTargetSize = 48.dp,
     // Corners
     cornerTiny = 4.dp,
     cornerSmall = 5.dp,
@@ -347,3 +354,9 @@ fun expandedDimensions() = OpenTasksDimensions(
 )
 
 val LocalOpenTasksDimensions = staticCompositionLocalOf { compactDimensions() }
+
+@Composable
+internal fun Modifier.minimumInteractiveTargetSize(): Modifier {
+    val minimumSize = LocalOpenTasksDimensions.current.minimumInteractiveTargetSize
+    return sizeIn(minWidth = minimumSize, minHeight = minimumSize)
+}

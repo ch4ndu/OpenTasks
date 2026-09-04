@@ -14,6 +14,10 @@ import opentasks.composeapp.generated.resources.import_csv_ticktick
 import opentasks.composeapp.generated.resources.import_error
 import opentasks.composeapp.generated.resources.import_failed_generic
 import opentasks.composeapp.generated.resources.import_file_too_large
+import opentasks.composeapp.generated.resources.calendar_access_denied_import
+import opentasks.composeapp.generated.resources.calendar_import_invalid_response
+import opentasks.composeapp.generated.resources.calendar_import_too_many_events
+import opentasks.composeapp.generated.resources.calendar_import_transport_failed
 import opentasks.composeapp.generated.resources.no_events_in_file
 import opentasks.composeapp.generated.resources.no_tasks_in_file
 import org.jetbrains.compose.resources.stringResource
@@ -62,6 +66,14 @@ internal fun importErrorText(error: ImportErrorState): String = when (error.type
     ImportErrorType.FILE_TOO_LARGE -> stringResource(Res.string.import_file_too_large)
     ImportErrorType.EMPTY_CSV_FILE -> stringResource(Res.string.no_tasks_in_file)
     ImportErrorType.EMPTY_ICS_FILE -> stringResource(Res.string.no_events_in_file)
+    ImportErrorType.CALENDAR_ACCESS_DENIED ->
+        stringResource(Res.string.calendar_access_denied_import)
+    ImportErrorType.CALENDAR_TRANSPORT ->
+        stringResource(Res.string.calendar_import_transport_failed)
+    ImportErrorType.CALENDAR_INVALID_RESPONSE ->
+        stringResource(Res.string.calendar_import_invalid_response)
+    ImportErrorType.CALENDAR_TOO_MANY_EVENTS ->
+        stringResource(Res.string.calendar_import_too_many_events)
     ImportErrorType.GENERIC -> error.detail?.let { detail ->
         stringResource(Res.string.import_error, detail)
     } ?: stringResource(Res.string.import_failed_generic)

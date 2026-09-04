@@ -7,6 +7,7 @@ import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.data.auth.AccountMutationGate
 import com.udnahc.opentasks.data.sync.SyncTrigger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -41,37 +42,69 @@ class NoteRepositoryImpl(
             .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
 
-    override suspend fun insert(note: Note) = mutationGate.withExclusive {
-        log.v { "Inserting note: ${note.id}" }
-        withContext(ioDispatcher) {
-            noteDao.insert(note.withDefaultTimestamps().withUtcTimestamps())
-        }
-        syncTrigger.triggerSync()
+    override suspend fun insert(note: Note) {
+        insertCommitted(note)
     }
 
-    override suspend fun update(note: Note) = mutationGate.withExclusive {
-        log.v { "Updating note: ${note.id}" }
-        val committed = note.copy(
-            isSynced = false,
-            updatedAt = maxOf(localNow(), note.updatedAt),
-        )
-        withContext(ioDispatcher) {
-            noteDao.update(committed.withUtcTimestamps())
+    override suspend fun insertCommitted(note: Note): CommittedMutation<Note> =
+        mutationGate.withExclusive {
+            log.v { "Inserting note" }
+            val committed = note.withDefaultTimestamps()
+            withContext(ioDispatcher) {
+                noteDao.insert(committed.withUtcTimestamps())
+            }
+            committed.withSyncWarning()
         }
-        syncTrigger.triggerSync()
+
+    override suspend fun update(note: Note) {
+        updateCommitted(note)
     }
 
-    override suspend fun delete(note: Note) = mutationGate.withExclusive {
-        log.v { "Soft-deleting note: ${note.id}" }
-        val committed = note.copy(
-            isDeleted = true,
-            isSynced = false,
-            updatedAt = maxOf(localNow(), note.updatedAt),
-        )
-        withContext(ioDispatcher) {
-            noteDao.update(committed.withUtcTimestamps())
+    override suspend fun updateCommitted(note: Note): CommittedMutation<Note> =
+        mutationGate.withExclusive {
+            log.v { "Updating note" }
+            val committed = note.copy(
+                isSynced = false,
+                updatedAt = maxOf(localNow(), note.updatedAt),
+            )
+            withContext(ioDispatcher) {
+                noteDao.update(committed.withUtcTimestamps())
+            }
+            committed.withSyncWarning()
         }
+
+    override suspend fun delete(note: Note) {
+        deleteCommitted(note)
+    }
+
+    override suspend fun deleteCommitted(note: Note): CommittedMutation<Note> =
+        mutationGate.withExclusive {
+            log.v { "Soft-deleting note" }
+            val committed = note.copy(
+                isDeleted = true,
+                isSynced = false,
+                updatedAt = maxOf(localNow(), note.updatedAt),
+            )
+            withContext(ioDispatcher) {
+                noteDao.update(committed.withUtcTimestamps())
+            }
+            committed.withSyncWarning()
+        }
+
+    private suspend fun Note.withSyncWarning(): CommittedMutation<Note> =
+        CommittedMutation(this).withPostCommitWarning(
+            warning = triggerSyncAfterCommit(),
+            phase = PostCommitWarningPhase.SYNC,
+        )
+
+    private suspend fun triggerSyncAfterCommit(): Throwable? = try {
         syncTrigger.triggerSync()
+        null
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        log.w { "Note write committed, but sync scheduling failed" }
+        error
     }
 
     private fun Note.withDefaultTimestamps(): Note {

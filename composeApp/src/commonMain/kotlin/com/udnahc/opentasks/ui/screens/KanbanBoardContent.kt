@@ -27,8 +27,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,16 +59,13 @@ import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.ui.theme.StarGold
 import com.udnahc.opentasks.ui.theme.WindowSizeCategory
 import com.udnahc.opentasks.ui.theme.kanbanStatusColor
 import com.udnahc.opentasks.ui.theme.priorityColor
 import opentasks.composeapp.generated.resources.Res
-import opentasks.composeapp.generated.resources.ic_star
 import opentasks.composeapp.generated.resources.status_done
 import opentasks.composeapp.generated.resources.status_in_progress
 import opentasks.composeapp.generated.resources.status_todo
-import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
@@ -501,21 +496,12 @@ private fun KanbanTaskCard(
                 }
             }
 
-            if (task.isStarred) {
-                IconButton(
-                    onClick = onToggleStar,
-                    modifier = Modifier
-                        .size(dimens.touchTargetMedium)
-                        .align(Alignment.CenterVertically),
-                ) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_star),
-                        contentDescription = null,
-                        tint = StarGold,
-                        modifier = Modifier.size(dimens.iconSmall),
-                    )
-                }
-            }
+            TaskStarButton(
+                isStarred = task.isStarred,
+                onClick = onToggleStar,
+                modifier = Modifier.align(Alignment.CenterVertically),
+                iconSize = dimens.iconSmall,
+            )
         }
     }
 }

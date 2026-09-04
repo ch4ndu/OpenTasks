@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_channel_task_reminders">Task Reminders</string>
+    <string name="notification_channel_task_reminders_description">Notifications for task reminders</string>
+    <string name="notification_channel_all_day_tasks">All-Day Tasks</string>
+    <string name="notification_channel_all_day_tasks_description">Ongoing notifications for all-day tasks</string>
+    <string name="notification_all_day_task_in_progress">All-day task in progress</string>
+    <string name="notification_action_mark_done">Mark Done</string>
+    <string name="notification_action_got_it">Got It</string>
+</resources>

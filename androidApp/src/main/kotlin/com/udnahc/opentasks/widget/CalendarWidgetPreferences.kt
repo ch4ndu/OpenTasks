@@ -16,13 +16,12 @@ data class CalendarWidgetPreferences(
             val sp = context.getSharedPreferences(prefsName(widgetId), Context.MODE_PRIVATE)
             return CalendarWidgetPreferences(
                 widgetId = widgetId,
-                theme = WidgetTheme.valueOf(
-                    sp.getString("theme", WidgetTheme.DARK.name) ?: WidgetTheme.DARK.name
-                ),
-                fontSize = WidgetFontSize.valueOf(
-                    sp.getString("fontSize", WidgetFontSize.NORMAL.name)
-                        ?: WidgetFontSize.NORMAL.name
-                ),
+                theme = WidgetTheme.entries.firstOrNull {
+                    it.name == sp.getString("theme", WidgetTheme.DARK.name)
+                } ?: WidgetTheme.DARK,
+                fontSize = WidgetFontSize.entries.firstOrNull {
+                    it.name == sp.getString("fontSize", WidgetFontSize.NORMAL.name)
+                } ?: WidgetFontSize.NORMAL,
             )
         }
 

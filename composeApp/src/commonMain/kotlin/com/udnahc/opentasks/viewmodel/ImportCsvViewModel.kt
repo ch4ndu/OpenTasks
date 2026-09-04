@@ -103,7 +103,7 @@ class ImportCsvViewModel(
                     } else {
                         ImportErrorType.GENERIC
                     },
-                    detail = detail,
+                    detail = null,
                 ),
             )
         }

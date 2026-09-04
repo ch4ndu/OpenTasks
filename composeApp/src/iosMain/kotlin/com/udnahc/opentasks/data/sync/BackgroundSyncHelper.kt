@@ -31,6 +31,7 @@ object BackgroundSyncHelper : KoinComponent {
 
     fun performSync(completion: (Boolean) -> Unit): BackgroundSyncHandle {
         log.d { "Background sync starting" }
+        var succeeded = false
         val job = scope.launch {
             try {
                 val completed = accountBoundaryExecutor.withActiveCacheBoundary {
@@ -40,16 +41,16 @@ object BackgroundSyncHelper : KoinComponent {
                 if (completed == null) {
                     log.d { "Background maintenance skipped without an active cache boundary" }
                 }
-            } catch (e: CancellationException) {
+                succeeded = true
+            } catch (error: CancellationException) {
                 log.d { "Background sync cancelled" }
-                throw e
-            } catch (e: Exception) {
-                log.e { "Background sync failed: ${e.message}" }
-                throw e
+                throw error
+            } catch (_: Exception) {
+                log.e { "Background sync failed" }
             }
         }
         job.invokeOnCompletion { cause ->
-            completion(cause == null)
+            completion(cause == null && succeeded)
         }
         return BackgroundSyncHandle(job)
     }

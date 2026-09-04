@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.data.sync
 
+import com.udnahc.opentasks.ExternalInputPolicy
 import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
 import com.udnahc.opentasks.data.attachment.AttachmentFileTooLargeException
 import com.udnahc.opentasks.data.auth.CacheBinding
@@ -14,7 +15,6 @@ import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
@@ -45,7 +45,9 @@ class PocketBaseRecordGateway(
     }
     suspend fun getCapability(): GatewayResponse<PocketBaseSyncMeta> =
         decode(client.get("$baseUrl/api/collections/opentasks_sync_meta/records?perPage=1")) { text ->
-            json.decodeFromString<PocketBaseRecordPage<PocketBaseSyncMeta>>(text).items.firstOrNull()
+            val page = json.decodeFromString<PocketBaseRecordPage<PocketBaseSyncMeta>>(text)
+            validatePocketBasePage(requestedPage = 1, perPage = 1, response = page)
+            page.items.firstOrNull()
         }
 
     suspend fun getRecords(
@@ -53,10 +55,15 @@ class PocketBaseRecordGateway(
         page: Int,
         perPage: Int,
     ): GatewayResponse<PocketBaseRecordPage<JsonObject>> {
+        require(page >= 1) { "PocketBase page request must be positive" }
+        require(perPage in 1..POCKETBASE_MAX_PAGE_SIZE) {
+            "PocketBase page size is outside the supported range"
+        }
         val response: GatewayResponse<PocketBaseRecordPage<JsonObject>> = decode(
             client.get("$baseUrl/api/collections/$collection/records?page=$page&perPage=$perPage&sort=id" + ownerFilter()),
         ) { text -> json.decodeFromString<PocketBaseRecordPage<JsonObject>>(text) }
         val pageBody = response.body?.let { body ->
+            validatePocketBasePage(page, perPage, body)
             body.copy(items = body.items.map(::requireOwnedRecord))
         }
         return response.copy(body = pageBody)
@@ -72,7 +79,11 @@ class PocketBaseRecordGateway(
                         } ?: PocketBaseFilter.localIdEquals(localId)
                     )
             )
-        ) { text -> json.decodeFromString<PocketBaseRecordPage<JsonObject>>(text) }
+        ) { text ->
+            json.decodeFromString<PocketBaseRecordPage<JsonObject>>(text).also { page ->
+                validatePocketBasePage(requestedPage = 1, perPage = 1, response = page)
+            }
+        }
         return GatewayResponse(
             status = response.status,
             body = response.body?.items?.firstOrNull()?.let(::requireOwnedRecord),
@@ -118,7 +129,7 @@ class PocketBaseRecordGateway(
         if (response.status == HttpStatusCode.Unauthorized) {
             throw SyncAuthenticationRejectedException()
         }
-        val rawBody = response.bodyAsText()
+        val rawBody = readPocketBaseUtf8Body(response, POCKETBASE_SMALL_BODY_MAX_BYTES)
         return GatewayResponse(
             status = response.status,
             body = Unit.takeIf { response.status.value in 200..299 },
@@ -208,7 +219,12 @@ class PocketBaseRecordGateway(
                 parameters.append("token", token)
             }
         }
-        val bytes = if (response.status.value in 200..299) readBoundedResponseBytes(response) else null
+        val bytes = if (response.status.value in 200..299) {
+            readBoundedResponseBytes(response)
+        } else {
+            readPocketBaseUtf8Body(response, POCKETBASE_SMALL_BODY_MAX_BYTES)
+            null
+        }
         return GatewayResponse(response.status, bytes, "")
     }
 
@@ -216,7 +232,14 @@ class PocketBaseRecordGateway(
         if (response.status == HttpStatusCode.Unauthorized) {
             throw SyncAuthenticationRejectedException()
         }
-        val text = response.bodyAsText()
+        val text = readPocketBaseUtf8Body(
+            response = response,
+            maxBytes = if (response.status.value in 200..299) {
+                POCKETBASE_JSON_BODY_MAX_BYTES
+            } else {
+                POCKETBASE_SMALL_BODY_MAX_BYTES
+            },
+        )
         return GatewayResponse(
             status = response.status,
             body = if (response.status.value in 200..299) decode(text) else null,
@@ -340,21 +363,92 @@ internal fun safePocketBaseFailureSummary(rawBody: String): String {
     val validation = response["data"] as? JsonObject
         ?: return "validation=none"
     if (validation.isEmpty()) return "validation=none"
-    val fieldCodes = validation.entries
-        .sortedBy { it.key }
-        .joinToString(",") { (field, error) ->
-            val code = (error as? JsonObject)
-                ?.get("code")
-                ?.jsonPrimitive
-                ?.contentOrNull
-                ?: "unknown"
-            "$field:$code"
-        }
-    return "validation=$fieldCodes"
+    return "validation=present,count=${validation.size}"
 }
 
 @Serializable
 data class PocketBaseRecordPage<T>(val items: List<T> = emptyList(), val page: Int = 1, val totalPages: Int = 1)
+
+internal const val POCKETBASE_JSON_BODY_MAX_BYTES = 16 * 1024 * 1024
+internal const val POCKETBASE_SMALL_BODY_MAX_BYTES = 64 * 1024
+internal const val POCKETBASE_MAX_PAGE_SIZE = 200
+internal const val POCKETBASE_MAX_TOTAL_PAGES = 100
+internal const val POCKETBASE_MAX_CUMULATIVE_ROWS = 50_000
+
+internal class PocketBasePaginationBudget {
+    private var acceptedRows = 0
+
+    fun reserve(rowCount: Int) {
+        if (rowCount > POCKETBASE_MAX_CUMULATIVE_ROWS - acceptedRows) {
+            throw PocketBaseConnectionException("PocketBase pagination row limit was exceeded")
+        }
+        acceptedRows += rowCount
+    }
+}
+
+internal class PocketBasePaginationGuard(
+    private val perPage: Int,
+    private val budget: PocketBasePaginationBudget = PocketBasePaginationBudget(),
+) {
+    private var stableTotalPages: Int? = null
+
+    init {
+        require(perPage in 1..POCKETBASE_MAX_PAGE_SIZE) {
+            "PocketBase page size is outside the supported range"
+        }
+    }
+
+    fun accept(requestedPage: Int, response: PocketBaseRecordPage<*>) {
+        validatePocketBasePage(requestedPage, perPage, response)
+        val expected = stableTotalPages
+        if (expected != null && expected != response.totalPages) {
+            throw PocketBaseConnectionException("PocketBase pagination changed during the read")
+        }
+        budget.reserve(response.items.size)
+        if (expected == null) stableTotalPages = response.totalPages
+    }
+}
+
+internal fun validatePocketBasePage(
+    requestedPage: Int,
+    perPage: Int,
+    response: PocketBaseRecordPage<*>,
+) {
+    if (response.page != requestedPage ||
+        response.items.size > perPage ||
+        response.totalPages !in 0..POCKETBASE_MAX_TOTAL_PAGES ||
+        response.totalPages == 0 && (requestedPage != 1 || response.items.isNotEmpty()) ||
+        response.totalPages > 0 && requestedPage > response.totalPages
+    ) {
+        throw PocketBaseConnectionException("PocketBase pagination response was invalid")
+    }
+}
+
+internal suspend fun readPocketBaseUtf8Body(
+    response: HttpResponse,
+    maxBytes: Int,
+): String {
+    require(maxBytes >= 0 && maxBytes < Int.MAX_VALUE) {
+        "PocketBase response byte limit is invalid"
+    }
+    val output = ByteArray(maxBytes + 1)
+    val channel = response.bodyAsChannel()
+    var total = 0
+    while (total < output.size) {
+        val read = channel.readAvailable(output, total, output.size - total)
+        if (read < 0) break
+        if (read == 0) continue
+        total += read
+    }
+    if (total > maxBytes) {
+        throw PocketBaseConnectionException("PocketBase response body exceeded its byte limit")
+    }
+    val bytes = output.copyOf(total)
+    if (!ExternalInputPolicy.isStrictUtf8(bytes)) {
+        throw PocketBaseConnectionException("PocketBase response body was not valid UTF-8")
+    }
+    return bytes.decodeToString()
+}
 
 @Serializable
 data class PocketBaseSyncMeta(

@@ -5,12 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
-import com.udnahc.opentasks.data.extensions.extractYear
-import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.model.Note
+import com.udnahc.opentasks.data.repository.CommittedMutation
 import com.udnahc.opentasks.domain.action.note.AddNoteAction
 import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
 import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
+import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
+import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveNoteByIdUseCase
 import kotlinx.coroutines.CancellationException
@@ -36,6 +37,34 @@ data class NoteListItem(
     val updatedAtText: String,
 )
 
+sealed interface NoteMutationOperation {
+    val requestToken: Long
+
+    data class Create(
+        override val requestToken: Long,
+    ) : NoteMutationOperation
+
+    data class Update(
+        override val requestToken: Long,
+        val noteId: String,
+    ) : NoteMutationOperation
+
+    data class Delete(
+        override val requestToken: Long,
+        val note: Note,
+    ) : NoteMutationOperation
+}
+
+sealed interface NoteMutationState {
+    data object Idle : NoteMutationState
+    data class Busy(val operation: NoteMutationOperation) : NoteMutationState
+    data class Success(
+        val operation: NoteMutationOperation,
+        val hasPostCommitWarning: Boolean,
+    ) : NoteMutationState
+    data class Error(val operation: NoteMutationOperation) : NoteMutationState
+}
+
 class NoteViewModel(
     observeAllNotes: ObserveAllNotesUseCase,
     private val observeNoteById: ObserveNoteByIdUseCase,
@@ -43,12 +72,15 @@ class NoteViewModel(
     private val updateNoteAction: UpdateNoteAction,
     private val deleteNoteAction: DeleteNoteAction,
     private val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
+    private val dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
 ) : ViewModel() {
 
     private val _selectedNoteId = MutableStateFlow<String?>(null)
+    private val _mutationState = MutableStateFlow<NoteMutationState>(NoteMutationState.Idle)
+    val mutationState: StateFlow<NoteMutationState> = _mutationState
 
     val noteListItems: StateFlow<List<NoteListItem>> = observeAllNotes()
-        .map { notes -> notes.map { it.toListItem() } }
+        .map { notes -> notes.map { it.toListItem(dateTimeFormatter) } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -66,37 +98,93 @@ class NoteViewModel(
         title: String,
         content: String
     ) {
-        launchMutation { addNoteAction(title, content) }
+        addNote(LEGACY_NOTE_REQUEST_TOKEN, title, content)
+    }
+
+    fun addNote(
+        requestToken: Long,
+        title: String,
+        content: String,
+    ) {
+        launchMutation(NoteMutationOperation.Create(requestToken)) {
+            addNoteAction(title, content)
+        }
     }
 
     fun updateNote(note: Note) {
-        launchMutation { updateNoteAction(note) }
+        updateNote(LEGACY_NOTE_REQUEST_TOKEN, note)
+    }
+
+    fun updateNote(requestToken: Long, note: Note) {
+        launchMutation(NoteMutationOperation.Update(requestToken, note.id)) {
+            updateNoteAction(note)
+        }
     }
 
     fun deleteNote(note: Note) {
-        launchMutation { deleteNoteAction(note) }
+        deleteNote(LEGACY_NOTE_REQUEST_TOKEN, note)
     }
 
-    private fun launchMutation(block: suspend () -> Unit) {
+    fun deleteNote(requestToken: Long, note: Note) {
+        launchMutation(NoteMutationOperation.Delete(requestToken, note)) {
+            deleteNoteAction(note)
+        }
+    }
+
+    fun consumeMutationState(state: NoteMutationState): Boolean =
+        when (state) {
+            is NoteMutationState.Success,
+            is NoteMutationState.Error,
+            -> _mutationState.compareAndSet(state, NoteMutationState.Idle)
+            NoteMutationState.Idle,
+            is NoteMutationState.Busy,
+            -> false
+        }
+
+    private fun launchMutation(
+        operation: NoteMutationOperation,
+        block: suspend () -> CommittedMutation<Note>,
+    ) {
+        val busy = NoteMutationState.Busy(operation)
+        if (!_mutationState.compareAndSet(NoteMutationState.Idle, busy)) return
         val expectedBoundary = accountBoundaryExecutor?.captureForegroundBoundary()
-        if (accountBoundaryExecutor != null && expectedBoundary == null) return
+        if (accountBoundaryExecutor != null && expectedBoundary == null) {
+            log.w { "Note mutation rejected because no foreground account boundary is active" }
+            _mutationState.compareAndSet(busy, NoteMutationState.Error(operation))
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                accountBoundaryExecutor.withForegroundActionBoundary(expectedBoundary, block)
+                val committed = accountBoundaryExecutor.withForegroundActionBoundary(
+                    expectedBoundary,
+                    block,
+                )
+                _mutationState.compareAndSet(
+                    busy,
+                    NoteMutationState.Success(
+                        operation = operation,
+                        hasPostCommitWarning = committed.postCommitWarning != null,
+                    ),
+                )
             } catch (error: CancellationException) {
+                _mutationState.compareAndSet(busy, NoteMutationState.Idle)
                 throw error
             } catch (_: AccountBoundaryRejectedException) {
                 log.w { "Note mutation skipped because the foreground account boundary changed" }
+                _mutationState.compareAndSet(busy, NoteMutationState.Error(operation))
+            } catch (_: Exception) {
+                log.e { "Note mutation failed before commit" }
+                _mutationState.compareAndSet(busy, NoteMutationState.Error(operation))
             }
         }
     }
 }
 
-private fun Note.toListItem(): NoteListItem =
+private fun Note.toListItem(dateTimeFormatter: DateTimeTextFormatter): NoteListItem =
     NoteListItem(
         note = this,
         previewText = noteContentPreview(content),
-        updatedAtText = formatNoteDate(updatedAt),
+        updatedAtText = formatNoteDate(updatedAt, dateTimeFormatter),
     )
 
 /** Converts saved rich-text HTML into a compact Markdown-style preview. */
@@ -134,8 +222,12 @@ private fun String.decodeHtmlEntities(): String =
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
 
-private fun formatNoteDate(localMillis: Long): String {
+private fun formatNoteDate(
+    localMillis: Long,
+    dateTimeFormatter: DateTimeTextFormatter,
+): String {
     if (localMillis == 0L) return ""
-    val y = extractYear(localMillis)
-    return "${formatDateShort(localMillis)} $y"
+    return dateTimeFormatter.formatDateWithYear(localMillis)
 }
+
+private const val LEGACY_NOTE_REQUEST_TOKEN = 0L

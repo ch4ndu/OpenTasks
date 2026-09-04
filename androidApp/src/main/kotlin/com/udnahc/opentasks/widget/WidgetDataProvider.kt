@@ -5,7 +5,6 @@ import com.udnahc.opentasks.data.dao.CountdownDao
 import com.udnahc.opentasks.data.dao.TaskDao
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
 import com.udnahc.opentasks.data.extensions.extractDay
-import com.udnahc.opentasks.data.extensions.formatDateShort
 import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
 import com.udnahc.opentasks.data.extensions.localMillisToUtcMillis
 import com.udnahc.opentasks.data.extensions.nowUtcMillis
@@ -17,6 +16,8 @@ import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownOccurrence
+import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
+import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
@@ -60,20 +61,28 @@ class WidgetDataProvider : KoinComponent {
             getCategoriesWithinBoundary()
         }.orEmpty()
 
-    suspend fun getWidgetTasks(prefs: WidgetPreferences): List<WidgetTask> =
+    suspend fun getWidgetTasks(
+        prefs: WidgetPreferences,
+        dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
+    ): List<WidgetTask> =
         widgetAccountGate.withActiveCacheBoundary {
-            getWidgetTasksWithinBoundary(prefs)
+            getWidgetTasksWithinBoundary(prefs, dateTimeFormatter)
         }.orEmpty()
 
     internal suspend fun getCategoriesWithinBoundary(): List<Category> =
         categoryDao.getAllCategoriesOnce().filter { !it.isDeleted }
 
-    internal suspend fun getWidgetTasksWithinBoundary(prefs: WidgetPreferences): List<WidgetTask> {
+    internal suspend fun getWidgetTasksWithinBoundary(
+        prefs: WidgetPreferences,
+        dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
+    ): List<WidgetTask> {
         val tasks = fetchTasks(prefs)
         val sorted = sortTasks(tasks, prefs.sortBy)
         val todayLabel = getString(Res.string.today)
         val tomorrowLabel = getString(Res.string.widget_filter_tomorrow)
-        return sorted.take(15).map { it.toWidgetTask(todayLabel, tomorrowLabel) }
+        return sorted.take(15).map {
+            it.toWidgetTask(todayLabel, tomorrowLabel, dateTimeFormatter)
+        }
     }
 
     private suspend fun fetchTasks(prefs: WidgetPreferences): List<Task> {
@@ -217,7 +226,11 @@ class WidgetDataProvider : KoinComponent {
         const val MAX_TASKS_PER_WEEK_DAY = 1
     }
 
-    private fun Task.toWidgetTask(todayLabel: String, tomorrowLabel: String): WidgetTask {
+    private fun Task.toWidgetTask(
+        todayLabel: String,
+        tomorrowLabel: String,
+        dateTimeFormatter: DateTimeTextFormatter,
+    ): WidgetTask {
         val today = todayLocal()
         val deadlineUtcMillis = deadline
         val deadlineLocal = deadlineUtcMillis?.let { utcMillisToLocalMillis(it) }
@@ -226,7 +239,7 @@ class WidgetDataProvider : KoinComponent {
             when {
                 deadlineDate == today -> todayLabel
                 deadlineDate == today.plus(1, DateTimeUnit.DAY) -> tomorrowLabel
-                else -> formatDateShort(deadlineLocal)
+                else -> dateTimeFormatter.formatShortDate(deadlineLocal)
             }
         } else {
             null

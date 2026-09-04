@@ -117,7 +117,8 @@ See [docs/README.md](docs/README.md) for feature behavior and technical design n
 
 ## Building & Running
 
-**Prerequisites:** JDK 17+, Android Studio (for Android), Xcode (for iOS)
+**Prerequisites:** JDK 17, Android Studio (for Android), Xcode (for iOS). Both JVM modules pin
+the JDK 17 toolchain; the Gradle 9.4.1 wrapper distribution is checksum-verified.
 
 ```bash
 # Quick compile check
@@ -162,7 +163,8 @@ ProGuard configuration come from `composeApp/build.gradle.kts`.
 The current project configuration does not sign or notarize the DMG. Configure Apple code signing
 and notarization before distributing it to users without macOS Gatekeeper warnings.
 
-For **iOS**, open `iosApp/iosApp.xcodeproj` in Xcode and build the `iosApp` scheme.
+For **iOS**, open `iosApp/iosApp.xcodeproj` in Xcode and build the `iosApp` scheme. The minimum
+deployment target remains iOS 18.2.
 
 ## Project Structure
 

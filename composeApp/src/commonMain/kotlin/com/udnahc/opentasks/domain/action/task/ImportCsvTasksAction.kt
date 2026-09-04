@@ -34,10 +34,18 @@ class ImportCsvTasksAction(
             val now = localNow()
             var importedCount = 0
             val importedTaskIds = mutableListOf<String>()
+            val identityBatch = ImportedIdentityBatch()
+            val consumedLegacyAliases = mutableSetOf<String>()
 
             for (csvTask in tasks) {
-                val externalId = "csv_${csvTask.title.hashCode()}_${csvTask.createdAt}"
-                if (taskRepository.getTaskByExternalId(externalId) != null) continue
+                val identity = identityBatch.nextCsv(csvTask)
+                if (taskRepository.getTaskByExternalId(identity.canonicalId) != null) continue
+                val legacyMatch = identity.legacyAlias !in consumedLegacyAliases &&
+                        taskRepository.getTaskByExternalId(identity.legacyAlias) != null
+                if (legacyMatch) {
+                    consumedLegacyAliases.add(identity.legacyAlias)
+                    continue
+                }
 
                 val categoryId = resolveCategory(csvTask.listName, categoryCache)
 
@@ -62,7 +70,7 @@ class ImportCsvTasksAction(
                     recurrenceType = csvTask.recurrenceType,
                     categoryId = categoryId,
                     durationReminders = csvTask.durationReminders,
-                    sourceExternalId = externalId,
+                    sourceExternalId = identity.canonicalId,
                     createdAt = if (csvTask.createdAt > 0) utcToLocal(csvTask.createdAt) else now,
                     updatedAt = now,
                 )

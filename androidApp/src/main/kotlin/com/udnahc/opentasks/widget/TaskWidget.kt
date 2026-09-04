@@ -14,6 +14,7 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.udnahc.opentasks.data.auth.WidgetAccountGate
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.auth.AccountBoundary
+import com.udnahc.opentasks.domain.time.LocalizedDateTimeFormatter
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.widget_filter_all
 import opentasks.composeapp.generated.resources.widget_filter_next_7_days
@@ -24,6 +25,7 @@ import org.jetbrains.compose.resources.getString
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.lighthousegames.logging.logging
+import kotlin.coroutines.cancellation.CancellationException
 
 private val log = logging("TaskWidget")
 
@@ -96,8 +98,10 @@ class TaskWidget : GlanceAppWidget() {
                     refreshAllWidgetsWithinBoundary(context, boundary)
                 }
                 if (refreshed == null) log.d { "Skipped task widget refresh without an active cache boundary" }
-            } catch (e: Exception) {
-                log.e(e) { "Failed to refresh all widgets" }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                log.e { "Task widget family refresh failed" }
             }
         }
 
@@ -107,37 +111,50 @@ class TaskWidget : GlanceAppWidget() {
         ) {
             val manager = GlanceAppWidgetManager(context)
             manager.getGlanceIds(TaskWidget::class.java).forEach { glanceId ->
-                updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-                    prefs.toMutablePreferences().apply {
-                        WidgetBoundaryMarker.write(this, boundary)
-                        this[REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
-                            this[REFRESH_TRIGGER_KEY] ?: 0L,
-                            System.currentTimeMillis(),
-                        )
+                try {
+                    updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                        prefs.toMutablePreferences().apply {
+                            WidgetBoundaryMarker.write(this, boundary)
+                            this[REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
+                                this[REFRESH_TRIGGER_KEY] ?: 0L,
+                                System.currentTimeMillis(),
+                            )
+                        }
                     }
+                    instance.update(context, glanceId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    log.e { "Task widget instance refresh failed" }
                 }
-                instance.update(context, glanceId)
             }
         }
 
         internal suspend fun blankAllWidgets(context: Context) {
             val manager = GlanceAppWidgetManager(context)
             manager.getGlanceIds(TaskWidget::class.java).forEach { glanceId ->
-                updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-                    prefs.toMutablePreferences().apply {
-                        WidgetBoundaryMarker.clear(this)
-                        this[REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
-                            this[REFRESH_TRIGGER_KEY] ?: 0L,
-                            System.currentTimeMillis(),
-                        )
+                try {
+                    updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                        prefs.toMutablePreferences().apply {
+                            WidgetBoundaryMarker.clear(this)
+                            this[REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
+                                this[REFRESH_TRIGGER_KEY] ?: 0L,
+                                System.currentTimeMillis(),
+                            )
+                        }
                     }
+                    instance.update(context, glanceId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    log.e { "Task widget instance blanking failed" }
                 }
-                instance.update(context, glanceId)
             }
         }
     }
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val dateTimeFormatter = LocalizedDateTimeFormatter(context)
         val appWidgetId = try {
             GlanceAppWidgetManager(context).getAppWidgetId(id)
         } catch (e: Exception) {
@@ -163,7 +180,10 @@ class TaskWidget : GlanceAppWidget() {
                         val provider = WidgetDataProvider()
                         provider.withActiveCacheBoundary { boundary ->
                             val prefs = WidgetPreferences.load(context, appWidgetId)
-                            val tasks = provider.getWidgetTasksWithinBoundary(prefs)
+                            val tasks = provider.getWidgetTasksWithinBoundary(
+                                prefs,
+                                dateTimeFormatter,
+                            )
                             val categories = provider.getCategoriesWithinBoundary()
                             val filterLabel = resolveFilterLabel(prefs, categories)
                             log.v { "Widget $appWidgetId: ${tasks.size} tasks, filter=$filterLabel, trigger=$refreshTrigger" }

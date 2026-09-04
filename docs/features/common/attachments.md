@@ -34,7 +34,11 @@ Platform storage is abstracted by `AttachmentFileStorage`:
 - iOS stores optimized JPEG files under the app documents attachment directory.
 - JVM stores optimized and thumbnail files under `~/.opentasks/attachments/images`, using Skia to resize and encode WebP with JPEG fallback.
 
-The image policy currently uses a 1600 px maximum long edge, 320 px thumbnails, quality 80, and a 5 MB upload cap.
+Image intake rejects sources larger than 32 MiB, any source dimension above 16,384 px, or more than 64 million decoded pixels before allocating the full decoded image. Accepted images are optimized to a 1600 px maximum long edge with 320 px thumbnails, quality 80, and a 5 MiB upload cap.
+
+iOS gallery selection uses one-image `PHPicker` file representations. The temporary representation is copied through a 32 MiB-plus-one bounded native read while the provider callback owns its URL; ImageIO then validates metadata and applies orientation while producing the stored 1600 px image and 320 px thumbnail. Camera capture retains the camera-specific `UIImage` preprocessing path.
+
+Each allocated image/thumbnail pair is recorded in the account-owned `attachment_file_cleanup` table before the first file write. A file lease is released only after an exact attachment-row read proves the path is referenced, or after deletion proves the path is absent. Failed, cancelled, losing-download, and superseded-file paths therefore remain durably retryable across process death.
 
 ## Sync Behavior
 
@@ -50,7 +54,7 @@ Sync states:
 - `FAILED`: retryable sync or download failure.
 - `BLOCKED`: non-retryable policy or decode failure.
 
-Normal deletes are tombstones. Deleting an image marks the attachment deleted and removes local files where practical; sync clears or updates the remote file record rather than treating normal app deletion as a hard server delete. The sole remote hard-delete exception is a confirmed local-authoritative account replacement: the owner-scoped executor deletes the destination attachment record/file, preserves the local attachment bytes, then uploads them during exact reseeding.
+Normal deletes are tombstones. Deleting an image marks the attachment deleted; the shared cleanup owner retains both paths until both files are proven absent, then conditionally clears the unchanged tombstone paths. Sync clears or updates the remote file record rather than treating normal app deletion as a hard server delete. The sole remote hard-delete exception is a confirmed local-authoritative account replacement: the owner-scoped executor deletes the destination attachment record/file, preserves the local attachment bytes, then uploads them during exact reseeding.
 
 ## PocketBase
 

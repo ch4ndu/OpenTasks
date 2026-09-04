@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -77,6 +78,7 @@ fun QuadrantDetailScreen(
     onBack: () -> Unit,
     onTaskClick: (Task) -> Unit,
     onCreateTask: (TaskPriority) -> Unit,
+    onTaskMutationFailure: () -> Unit = {},
 ) {
     LaunchedEffect(priority) { viewModel.selectPriority(priority) }
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
@@ -94,7 +96,7 @@ fun QuadrantDetailScreen(
             val categorizedTasks by viewModel.categorizedTasks.collectAsState()
             val categoryNames by viewModel.categoryNames.collectAsState()
             val taskContentPreviews by viewModel.taskContentPreviews.collectAsState()
-            val taskDueTextById by viewModel.taskDueTextById.collectAsState()
+            val taskDueTextById by viewModel.selectedPriorityTaskDueTextById.collectAsState()
             val defaultCategoryName = stringResource(Res.string.inbox)
             QuadrantDetailContent(
                 title = title,
@@ -115,7 +117,7 @@ fun QuadrantDetailScreen(
 
         TaskListViewMode.BOARD -> {
             val tasksByStatus by viewModel.tasksByStatus.collectAsState()
-            val taskDueTextById by viewModel.taskDueTextById.collectAsState()
+            val taskDueTextById by viewModel.selectedPriorityTaskDueTextById.collectAsState()
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -179,6 +181,12 @@ fun QuadrantDetailScreen(
             onDismiss = { viewModel.dismissSeriesChoice() },
         )
     }
+
+    TaskMutationFailureEffect(
+        eventFlow = viewModel.taskMutationFailureEvent,
+        consume = viewModel::consumeTaskMutationFailureEvent,
+        onFailure = onTaskMutationFailure,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -247,6 +255,7 @@ internal fun QuadrantDetailContent(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = dimens.paddingLarge),
+            contentPadding = PaddingValues(bottom = dimens.fabAreaBottom),
         ) {
             categorizedTasks.forEach { group ->
                 val category = group.category

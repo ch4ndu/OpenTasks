@@ -14,23 +14,21 @@ import androidx.glance.currentState
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.udnahc.opentasks.data.extensions.daysInMonth
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
+import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.todayLocal
 import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.WidgetAccountGate
+import com.udnahc.opentasks.domain.time.LocalizedDateTimeFormatter
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import org.lighthousegames.logging.logging
+import kotlin.coroutines.cancellation.CancellationException
 
 private val log = logging("CalendarWidget")
 
 internal val CAL_REFRESH_TRIGGER_KEY = longPreferencesKey("cal_refresh_trigger")
 internal val CAL_DISPLAYED_YEAR_KEY = intPreferencesKey("cal_displayed_year")
 internal val CAL_DISPLAYED_MONTH_KEY = intPreferencesKey("cal_displayed_month")
-
-private val MONTH_NAMES_FULL = arrayOf(
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
-)
 
 private sealed class CalendarWidgetData {
     data object Loading : CalendarWidgetData()
@@ -92,8 +90,10 @@ class CalendarWidget : GlanceAppWidget() {
                     refreshAllWidgetsWithinBoundary(context, boundary)
                 }
                 if (refreshed == null) log.d { "Skipped calendar widget refresh without an active cache boundary" }
-            } catch (e: Exception) {
-                log.e(e) { "Failed to refresh all calendar widgets" }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                log.e { "Calendar widget family refresh failed" }
             }
         }
 
@@ -103,32 +103,44 @@ class CalendarWidget : GlanceAppWidget() {
         ) {
             val manager = GlanceAppWidgetManager(context)
             manager.getGlanceIds(CalendarWidget::class.java).forEach { glanceId ->
-                updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-                    prefs.toMutablePreferences().apply {
-                        WidgetBoundaryMarker.write(this, boundary)
-                        this[CAL_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
-                            this[CAL_REFRESH_TRIGGER_KEY] ?: 0L,
-                            System.currentTimeMillis(),
-                        )
+                try {
+                    updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                        prefs.toMutablePreferences().apply {
+                            WidgetBoundaryMarker.write(this, boundary)
+                            this[CAL_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
+                                this[CAL_REFRESH_TRIGGER_KEY] ?: 0L,
+                                System.currentTimeMillis(),
+                            )
+                        }
                     }
+                    instance.update(context, glanceId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    log.e { "Calendar widget instance refresh failed" }
                 }
-                instance.update(context, glanceId)
             }
         }
 
         internal suspend fun blankAllWidgets(context: Context) {
             val manager = GlanceAppWidgetManager(context)
             manager.getGlanceIds(CalendarWidget::class.java).forEach { glanceId ->
-                updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-                    prefs.toMutablePreferences().apply {
-                        WidgetBoundaryMarker.clear(this)
-                        this[CAL_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
-                            this[CAL_REFRESH_TRIGGER_KEY] ?: 0L,
-                            System.currentTimeMillis(),
-                        )
+                try {
+                    updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                        prefs.toMutablePreferences().apply {
+                            WidgetBoundaryMarker.clear(this)
+                            this[CAL_REFRESH_TRIGGER_KEY] = WidgetBoundaryMarker.nextTrigger(
+                                this[CAL_REFRESH_TRIGGER_KEY] ?: 0L,
+                                System.currentTimeMillis(),
+                            )
+                        }
                     }
+                    instance.update(context, glanceId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    log.e { "Calendar widget instance blanking failed" }
                 }
-                instance.update(context, glanceId)
             }
         }
 
@@ -167,6 +179,7 @@ class CalendarWidget : GlanceAppWidget() {
     }
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val dateTimeFormatter = LocalizedDateTimeFormatter(context)
         val appWidgetId = try {
             GlanceAppWidgetManager(context).getAppWidgetId(id)
         } catch (e: Exception) {
@@ -204,7 +217,9 @@ class CalendarWidget : GlanceAppWidget() {
                             )
                             val days = daysInMonth(displayedYear, displayedMonth)
                             val firstDayOffset = dayOfWeekIndex(displayedYear, displayedMonth, 1)
-                            val monthLabel = "${MONTH_NAMES_FULL[displayedMonth - 1]} $displayedYear"
+                            val monthLabel = dateTimeFormatter.formatMonthYear(
+                                startOfDayLocalMillis(displayedYear, displayedMonth, 1)
+                            )
                             val todayDay = if (displayedYear == today.year && displayedMonth == today.monthNumber) {
                                 today.dayOfMonth
                             } else {
@@ -235,7 +250,9 @@ class CalendarWidget : GlanceAppWidget() {
                     val prefs = CalendarWidgetPreferences(appWidgetId)
                     val days = daysInMonth(displayedYear, displayedMonth)
                     val firstDayOffset = dayOfWeekIndex(displayedYear, displayedMonth, 1)
-                    val monthLabel = "${MONTH_NAMES_FULL[displayedMonth - 1]} $displayedYear"
+                    val monthLabel = dateTimeFormatter.formatMonthYear(
+                        startOfDayLocalMillis(displayedYear, displayedMonth, 1)
+                    )
                     CalendarWidgetContent(
                         year = displayedYear,
                         month = displayedMonth,
@@ -266,7 +283,9 @@ class CalendarWidget : GlanceAppWidget() {
                     val prefs = CalendarWidgetPreferences(appWidgetId)
                     val days = daysInMonth(displayedYear, displayedMonth)
                     val firstDayOffset = dayOfWeekIndex(displayedYear, displayedMonth, 1)
-                    val monthLabel = "${MONTH_NAMES_FULL[displayedMonth - 1]} $displayedYear"
+                    val monthLabel = dateTimeFormatter.formatMonthYear(
+                        startOfDayLocalMillis(displayedYear, displayedMonth, 1)
+                    )
                     CalendarWidgetContent(
                         year = displayedYear,
                         month = displayedMonth,

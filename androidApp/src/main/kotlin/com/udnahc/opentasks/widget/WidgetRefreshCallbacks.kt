@@ -9,6 +9,7 @@ import androidx.glance.appwidget.action.ActionCallback
 import com.udnahc.opentasks.data.auth.WidgetAccountGate
 import com.udnahc.opentasks.domain.action.settings.TriggerSyncAction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.widget_refreshing
@@ -35,14 +36,16 @@ class TaskRefreshCallback : ActionCallback, KoinComponent {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
                 }
-                triggerSyncAction()
+                triggerSyncAction.syncNow()
                 val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
                 TaskWidget.refreshWidgetWithinBoundary(context, appWidgetId, boundary)
                 log.d { "Task widget refreshed" }
             }
             if (refreshed == null) log.d { "Skipped task widget action without an active cache boundary" }
-        } catch (e: Exception) {
-            log.e(e) { "Task widget refresh failed" }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            log.e { "Task widget refresh failed" }
         }
     }
 }
@@ -63,14 +66,16 @@ class CalendarRefreshCallback : ActionCallback, KoinComponent {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
                 }
-                triggerSyncAction()
+                triggerSyncAction.syncNow()
                 val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
                 CalendarWidget.refreshWidgetWithinBoundary(context, appWidgetId, boundary)
                 log.d { "Calendar widget refreshed" }
             }
             if (refreshed == null) log.d { "Skipped calendar widget action without an active cache boundary" }
-        } catch (e: Exception) {
-            log.e(e) { "Calendar widget refresh failed" }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            log.e { "Calendar widget refresh failed" }
         }
     }
 }
@@ -91,14 +96,16 @@ class WeekRefreshCallback : ActionCallback, KoinComponent {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, getString(Res.string.widget_refreshing), Toast.LENGTH_SHORT).show()
                 }
-                triggerSyncAction()
+                triggerSyncAction.syncNow()
                 val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(glanceId)
                 WeekWidget.refreshWidgetWithinBoundary(context, appWidgetId, boundary)
                 log.d { "Week widget refreshed" }
             }
             if (refreshed == null) log.d { "Skipped week widget action without an active cache boundary" }
-        } catch (e: Exception) {
-            log.e(e) { "Week widget refresh failed" }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            log.e { "Week widget refresh failed" }
         }
     }
 }

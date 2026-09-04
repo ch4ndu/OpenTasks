@@ -8,6 +8,9 @@ class FetchCalendarEventsUseCase(
 ) {
     fun isAvailable(): Boolean = calendarProvider.isAvailable()
 
+    fun supportsExplicitImportWithoutPermissionRequest(): Boolean =
+        calendarProvider.supportsExplicitImportWithoutPermissionRequest()
+
     suspend operator fun invoke(
         startUtcMillis: Long,
         endUtcMillis: Long

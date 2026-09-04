@@ -1,18 +1,14 @@
 package com.udnahc.opentasks.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -25,7 +21,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
@@ -34,7 +29,6 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
-import opentasks.composeapp.generated.resources.custom
 import opentasks.composeapp.generated.resources.daily
 import opentasks.composeapp.generated.resources.end
 import opentasks.composeapp.generated.resources.every_weekday
@@ -326,7 +320,6 @@ internal fun DurationRepeatDialog(
     onSelected: (RecurrenceType) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val dimens = OpenTasksTheme.dimens
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.repeat), fontWeight = FontWeight.Bold) },
@@ -361,24 +354,6 @@ internal fun DurationRepeatDialog(
                         label = label,
                         isSelected = option == selected,
                         onClick = { onSelected(option) },
-                    )
-                }
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    thickness = dimens.dividerThin,
-                    modifier = Modifier.padding(vertical = dimens.paddingSmall),
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { /* Custom not implemented yet */ }
-                        .padding(vertical = dimens.listRowCompletedVerticalPadding),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        stringResource(Res.string.custom),
-                        color = MaterialTheme.colorScheme.onBackground,
-                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }

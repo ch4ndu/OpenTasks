@@ -15,15 +15,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
+import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
+import com.udnahc.opentasks.data.attachment.AttachmentFileTooLargeException
 import com.udnahc.opentasks.data.attachment.PickedImage
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -35,25 +45,41 @@ actual fun rememberTaskImagePickerActions(
 ): TaskImagePickerActions {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val currentOnImagePicked = rememberUpdatedState(onImagePicked)
+    val currentOnError = rememberUpdatedState(onError)
     var pendingCameraFile by remember { mutableStateOf<File?>(null) }
     DisposableEffect(Unit) {
         onDispose {
-            pendingCameraFile?.delete()
+            val launcherOwnedFile = pendingCameraFile
             pendingCameraFile = null
+            launcherOwnedFile?.delete()
         }
     }
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        ?: error("Unable to read image")
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    val declaredLength = context.contentResolver
+                        .openAssetFileDescriptor(uri, "r")
+                        ?.use { it.length }
+                    if (declaredLength != null &&
+                        declaredLength >= 0L &&
+                        declaredLength > AttachmentFilePolicy.MAX_SOURCE_BYTES
+                    ) {
+                        throw AttachmentFileTooLargeException(AttachmentFilePolicy.MAX_SOURCE_BYTES)
+                    }
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.readBoundedImageBytes()
+                    } ?: throw IllegalArgumentException("Attachment image could not be read")
                 }
-            }.onSuccess { bytes ->
-                onImagePicked(PickedImage("gallery.jpg", bytes))
-            }.onFailure {
-                onError("image_pick_failed")
+                currentCoroutineContext().ensureActive()
+                currentOnImagePicked.value(PickedImage("gallery.jpg", bytes))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                currentCoroutineContext().ensureActive()
+                currentOnError.value("image_pick_failed")
             }
         }
     }
@@ -64,44 +90,85 @@ actual fun rememberTaskImagePickerActions(
             file.delete()
             return@rememberLauncherForActivityResult
         }
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    try {
-                        file.readBytes()
-                    } finally {
-                        file.delete()
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                try {
+                    val bytes = withContext(Dispatchers.IO) {
+                        val declaredLength = file.length()
+                        if (declaredLength > AttachmentFilePolicy.MAX_SOURCE_BYTES) {
+                            throw AttachmentFileTooLargeException(AttachmentFilePolicy.MAX_SOURCE_BYTES)
+                        }
+                        file.inputStream().use { input -> input.readBoundedImageBytes() }
                     }
+                    currentCoroutineContext().ensureActive()
+                    currentOnImagePicked.value(PickedImage(file.name, bytes))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    currentOnError.value("image_capture_failed")
                 }
-            }.onSuccess { bytes ->
-                onImagePicked(PickedImage(file.name, bytes))
-            }.onFailure {
-                file.delete()
-                onError("image_capture_failed")
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) {
+                    file.delete()
+                }
             }
         }
     }
     val actions: TaskImagePickerActions = remember(context, galleryLauncher, cameraLauncher) {
         TaskImagePickerActions(
             pickFromGallery = { galleryLauncher.launch("image/*") },
-            captureFromCamera = {
-                runCatching {
-                    pendingCameraFile?.delete()
+            captureFromCamera = capture@{
+                if (pendingCameraFile != null) return@capture
+                var createdFile: File? = null
+                try {
                     val directory = File(context.cacheDir, "task_image_captures").apply { mkdirs() }
                     val file = File.createTempFile("task-image-", ".jpg", directory)
+                    createdFile = file
                     pendingCameraFile = file
-                    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                }.onSuccess { uri ->
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        file,
+                    )
                     cameraLauncher.launch(uri)
-                }.onFailure {
-                    pendingCameraFile?.delete()
-                    pendingCameraFile = null
-                    onError("image_capture_failed")
+                } catch (_: Exception) {
+                    if (pendingCameraFile === createdFile) {
+                        pendingCameraFile = null
+                    }
+                    createdFile?.delete()
+                    currentOnError.value("image_capture_failed")
                 }
             },
         )
     }
     return actions
+}
+
+private suspend fun InputStream.readBoundedImageBytes(): ByteArray {
+    val maxBytes = AttachmentFilePolicy.MAX_SOURCE_BYTES
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var total = 0L
+    while (total <= maxBytes) {
+        currentCoroutineContext().ensureActive()
+        val remaining = (maxBytes + 1L - total).coerceAtMost(buffer.size.toLong()).toInt()
+        val read = read(buffer, 0, remaining)
+        if (read < 0) break
+        if (read == 0) {
+            val byte = read()
+            if (byte < 0) break
+            total += 1L
+            if (total > maxBytes) throw AttachmentFileTooLargeException(maxBytes)
+            output.write(byte)
+            continue
+        }
+        total += read
+        if (total > maxBytes) throw AttachmentFileTooLargeException(maxBytes)
+        output.write(buffer, 0, read)
+    }
+    currentCoroutineContext().ensureActive()
+    return output.toByteArray()
 }
 
 @Composable

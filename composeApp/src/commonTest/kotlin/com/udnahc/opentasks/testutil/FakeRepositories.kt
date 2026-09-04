@@ -116,6 +116,9 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
     override suspend fun getTasksWithDeadlines(): List<Task> =
         tasksFlow.value.filter { !it.isDeleted && it.deadline != null }
 
+    override suspend fun getAllTasksForReminderReconciliationUtc(): List<Task> =
+        tasksFlow.value
+
     override suspend fun getTaskByIdUtc(id: String): Task? {
         getTaskByIdUtcCalls++
         return tasksFlow.value.firstOrNull { it.id == id && !it.isDeleted }

@@ -45,6 +45,7 @@ import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskListViewMode
 import com.udnahc.opentasks.data.model.TaskSortOption
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
 import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel.ActiveTaskListSection
@@ -86,6 +87,7 @@ fun TaskListScreen(
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
+    onTaskMutationFailure: () -> Unit = {},
 ) {
     // Sync parent's selectedCategoryId into ViewModel for the derived flow
     LaunchedEffect(selectedCategoryId) { viewModel.selectCategory(selectedCategoryId) }
@@ -216,6 +218,12 @@ fun TaskListScreen(
             onDismiss = { viewModel.dismissSeriesChoice() },
         )
     }
+
+    TaskMutationFailureEffect(
+        eventFlow = viewModel.taskMutationFailureEvent,
+        consume = viewModel::consumeTaskMutationFailureEvent,
+        onFailure = onTaskMutationFailure,
+    )
 
     if (showCategoryPicker) {
         val filteredCategories by viewModel.filteredCategories.collectAsState()
@@ -430,7 +438,9 @@ internal fun TaskListTopBar(
         titleContent = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable(onClick = onListClick),
+                modifier = Modifier
+                    .clickable(onClick = onListClick)
+                    .minimumInteractiveTargetSize(),
             ) {
                 Text(
                     text = listName,

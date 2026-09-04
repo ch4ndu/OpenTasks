@@ -23,7 +23,7 @@ internal fun String.toSubtaskItems(): List<SubtaskItem> {
     if (isBlank()) return emptyList()
     return runCatching { subtaskJson.decodeFromString<List<SubtaskItem>>(this) }
         .getOrElse {
-            log.w(it) { "Failed to parse subtasks JSON" }
+            log.w { "Failed to parse stored subtask data" }
             emptyList()
         }
         .filter { it.text.isNotBlank() }

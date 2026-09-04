@@ -12,7 +12,7 @@ class PocketBaseConnectionVerifier(
     private val healthCheck: suspend (PocketbaseClient) -> Unit = { it.health.healthCheck() },
 ) {
     suspend fun verify() {
-        val client = pbProvider.client
+        val client = pbProvider.activeClientMetadata()?.client
             ?: throw PocketBaseConnectionException("PocketBase client is not configured")
         verify(client)
     }
@@ -21,22 +21,23 @@ class PocketBaseConnectionVerifier(
         runCatching { healthCheck(client) }
             .onFailure {
                 if (it is CancellationException) throw it
-                log.e(it) { "PocketBase health check failed" }
+                log.e { "PocketBase health check failed" }
             }
             .getOrElse { throw PocketBaseConnectionException("PocketBase health check failed", it) }
 
         val failures = mutableListOf<SyncCollectionFailure>()
+        val clientMetadata = PocketBaseClientProvider.metadataFor(client)
         adapters.sortedBy { it.order }.forEach { adapter ->
             runCatching {
-                if (PocketBaseClientProvider.bindingFor(client) == null) {
+                if (clientMetadata?.binding == null) {
                     adapter.verifyCollection(client)
                 } else {
                     adapter.verifyCollectionForActiveBoundary(client)
                 }
             }
-            .onFailure { error ->
+                .onFailure { error ->
                     if (error is CancellationException) throw error
-                    log.e(error) { "PocketBase collection check failed: ${adapter.collectionName}" }
+                    log.e { "PocketBase collection check failed: ${adapter.collectionName}" }
                     failures += SyncCollectionFailure(adapter.collectionName, "verify", error)
                 }
         }

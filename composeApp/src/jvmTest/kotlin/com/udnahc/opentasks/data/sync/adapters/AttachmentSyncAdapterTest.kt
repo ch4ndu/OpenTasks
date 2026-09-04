@@ -272,7 +272,10 @@ class AttachmentSyncAdapterTest {
             height = 48,
             updatedAt = 200L,
         )
-        val storage = FakeAttachmentFileStorage().apply { addFile(local.localPath) }
+        val storage = FakeAttachmentFileStorage().apply {
+            addFile(local.localPath)
+            addFile(local.thumbnailPath)
+        }
         val remote = AttachmentRecord(
             localId = local.id,
             ownerType = local.ownerType,

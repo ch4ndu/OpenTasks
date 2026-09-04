@@ -7,8 +7,6 @@ import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
-import com.udnahc.opentasks.data.extensions.formatDateShort
-import com.udnahc.opentasks.data.extensions.formatTimeFromLocalMillis
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.notification.ReminderCommandRejectedException
@@ -18,6 +16,8 @@ import com.udnahc.opentasks.data.repository.CommittedMutation
 import com.udnahc.opentasks.domain.action.task.DismissTaskNotificationAction
 import com.udnahc.opentasks.domain.action.task.MarkTaskNotificationDoneAction
 import com.udnahc.opentasks.domain.action.task.TaskWriteResult
+import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
+import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
 import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -89,6 +89,7 @@ class TaskNotificationViewModel(
     private val dismissTaskNotificationAction: DismissTaskNotificationAction,
     private val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
 ) : ViewModel() {
 
     private val _event = MutableStateFlow<NotificationDeepLinkEvent?>(null)
@@ -190,16 +191,16 @@ class TaskNotificationViewModel(
                     onTaskUpdated(boundary)
                 } catch (error: CancellationException) {
                     throw error
-                } catch (error: Exception) {
-                    log.e(error) { "Notification widget callback failed after committed task update" }
+                } catch (_: Exception) {
+                    log.e { "Notification widget callback failed after committed task update" }
                 }
             }
             try {
                 onResult(mutation)
             } catch (error: CancellationException) {
                 throw error
-            } catch (error: Exception) {
-                log.e(error) { "Notification result callback failed after a committed task update" }
+            } catch (_: Exception) {
+                log.e { "Notification result callback failed after a committed task update" }
             }
         }
     }
@@ -235,8 +236,8 @@ class TaskNotificationViewModel(
                 onResult()
             } catch (error: CancellationException) {
                 throw error
-            } catch (error: Exception) {
-                log.e(error) { "Notification dismissal callback failed after the reminder was dismissed" }
+            } catch (_: Exception) {
+                log.e { "Notification dismissal callback failed after the reminder was dismissed" }
             }
         }
     }
@@ -255,9 +256,9 @@ class TaskNotificationViewModel(
             } catch (error: ReminderCommandRejectedException) {
                 _hasActionError.value = true
                 log.w { "Notification action rejected by its identity contract" }
-            } catch (error: Exception) {
+            } catch (_: Exception) {
                 _hasActionError.value = true
-                log.e(error) { "Notification action failed before a committed result" }
+                log.e { "Notification action failed before a committed result" }
             } finally {
                 _isBusy.value = false
             }
@@ -267,29 +268,24 @@ class TaskNotificationViewModel(
     private fun Long?.formatUtcDateTime(): String {
         val utcMillis = this ?: return ""
         val localMillis = utcToLocal(utcMillis)
-        return "${formatDateShort(localMillis)}, ${formatTimeFromLocalMillis(localMillis)}"
+        return "${dateTimeFormatter.formatShortDate(localMillis)}, ${dateTimeFormatter.formatTime(localMillis)}"
     }
 
     private fun Task?.formatDueText(): String {
         val task = this ?: return ""
         val deadline = task.deadline ?: return ""
         return if (task.isAllDay) {
-            formatDateShort(deadline)
+            dateTimeFormatter.formatShortDate(deadline)
         } else {
-            "${formatDateShort(deadline)}, ${formatTimeFromLocalMillis(deadline)}"
+            "${dateTimeFormatter.formatShortDate(deadline)}, ${dateTimeFormatter.formatTime(deadline)}"
         }
     }
 
-    /** Ongoing is navigation context; task writes use a task reminder identity. */
+    /** Ongoing Mark Done keeps the canonical identity after validating its task context. */
     private fun NotificationDeepLinkEvent.markDoneSemanticKey(task: Task?): String? {
         val identity = semanticKey?.let(ReminderIdentity::fromSemanticKey) ?: return null
         if (identity.kind != ReminderKind.ONGOING) return identity.semanticKey
         if (task?.id != eventId || task.isAllDay != true) return null
-        return ReminderIdentity(
-            eventId = identity.eventId,
-            occurrenceUtcMillis = identity.occurrenceUtcMillis,
-            kind = ReminderKind.DATE,
-            ordinal = 0,
-        ).semanticKey
+        return identity.semanticKey
     }
 }
