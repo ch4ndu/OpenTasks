@@ -34,6 +34,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
+import kotlin.coroutines.cancellation.CancellationException
 
 class BaseSyncAdapterTest {
     private val client = PocketbaseClient({
@@ -107,6 +108,85 @@ class BaseSyncAdapterTest {
 
         assertTrue(adapter.local.isEmpty())
         assertEquals(1, adapter.hardDeletedCount)
+    }
+
+    @Test
+    fun neverSyncedTombstoneRecoversACommittedRemoteCreateBeforePushingDelete() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(FakeEntity(id = "one", deleted = true, synced = false, updatedAt = 30)),
+            remote = mutableListOf(FakeRecord(localId = "one", value = "created", updatedAt = 20).withId("pb-one")),
+        )
+
+        adapter.pushAll(client)
+
+        assertEquals("pb-one", adapter.local.single().pbId)
+        assertTrue(adapter.local.single().synced)
+        assertTrue(adapter.remote.single().deleted)
+        assertEquals(0, adapter.hardDeletedCount)
+    }
+
+    @Test
+    fun neverSyncedTombstoneIsRetainedWhenRemoteAbsenceLookupFails() = runBlocking {
+        val tombstone = FakeEntity(id = "one", deleted = true, synced = false, updatedAt = 30)
+        val adapter = FakeAdapter(
+            local = mutableListOf(tombstone),
+            remote = mutableListOf(),
+            tombstoneLookupError = IllegalStateException("lookup failed"),
+        )
+
+        assertFailsWith<SyncAdapterException> { adapter.pushAll(client) }
+
+        assertEquals(tombstone, adapter.local.single())
+        assertEquals(0, adapter.hardDeletedCount)
+    }
+
+    @Test
+    fun cancelledNeverSyncedTombstoneLookupEscapesAndRetainsTheRow() = runBlocking {
+        val tombstone = FakeEntity(id = "one", deleted = true, synced = false, updatedAt = 30)
+        val adapter = FakeAdapter(
+            local = mutableListOf(tombstone),
+            remote = mutableListOf(),
+            tombstoneLookupError = CancellationException("cancelled"),
+        )
+
+        assertFailsWith<CancellationException> { adapter.pushAll(client) }
+
+        assertEquals(tombstone, adapter.local.single())
+        assertEquals(0, adapter.hardDeletedCount)
+    }
+
+    @Test
+    fun changedTombstoneIsNotDeletedAfterAProvenRemoteAbsence() = runBlocking {
+        val tombstone = FakeEntity(id = "one", deleted = true, synced = false, updatedAt = 30)
+        val restored = tombstone.copy(value = "restored", deleted = false, updatedAt = 40)
+        val adapter = FakeAdapter(
+            local = mutableListOf(tombstone),
+            remote = mutableListOf(),
+            onTombstoneLookup = { adapterLocal ->
+                adapterLocal[0] = restored
+            },
+        )
+
+        adapter.pushAll(client)
+
+        assertEquals(restored, adapter.local.single())
+        assertEquals(0, adapter.hardDeletedCount)
+    }
+
+    @Test
+    fun childProtectedTombstoneUsesDurablePushWhenRemoteIsAbsent() = runBlocking {
+        val adapter = FakeAdapter(
+            local = mutableListOf(FakeEntity(id = "one", deleted = true, synced = false, updatedAt = 30)),
+            remote = mutableListOf(),
+            allowHardDelete = false,
+        )
+
+        adapter.pushAll(client)
+
+        assertEquals("pb-one", adapter.local.single().pbId)
+        assertTrue(adapter.local.single().synced)
+        assertTrue(adapter.remote.single().deleted)
+        assertEquals(0, adapter.hardDeletedCount)
     }
 
     @Test
@@ -928,6 +1008,9 @@ private open class FakeAdapter(
     val silentlySkippedRemoteIds: Set<String> = emptySet(),
     val onPull: suspend () -> Unit = {},
     private val failMarkUnsyncedOnCall: Int? = null,
+    private val tombstoneLookupError: Throwable? = null,
+    private val onTombstoneLookup: suspend (MutableList<FakeEntity>) -> Unit = {},
+    private val allowHardDelete: Boolean = true,
 ) : BaseSyncAdapter<FakeEntity, FakeRecord>() {
     var hardDeletedCount = 0
     var pullCount = 0
@@ -968,6 +1051,8 @@ private open class FakeAdapter(
         hardDeletedCount += 1
         local.removeAll { it.id == entity.id }
     }
+
+    override suspend fun shouldHardDeleteLocalNeverSynced(entity: FakeEntity): Boolean = allowHardDelete
 
     override suspend fun upsert(entity: FakeEntity) {
         local.removeAll { it.id == entity.id }
@@ -1034,8 +1119,11 @@ private open class FakeAdapter(
         return record
     }
 
-    override suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String) =
-        remote.firstOrNull { it.localId == localId }
+    override suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): FakeRecord? {
+        if (tombstoneLookupError != null) throw tombstoneLookupError
+        onTombstoneLookup(local)
+        return remote.firstOrNull { it.localId == localId }
+    }
 
     override suspend fun validateRemoteRecord(record: FakeRecord): String? =
         if (record.localId in invalidRemoteIds) {

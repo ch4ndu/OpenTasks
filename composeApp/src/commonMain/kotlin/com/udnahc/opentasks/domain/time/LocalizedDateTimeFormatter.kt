@@ -3,6 +3,7 @@ package com.udnahc.opentasks.domain.time
 import com.udnahc.opentasks.data.extensions.localMillisToLocalDateTime
 
 interface DateTimeTextFormatter {
+    val formattingContextKey: String get() = "static"
     fun formatShortDate(localMillis: Long): String
     fun formatDateWithYear(localMillis: Long): String {
         val year = localMillisToLocalDateTime(localMillis).year
@@ -20,6 +21,8 @@ expect class LocalizedDateTimeFormatter() : DateTimeTextFormatter
 
 /** Stable English fallback for tests and direct constructors outside platform DI. */
 object EnglishDateTimeFormatter : DateTimeTextFormatter {
+    override val formattingContextKey: String = "english-12-hour"
+
     override fun formatShortDate(localMillis: Long): String {
         val date = localMillisToLocalDateTime(localMillis).date
         return "${SHORT_MONTHS[date.monthNumber - 1]} ${date.dayOfMonth}"

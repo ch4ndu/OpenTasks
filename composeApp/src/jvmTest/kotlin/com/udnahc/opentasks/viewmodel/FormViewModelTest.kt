@@ -82,6 +82,7 @@ class FormViewModelTest : MainDispatcherRule() {
             content = "Body",
             priority = TaskPriority.MEDIUM,
             categoryId = "inbox",
+            status = TaskStatus.IN_PROGRESS,
         )
         viewModel.saveEvent.test {
             assertEquals(null, awaitItem())
@@ -91,8 +92,14 @@ class FormViewModelTest : MainDispatcherRule() {
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals("New", taskRepository.inserted.single().title)
+        assertEquals(TaskStatus.IN_PROGRESS, taskRepository.inserted.single().status)
+        assertEquals(null, taskRepository.inserted.single().completedAt)
 
-        viewModel.addCategory("Projects")
+        viewModel.categories.test {
+            viewModel.addCategory("Projects")
+            awaitMatching { categories -> categories.any { it.name == "Projects" } }
+            cancelAndIgnoreRemainingEvents()
+        }
         viewModel.deleteTask("task")
         advanceUntilIdle()
         assertEquals("Projects", categoryRepository.inserted.single().name)

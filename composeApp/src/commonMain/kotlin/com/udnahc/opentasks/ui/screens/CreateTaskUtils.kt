@@ -1,6 +1,22 @@
 package com.udnahc.opentasks.ui.screens
 
 import com.udnahc.opentasks.data.extensions.computeLocalMillis
+import com.udnahc.opentasks.data.extensions.extractDay
+import com.udnahc.opentasks.data.extensions.extractHour
+import com.udnahc.opentasks.data.extensions.extractMinute
+import com.udnahc.opentasks.data.extensions.extractMonth
+import com.udnahc.opentasks.data.extensions.extractYear
+import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
+import com.udnahc.opentasks.data.extensions.localMillisToLocalDateTime
+import com.udnahc.opentasks.data.model.TaskFormData
+import com.udnahc.opentasks.data.model.TaskStatus
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.until
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.none
 import opentasks.composeapp.generated.resources.reminder_1_day_early
@@ -60,3 +76,185 @@ internal fun computeDeadlineMillis(
     hour: Int,
     minute: Int
 ): Long = computeLocalMillis(year, month, day, hour, minute)
+
+internal data class TaskEditorDateState(
+    val deadline: Long?,
+    val endDeadline: Long?,
+    val pendingStartHour: Int,
+    val pendingStartMinute: Int,
+    val pendingEndHour: Int,
+    val pendingEndMinute: Int,
+) {
+    val selectedDay: Int get() = deadline?.let(::extractDay) ?: 0
+    val selectedMonth: Int get() = deadline?.let(::extractMonth) ?: 0
+    val selectedYear: Int get() = deadline?.let(::extractYear) ?: 0
+    val selectedHour: Int get() = deadline?.let(::extractHour) ?: pendingStartHour
+    val selectedMinute: Int get() = deadline?.let(::extractMinute) ?: pendingStartMinute
+    val endDay: Int get() = endDeadline?.let(::extractDay) ?: 0
+    val endMonth: Int get() = endDeadline?.let(::extractMonth) ?: 0
+    val endYear: Int get() = endDeadline?.let(::extractYear) ?: 0
+    val endHour: Int get() = endDeadline?.let(::extractHour) ?: pendingEndHour
+    val endMinute: Int get() = endDeadline?.let(::extractMinute) ?: pendingEndMinute
+    val isValidRange: Boolean
+        get() = when {
+            deadline == null -> endDeadline == null
+            endDeadline == null -> true
+            else -> endDeadline >= deadline
+        }
+    val civilDaySpan: Int
+        get() = if (deadline != null && endDeadline != null) {
+            localMillisToLocalDate(deadline).until(
+                localMillisToLocalDate(endDeadline),
+                DateTimeUnit.DAY,
+            ).toInt()
+        } else {
+            0
+        }
+
+    fun selectDate(day: Int, month: Int, year: Int): TaskEditorDateState {
+        val newDate = localDateOrNull(year, month, day) ?: return this
+        val previousDeadline = deadline
+        val nextDeadline = previousDeadline?.withCivilDate(newDate)
+            ?: computeDeadlineMillis(year, month, day, pendingStartHour, pendingStartMinute)
+        val nextEndDeadline = if (previousDeadline != null && endDeadline != null) {
+            val previousStartDate = localMillisToLocalDate(previousDeadline)
+            val previousEndDate = localMillisToLocalDate(endDeadline)
+            val daySpan = previousStartDate.until(previousEndDate, DateTimeUnit.DAY)
+            endDeadline.withCivilDate(newDate.plus(daySpan, DateTimeUnit.DAY))
+        } else {
+            endDeadline
+        }
+        return copy(deadline = nextDeadline, endDeadline = nextEndDeadline)
+    }
+
+    fun selectStartTime(hour: Int, minute: Int): TaskEditorDateState = copy(
+        deadline = deadline?.withTime(hour, minute),
+        pendingStartHour = hour,
+        pendingStartMinute = minute,
+    )
+
+    fun selectEndTime(hour: Int, minute: Int): TaskEditorDateState = copy(
+        endDeadline = when {
+            endDeadline != null -> endDeadline.withTime(hour, minute)
+            deadline != null -> deadline.withTime(hour, minute)
+            else -> null
+        },
+        pendingEndHour = hour,
+        pendingEndMinute = minute,
+    )
+
+    fun clearDate(): TaskEditorDateState = copy(
+        deadline = null,
+        endDeadline = null,
+        pendingEndHour = -1,
+        pendingEndMinute = 0,
+    )
+}
+
+internal fun initialTaskEditorDateState(
+    formData: TaskFormData?,
+    initialDay: Int,
+    initialMonth: Int,
+    initialYear: Int,
+): TaskEditorDateState {
+    val initialDeadline = formData?.deadline ?: localDateOrNull(initialYear, initialMonth, initialDay)?.let {
+        computeDeadlineMillis(it.year, it.monthNumber, it.dayOfMonth, DEFAULT_START_HOUR, 0)
+    }
+    val initialEndDeadline = formData?.endDeadline
+    return TaskEditorDateState(
+        deadline = initialDeadline,
+        endDeadline = initialEndDeadline,
+        pendingStartHour = initialDeadline?.let(::extractHour) ?: DEFAULT_START_HOUR,
+        pendingStartMinute = initialDeadline?.let(::extractMinute) ?: 0,
+        pendingEndHour = initialEndDeadline?.let(::extractHour) ?: -1,
+        pendingEndMinute = initialEndDeadline?.let(::extractMinute) ?: 0,
+    )
+}
+
+internal fun TaskEditorDateState.toSaveableValues(): List<Long> = listOf(
+    deadline ?: NO_DATE_MILLIS,
+    endDeadline ?: NO_DATE_MILLIS,
+    pendingStartHour.toLong(),
+    pendingStartMinute.toLong(),
+    pendingEndHour.toLong(),
+    pendingEndMinute.toLong(),
+)
+
+internal fun taskEditorDateStateFromSaveableValues(values: List<Long>): TaskEditorDateState? {
+    if (values.size != TASK_EDITOR_DATE_SAVED_FIELD_COUNT) return null
+    return TaskEditorDateState(
+        deadline = values[0].takeUnless { it == NO_DATE_MILLIS },
+        endDeadline = values[1].takeUnless { it == NO_DATE_MILLIS },
+        pendingStartHour = values[2].toInt(),
+        pendingStartMinute = values[3].toInt(),
+        pendingEndHour = values[4].toInt(),
+        pendingEndMinute = values[5].toInt(),
+    )
+}
+
+internal fun toggleTaskEditorCompletionStatus(
+    currentStatus: TaskStatus,
+    initialStatus: TaskStatus,
+): TaskStatus = if (currentStatus == TaskStatus.DONE) {
+    initialStatus.takeUnless { it == TaskStatus.DONE } ?: TaskStatus.TODO
+} else {
+    TaskStatus.DONE
+}
+
+internal fun taskEditorCompletionRestoreStatus(initialStatus: TaskStatus): TaskStatus =
+    initialStatus.takeUnless { it == TaskStatus.DONE } ?: TaskStatus.TODO
+
+internal fun durationMinutesForCivilSpan(
+    daySpan: Int,
+    startHour: Int,
+    startMinute: Int,
+    endHour: Int,
+    endMinute: Int,
+): Int = daySpan * MINUTES_PER_DAY +
+        (endHour * 60 + endMinute) -
+        (startHour * 60 + startMinute)
+
+internal sealed interface TaskFormBuildResult {
+    data class Ready(val formData: TaskFormData) : TaskFormBuildResult
+    data object InvalidDateRange : TaskFormBuildResult
+}
+
+internal fun buildTaskFormDataForSave(
+    draft: TaskFormData,
+    dateState: TaskEditorDateState,
+    status: TaskStatus,
+): TaskFormBuildResult {
+    if (!dateState.isValidRange) return TaskFormBuildResult.InvalidDateRange
+    return TaskFormBuildResult.Ready(
+        draft.copy(
+            deadline = dateState.deadline,
+            endDeadline = dateState.endDeadline,
+            status = status,
+        ),
+    )
+}
+
+private fun Long.withCivilDate(date: LocalDate): Long {
+    val localDateTime = localMillisToLocalDateTime(this)
+    return LocalDateTime(date, localDateTime.time).toInstant(TimeZone.UTC).toEpochMilliseconds()
+}
+
+private fun Long.withTime(hour: Int, minute: Int): Long {
+    val dateTime = localMillisToLocalDateTime(this)
+    if (dateTime.hour == hour && dateTime.minute == minute) return this
+    return computeDeadlineMillis(
+        dateTime.year,
+        dateTime.monthNumber,
+        dateTime.dayOfMonth,
+        hour,
+        minute,
+    )
+}
+
+private fun localDateOrNull(year: Int, month: Int, day: Int): LocalDate? =
+    runCatching { LocalDate(year, month, day) }.getOrNull()
+
+private const val DEFAULT_START_HOUR = 8
+private const val MINUTES_PER_DAY = 24 * 60
+private const val TASK_EDITOR_DATE_SAVED_FIELD_COUNT = 6
+private const val NO_DATE_MILLIS = Long.MIN_VALUE

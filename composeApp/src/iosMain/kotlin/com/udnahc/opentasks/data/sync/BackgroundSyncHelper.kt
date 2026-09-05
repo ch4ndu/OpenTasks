@@ -1,7 +1,7 @@
 package com.udnahc.opentasks.data.sync
 
-import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
+import com.udnahc.opentasks.domain.action.reminder.RebuildReminderQueueAction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,12 +34,22 @@ object BackgroundSyncHelper : KoinComponent {
         var succeeded = false
         val job = scope.launch {
             try {
-                val completed = accountBoundaryExecutor.withActiveCacheBoundary {
-                    syncService.syncAll()
-                    rebuildReminderQueueAction()
+                val capturedBoundary = accountBoundaryExecutor.withActiveCacheBoundary { boundary ->
+                    boundary
                 }
-                if (completed == null) {
+                if (capturedBoundary == null) {
                     log.d { "Background maintenance skipped without an active cache boundary" }
+                } else {
+                    runScheduledSyncMaintenance(
+                        capturedBoundary = capturedBoundary,
+                        syncNetwork = { syncService.syncActiveClientWithinMutation() },
+                        withRevalidatedBoundary = { expected, block ->
+                            accountBoundaryExecutor.withForegroundBoundary(expected, block)
+                        },
+                        maintenanceSteps = listOf(
+                            { rebuildReminderQueueAction() },
+                        ),
+                    )
                 }
                 succeeded = true
             } catch (error: CancellationException) {

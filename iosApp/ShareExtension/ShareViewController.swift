@@ -27,9 +27,9 @@ final class ShareViewController: UIViewController {
                     self.extensionContext?.completeRequest(returningItems: nil)
                     return
                 }
-                self.publishAndOpen(.accepted(payload))
+                self.showPublishConfirmation(.accepted(payload))
             case .failure(let failure):
-                self.publishAndOpen(.rejected(failure))
+                self.showPublishConfirmation(.rejected(failure))
             }
         }
     }
@@ -254,100 +254,101 @@ final class ShareViewController: UIViewController {
         return .payload(payload)
     }
 
-    private func publishAndOpen(_ envelope: ShareHandoffEnvelope) {
-        handoffQueue.async {
-            let nonce: String
-            do {
-                nonce = try ShareHandoffStore.publish(envelope)
-            } catch {
-                DispatchQueue.main.async {
-                    self.showOpenFailure()
-                }
-                return
-            }
-
-            guard let url = URL(string: "opentasks://share?nonce=\(nonce)") else {
-                self.cleanupPendingAfterOpenFailure(nonce: nonce, isRetry: false)
-                return
-            }
-
-            DispatchQueue.main.async {
-                self.openContainingApp(url: url, nonce: nonce)
-            }
-        }
-    }
-
-    private func openContainingApp(url: URL, nonce: String) {
-        guard let context = extensionContext else {
-            cleanupPendingAfterOpenFailure(nonce: nonce, isRetry: false)
-            return
-        }
-
-        context.open(url) { accepted in
-            if accepted {
-                DispatchQueue.main.async {
-                    context.completeRequest(returningItems: nil)
-                }
-                return
-            }
-
-            self.cleanupPendingAfterOpenFailure(nonce: nonce, isRetry: false)
-        }
-    }
-
-    private func cleanupPendingAfterOpenFailure(nonce: String, isRetry: Bool) {
-        handoffQueue.async {
-            do {
-                try ShareHandoffStore.removePending(nonce: nonce)
-            } catch {
-                DispatchQueue.main.async {
-                    if isRetry {
-                        self.showCleanupUnprovedFailure()
-                    } else {
-                        self.showCleanupRetry(nonce: nonce)
-                    }
-                }
-                return
-            }
-
-            DispatchQueue.main.async {
-                self.showOpenFailure()
-            }
-        }
-    }
-
-    private func showCleanupRetry(nonce: String) {
+    private func showPublishConfirmation(_ envelope: ShareHandoffEnvelope) {
         let alert = UIAlertController(
-            title: "OpenTasks",
-            message: "Unable to finish cleaning up this share. Please retry.",
+            title: localized("share.title", "OpenTasks"),
+            message: localized(
+                "share.confirm.message",
+                "Save this shared item for review in OpenTasks?"
+            ),
             preferredStyle: .alert,
         )
         alert.addAction(
-            UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
-                self?.cleanupPendingAfterOpenFailure(nonce: nonce, isRetry: true)
+            UIAlertAction(
+                title: localized("share.cancel", "Cancel"),
+                style: .cancel,
+            ) { [weak self] _ in
+                self?.extensionContext?.completeRequest(returningItems: nil)
+            }
+        )
+        alert.addAction(
+            UIAlertAction(
+                title: localized("share.save", "Save"),
+                style: .default,
+            ) { [weak self] _ in
+                self?.publishForReview(envelope)
             }
         )
         present(alert, animated: true)
     }
 
-    private func showCleanupUnprovedFailure() {
+    private func publishForReview(_ envelope: ShareHandoffEnvelope) {
+        handoffQueue.async {
+            do {
+                _ = try ShareHandoffStore.publish(envelope)
+            } catch {
+                DispatchQueue.main.async {
+                    self.showPublishFailure(envelope)
+                }
+                return
+            }
+
+            DispatchQueue.main.async {
+                self.showSavedForReview()
+            }
+        }
+    }
+
+    private func showPublishFailure(_ envelope: ShareHandoffEnvelope) {
         let alert = UIAlertController(
-            title: "OpenTasks",
-            message: "Unable to verify that the shared item was removed.",
+            title: localized("share.title", "OpenTasks"),
+            message: localized(
+                "share.save.failure",
+                "Unable to save this shared item. Please try again."
+            ),
             preferredStyle: .alert,
         )
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(
+            UIAlertAction(
+                title: localized("share.cancel", "Cancel"),
+                style: .cancel,
+            ) { [weak self] _ in
+                self?.extensionContext?.completeRequest(returningItems: nil)
+            }
+        )
+        alert.addAction(
+            UIAlertAction(
+                title: localized("share.retry", "Retry"),
+                style: .default,
+            ) { [weak self] _ in
+                self?.publishForReview(envelope)
+            }
+        )
         present(alert, animated: true)
     }
 
-    private func showOpenFailure() {
+    private func showSavedForReview() {
         let alert = UIAlertController(
-            title: "OpenTasks",
-            message: "Unable to open OpenTasks from this share.",
+            title: localized("share.title", "OpenTasks"),
+            message: localized(
+                "share.saved.message",
+                "Saved. Open OpenTasks to review this shared item."
+            ),
             preferredStyle: .alert,
         )
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(
+            UIAlertAction(
+                title: localized("share.done", "Done"),
+                style: .default,
+            ) { [weak self] _ in
+                self?.extensionContext?.completeRequest(returningItems: nil)
+            }
+        )
         present(alert, animated: true)
+    }
+
+    private func localized(_ key: String, _ fallback: String) -> String {
+        NSLocalizedString(key, tableName: nil, bundle: .main, value: fallback, comment: "")
     }
 
     private static func firstURL(in text: String) -> String? {

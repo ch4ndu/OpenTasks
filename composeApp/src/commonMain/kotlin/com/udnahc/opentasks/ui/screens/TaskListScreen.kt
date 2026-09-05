@@ -88,6 +88,7 @@ fun TaskListScreen(
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
     onTaskMutationFailure: () -> Unit = {},
+    onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
     // Sync parent's selectedCategoryId into ViewModel for the derived flow
     LaunchedEffect(selectedCategoryId) { viewModel.selectCategory(selectedCategoryId) }
@@ -97,6 +98,11 @@ fun TaskListScreen(
     val sortOption by viewModel.sortOption.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     var showCategoryPicker by remember { mutableStateOf(false) }
+    var isSortMenuBusy by remember { mutableStateOf(false) }
+    ModalBusyEffect(
+        taskPendingSeriesChoice != null || showCategoryPicker || isSortMenuBusy,
+        onModalBusyChanged,
+    )
 
     val categories by viewModel.categories.collectAsState()
     val defaultListName = stringResource(Res.string.inbox)
@@ -166,6 +172,7 @@ fun TaskListScreen(
                 isRefreshing = isRefreshing,
                 syncEnabled = syncEnabled,
                 onRefresh = onRefresh,
+                onSortMenuBusyChanged = { isSortMenuBusy = it },
             )
         }
 
@@ -206,6 +213,7 @@ fun TaskListScreen(
                     onSortOptionSelected = { viewModel.setSortOption(it) },
                     viewMode = viewMode,
                     onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.LIST) },
+                    onSortMenuBusyChanged = { isSortMenuBusy = it },
                 )
             }
         }
@@ -283,6 +291,7 @@ internal fun TaskListContent(
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
+    onSortMenuBusyChanged: (Boolean) -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val density = LocalDensity.current
@@ -416,6 +425,7 @@ internal fun TaskListContent(
             onSortOptionSelected = onSortOptionSelected,
             viewMode = viewMode,
             onViewModeToggle = onViewModeToggle,
+            onSortMenuBusyChanged = onSortMenuBusyChanged,
         )
     }
 }
@@ -430,8 +440,10 @@ internal fun TaskListTopBar(
     onSortOptionSelected: (TaskSortOption) -> Unit = {},
     viewMode: TaskListViewMode = TaskListViewMode.LIST,
     onViewModeToggle: () -> Unit = {},
+    onSortMenuBusyChanged: (Boolean) -> Unit = {},
 ) {
     var showSortMenu by remember { mutableStateOf(false) }
+    ModalBusyEffect(showSortMenu, onSortMenuBusyChanged)
 
     OpenTasksTopBar(
         containerStyle = OpenTasksTopBarContainerStyle.Translucent,

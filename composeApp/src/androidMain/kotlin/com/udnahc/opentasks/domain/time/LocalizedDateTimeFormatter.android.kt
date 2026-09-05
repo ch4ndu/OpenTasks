@@ -21,6 +21,9 @@ actual class LocalizedDateTimeFormatter actual constructor() : DateTimeTextForma
         get() = context?.let(DateFormat::is24HourFormat)
             ?: !DateFormat.getBestDateTimePattern(locale, "j").contains('a')
 
+    override val formattingContextKey: String
+        get() = "${locale.toLanguageTag()}|24-hour=$uses24HourTime"
+
     override fun formatShortDate(localMillis: Long): String =
         format(localMillis, "MMMd")
 

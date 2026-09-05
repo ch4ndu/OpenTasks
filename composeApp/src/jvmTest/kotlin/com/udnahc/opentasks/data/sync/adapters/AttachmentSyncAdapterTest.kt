@@ -6,7 +6,9 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
 import com.udnahc.opentasks.data.attachment.AttachmentFileStorage
 import com.udnahc.opentasks.data.attachment.AttachmentFileTooLargeException
+import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.database.AppDatabase
+import com.udnahc.opentasks.data.model.Attachment
 import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.PocketBaseRecordGateway
@@ -22,7 +24,9 @@ import java.io.File
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.request.HttpResponseData
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
@@ -190,6 +194,169 @@ class AttachmentSyncAdapterTest {
         )
 
         assertFalse(createAdapter(storage).shouldSkipIncomingRecord(record, local))
+    }
+
+    @Test
+    fun equalTimestampMissingImageVariantsAreRepairedAndSkippedOnTheNextPull() = runTest {
+        val parent = testTask(id = "task", pbId = "task-remote", isSynced = true)
+        val variants = listOf(
+            "missing-image" to { storage: FakeAttachmentFileStorage, attachment: Attachment ->
+                storage.addFile(attachment.thumbnailPath)
+            },
+            "missing-thumbnail" to { storage: FakeAttachmentFileStorage, attachment: Attachment ->
+                storage.addFile(attachment.localPath)
+            },
+            "missing-both" to { _: FakeAttachmentFileStorage, _: Attachment -> Unit },
+        )
+        val attachments = variants.map { (id, _) ->
+            testAttachment(
+                id = id,
+                ownerId = parent.id,
+                remoteFileName = "remote-$id.jpg",
+                pbId = "pb-$id",
+                syncState = AttachmentSyncState.SYNCED,
+                isSynced = true,
+                updatedAt = 200L,
+            )
+        }
+        database.taskDao().insert(parent)
+        attachments.forEach { database.attachmentDao().insert(it) }
+        val storage = FakeAttachmentFileStorage()
+        variants.forEachIndexed { index, (_, seed) -> seed(storage, attachments[index]) }
+        var downloadCount = 0
+        val gateway = ownerBoundGateway { request ->
+            when {
+                request.url.encodedPath.endsWith("/api/collections/attachments/records") -> respond(
+                    content = attachments.joinToString(
+                        prefix = "{\"items\":[",
+                        postfix = "],\"page\":1,\"totalPages\":1}",
+                    ) { attachment -> attachmentRecordJson(attachment) },
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+                request.method == HttpMethod.Post && request.url.encodedPath.endsWith("/api/files/token") -> respond(
+                    content = "{\"token\":\"test-token\"}",
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+                request.url.encodedPath.contains("/api/files/attachments/") -> {
+                    downloadCount += 1
+                    respond(byteArrayOf(1, 2, 3), HttpStatusCode.OK)
+                }
+                else -> error("Unexpected attachment pull request ${request.method} ${request.url}")
+            }
+        }
+        val adapter = GatewayAttachmentSyncAdapter(database, storage, gateway)
+        val client = PocketBaseClientProvider().createClient("http://localhost:8090")
+
+        adapter.pullAll(client)
+
+        attachments.forEach { attachment ->
+            val stored = assertNotNull(database.attachmentDao().findByIdAnyState(attachment.id))
+            assertEquals(AttachmentSyncState.SYNCED, stored.syncState)
+            assertTrue(stored.isSynced)
+            assertTrue(storage.exists(stored.localPath))
+            assertTrue(storage.exists(stored.thumbnailPath))
+        }
+        assertEquals(3, downloadCount)
+
+        adapter.pullAll(client)
+
+        assertEquals(3, downloadCount)
+    }
+
+    @Test
+    fun equalTimestampMissingFileRepairRejectsADifferentRemoteRecordIdentity() = runTest {
+        val parent = testTask(id = "identity-task", pbId = "identity-task-remote", isSynced = true)
+        val local = testAttachment(
+            id = "identity-attachment",
+            ownerId = parent.id,
+            remoteFileName = "identity.jpg",
+            pbId = "captured-record-id",
+            syncState = AttachmentSyncState.SYNCED,
+            isSynced = true,
+            updatedAt = 200L,
+        )
+        val remote = local.copy(pbId = "different-record-id")
+        database.taskDao().insert(parent)
+        database.attachmentDao().insert(local)
+        var downloadCount = 0
+        val gateway = ownerBoundGateway { request ->
+            when {
+                request.url.encodedPath.endsWith("/api/collections/attachments/records") -> respond(
+                    content = "{\"items\":[${attachmentRecordJson(remote)}],\"page\":1,\"totalPages\":1}",
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+                request.url.encodedPath.contains("/api/files/attachments/") -> {
+                    downloadCount += 1
+                    respond(byteArrayOf(1, 2, 3), HttpStatusCode.OK)
+                }
+                else -> error("Unexpected attachment identity request ${request.method} ${request.url}")
+            }
+        }
+
+        GatewayAttachmentSyncAdapter(database, FakeAttachmentFileStorage(), gateway).pullAll(
+            PocketBaseClientProvider().createClient("http://localhost:8090"),
+        )
+
+        assertEquals(0, downloadCount)
+        assertEquals(local, database.attachmentDao().findByIdAnyState(local.id))
+    }
+
+    @Test
+    fun equalTimestampRepairRejectsAConcurrentSameTimestampEditAndCleansDownloadedFiles() = runTest {
+        val parent = testTask(id = "task-race", pbId = "task-race-remote", isSynced = true)
+        val local = testAttachment(
+            id = "attachment-race",
+            ownerId = parent.id,
+            remoteFileName = "remote-race.jpg",
+            pbId = "pb-race",
+            syncState = AttachmentSyncState.SYNCED,
+            isSynced = true,
+            updatedAt = 200L,
+        )
+        database.taskDao().insert(parent)
+        database.attachmentDao().insert(local)
+        val storage = FakeAttachmentFileStorage()
+        val concurrentEdit = local.copy(
+            sortOrder = local.sortOrder + 1,
+            syncState = AttachmentSyncState.LOCAL_ONLY,
+            isSynced = false,
+        )
+        var downloadCount = 0
+        var editApplied = false
+        val gateway = ownerBoundGateway { request ->
+            when {
+                request.url.encodedPath.endsWith("/api/collections/attachments/records") -> respond(
+                    content = "{\"items\":[${attachmentRecordJson(local)}],\"page\":1,\"totalPages\":1}",
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+                request.method == HttpMethod.Post && request.url.encodedPath.endsWith("/api/files/token") -> respond(
+                    content = "{\"token\":\"test-token\"}",
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+                request.url.encodedPath.contains("/api/files/attachments/") -> {
+                    downloadCount += 1
+                    editApplied = true
+                    database.attachmentDao().update(concurrentEdit)
+                    respond(byteArrayOf(1, 2, 3), HttpStatusCode.OK)
+                }
+                else -> error("Unexpected attachment race request ${request.method} ${request.url}")
+            }
+        }
+
+        GatewayAttachmentSyncAdapter(database, storage, gateway).pullAll(
+            PocketBaseClientProvider().createClient("http://localhost:8090"),
+        )
+
+        assertTrue(editApplied)
+        assertEquals(1, downloadCount)
+        assertEquals(concurrentEdit, database.attachmentDao().findByIdAnyState(local.id))
+        assertFalse(storage.exists("/tmp/remote-race.jpg"))
+        assertFalse(storage.exists("/tmp/thumb_remote-race.jpg"))
     }
 
     @Test
@@ -795,6 +962,23 @@ class AttachmentSyncAdapterTest {
         taskDao = database.taskDao(),
         fileStorage = storage,
     )
+
+    private fun ownerBoundGateway(
+        handler: MockRequestHandler,
+    ): PocketBaseRecordGateway = PocketBaseRecordGateway(
+        HttpClient(MockEngine(handler)),
+        "https://example.test",
+        ownerBinding = CacheBinding(
+            canonicalEndpoint = "https://example.test",
+            serverInstanceId = "server",
+            accountId = "account-a",
+            capabilityVersion = 2,
+            boundaryEpoch = 1,
+        ),
+    )
+
+    private fun attachmentRecordJson(attachment: Attachment): String =
+        """{"id":"${attachment.pbId}","account":"account-a","localId":"${attachment.id}","ownerType":"${attachment.ownerType}","ownerId":"${attachment.ownerId}","kind":"${attachment.kind}","file":"${attachment.remoteFileName}","mimeType":"${attachment.mimeType}","fileName":"${attachment.fileName}","fileSizeBytes":${attachment.fileSizeBytes},"width":${attachment.width},"height":${attachment.height},"sortOrder":${attachment.sortOrder},"isDeleted":${attachment.isDeleted},"localCreatedAt":${attachment.createdAt},"localUpdatedAt":${attachment.updatedAt}}"""
 
     private class GatewayAttachmentSyncAdapter(
         database: AppDatabase,

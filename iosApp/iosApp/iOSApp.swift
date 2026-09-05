@@ -74,6 +74,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         MainViewControllerKt.initializeOpenTasksKoin()
+        SharedTaskPayloadKt.updateSharedTaskIntakeAppActive(isActive: false)
+        SharedHandoffReceiver.start()
         UNUserNotificationCenter.current().delegate = self
 
         BGTaskScheduler.shared.register(
@@ -88,6 +90,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
+        SharedTaskPayloadKt.updateSharedTaskIntakeAppActive(isActive: true)
+        SharedHandoffReceiver.enqueueScan()
         NotificationBoundaryHelper.shared.currentBoundary { [weak self] accountId, boundaryEpochText in
             guard let accountId = accountId,
                   !accountId.isEmpty,
@@ -99,6 +103,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 boundaryEpoch: boundaryEpoch
             )
         }
+    }
+
+    func applicationWillResignActive(_ application: UIApplication) {
+        SharedTaskPayloadKt.updateSharedTaskIntakeAppActive(isActive: false)
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,

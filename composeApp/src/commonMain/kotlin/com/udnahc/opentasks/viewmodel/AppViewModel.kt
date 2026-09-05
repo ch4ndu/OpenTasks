@@ -3,6 +3,7 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.SharedTaskPayload
+import com.udnahc.opentasks.completeSharedTaskReview
 import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
@@ -58,6 +59,8 @@ class AppViewModel(
     val sharedIcsImportResult: StateFlow<SharedIcsImportResult?> = _sharedIcsImportResult.asStateFlow()
     private val _sharedIcsImportConfirmation = MutableStateFlow<Long?>(null)
     val sharedIcsImportConfirmation: StateFlow<Long?> = _sharedIcsImportConfirmation.asStateFlow()
+    private val _isSharedIcsIntakeBusy = MutableStateFlow(false)
+    val isSharedIcsIntakeBusy: StateFlow<Boolean> = _isSharedIcsIntakeBusy.asStateFlow()
     private val sharedIcsPayloadIds = mutableSetOf<Long>()
     private val pendingSharedIcsConfirmations = ArrayDeque<PendingSharedIcs>()
     private val pendingSharedIcs = ArrayDeque<PendingSharedIcs>()
@@ -71,20 +74,24 @@ class AppViewModel(
      * it. Claimed payloads are owned by this epoch, so they are never returned
      * to the process-global handoff when this ViewModel is cleared.
      */
-    fun importSharedIcs(payload: SharedTaskPayload) {
-        val pending = captureSharedIcs(payload) ?: return
+    fun importSharedIcs(payload: SharedTaskPayload): Boolean {
+        val pending = captureSharedIcs(payload) ?: return false
         pendingSharedIcs += pending
         startNextSharedIcsIfIdle()
+        refreshSharedIcsBusy()
+        return true
     }
 
     /**
      * Retires the process-global handoff into this account epoch but waits for
      * explicit user confirmation before parsing or importing its ICS content.
      */
-    fun requestSharedIcsImport(payload: SharedTaskPayload) {
-        val pending = captureSharedIcs(payload) ?: return
+    fun requestSharedIcsImport(payload: SharedTaskPayload): Boolean {
+        val pending = captureSharedIcs(payload) ?: return false
         pendingSharedIcsConfirmations += pending
         showNextSharedIcsConfirmationIfIdle()
+        refreshSharedIcsBusy()
+        return true
     }
 
     fun confirmSharedIcsImport(payloadId: Long): Boolean {
@@ -97,6 +104,7 @@ class AppViewModel(
         pendingSharedIcs += pending
         startNextSharedIcsIfIdle()
         showNextSharedIcsConfirmationIfIdle()
+        refreshSharedIcsBusy()
         return true
     }
 
@@ -107,7 +115,9 @@ class AppViewModel(
 
         pendingSharedIcsConfirmations.removeFirst()
         _sharedIcsImportConfirmation.value = null
+        completeSharedTaskReview(payloadId)
         showNextSharedIcsConfirmationIfIdle()
+        refreshSharedIcsBusy()
         return true
     }
 
@@ -117,7 +127,9 @@ class AppViewModel(
             activeSharedIcs = null
             sharedIcsImportJob = null
         }
+        completeSharedTaskReview(result.payloadId)
         startNextSharedIcsIfIdle()
+        refreshSharedIcsBusy()
         return true
     }
 
@@ -196,18 +208,30 @@ class AppViewModel(
             sharedIcsImportJob = null
             if (_sharedIcsImportResult.value == null) {
                 activeSharedIcs = null
+                completeSharedTaskReview(payloadId)
                 startNextSharedIcsIfIdle()
+                refreshSharedIcsBusy()
             }
         }
     }
 
+    private fun refreshSharedIcsBusy() {
+        _isSharedIcsIntakeBusy.value = pendingSharedIcsConfirmations.isNotEmpty() ||
+            pendingSharedIcs.isNotEmpty() ||
+            activeSharedIcs != null ||
+            _sharedIcsImportConfirmation.value != null ||
+            _sharedIcsImportResult.value != null
+    }
+
     override fun onCleared() {
         isEpochAlive = false
+        sharedIcsPayloadIds.forEach(::completeSharedTaskReview)
         pendingSharedIcsConfirmations.clear()
         pendingSharedIcs.clear()
         activeSharedIcs = null
         _sharedIcsImportConfirmation.value = null
         _sharedIcsImportResult.value = null
+        _isSharedIcsIntakeBusy.value = false
         sharedIcsImportJob?.cancel()
         sharedIcsImportJob = null
         sharedIcsPayloadIds.clear()

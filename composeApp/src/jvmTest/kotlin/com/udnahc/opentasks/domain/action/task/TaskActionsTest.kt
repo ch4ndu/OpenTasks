@@ -1,6 +1,8 @@
 package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_DAY
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_HOUR
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.model.RecurrenceType
@@ -30,9 +32,33 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class TaskActionsTest {
+    @Test
+    fun addTaskPersistsInitialStatusAndNormalizesCompletionTime() = runTest {
+        val repository = FakeTaskRepository()
+        val action = AddTaskAction(repository, ScheduleTaskRemindersAction(NotificationScheduler(), repository))
+
+        TaskStatus.entries.forEach { status ->
+            action(
+                title = status.name,
+                content = "",
+                status = status,
+            )
+        }
+
+        assertEquals(TaskStatus.entries, repository.inserted.map { it.status })
+        repository.inserted.forEach { task ->
+            if (task.status == TaskStatus.DONE) {
+                assertNotNull(task.completedAt)
+            } else {
+                assertEquals(null, task.completedAt)
+            }
+        }
+    }
+
     @Test
     fun addTaskPersistsAllBusinessFieldsAndSchedulesById() = runTest {
         val repository = FakeTaskRepository()
@@ -97,6 +123,47 @@ class TaskActionsTest {
         val deleted = repository.updated.last()
         assertTrue(deleted.isDeleted)
         assertTrue(deleted.updatedAt >= updated.updatedAt)
+    }
+
+    @Test
+    fun titleOnlyFormUpdatePersistsInProgressStatusAndExactOvernightRange() = runTest {
+        val deadline = startOfDayLocalMillis(2026, 5, 4) + 22 * MILLIS_PER_HOUR + 321L
+        val endDeadline = startOfDayLocalMillis(2026, 5, 5) + 90 * MILLIS_PER_MINUTE + 654L
+        val original = testTask(
+            id = "in-progress-overnight",
+            title = "Original",
+            content = "Body",
+            deadline = deadline,
+            endDeadline = endDeadline,
+            status = TaskStatus.IN_PROGRESS,
+        )
+        val repository = FakeTaskRepository(listOf(original))
+        val action = UpdateTaskAction(
+            repository,
+            ScheduleTaskRemindersAction(NotificationScheduler(), repository),
+        )
+
+        action(
+            original.id,
+            TaskWriteIntent.FormUpdate(
+                TaskFormData(
+                    title = "Renamed",
+                    content = original.content,
+                    priority = original.priority,
+                    deadline = deadline,
+                    endDeadline = endDeadline,
+                    recurrence = original.recurrenceType,
+                    categoryId = original.categoryId,
+                    status = TaskStatus.IN_PROGRESS,
+                ),
+            ),
+        )
+
+        val stored = repository.tasks.single()
+        assertEquals("Renamed", stored.title)
+        assertEquals(TaskStatus.IN_PROGRESS, stored.status)
+        assertEquals(deadline, stored.deadline)
+        assertEquals(endDeadline, stored.endDeadline)
     }
 
     @Test

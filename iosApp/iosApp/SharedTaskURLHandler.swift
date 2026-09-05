@@ -1,38 +1,106 @@
 import ComposeApp
 import Foundation
 
-private enum SharedHandoffReceiver {
-    static let queue = DispatchQueue(label: "com.udnahc.opentasks.share.claim")
-    static var lastEventID: Int64 = 0
+enum SharedHandoffReceiver {
+    private static let intakeNotification = Notification.Name("OpenTasksSharedTaskIntakeReady")
+    private static let queue = DispatchQueue(label: "com.udnahc.opentasks.share.claim")
+    private static let stateLock = NSLock()
+    private static var observer: NSObjectProtocol?
+    private static var isRunning = false
+    private static var isRequested = false
+    private static var lastEventID: Int64 = 0
 
-    static func enqueue(nonce: String) {
+    static func start() {
+        stateLock.lock()
+        if observer == nil {
+            observer = NotificationCenter.default.addObserver(
+                forName: intakeNotification,
+                object: nil,
+                queue: nil,
+            ) { _ in
+                SharedHandoffReceiver.enqueueScan()
+            }
+        }
+        stateLock.unlock()
+        enqueueScan()
+    }
+
+    static func enqueueScan() {
+        stateLock.lock()
+        isRequested = true
+        guard !isRunning else {
+            stateLock.unlock()
+            return
+        }
+        isRunning = true
+        stateLock.unlock()
+
         queue.async {
-            guard let eventID = nextEventID(),
-                  SharedTaskPayloadKt.reserveSharedTaskPayload(id: eventID) else {
+            SharedHandoffReceiver.drainRequests()
+        }
+    }
+
+    private static func drainRequests() {
+        while true {
+            stateLock.lock()
+            guard isRequested else {
+                isRunning = false
+                stateLock.unlock()
                 return
             }
-            defer {
-                _ = SharedTaskPayloadKt.releaseSharedTaskPayloadReservation(id: eventID)
-            }
-            guard let envelope = try? ShareHandoffStore.claim(nonce: nonce) else { return }
+            isRequested = false
+            stateLock.unlock()
+            scanOnce()
+        }
+    }
 
-            let published: Bool
-            switch envelope {
-            case .accepted(let payload):
-                published = SharedTaskPayloadKt.publishReservedSharedTaskPayload(
-                    id: eventID,
-                    description: payload.description,
-                    url: payload.url,
-                    icsContent: payload.icsContent,
-                    icsFileName: payload.icsFileName
-                )
-            case .rejected(let rejectionCode):
-                published = SharedTaskPayloadKt.publishReservedSharedTaskPayloadRejectionCode(
-                    id: eventID,
-                    reason: rejectionCode.rawValue,
-                )
-            }
-            guard published else { return }
+    private static func scanOnce() {
+        guard SharedTaskPayloadKt.canScanSharedTaskIntake() else { return }
+
+        let nonce: String
+        do {
+            guard let discovered = try ShareHandoffStore.discoverPendingNonce() else { return }
+            nonce = discovered
+        } catch {
+            return
+        }
+
+        guard let eventID = nextEventID(),
+              let ticket = SharedTaskPayloadKt.reserveSharedTaskIntake(id: eventID) else {
+            return
+        }
+        defer {
+            _ = SharedTaskPayloadKt.abandonSharedTaskIntakeReservation(id: eventID)
+        }
+
+        let envelope: ShareHandoffEnvelope
+        do {
+            guard let claimed = try ShareHandoffStore.claim(nonce: nonce) else { return }
+            envelope = claimed
+        } catch {
+            return
+        }
+
+        switch envelope {
+        case .accepted(let payload):
+            _ = SharedTaskPayloadKt.publishSharedTaskIntake(
+                id: eventID,
+                readinessGeneration: ticket.readinessGeneration,
+                accountId: ticket.accountId,
+                boundaryEpoch: ticket.boundaryEpoch,
+                description: payload.description,
+                url: payload.url,
+                icsContent: payload.icsContent,
+                icsFileName: payload.icsFileName
+            )
+        case .rejected(let rejectionCode):
+            _ = SharedTaskPayloadKt.publishSharedTaskIntakeRejectionCode(
+                id: eventID,
+                readinessGeneration: ticket.readinessGeneration,
+                accountId: ticket.accountId,
+                boundaryEpoch: ticket.boundaryEpoch,
+                reason: rejectionCode.rawValue
+            )
         }
     }
 
@@ -74,5 +142,5 @@ func handleOpenTasksURL(_ url: URL) {
         return
     }
 
-    SharedHandoffReceiver.enqueue(nonce: nonce)
+    SharedHandoffReceiver.enqueueScan()
 }

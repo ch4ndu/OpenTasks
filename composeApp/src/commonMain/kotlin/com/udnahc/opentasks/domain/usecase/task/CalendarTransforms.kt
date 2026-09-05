@@ -1,13 +1,17 @@
 package com.udnahc.opentasks.domain.usecase.task
 
 import com.udnahc.opentasks.data.extensions.dayKey
+import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.extensions.dayKeyToMillis
 import com.udnahc.opentasks.data.extensions.extractHour
 import com.udnahc.opentasks.data.extensions.extractMinute
+import com.udnahc.opentasks.data.model.CalendarListDisplayModePreference
+import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
 import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
+import kotlinx.datetime.LocalDate
 
 data class CalendarDayTasks(
     val allDayTasks: List<Task> = emptyList(),
@@ -15,10 +19,6 @@ data class CalendarDayTasks(
     val timedTaskStartMinutes: Map<String, Int> = emptyMap(),
     val timedTaskTimeText: Map<String, String> = emptyMap(),
 )
-
-private val CALENDAR_TIMELINE_HOUR_LABELS = (0..23).map { hour ->
-    EnglishDateTimeFormatter.formatHour(hour)
-}
 
 data class CalendarTaskRowProjection(
     val task: Task,
@@ -44,10 +44,120 @@ data class CalendarDayProjection(
     val timedRows: List<CalendarTaskRowProjection> = emptyList(),
     val allDayPreview: CalendarTaskPrefix = CalendarTaskPrefix(emptyList(), 0),
     val monthPreview: CalendarTaskPrefix = CalendarTaskPrefix(emptyList(), 0),
-    val timelineHourLabels: List<String> = CALENDAR_TIMELINE_HOUR_LABELS,
 )
 
 internal val EMPTY_CALENDAR_DAY_PROJECTION = CalendarDayProjection()
+
+data class CalendarRenderState(
+    val viewPreference: CalendarViewPreference,
+    val listDisplayModePreference: CalendarListDisplayModePreference,
+    val today: LocalDate,
+    val taskDayKeys: Set<Long> = emptySet(),
+    val calendarDaysByDay: Map<Long, CalendarDayProjection> = emptyMap(),
+    val selectedDayProjection: CalendarDayProjection = EMPTY_CALENDAR_DAY_PROJECTION,
+    val timelineHourLabels: List<String> = emptyList(),
+)
+
+internal class CalendarProjectionCache(
+    private val dateTimeFormatter: DateTimeTextFormatter,
+) {
+    private var contextKey: String? = null
+    private val sourceInputsByDay = mutableMapOf<Long, List<Task>>()
+    private val projectionsByDay = mutableMapOf<Long, CalendarDayProjection>()
+    private var timelineHourLabels: List<String>? = null
+
+    fun render(
+        today: LocalDate,
+        dayInputs: Map<Long, List<Task>>,
+        formattingContextKey: String,
+        viewPreference: CalendarViewPreference,
+        listDisplayModePreference: CalendarListDisplayModePreference,
+        listSelectedDayKey: Long?,
+        monthSelectedDayKey: Long?,
+    ): CalendarRenderState {
+        if (contextKey != formattingContextKey) {
+            contextKey = formattingContextKey
+            sourceInputsByDay.clear()
+            projectionsByDay.clear()
+            timelineHourLabels = null
+        }
+
+        val todayDayKey = dayKeyFromDate(today.year, today.monthNumber, today.dayOfMonth)
+        val selectedDayKey = when (viewPreference) {
+            CalendarViewPreference.LIST -> listSelectedDayKey ?: todayDayKey
+            CalendarViewPreference.MONTH -> monthSelectedDayKey ?: todayDayKey
+            else -> null
+        }
+        val taskDayKeys = dayInputs.keys.toSet()
+
+        if (viewPreference == CalendarViewPreference.YEAR) {
+            removeChangedAndMissingEntries(dayInputs)
+            return CalendarRenderState(
+                viewPreference = viewPreference,
+                listDisplayModePreference = listDisplayModePreference,
+                today = today,
+                taskDayKeys = taskDayKeys,
+            )
+        }
+
+        val requiredInputs = LinkedHashMap(dayInputs)
+        if (selectedDayKey != null && selectedDayKey !in requiredInputs) {
+            requiredInputs[selectedDayKey] = emptyList()
+        }
+        val nextProjections = requiredInputs.mapValues { (day, tasks) ->
+            val previous = projectionsByDay[day]
+            if (previous != null && sourceInputsByDay[day] == tasks) {
+                val isToday = day == todayDayKey
+                if (previous.isToday == isToday) previous else previous.copy(isToday = isToday)
+            } else {
+                projectCalendarDay(
+                    tasks = tasks,
+                    targetDayKey = day,
+                    todayDayKey = todayDayKey,
+                    dateTimeFormatter = dateTimeFormatter,
+                )
+            }
+        }
+        sourceInputsByDay.keys.retainAll(requiredInputs.keys)
+        projectionsByDay.keys.retainAll(requiredInputs.keys)
+        sourceInputsByDay.putAll(requiredInputs)
+        projectionsByDay.putAll(nextProjections)
+
+        val labels = if (
+            viewPreference == CalendarViewPreference.DAY ||
+            viewPreference == CalendarViewPreference.THREE_DAY
+        ) {
+            timelineHourLabels ?: calendarTimelineHourLabels(dateTimeFormatter).also {
+                timelineHourLabels = it
+            }
+        } else {
+            emptyList()
+        }
+        return CalendarRenderState(
+            viewPreference = viewPreference,
+            listDisplayModePreference = listDisplayModePreference,
+            today = today,
+            taskDayKeys = taskDayKeys,
+            calendarDaysByDay = nextProjections,
+            selectedDayProjection = selectedDayKey?.let(nextProjections::get)
+                ?: EMPTY_CALENDAR_DAY_PROJECTION,
+            timelineHourLabels = labels,
+        )
+    }
+
+    private fun removeChangedAndMissingEntries(dayInputs: Map<Long, List<Task>>) {
+        sourceInputsByDay.keys.toList().forEach { day ->
+            if (dayInputs[day] != sourceInputsByDay[day]) {
+                sourceInputsByDay.remove(day)
+                projectionsByDay.remove(day)
+            }
+        }
+    }
+}
+
+fun calendarTimelineHourLabels(
+    dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
+): List<String> = (0..23).map(dateTimeFormatter::formatHour)
 
 /**
  * Returns tasks for a specific day, sorted by deadline.
@@ -88,7 +198,6 @@ fun projectCalendarDay(
         timedRows = timedRows,
         allDayPreview = calendarTaskPrefix(allDayRows, maxVisible = 3),
         monthPreview = calendarTaskPrefix(rows, maxVisible = 5),
-        timelineHourLabels = (0..23).map(dateTimeFormatter::formatHour),
     )
 }
 

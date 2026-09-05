@@ -10,7 +10,7 @@ enum ShareHandoffPolicy {
     static let maxEntries = 64
     static let maxAggregateBytes: Int64 = 4 * 1024 * 1024
     static let maxFilenameBytes = 255
-    static let timeToLiveMillis: Int64 = 10 * 60 * 1000
+    static let timeToLiveMillis: Int64 = 24 * 60 * 60 * 1000
     static let futureSkewMillis: Int64 = 60 * 1000
     static let defaultFilename = "shared.ics"
 
@@ -180,19 +180,31 @@ enum ShareHandoffStore {
         }
     }
 
-    static func removePending(nonce: String) throws {
-        guard ShareHandoffPolicy.acceptsNonce(nonce) else { return }
-
+    static func discoverPendingNonce() throws -> String? {
         try withExclusiveLock { layout in
-            let pendingEntries = try recoverAndPrune(
+            let entries = try recoverAndPrune(
                 layout: layout,
                 nowMillis: try currentTimeMillis()
             )
-            if let pendingEntry = pendingEntries[nonce] {
-                try removeEntries([pendingEntry.url], from: layout.pending)
+            var candidates: [(createdAtMillis: Int64, nonce: String)] = []
+            candidates.reserveCapacity(entries.count)
+            for entry in entries.values {
+                let data = try readBoundedRegularFile(
+                    at: entry.url,
+                    maxBytes: ShareHandoffPolicy.maxEnvelopeBytes
+                )
+                let storedEnvelope = try decode(data)
+                candidates.append((storedEnvelope.createdAtMillis, entry.nonce))
             }
+            return candidates.min { first, second in
+                if first.createdAtMillis != second.createdAtMillis {
+                    return first.createdAtMillis < second.createdAtMillis
+                }
+                return first.nonce < second.nonce
+            }?.nonce
         }
     }
+
 }
 
 private extension ShareHandoffStore {

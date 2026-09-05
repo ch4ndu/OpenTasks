@@ -109,15 +109,25 @@ interface AttachmentDao {
      * local edit or tombstone wins and the caller can remove the unused files.
      */
     @Transaction
-    suspend fun installDownloadedRemoteIfNewer(remote: Attachment): AttachmentDownloadInstallResult {
+    suspend fun installDownloadedRemoteIfNewer(
+        remote: Attachment,
+        basis: AttachmentDownloadInstallBasis? = null,
+    ): AttachmentDownloadInstallResult {
         val local = findByIdAnyState(remote.id)
         val isEqualTimestampDownloadRetry = local?.let {
             it.updatedAt == remote.updatedAt &&
                 it.syncState == com.udnahc.opentasks.data.model.AttachmentSyncState.FAILED &&
                 (it.lastSyncError == "download_failed" || it.lastSyncError?.startsWith("download_http_") == true)
         } == true
+        val isEqualTimestampMissingFileRepair = local?.let {
+            basis?.allowsEqualTimestampRepair == true &&
+                it == basis.expectedLocal &&
+                it.canRepairEqualTimestampDownload(remote)
+        } == true
         if (local != null && (local.updatedAt > remote.updatedAt ||
-                (local.updatedAt == remote.updatedAt && !isEqualTimestampDownloadRetry))) {
+                (local.updatedAt == remote.updatedAt &&
+                    !isEqualTimestampDownloadRetry &&
+                    !isEqualTimestampMissingFileRepair))) {
             return AttachmentDownloadInstallResult.KeptLocal
         }
         val replacementPaths = setOf(remote.localPath, remote.thumbnailPath)
@@ -311,3 +321,24 @@ private fun Attachment.retainingFileMetadataFrom(local: Attachment?): Attachment
             height = it.height,
         )
     } ?: this
+
+private fun Attachment.canRepairEqualTimestampDownload(remote: Attachment): Boolean =
+    !isDeleted &&
+        isSynced &&
+        syncState == AttachmentSyncState.SYNCED &&
+        remote.updatedAt == updatedAt &&
+        !remote.isDeleted &&
+        remote.remoteFileName?.isNotBlank() == true &&
+        remoteFileName == remote.remoteFileName &&
+        pbId == remote.pbId &&
+        id == remote.id &&
+        ownerType == remote.ownerType &&
+        ownerId == remote.ownerId &&
+        kind == remote.kind &&
+        sortOrder == remote.sortOrder &&
+        createdAt == remote.createdAt
+
+data class AttachmentDownloadInstallBasis(
+    val expectedLocal: Attachment,
+    val allowsEqualTimestampRepair: Boolean,
+)

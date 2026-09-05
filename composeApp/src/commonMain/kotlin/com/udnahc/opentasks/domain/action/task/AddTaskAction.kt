@@ -8,6 +8,7 @@ import com.udnahc.opentasks.data.model.NotifyBeforeUnit
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.data.repository.CommittedMutation
 import com.udnahc.opentasks.data.repository.PostCommitWarningPhase
@@ -47,6 +48,7 @@ class AddTaskAction(
         attendees: String = "",
         durationReminders: String = "",
         dateReminders: String = "",
+        status: TaskStatus = TaskStatus.TODO,
     ): CommittedMutation<Task> = accountBoundaryExecutor.withForegroundActionBoundary {
         log.d { "Adding task" }
         val now = localNow()
@@ -73,6 +75,7 @@ class AddTaskAction(
             attendees = attendees,
             durationReminders = durationReminders,
             dateReminders = dateReminders,
+            status = status,
             createdAt = now,
             updatedAt = now,
         )

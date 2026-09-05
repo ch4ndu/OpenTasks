@@ -30,6 +30,7 @@ import com.udnahc.opentasks.domain.usecase.countdown.CountdownOccurrence
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
 import com.udnahc.opentasks.ui.screens.OpenTasksBackButton
+import com.udnahc.opentasks.ui.screens.ModalBusyEffect
 import com.udnahc.opentasks.ui.screens.OpenTasksOverflowButton
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
@@ -54,12 +55,14 @@ fun CountdownDetailScreen(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
     CountdownDetailContent(
         countdown = countdown,
         onBack = onBack,
         onEdit = onEdit,
         onDelete = onDelete,
+        onModalBusyChanged = onModalBusyChanged,
     )
 }
 
@@ -70,9 +73,11 @@ internal fun CountdownDetailContent(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     var showMenu by remember { mutableStateOf(false) }
+    ModalBusyEffect(showMenu, onModalBusyChanged)
 
     Box(
         modifier = Modifier

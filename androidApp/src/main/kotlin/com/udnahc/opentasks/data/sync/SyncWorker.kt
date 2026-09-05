@@ -29,29 +29,33 @@ class SyncWorker(
         return try {
             val expectedAccountId = inputData.getString(KEY_ACCOUNT_ID)
             val expectedEpoch = inputData.getLong(KEY_BOUNDARY_EPOCH, 0L)
-            val maintained = widgetAccountGate.withActiveCacheBoundary { boundary ->
-                if (expectedAccountId.isNullOrBlank() ||
-                    expectedEpoch <= 0L ||
-                    expectedAccountId != boundary.accountId ||
-                    expectedEpoch != boundary.boundaryEpoch
-                ) {
-                    log.d { "SyncWorker skipped stale account boundary" }
-                    return@withActiveCacheBoundary false
-                }
-                runScheduledSyncMaintenance(
-                    syncNetwork = syncService::syncActiveClientWithinMutation,
-                    rebuildReminders = { rebuildReminderQueueAction() },
-                    refreshWidgets = {
-                        TaskWidget.refreshAllWidgetsWithinBoundary(applicationContext, boundary)
-                        CalendarWidget.refreshAllWidgetsWithinBoundary(applicationContext, boundary)
-                        WeekWidget.refreshAllWidgetsWithinBoundary(applicationContext, boundary)
-                    },
-                )
-                true
+            if (expectedAccountId.isNullOrBlank() || expectedEpoch <= 0L) {
+                log.d { "SyncWorker skipped malformed account boundary" }
+                return Result.success()
             }
-            if (maintained != true) {
-                log.d { "SyncWorker skipped: no active cache boundary" }
+            val capturedBoundary = widgetAccountGate.withActiveCacheBoundary(
+                expectedAccountId = expectedAccountId,
+                expectedBoundaryEpoch = expectedEpoch,
+            ) { boundary ->
+                boundary
             }
+            if (capturedBoundary == null) {
+                log.d { "SyncWorker skipped stale or unavailable account boundary" }
+                return Result.success()
+            }
+            runScheduledSyncMaintenance(
+                capturedBoundary = capturedBoundary,
+                syncNetwork = { syncService.syncActiveClientWithinMutation() },
+                withRevalidatedBoundary = { expected, block ->
+                    widgetAccountGate.withForegroundBoundary(expected, block)
+                },
+                maintenanceSteps = listOf(
+                    { rebuildReminderQueueAction() },
+                    { boundary -> TaskWidget.refreshAllWidgetsWithinBoundary(applicationContext, boundary) },
+                    { boundary -> CalendarWidget.refreshAllWidgetsWithinBoundary(applicationContext, boundary) },
+                    { boundary -> WeekWidget.refreshAllWidgetsWithinBoundary(applicationContext, boundary) },
+                ),
+            )
             Result.success()
         } catch (e: CancellationException) {
             throw e
@@ -64,48 +68,5 @@ class SyncWorker(
     companion object {
         const val KEY_ACCOUNT_ID = "account_id"
         const val KEY_BOUNDARY_EPOCH = "boundary_epoch"
-    }
-}
-
-/** A missing stable client skips only the network pass; local maintenance always runs. */
-internal suspend fun runScheduledSyncMaintenance(
-    syncNetwork: suspend () -> Boolean,
-    rebuildReminders: suspend () -> Unit,
-    refreshWidgets: suspend () -> Unit,
-) {
-    var syncFailure: Exception? = null
-    try {
-        if (!syncNetwork()) log.d { "SyncWorker skipped network sync: no stable active PocketBase client" }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        syncFailure = e
-    }
-
-    val maintenanceFailures = mutableListOf<Exception>()
-    try {
-        rebuildReminders()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        maintenanceFailures += e
-    }
-    try {
-        refreshWidgets()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        maintenanceFailures += e
-    }
-
-    val originalSyncFailure = syncFailure
-    if (originalSyncFailure != null) {
-        maintenanceFailures.forEach(originalSyncFailure::addSuppressed)
-        throw originalSyncFailure
-    }
-    if (maintenanceFailures.isNotEmpty()) {
-        val maintenanceFailure = maintenanceFailures.first()
-        maintenanceFailures.drop(1).forEach(maintenanceFailure::addSuppressed)
-        throw maintenanceFailure
     }
 }

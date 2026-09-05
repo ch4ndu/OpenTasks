@@ -43,8 +43,9 @@ import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.WidgetCalendarDate
 import com.udnahc.opentasks.WidgetNavigationEvent
-import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
+import com.udnahc.opentasks.domain.usecase.task.CalendarRenderState
 import com.udnahc.opentasks.ui.screens.CompleteSeriesDialog
+import com.udnahc.opentasks.ui.screens.ModalBusyEffect
 import com.udnahc.opentasks.ui.screens.OpenTasksBackButton
 import com.udnahc.opentasks.ui.screens.OpenTasksSettingsButton
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
@@ -86,9 +87,9 @@ import org.jetbrains.compose.resources.stringResource
 // ── Pager constants ─────────────────────────────────────────────────────────
 
 private const val DAY_PAGER_RANGE = 7300
-private const val DAY_PAGER_CENTRE = DAY_PAGER_RANGE / 2
+internal const val DAY_PAGER_CENTRE = DAY_PAGER_RANGE / 2
 private const val WEEK_PAGER_RANGE = 1040
-private const val WEEK_PAGER_CENTRE = WEEK_PAGER_RANGE / 2
+internal const val WEEK_PAGER_CENTRE = WEEK_PAGER_RANGE / 2
 internal const val YEAR_PAGER_RANGE = 20
 internal const val YEAR_PAGER_CENTRE = YEAR_PAGER_RANGE / 2
 internal const val MONTH_PAGER_MIN_OFFSET = -(YEAR_PAGER_CENTRE * 12 + 11)
@@ -110,11 +111,48 @@ internal enum class CalendarViewType(val labelRes: StringResource) {
 
 internal enum class ListDisplayMode { TIMELINE, CARD }
 
-private data class TodayCalendarDate(
+internal data class CalendarPagerAnchor(
     val year: Int,
     val month: Int,
     val day: Int,
-)
+) {
+    val todayMillis: Long = startOfDayLocalMillis(year, month, day)
+
+    fun monthAt(page: Int): CalendarNavigationDate {
+        val offset = page - MONTH_PAGER_CENTRE
+        var targetYear = year
+        var targetMonth = month + offset
+        while (targetMonth > 12) {
+            targetMonth -= 12
+            targetYear += 1
+        }
+        while (targetMonth < 1) {
+            targetMonth += 12
+            targetYear -= 1
+        }
+        return CalendarNavigationDate(targetYear, targetMonth)
+    }
+
+    fun monthPageFor(targetYear: Int, targetMonth: Int): Int? {
+        val offset = (targetYear - year) * 12 + (targetMonth - month)
+        return (MONTH_PAGER_CENTRE + offset).takeIf { it in 0 until MONTH_PAGER_RANGE }
+    }
+
+    fun yearAt(page: Int): Int = year + (page - YEAR_PAGER_CENTRE)
+
+    fun yearPageFor(targetYear: Int): Int =
+        (YEAR_PAGER_CENTRE + (targetYear - year)).coerceIn(0, YEAR_PAGER_RANGE - 1)
+
+    fun weekStartAt(page: Int): Long =
+        startOfWeekLocalMillis(todayMillis) +
+            (page - WEEK_PAGER_CENTRE) * 7L * MILLIS_PER_DAY
+
+    fun weekSelectionAt(page: Int): Long =
+        if (page == WEEK_PAGER_CENTRE) todayMillis else weekStartAt(page)
+
+    fun dayAt(page: Int): Long =
+        todayMillis + (page - DAY_PAGER_CENTRE) * MILLIS_PER_DAY
+}
 
 internal data class CalendarNavigationDate(
     val year: Int,
@@ -127,8 +165,7 @@ internal fun monthPagerPageFor(
     targetYear: Int,
     targetMonth: Int,
 ): Int? {
-    val offset = (targetYear - todayYear) * 12 + (targetMonth - todayMonth)
-    return (MONTH_PAGER_CENTRE + offset).takeIf { it in 0 until MONTH_PAGER_RANGE }
+    return CalendarPagerAnchor(todayYear, todayMonth, 1).monthPageFor(targetYear, targetMonth)
 }
 
 internal fun widgetCalendarDay(date: WidgetCalendarDate): CalendarDay =
@@ -165,22 +202,16 @@ fun CalendarScreen(
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
     onTaskMutationFailure: () -> Unit = {},
+    onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
-    val today by viewModel.today.collectAsState()
+    val calendarRenderState by viewModel.calendarRenderState.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
-    val calendarViewPreference by viewModel.calendarViewPreference.collectAsState()
-    val listDisplayModePreference by viewModel.calendarListDisplayModePreference.collectAsState()
+    var isContentModalBusy by remember { mutableStateOf(false) }
+    ModalBusyEffect(taskPendingSeriesChoice != null || isContentModalBusy, onModalBusyChanged)
 
     CalendarContent(
-        todayDate = TodayCalendarDate(today.year, today.monthNumber, today.dayOfMonth),
-        taskDayKeysFlow = viewModel.taskDayKeys,
-        calendarDaysByDayFlow = viewModel.calendarDaysByDay,
-        selectedListDayProjectionFlow = viewModel.selectedListDayProjection,
-        selectedMonthDayProjectionFlow = viewModel.selectedMonthDayProjection,
+        calendarRenderState = calendarRenderState,
         categoryNamesFlow = viewModel.categoryNames,
-        timelineHourLabels = viewModel.timelineHourLabels,
-        currentView = calendarViewPreference.toCalendarViewType(),
-        listDisplayMode = listDisplayModePreference.toListDisplayMode(),
         onCalendarViewChanged = { viewModel.saveCalendarViewPreference(it.toPreference()) },
         onListDisplayModeChanged = {
             viewModel.saveCalendarListDisplayModePreference(it.toPreference())
@@ -197,6 +228,7 @@ fun CalendarScreen(
         isRefreshing = isRefreshing,
         syncEnabled = syncEnabled,
         onRefresh = onRefresh,
+        onModalBusyChanged = { isContentModalBusy = it },
     )
 
     if (taskPendingSeriesChoice != null) {
@@ -219,15 +251,8 @@ fun CalendarScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CalendarContent(
-    todayDate: TodayCalendarDate,
-    taskDayKeysFlow: StateFlow<Set<Long>>,
-    calendarDaysByDayFlow: StateFlow<Map<Long, CalendarDayProjection>>,
-    selectedListDayProjectionFlow: StateFlow<CalendarDayProjection>,
-    selectedMonthDayProjectionFlow: StateFlow<CalendarDayProjection>,
+    calendarRenderState: CalendarRenderState,
     categoryNamesFlow: StateFlow<Map<String, String>>,
-    timelineHourLabels: List<String>,
-    currentView: CalendarViewType,
-    listDisplayMode: ListDisplayMode,
     onCalendarViewChanged: (CalendarViewType) -> Unit,
     onListDisplayModeChanged: (ListDisplayMode) -> Unit,
     onListDaySelected: (Long) -> Unit,
@@ -242,46 +267,46 @@ private fun CalendarContent(
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
+    onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
+    val currentView = calendarRenderState.viewPreference.toCalendarViewType()
+    val listDisplayMode = calendarRenderState.listDisplayModePreference.toListDisplayMode()
+    val pagerAnchor = remember(calendarRenderState.today) {
+        val today = calendarRenderState.today
+        CalendarPagerAnchor(today.year, today.monthNumber, today.dayOfMonth)
+    }
     val density = LocalDensity.current
     val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val navBarHeight = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
     val dimens = OpenTasksTheme.dimens
     val topBarHeight = dimens.topBarHeight + statusBarHeight
 
-    val todayYear = todayDate.year
-    val todayMonth = todayDate.month
-    val todayDay = todayDate.day
+    val todayYear = pagerAnchor.year
+    val todayMonth = pagerAnchor.month
+    val todayDay = pagerAnchor.day
 
     var showViewPicker by remember { mutableStateOf(false) }
+    ModalBusyEffect(showViewPicker, onModalBusyChanged)
     val scope = rememberCoroutineScope()
 
     // ── Month-pager state (shared by Month view) ───
     val centreIndex = MONTH_PAGER_CENTRE
     val pagerState = rememberPagerState(initialPage = centreIndex) { MONTH_PAGER_RANGE }
 
-    val displayedYearMonth by remember {
-        derivedStateOf {
-            val offset = pagerState.currentPage - centreIndex
-            var y = todayYear
-            var m = todayMonth + offset
-            while (m > 12) {
-                m -= 12; y++
-            }
-            while (m < 1) {
-                m += 12; y--
-            }
-            y to m
-        }
+    val displayedYearMonth by remember(pagerAnchor, pagerState) {
+        derivedStateOf { pagerAnchor.monthAt(pagerState.currentPage) }
     }
-    val displayedYear = displayedYearMonth.first
-    val displayedMonth = displayedYearMonth.second
+    val displayedYear = displayedYearMonth.year
+    val displayedMonth = displayedYearMonth.month
 
     // Selected day for month-view collapse
     var selectedDay by remember { mutableStateOf<CalendarDay?>(null) }
-    LaunchedEffect(pagerState.currentPage) {
-        selectedDay = null
-        onMonthDayCleared()
+    LaunchedEffect(displayedYear, displayedMonth) {
+        val current = selectedDay
+        if (current == null || current.year != displayedYear || current.month != displayedMonth) {
+            selectedDay = null
+            onMonthDayCleared()
+        }
     }
 
     val collapseProgress = remember { Animatable(0f) }
@@ -294,20 +319,18 @@ private fun CalendarContent(
 
     // ── Year-pager state ───
     val yearPagerState = rememberPagerState(initialPage = YEAR_PAGER_CENTRE) { YEAR_PAGER_RANGE }
-    val yearViewYear by remember {
-        derivedStateOf {
-            todayYear + (yearPagerState.currentPage - YEAR_PAGER_CENTRE)
-        }
+    val yearViewYear by remember(pagerAnchor, yearPagerState) {
+        derivedStateOf { pagerAnchor.yearAt(yearPagerState.currentPage) }
     }
-    var yearViewMonth by remember { mutableStateOf(todayMonth) }
+    var yearViewMonth by remember(todayMonth) { mutableStateOf(todayMonth) }
 
-    LaunchedEffect(widgetNavigationEvent?.id) {
+    LaunchedEffect(widgetNavigationEvent?.id, pagerAnchor) {
         val event = widgetNavigationEvent ?: return@LaunchedEffect
         val date = event.calendarDate ?: run {
             onWidgetNavigationConsumed(event.id)
             return@LaunchedEffect
         }
-        val targetPage = monthPagerPageFor(todayYear, todayMonth, date.year, date.month)
+        val targetPage = pagerAnchor.monthPageFor(date.year, date.month)
             ?: run {
                 onWidgetNavigationConsumed(event.id)
                 return@LaunchedEffect
@@ -323,26 +346,17 @@ private fun CalendarContent(
     val weekPagerState = rememberPagerState(initialPage = WEEK_PAGER_CENTRE) { WEEK_PAGER_RANGE }
 
     // Selected day for list view (defaults to today)
-    val todayMillis = remember(todayYear, todayMonth, todayDay) {
-        startOfDayLocalMillis(todayYear, todayMonth, todayDay)
+    val todayMillis = pagerAnchor.todayMillis
+    var listSelectedDayMillis by remember(pagerAnchor, weekPagerState.currentPage) {
+        mutableStateOf(pagerAnchor.weekSelectionAt(weekPagerState.currentPage))
     }
-    var listSelectedDayMillis by remember(todayMillis) { mutableStateOf(todayMillis) }
     LaunchedEffect(listSelectedDayMillis) {
         onListDaySelected(listSelectedDayMillis)
     }
 
-    // When the week pager page changes, select the first day of the new week
-    // (unless the current selection is already within that week)
-    val weekMillis = 7 * MILLIS_PER_DAY
-    LaunchedEffect(weekPagerState.currentPage) {
-        val weekOffset = weekPagerState.currentPage - WEEK_PAGER_CENTRE
-        val thisWeekSunMillis = startOfWeekLocalMillis(todayMillis)
-        val targetWeekSunMillis = thisWeekSunMillis + weekOffset * weekMillis
-        val targetWeekSatMillis = targetWeekSunMillis + 6 * MILLIS_PER_DAY
-        // If current selection is outside this week, snap to Sunday of the new week
-        if (listSelectedDayMillis !in targetWeekSunMillis..targetWeekSatMillis) {
-            listSelectedDayMillis = targetWeekSunMillis
-        }
+    LaunchedEffect(weekPagerState.currentPage, todayMillis) {
+        val targetSelection = pagerAnchor.weekSelectionAt(weekPagerState.currentPage)
+        if (listSelectedDayMillis != targetSelection) listSelectedDayMillis = targetSelection
     }
 
     // Derive month name from the list-view selected day
@@ -354,47 +368,37 @@ private fun CalendarContent(
     val weekViewPagerState =
         rememberPagerState(initialPage = WEEK_PAGER_CENTRE) { WEEK_PAGER_RANGE }
 
-    val weekViewSundayMillis by remember {
-        derivedStateOf {
-            val weekOffset = weekViewPagerState.currentPage - WEEK_PAGER_CENTRE
-            val thisWeekSunMillis = startOfWeekLocalMillis(todayMillis)
-            thisWeekSunMillis + weekOffset * 7 * MILLIS_PER_DAY
-        }
+    val weekViewSundayMillis by remember(pagerAnchor, weekViewPagerState) {
+        derivedStateOf { pagerAnchor.weekStartAt(weekViewPagerState.currentPage) }
     }
 
-    val weekViewCalendarMonth by remember {
-        derivedStateOf { extractMonth(weekViewSundayMillis) }
-    }
+    val weekViewCalendarMonth = extractMonth(weekViewSundayMillis)
 
-    var weekViewSelectedDayMillis by remember(todayMillis) { mutableStateOf(todayMillis) }
+    var weekViewSelectedDayMillis by remember(pagerAnchor, weekViewPagerState.currentPage) {
+        mutableStateOf(pagerAnchor.weekSelectionAt(weekViewPagerState.currentPage))
+    }
+    LaunchedEffect(weekViewPagerState.currentPage, todayMillis) {
+        val targetSelection = pagerAnchor.weekSelectionAt(weekViewPagerState.currentPage)
+        if (weekViewSelectedDayMillis != targetSelection) weekViewSelectedDayMillis = targetSelection
+    }
 
     // ── Three-day pager state (per-day pages) ───
     val threeDayPagerState = rememberPagerState(initialPage = DAY_PAGER_CENTRE) { DAY_PAGER_RANGE }
 
-    val threeDayStartMillis by remember {
-        derivedStateOf {
-            val offset = threeDayPagerState.currentPage - DAY_PAGER_CENTRE
-            todayMillis + offset * MILLIS_PER_DAY
-        }
+    val threeDayStartMillis by remember(pagerAnchor, threeDayPagerState) {
+        derivedStateOf { pagerAnchor.dayAt(threeDayPagerState.currentPage) }
     }
 
-    val threeDayMonth by remember {
-        derivedStateOf { extractMonth(threeDayStartMillis) }
-    }
+    val threeDayMonth = extractMonth(threeDayStartMillis)
 
     // ── Day-view pager state (per-day pages) ───
     val dayViewPagerState = rememberPagerState(initialPage = DAY_PAGER_CENTRE) { DAY_PAGER_RANGE }
 
-    val dayViewSelectedMillis by remember {
-        derivedStateOf {
-            val offset = dayViewPagerState.currentPage - DAY_PAGER_CENTRE
-            todayMillis + offset * MILLIS_PER_DAY
-        }
+    val dayViewSelectedMillis by remember(pagerAnchor, dayViewPagerState) {
+        derivedStateOf { pagerAnchor.dayAt(dayViewPagerState.currentPage) }
     }
 
-    val dayViewMonth by remember {
-        derivedStateOf { extractMonth(dayViewSelectedMillis) }
-    }
+    val dayViewMonth = extractMonth(dayViewSelectedMillis)
 
     // Propagate selected date to parent (per-view effects)
     LaunchedEffect(currentView, listSelectedDayMillis) {
@@ -451,7 +455,7 @@ private fun CalendarContent(
         year: Int,
         month: Int
     ) {
-        val targetPage = monthPagerPageFor(todayYear, todayMonth, year, month) ?: return
+        val targetPage = pagerAnchor.monthPageFor(year, month) ?: return
         scope.launch { pagerState.scrollToPage(targetPage) }
         onCalendarViewChanged(CalendarViewType.MONTH)
     }
@@ -500,11 +504,9 @@ private fun CalendarContent(
         ) {
             when (currentView) {
                 CalendarViewType.LIST -> {
-                    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
-                    val selectedListDayProjection by selectedListDayProjectionFlow.collectAsState()
                     val categoryNames by categoryNamesFlow.collectAsState()
                     ListViewContent(
-                        dayProjection = selectedListDayProjection,
+                        dayProjection = calendarRenderState.selectedDayProjection,
                         todayMillis = todayMillis,
                         todayYear = todayYear,
                         todayMonth = todayMonth,
@@ -513,7 +515,7 @@ private fun CalendarContent(
                         onDaySelected = { listSelectedDayMillis = it },
                         weekPagerState = weekPagerState,
                         weekPagerCentre = WEEK_PAGER_CENTRE,
-                        calendarDaysByDay = calendarDaysByDay,
+                        calendarDaysByDay = calendarRenderState.calendarDaysByDay,
                         categoryNames = categoryNames,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
@@ -524,14 +526,13 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.YEAR -> {
-                    val taskDayKeys by taskDayKeysFlow.collectAsState()
                     YearViewContent(
                         pagerState = yearPagerState,
                         centreIndex = YEAR_PAGER_CENTRE,
                         todayYear = todayYear,
                         todayMonth = todayMonth,
                         todayDay = todayDay,
-                        taskDayKeys = taskDayKeys,
+                        taskDayKeys = calendarRenderState.taskDayKeys,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
                         onMonthClick = { year, month -> navigateToMonth(year, month) },
@@ -539,11 +540,9 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.MONTH -> {
-                    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
-                    val selectedMonthDayProjection by selectedMonthDayProjectionFlow.collectAsState()
                     val categoryNames by categoryNamesFlow.collectAsState()
                     MonthViewContent(
-                        selectedDayProjection = selectedMonthDayProjection,
+                        selectedDayProjection = calendarRenderState.selectedDayProjection,
                         todayYear = todayYear,
                         todayMonth = todayMonth,
                         todayDay = todayDay,
@@ -551,7 +550,7 @@ private fun CalendarContent(
                         collapseProgress = collapseProgress,
                         pagerState = pagerState,
                         centreIndex = centreIndex,
-                        calendarDaysByDay = calendarDaysByDay,
+                        calendarDaysByDay = calendarRenderState.calendarDaysByDay,
                         categoryNames = categoryNames,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
@@ -573,7 +572,6 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.WEEK -> {
-                    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
                     WeekViewContent(
                         todayMillis = todayMillis,
                         todayYear = todayYear,
@@ -584,7 +582,7 @@ private fun CalendarContent(
                         weekSundayMillis = weekViewSundayMillis,
                         calendarYear = extractYear(weekViewSundayMillis),
                         calendarMonth = weekViewCalendarMonth,
-                        calendarDaysByDay = calendarDaysByDay,
+                        calendarDaysByDay = calendarRenderState.calendarDaysByDay,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
                         onTaskClick = onTaskClick,
@@ -602,7 +600,6 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.THREE_DAY -> {
-                    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
                     ThreeDayViewContent(
                         todayMillis = todayMillis,
                         todayYear = todayYear,
@@ -610,17 +607,16 @@ private fun CalendarContent(
                         todayDay = todayDay,
                         pagerState = threeDayPagerState,
                         pagerCentre = DAY_PAGER_CENTRE,
-                        calendarDaysByDay = calendarDaysByDay,
+                        calendarDaysByDay = calendarRenderState.calendarDaysByDay,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
                         onTaskClick = onTaskClick,
                         onToggleComplete = onToggleComplete,
-                        timelineHourLabels = timelineHourLabels,
+                        timelineHourLabels = calendarRenderState.timelineHourLabels,
                     )
                 }
 
                 CalendarViewType.DAY -> {
-                    val calendarDaysByDay by calendarDaysByDayFlow.collectAsState()
                     DayViewContent(
                         todayMillis = todayMillis,
                         todayYear = todayYear,
@@ -628,12 +624,12 @@ private fun CalendarContent(
                         todayDay = todayDay,
                         pagerState = dayViewPagerState,
                         pagerCentre = DAY_PAGER_CENTRE,
-                        calendarDaysByDay = calendarDaysByDay,
+                        calendarDaysByDay = calendarRenderState.calendarDaysByDay,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
                         onTaskClick = onTaskClick,
                         onToggleComplete = onToggleComplete,
-                        timelineHourLabels = timelineHourLabels,
+                        timelineHourLabels = calendarRenderState.timelineHourLabels,
                     )
                 }
             }
@@ -697,7 +693,7 @@ private fun CalendarContent(
                         ),
                     )
                     yearViewMonth = activeViewDate.month
-                    val targetPage = (YEAR_PAGER_CENTRE + (activeViewDate.year - todayYear))
+                    val targetPage = pagerAnchor.yearPageFor(activeViewDate.year)
                         .coerceIn(0, yearPagerState.pageCount - 1)
                     scope.launch { yearPagerState.scrollToPage(targetPage) }
                 }

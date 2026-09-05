@@ -40,6 +40,10 @@ class TaskSyncAdapter(
     ) = dao.updatePbId(localId, pbId)
 
     override suspend fun markUnsynced(localId: String) = dao.markUnsynced(localId)
+    override suspend fun shouldHardDeleteLocalNeverSynced(entity: Task): Boolean =
+        attachmentDao?.hasRemoteIdentityForTask(entity.id) != true &&
+            tagDao?.hasRemoteIdentityTaskTag(entity.id) != true
+
     override suspend fun hardDeleteLocalNeverSynced(entity: Task) {
         if (attachmentDao?.hasRemoteIdentityForTask(entity.id) == true ||
             tagDao?.hasRemoteIdentityTaskTag(entity.id) == true) return

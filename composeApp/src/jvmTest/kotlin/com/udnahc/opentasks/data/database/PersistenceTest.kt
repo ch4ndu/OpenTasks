@@ -25,6 +25,8 @@ import com.udnahc.opentasks.data.model.AppSettings
 import com.udnahc.opentasks.data.model.ATTACHMENT_OWNER_TASK
 import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.model.TaskStatus
+import com.udnahc.opentasks.data.dao.AttachmentDownloadInstallBasis
+import com.udnahc.opentasks.data.dao.AttachmentDownloadInstallResult
 import com.udnahc.opentasks.data.repository.AttachmentRepositoryImpl
 import com.udnahc.opentasks.data.repository.AppSettingsRepositoryImpl
 import com.udnahc.opentasks.data.repository.CategoryRepositoryImpl
@@ -46,6 +48,7 @@ import com.udnahc.opentasks.data.sync.SyncSettingsKeys
 import com.udnahc.opentasks.data.sync.SyncWriterTransactionRunner
 import com.udnahc.opentasks.data.sync.adapters.AttachmentFileDownloadException
 import com.udnahc.opentasks.data.sync.adapters.AttachmentSyncAdapter
+import com.udnahc.opentasks.data.sync.adapters.TaskSyncAdapter
 import com.udnahc.opentasks.data.sync.records.AttachmentRecord
 import com.udnahc.opentasks.data.sync.records.toAttachment
 import com.udnahc.opentasks.data.settings.RoomAccountStateStore
@@ -668,6 +671,35 @@ class PersistenceTest {
     }
 
     @Test
+    fun neverSyncedTaskTombstoneRetainsAChildWithRemoteIdentity() = runTest {
+        val task = testTask(
+            id = "protected-task",
+            isDeleted = true,
+            isSynced = false,
+            pbId = null,
+        )
+        val attachment = testAttachment(
+            id = "remote-attachment",
+            ownerId = task.id,
+            pbId = "remote-attachment-id",
+        )
+        database.taskDao().insert(task)
+        database.attachmentDao().insert(attachment)
+        val adapter = TaskSyncAdapter(
+            database.taskDao(),
+            database.attachmentDao(),
+            database.tagDao(),
+        )
+
+        assertFalse(adapter.shouldHardDeleteLocalNeverSynced(task))
+
+        adapter.hardDeleteLocalNeverSynced(task)
+
+        assertEquals(task, database.taskDao().findTaskByIdAnyState(task.id))
+        assertEquals(attachment, database.attachmentDao().findByIdAnyState(attachment.id))
+    }
+
+    @Test
     fun observingOneSettingDoesNotReemitForAnUnrelatedSettingWrite() = runTest {
         val repository = AppSettingsRepositoryImpl(database.appSettingsDao())
 
@@ -760,6 +792,34 @@ class PersistenceTest {
             assertEquals(AttachmentSyncState.FAILED, summary.worstSyncState)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun equalTimestampMissingFileInstallRejectsADifferentRemoteRecordIdentity() = runTest {
+        val local = testAttachment(
+            id = "identity-attachment",
+            localPath = "/tmp/identity-local.jpg",
+            thumbnailPath = "/tmp/identity-local-thumb.jpg",
+            remoteFileName = "identity.jpg",
+            pbId = "captured-record-id",
+            syncState = AttachmentSyncState.SYNCED,
+            isSynced = true,
+            updatedAt = 200L,
+        )
+        database.attachmentDao().insert(local)
+        val remote = local.copy(
+            localPath = "/tmp/identity-remote.jpg",
+            thumbnailPath = "/tmp/identity-remote-thumb.jpg",
+            pbId = "different-record-id",
+        )
+
+        val result = database.attachmentDao().installDownloadedRemoteIfNewer(
+            remote = remote,
+            basis = AttachmentDownloadInstallBasis(local, allowsEqualTimestampRepair = true),
+        )
+
+        assertEquals(AttachmentDownloadInstallResult.KeptLocal, result)
+        assertEquals(local, database.attachmentDao().findByIdAnyState(local.id))
     }
 
     @Test

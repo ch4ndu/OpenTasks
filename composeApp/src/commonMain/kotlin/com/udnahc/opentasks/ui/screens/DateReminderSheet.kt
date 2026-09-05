@@ -42,6 +42,9 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
 import kotlinx.coroutines.launch
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.all_day
 import opentasks.composeapp.generated.resources.clear_reminder
@@ -67,8 +70,6 @@ import opentasks.composeapp.generated.resources.today
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import kotlinx.datetime.LocalDate
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DateReminderSheetShell(
@@ -176,6 +177,7 @@ internal fun DateReminderBottomSheet(
     initialDurationReminders: String = "",
     initialEndHour: Int = -1,
     initialEndMinute: Int = 0,
+    initialDurationDaySpan: Int = 0,
     initialIsAllDay: Boolean = false,
     initialTab: Int = 0,
     onDaySelected: (day: Int, month: Int, year: Int) -> Unit,
@@ -269,6 +271,7 @@ internal fun DateReminderBottomSheet(
                     startMinute = durStartMinute,
                     endHour = durEndHour,
                     endMinute = durEndMinute,
+                    daySpan = initialDurationDaySpan,
                     isAllDay = durAllDay,
                     selectedReminders = activeReminders,
                     selectedRecurrence = durRecurrence,
@@ -468,6 +471,7 @@ private fun DurationTabContent(
     startMinute: Int,
     endHour: Int,
     endMinute: Int,
+    daySpan: Int,
     isAllDay: Boolean,
     selectedReminders: Set<ReminderOption>,
     selectedRecurrence: RecurrenceType,
@@ -480,10 +484,21 @@ private fun DurationTabContent(
 ) {
     val isToday = selectedDay == currentDate.dayOfMonth &&
             selectedMonth == currentDate.monthNumber && selectedYear == currentDate.year
-    val dayOfWeek = dayOfWeekName(dayOfWeekIndex(selectedYear, selectedMonth, 1), selectedDay)
-    val dateLabel = "$dayOfWeek, ${monthNameShort(selectedMonth)} $selectedDay"
+    val selectedDate = LocalDate(selectedYear, selectedMonth, selectedDay)
+    val endDate = selectedDate.plus(daySpan, DateTimeUnit.DAY)
+    val dateLabel = if (daySpan == 0) {
+        durationDateLabel(selectedDate)
+    } else {
+        "${durationDateLabel(selectedDate)} – ${durationDateLabel(endDate)}"
+    }
     val timeLabel = "${formatTime(startHour, startMinute)} - ${formatTime(endHour, endMinute)}"
-    val durationMinutes = (endHour * 60 + endMinute) - (startHour * 60 + startMinute)
+    val durationMinutes = durationMinutesForCivilSpan(
+        daySpan = daySpan,
+        startHour = startHour,
+        startMinute = startMinute,
+        endHour = endHour,
+        endMinute = endMinute,
+    )
     val durationLabel = if (durationMinutes >= 60) {
         val h = durationMinutes / 60
         val m = durationMinutes % 60
@@ -644,6 +659,12 @@ private fun DurationTabContent(
             onClick = onShowRepeatDialog,
         )
     }
+}
+
+@Composable
+private fun durationDateLabel(date: LocalDate): String {
+    val dayOfWeek = dayOfWeekName(dayOfWeekIndex(date.year, date.monthNumber, 1), date.dayOfMonth)
+    return "$dayOfWeek, ${monthNameShort(date.monthNumber)} ${date.dayOfMonth}"
 }
 
 @Composable

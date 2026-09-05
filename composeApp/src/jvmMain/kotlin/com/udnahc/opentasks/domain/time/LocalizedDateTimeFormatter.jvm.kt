@@ -12,6 +12,9 @@ actual class LocalizedDateTimeFormatter actual constructor() : DateTimeTextForma
     private val locale: Locale
         get() = Locale.getDefault()
 
+    override val formattingContextKey: String
+        get() = locale.toLanguageTag()
+
     override fun formatShortDate(localMillis: Long): String =
         formatDateWithoutYear(localMillis, FormatStyle.MEDIUM)
 

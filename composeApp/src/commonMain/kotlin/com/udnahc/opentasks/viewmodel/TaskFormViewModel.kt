@@ -216,6 +216,7 @@ class TaskFormViewModel(
                     attendees = formData.attendees,
                     durationReminders = formData.durationReminders,
                     dateReminders = formData.dateReminders,
+                    status = formData.status,
                 )
                 val task = committed.value
                 val imageResult = savePendingImages(task.id)

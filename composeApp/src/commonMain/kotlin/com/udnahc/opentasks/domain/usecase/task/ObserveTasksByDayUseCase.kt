@@ -13,6 +13,5 @@ class ObserveTasksByDayUseCase(private val repository: TaskRepository) {
         repository.getAllTasks().map { list ->
             list.mapNotNull { task -> task.deadline?.let { dl -> dayKey(dl) to task } }
                 .groupBy({ it.first }, { it.second })
-                .mapValues { (_, tasks) -> sortCalendarTasksForDay(tasks) }
         }.flowOn(Dispatchers.Default)
 }

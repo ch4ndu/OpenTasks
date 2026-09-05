@@ -3,8 +3,13 @@ package com.udnahc.opentasks.viewmodel
 import androidx.lifecycle.ViewModelStore
 import com.udnahc.opentasks.SharedTaskPayload
 import com.udnahc.opentasks.claimSharedIcsPayload
+import com.udnahc.opentasks.claimSharedIcsPayloadForReview
 import com.udnahc.opentasks.clearSharedTaskPayload
+import com.udnahc.opentasks.completeSharedTaskReview
+import com.udnahc.opentasks.deactivateSharedTaskIntake
 import com.udnahc.opentasks.publishSharedTaskPayload
+import com.udnahc.opentasks.sharedTaskIntakeStatus
+import com.udnahc.opentasks.updateSharedTaskIntakeReadiness
 import com.udnahc.opentasks.data.auth.AccountSessionFreshness
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.AccountBoundaryGuard
@@ -124,6 +129,93 @@ class AppViewModelTest : MainDispatcherRule() {
         assertEquals(2, taskRepository.inserted.size)
         assertTrue(viewModel.consumeSharedIcsImportResult(second))
         assertNull(viewModel.sharedIcsImportResult.value)
+    }
+
+    @Test
+    fun sharedIcsReviewStaysBusyThroughConfirmationAndTerminalResult() = runTest(dispatcher) {
+        val payloadId = 90_201L
+        val taskRepository = FakeTaskRepository()
+        val viewModel = fixture(taskRepository).viewModel
+        try {
+            val claimed = claimIcsForReview(payloadId, "review-result")
+            assertTrue(viewModel.requestSharedIcsImport(claimed))
+            assertTrue(viewModel.isSharedIcsIntakeBusy.value)
+            assertEquals(payloadId, sharedTaskIntakeStatus.value.activeReviewId)
+
+            assertTrue(viewModel.confirmSharedIcsImport(payloadId))
+            advanceUntilIdle()
+            val result = assertIs<SharedIcsImportResult.Success>(viewModel.sharedIcsImportResult.value)
+            assertTrue(viewModel.isSharedIcsIntakeBusy.value)
+            assertEquals(payloadId, sharedTaskIntakeStatus.value.activeReviewId)
+
+            assertTrue(viewModel.consumeSharedIcsImportResult(result))
+            assertFalse(viewModel.isSharedIcsIntakeBusy.value)
+            assertNull(sharedTaskIntakeStatus.value.activeReviewId)
+        } finally {
+            completeSharedTaskReview(payloadId)
+            clearSharedTaskPayload(payloadId)
+            deactivateSharedTaskIntake("shared-ics-account", 1L)
+        }
+    }
+
+    @Test
+    fun dismissingSharedIcsConfirmationReleasesItsReview() = runTest(dispatcher) {
+        val payloadId = 90_202L
+        val viewModel = fixture(FakeTaskRepository()).viewModel
+        try {
+            assertTrue(viewModel.requestSharedIcsImport(claimIcsForReview(payloadId, "dismiss")))
+            assertEquals(payloadId, viewModel.sharedIcsImportConfirmation.value)
+
+            assertTrue(viewModel.dismissSharedIcsImport(payloadId))
+            assertFalse(viewModel.isSharedIcsIntakeBusy.value)
+            assertNull(sharedTaskIntakeStatus.value.activeReviewId)
+        } finally {
+            completeSharedTaskReview(payloadId)
+            clearSharedTaskPayload(payloadId)
+            deactivateSharedTaskIntake("shared-ics-account", 1L)
+        }
+    }
+
+    @Test
+    fun clearingViewModelReleasesAClaimedConfirmationReview() = runTest(dispatcher) {
+        val payloadId = 90_204L
+        val viewModel = fixture(FakeTaskRepository()).viewModel
+        var store: ViewModelStore? = null
+        try {
+            assertTrue(viewModel.requestSharedIcsImport(claimIcsForReview(payloadId, "clear-review")))
+            store = ViewModelStore().also { it.put("shared-review", viewModel) }
+
+            store.clear()
+
+            assertFalse(viewModel.isSharedIcsIntakeBusy.value)
+            assertNull(sharedTaskIntakeStatus.value.activeReviewId)
+        } finally {
+            store?.clear()
+            completeSharedTaskReview(payloadId)
+            clearSharedTaskPayload(payloadId)
+            deactivateSharedTaskIntake("shared-ics-account", 1L)
+        }
+    }
+
+    @Test
+    fun cancelledSharedIcsImportReleasesItsReviewWithoutFailure() = runTest(dispatcher) {
+        val payloadId = 90_203L
+        val taskRepository = FakeTaskRepository().also {
+            it.insertError = CancellationException("cancel shared import")
+        }
+        val viewModel = fixture(taskRepository).viewModel
+        try {
+            assertTrue(viewModel.importSharedIcs(claimIcsForReview(payloadId, "cancel-review")))
+            advanceUntilIdle()
+
+            assertNull(viewModel.sharedIcsImportResult.value)
+            assertFalse(viewModel.isSharedIcsIntakeBusy.value)
+            assertNull(sharedTaskIntakeStatus.value.activeReviewId)
+        } finally {
+            completeSharedTaskReview(payloadId)
+            clearSharedTaskPayload(payloadId)
+            deactivateSharedTaskIntake("shared-ics-account", 1L)
+        }
     }
 
     @Test
@@ -264,6 +356,23 @@ class AppViewModelTest : MainDispatcherRule() {
         ),
         freshness = AccountSessionFreshness.ONLINE,
     )
+
+    private fun claimIcsForReview(payloadId: Long, uid: String): SharedTaskPayload {
+        updateSharedTaskIntakeReadiness(
+            accountId = "shared-ics-account",
+            boundaryEpoch = 1L,
+            isMounted = true,
+            isUiBusy = false,
+        )
+        publishSharedTaskPayload(payloadId, icsContent = validIcs(uid))
+        return assertNotNull(
+            claimSharedIcsPayloadForReview(
+                payloadId,
+                accountId = "shared-ics-account",
+                boundaryEpoch = 1L,
+            )
+        )
+    }
 
     private fun importCalendarEventsAction(
         taskRepository: FakeTaskRepository,

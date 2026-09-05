@@ -3,12 +3,28 @@ package com.udnahc.opentasks.domain.time
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
+import platform.Foundation.NSCalendar
+import platform.Foundation.NSLocale
 import platform.Foundation.NSTimeZone
+import platform.Foundation.currentLocale
 import platform.Foundation.dateWithTimeIntervalSince1970
+import platform.Foundation.localeIdentifier
 import platform.Foundation.timeZoneForSecondsFromGMT
 
 @OptIn(ExperimentalForeignApi::class)
 actual class LocalizedDateTimeFormatter actual constructor() : DateTimeTextFormatter {
+    override val formattingContextKey: String
+        get() {
+            val locale = NSLocale.currentLocale
+            val calendar = NSCalendar.currentCalendar
+            val hourCycle = NSDateFormatter().apply {
+                this.locale = locale
+                this.calendar = calendar
+                setLocalizedDateFormatFromTemplate("j")
+            }.dateFormat.orEmpty()
+            return "${locale.localeIdentifier}|${calendar.calendarIdentifier}|$hourCycle"
+        }
+
     override fun formatShortDate(localMillis: Long): String =
         format(localMillis, "MMMd")
 

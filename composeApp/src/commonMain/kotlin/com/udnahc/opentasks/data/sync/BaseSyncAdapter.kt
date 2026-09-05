@@ -184,16 +184,36 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 val entityUpdatedAt = updatedAt(entity)
                 val entityIsDeleted = isDeleted(entity)
 
-                if (entityIsDeleted && entityPbId == null && shouldHardDeleteLocalNeverSynced(entity)) {
-                    val toDelete = getById(entityLocalId)
-                    if (toDelete != null) hardDeleteLocalNeverSynced(toDelete)
-                    continue
+                var pushPbId = entityPbId
+                if (entityIsDeleted && entityPbId == null) {
+                    when (val lookup = lookupRemoteByLocalIdForTombstone(pass, entityLocalId)) {
+                        is TombstoneRemoteLookup.Found -> {
+                            if (!adoptRemoteIdentityForTombstoneIfUnchanged(
+                                    pass,
+                                    entityLocalId,
+                                    entityUpdatedAt,
+                                    lookup.remoteId,
+                                )
+                            ) {
+                                continue
+                            }
+                            pushPbId = lookup.remoteId
+                        }
+                        TombstoneRemoteLookup.Absent -> {
+                            when (hardDeleteLocalNeverSyncedIfUnchanged(pass, entity)) {
+                                HardDeleteDecision.Deleted,
+                                HardDeleteDecision.Changed,
+                                -> continue
+                                HardDeleteDecision.Protected -> Unit
+                            }
+                        }
+                    }
                 }
 
                 val body = stripId(toJsonBody(entity))
 
-                if (entityPbId != null) {
-                    val result = updateByPbIdOrRecover(pass, entityLocalId, entityPbId, body)
+                if (pushPbId != null) {
+                    val result = updateByPbIdOrRecover(pass, entityLocalId, pushPbId, body)
                     if (result == PushResolution.Pushed) {
                         markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
                     } else if (result == PushResolution.Failed) {
@@ -218,6 +238,94 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         if (failures.isNotEmpty()) {
             throw SyncAdapterException("Failed to push $collectionName", failures.first())
         }
+    }
+
+    private suspend fun lookupRemoteByLocalIdForTombstone(
+        pass: SyncPassContext,
+        localId: String,
+    ): TombstoneRemoteLookup {
+        if (localId.isBlank()) {
+            throw SyncAdapterException("Cannot recover a $collectionName tombstone with a blank local id")
+        }
+        if (allowsTestOnlyLegacySdkWrites()) {
+            return findRecordByLocalId(pass.client, localId)?.let { record ->
+                TombstoneRemoteLookup.Found(validatedRemoteId(record, localId))
+            } ?: TombstoneRemoteLookup.Absent
+        }
+
+        val response = requirePassGateway(pass).findByLocalId(collectionName, localId)
+        if (response.status.value == 401) throw SyncAuthenticationRejectedException()
+        if (!response.isSuccess) {
+            throw SyncAdapterException(
+                "Unable to look up the $collectionName tombstone by local id (HTTP ${response.status.value})",
+            )
+        }
+        val json = response.body ?: return TombstoneRemoteLookup.Absent
+        val record = runCatching { recordFromJson(json) }.getOrElse { error ->
+            throw SyncAdapterException("Unable to decode the recovered $collectionName record", error)
+        }
+        return TombstoneRemoteLookup.Found(validatedRemoteId(record, localId))
+    }
+
+    private fun validatedRemoteId(record: Record, expectedLocalId: String): String {
+        if (recordLocalId(record) != expectedLocalId) {
+            throw SyncAdapterException("Recovered $collectionName record has a mismatched local id")
+        }
+        return record.id?.trim()?.takeIf(String::isNotBlank)
+            ?: throw SyncAdapterException("Recovered $collectionName record has no remote id")
+    }
+
+    private suspend fun adoptRemoteIdentityForTombstoneIfUnchanged(
+        pass: SyncPassContext,
+        localId: String,
+        updatedAt: Long,
+        remoteId: String,
+    ): Boolean {
+        var adopted = false
+        pass.runWriterTransaction {
+            val current = getById(localId)
+            if (current == null ||
+                !isDeleted(current) ||
+                isSynced(current) ||
+                pbId(current) != null ||
+                updatedAt(current) != updatedAt
+            ) {
+                return@runWriterTransaction
+            }
+            updatePbId(localId, remoteId)
+            adopted = getById(localId)?.let {
+                pbId(it) == remoteId &&
+                    isDeleted(it) &&
+                    !isSynced(it) &&
+                    updatedAt(it) == updatedAt
+            } == true
+        }
+        return adopted
+    }
+
+    private suspend fun hardDeleteLocalNeverSyncedIfUnchanged(
+        pass: SyncPassContext,
+        entity: Entity,
+    ): HardDeleteDecision {
+        val expectedLocalId = localId(entity)
+        val expectedUpdatedAt = updatedAt(entity)
+        var decision = HardDeleteDecision.Changed
+        pass.runWriterTransaction {
+            val current = getById(expectedLocalId)
+            when {
+                current == null ||
+                    !isDeleted(current) ||
+                    isSynced(current) ||
+                    pbId(current) != null ||
+                    updatedAt(current) != expectedUpdatedAt -> Unit
+                !shouldHardDeleteLocalNeverSynced(current) -> decision = HardDeleteDecision.Protected
+                else -> {
+                    hardDeleteLocalNeverSynced(current)
+                    if (getById(expectedLocalId) == null) decision = HardDeleteDecision.Deleted
+                }
+            }
+        }
+        return decision
     }
 
     /**
@@ -787,6 +895,13 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             log.e { "Failed to save the remote id for a $collectionName record" }
         }
     }
+
+    private sealed interface TombstoneRemoteLookup {
+        data object Absent : TombstoneRemoteLookup
+        data class Found(val remoteId: String) : TombstoneRemoteLookup
+    }
+
+    private enum class HardDeleteDecision { Deleted, Protected, Changed }
 
     private enum class PushResolution { Pushed, RemoteWon, Failed }
 

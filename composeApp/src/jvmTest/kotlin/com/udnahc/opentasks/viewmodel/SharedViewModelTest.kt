@@ -171,6 +171,7 @@ class SharedViewModelTest : MainDispatcherRule() {
             saveCalendarListDisplayModePreference = SaveCalendarListDisplayModePreferenceAction(settingsRepository),
             localDaySignal = LocalDaySignal(),
             ioDispatcher = dispatcher,
+            projectionDispatcher = dispatcher,
         )
 
         viewModel.tasksByDay.test {
@@ -219,6 +220,7 @@ class SharedViewModelTest : MainDispatcherRule() {
                 SaveCalendarListDisplayModePreferenceAction(settingsRepository),
             localDaySignal = LocalDaySignal(),
             ioDispatcher = dispatcher,
+            projectionDispatcher = dispatcher,
         )
         val unchangedKey = dayKey(unchanged.deadline ?: dayStart)
         val changedKey = dayKey(changed.deadline ?: dayStart)
@@ -273,6 +275,7 @@ class SharedViewModelTest : MainDispatcherRule() {
                 SaveCalendarListDisplayModePreferenceAction(settingsRepository),
             localDaySignal = LocalDaySignal(),
             ioDispatcher = dispatcher,
+            projectionDispatcher = dispatcher,
         )
         val firstKeys = setOf(dayKey(firstDay), dayKey(secondDay))
 
@@ -908,6 +911,7 @@ class SharedViewModelTest : MainDispatcherRule() {
                 SaveCalendarListDisplayModePreferenceAction(settingsRepository),
             localDaySignal = localDaySignal,
             ioDispatcher = dispatcher,
+            projectionDispatcher = dispatcher,
         )
         val mayFourth = dayKey(startOfDayLocalMillis(2026, 5, 4))
         val mayFifth = dayKey(startOfDayLocalMillis(2026, 5, 5))

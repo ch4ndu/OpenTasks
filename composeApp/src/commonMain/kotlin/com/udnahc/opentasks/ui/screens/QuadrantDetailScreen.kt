@@ -79,10 +79,12 @@ fun QuadrantDetailScreen(
     onTaskClick: (Task) -> Unit,
     onCreateTask: (TaskPriority) -> Unit,
     onTaskMutationFailure: () -> Unit = {},
+    onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
     LaunchedEffect(priority) { viewModel.selectPriority(priority) }
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
+    ModalBusyEffect(taskPendingSeriesChoice != null, onModalBusyChanged)
 
     val density = LocalDensity.current
     val statusBarHeight = with(density) {

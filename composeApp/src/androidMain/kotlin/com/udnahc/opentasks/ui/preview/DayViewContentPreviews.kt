@@ -6,6 +6,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.udnahc.opentasks.domain.usecase.task.calendarTimelineHourLabels
 import com.udnahc.opentasks.domain.usecase.task.projectCalendarDay
 import com.udnahc.opentasks.ui.screens.calendar.DayViewContent
 import com.udnahc.opentasks.ui.screens.calendar.DayViewStripItem
@@ -49,6 +50,7 @@ private fun DayViewContentPreview() {
             navBarHeight = 0.dp,
             onTaskClick = {},
             onToggleComplete = {},
+            timelineHourLabels = calendarTimelineHourLabels(),
         )
     }
 }

@@ -28,8 +28,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -62,6 +65,18 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
+internal fun ModalBusyEffect(
+    isBusy: Boolean,
+    onModalBusyChanged: (Boolean) -> Unit,
+) {
+    val currentCallback by rememberUpdatedState(onModalBusyChanged)
+    LaunchedEffect(isBusy) { currentCallback(isBusy) }
+    DisposableEffect(Unit) {
+        onDispose { currentCallback(false) }
+    }
+}
+
+@Composable
 fun EisenhowerMatrixScreen(
     viewModel: MatrixViewModel,
     onTaskClick: (Task) -> Unit,
@@ -71,11 +86,13 @@ fun EisenhowerMatrixScreen(
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
     onTaskMutationFailure: () -> Unit = {},
+    onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
     val priorityProjections by viewModel.priorityProjections.collectAsState()
     val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
     val taskDueTextById by viewModel.taskDueTextById.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
+    ModalBusyEffect(taskPendingSeriesChoice != null, onModalBusyChanged)
 
     EisenhowerMatrixContent(
         priorityProjections = priorityProjections,

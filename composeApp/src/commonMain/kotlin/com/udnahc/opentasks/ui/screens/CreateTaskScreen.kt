@@ -57,11 +57,6 @@ import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
 import com.udnahc.opentasks.ExternalLaunchResult
 import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
-import com.udnahc.opentasks.data.extensions.extractDay
-import com.udnahc.opentasks.data.extensions.extractHour
-import com.udnahc.opentasks.data.extensions.extractMinute
-import com.udnahc.opentasks.data.extensions.extractMonth
-import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.attachment.PickedImage
 import com.udnahc.opentasks.data.model.Attachment
 import com.udnahc.opentasks.data.model.AppConstants
@@ -85,6 +80,7 @@ import com.udnahc.opentasks.ui.util.rememberOpenInMapsAction
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.all_day
 import opentasks.composeapp.generated.resources.cancel
+import opentasks.composeapp.generated.resources.clear_date
 import opentasks.composeapp.generated.resources.date_and_reminder
 import opentasks.composeapp.generated.resources.delete
 import opentasks.composeapp.generated.resources.discard_pending_images_message
@@ -96,6 +92,7 @@ import opentasks.composeapp.generated.resources.description_hint
 import opentasks.composeapp.generated.resources.done
 import opentasks.composeapp.generated.resources.ic_alarm
 import opentasks.composeapp.generated.resources.ic_check
+import opentasks.composeapp.generated.resources.ic_close
 import opentasks.composeapp.generated.resources.ic_delete
 import opentasks.composeapp.generated.resources.ic_flag
 import opentasks.composeapp.generated.resources.ic_list
@@ -108,6 +105,7 @@ import opentasks.composeapp.generated.resources.priority
 import opentasks.composeapp.generated.resources.ok
 import opentasks.composeapp.generated.resources.select
 import opentasks.composeapp.generated.resources.subtasks
+import opentasks.composeapp.generated.resources.task_date_range_invalid
 import opentasks.composeapp.generated.resources.title_hint
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -127,6 +125,11 @@ private fun <T : Enum<T>> enumStateSaver(
 private val reminderStateSaver: Saver<MutableState<Set<ReminderOption>>, String> = Saver(
     save = { state -> state.value.toRemindersString() },
     restore = { serialized -> mutableStateOf(serialized.toReminderSet()) },
+)
+
+private val taskEditorDateStateSaver = listSaver<MutableState<TaskEditorDateState>, Long>(
+    save = { state -> state.value.toSaveableValues() },
+    restore = { values -> taskEditorDateStateFromSaveableValues(values)?.let(::mutableStateOf) },
 )
 
 private val subtaskListSaver = listSaver<SnapshotStateList<SubtaskItem>, Any>(
@@ -268,6 +271,13 @@ private fun CreateTaskContent(
     val seededFormData = retainedFormData ?: editTask?.toTaskFormData()
     val initialPriorityValue = seededFormData?.priority ?: initialPriority
     val initialRecurrenceValue = seededFormData?.recurrence ?: RecurrenceType.NONE
+    val initialStatusValue = seededFormData?.status ?: TaskStatus.TODO
+    val completionRestoreStatus by rememberSaveable(
+        stateKey,
+        saver = enumStateSaver(TaskStatus.entries, TaskStatus.TODO),
+    ) {
+        mutableStateOf(taskEditorCompletionRestoreStatus(initialStatusValue))
+    }
     val initialContent = seededFormData?.content ?: initialDescription
     var title by rememberSaveable(stateKey) { mutableStateOf(seededFormData?.title ?: initialTitle) }
     var description by rememberSaveable(stateKey) { mutableStateOf(initialContent) }
@@ -277,8 +287,11 @@ private fun CreateTaskContent(
     ) {
         mutableStateOf(initialPriorityValue)
     }
-    var isCompleted by rememberSaveable(stateKey) {
-        mutableStateOf(seededFormData?.status == TaskStatus.DONE)
+    var status by rememberSaveable(
+        stateKey,
+        saver = enumStateSaver(TaskStatus.entries, initialStatusValue),
+    ) {
+        mutableStateOf(initialStatusValue)
     }
     var selectedCategoryId by rememberSaveable(stateKey) {
         mutableStateOf(
@@ -365,40 +378,15 @@ private fun CreateTaskContent(
 
     // Date & Reminder state
     var showDateSheet by remember { mutableStateOf(false) }
-    var selectedDay by rememberSaveable(stateKey) {
-        mutableIntStateOf(seededFormData?.deadline?.let {
-            extractDay(
-                it
-            )
-        } ?: initialDay)
-    }
-    var selectedMonth by rememberSaveable(stateKey) {
-        mutableIntStateOf(seededFormData?.deadline?.let {
-            extractMonth(
-                it
-            )
-        } ?: initialMonth)
-    }
-    var selectedYear by rememberSaveable(stateKey) {
-        mutableIntStateOf(seededFormData?.deadline?.let {
-            extractYear(
-                it
-            )
-        } ?: initialYear)
-    }
-    var selectedHour by rememberSaveable(stateKey) {
-        mutableIntStateOf(seededFormData?.deadline?.let {
-            extractHour(
-                it
-            )
-        } ?: 8)
-    }
-    var selectedMinute by rememberSaveable(stateKey) {
-        mutableIntStateOf(seededFormData?.deadline?.let {
-            extractMinute(
-                it
-            )
-        } ?: 0)
+    var dateState by rememberSaveable(stateKey, saver = taskEditorDateStateSaver) {
+        mutableStateOf(
+            initialTaskEditorDateState(
+                formData = seededFormData,
+                initialDay = initialDay,
+                initialMonth = initialMonth,
+                initialYear = initialYear,
+            ),
+        )
     }
     var selectedReminders by rememberSaveable(stateKey, saver = reminderStateSaver) {
         val initial = if (seededFormData?.durationReminders?.isNotBlank() == true) {
@@ -420,12 +408,6 @@ private fun CreateTaskContent(
             seededFormData?.durationReminders ?: ""
         )
     }
-    var endHour by rememberSaveable(stateKey) {
-        mutableIntStateOf(seededFormData?.endDeadline?.let { extractHour(it) } ?: -1)
-    }
-    var endMinute by rememberSaveable(stateKey) {
-        mutableIntStateOf(seededFormData?.endDeadline?.let { extractMinute(it) } ?: 0)
-    }
     var isAllDay by rememberSaveable(stateKey) {
         mutableStateOf(seededFormData?.isAllDay ?: false)
     }
@@ -446,39 +428,20 @@ private fun CreateTaskContent(
 
     fun saveTask() {
         if (!isSaving && title.isNotBlank()) {
-            val deadlineMs: Long? =
-                if (selectedYear > 0 && selectedMonth > 0 && selectedDay > 0) {
-                    computeDeadlineMillis(
-                        selectedYear,
-                        selectedMonth,
-                        selectedDay,
-                        selectedHour,
-                        selectedMinute
-                    )
-                } else null
             if (isSubtaskMode) syncSubtasksToDescription()
             val contentToSave = if (isSubtaskMode) description else richTextState.toHtml()
             val subtasksToSave = if (isSubtaskMode) subtasks.toSubtasksJson() else ""
-            onSave(
-                TaskFormData(
+            val result = buildTaskFormDataForSave(
+                draft = TaskFormData(
                     title = title,
                     content = contentToSave,
                     subtasks = subtasksToSave,
                     priority = priority,
-                    deadline = deadlineMs,
-                    endDeadline = if (endHour >= 0 && selectedDay > 0) computeDeadlineMillis(
-                        selectedYear,
-                        selectedMonth,
-                        selectedDay,
-                        endHour,
-                        endMinute
-                    ) else null,
                     isAllDay = isAllDay,
                     reminderDays = reminderDays,
                     recurrence = selectedRecurrence,
                     categoryId = selectedCategoryId,
                     section = section.takeIf { it.isNotBlank() },
-                    status = if (isCompleted) TaskStatus.DONE else TaskStatus.TODO,
                     location = location,
                     url = taskUrl,
                     organizer = organizer,
@@ -487,8 +450,11 @@ private fun CreateTaskContent(
                     durationReminders = durationReminders,
                     dateReminders = if (durationReminders.isBlank()) selectedReminders.toRemindersString() else "",
                     pendingImages = pendingImages,
-                )
+                ),
+                dateState = dateState,
+                status = status,
             )
+            if (result is TaskFormBuildResult.Ready) onSave(result.formData)
         }
     }
 
@@ -524,21 +490,34 @@ private fun CreateTaskContent(
         ) {
             // Date and Reminder row
             DateReminderRow(
-                selectedDay = selectedDay,
-                selectedMonth = selectedMonth,
-                selectedYear = selectedYear,
-                selectedHour = selectedHour,
-                selectedMinute = selectedMinute,
-                endHour = endHour,
-                endMinute = endMinute,
+                selectedDay = dateState.selectedDay,
+                selectedMonth = dateState.selectedMonth,
+                selectedYear = dateState.selectedYear,
+                selectedHour = dateState.selectedHour,
+                selectedMinute = dateState.selectedMinute,
+                endDay = dateState.endDay,
+                endMonth = dateState.endMonth,
+                endYear = dateState.endYear,
+                endHour = dateState.endHour,
+                endMinute = dateState.endMinute,
                 isAllDay = isAllDay,
                 durationReminders = durationReminders,
                 selectedReminders = selectedReminders,
                 selectedRecurrence = selectedRecurrence,
-                isCompleted = isCompleted,
-                onToggleComplete = { isCompleted = !isCompleted },
+                isCompleted = status == TaskStatus.DONE,
+                onToggleComplete = {
+                    status = toggleTaskEditorCompletionStatus(status, completionRestoreStatus)
+                },
+                onClearDate = { dateState = dateState.clearDate() },
                 onClick = { showDateSheet = true },
             )
+            if (!dateState.isValidRange) {
+                Text(
+                    text = stringResource(Res.string.task_date_range_invalid),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
 
             Spacer(Modifier.height(dimens.spacerLarge))
 
@@ -680,30 +659,27 @@ private fun CreateTaskContent(
     if (showDateSheet) {
         DateReminderBottomSheet(
             currentDate = currentDate,
-            selectedDay = selectedDay,
-            selectedMonth = selectedMonth,
-            selectedYear = selectedYear,
-            selectedHour = selectedHour,
-            selectedMinute = selectedMinute,
+            selectedDay = dateState.selectedDay,
+            selectedMonth = dateState.selectedMonth,
+            selectedYear = dateState.selectedYear,
+            selectedHour = dateState.selectedHour,
+            selectedMinute = dateState.selectedMinute,
             selectedReminders = selectedReminders,
             selectedRecurrence = selectedRecurrence,
             initialDurationReminders = durationReminders,
-            initialEndHour = endHour,
-            initialEndMinute = endMinute,
+            initialEndHour = dateState.endHour,
+            initialEndMinute = dateState.endMinute,
+            initialDurationDaySpan = dateState.civilDaySpan,
             initialIsAllDay = isAllDay,
-            initialTab = if (durationReminders.isNotBlank()) 1 else 0,
+            initialTab = if (dateState.endDeadline != null || durationReminders.isNotBlank()) 1 else 0,
             onDaySelected = { day, month, year ->
-                selectedDay = day
-                selectedMonth = month
-                selectedYear = year
+                dateState = dateState.selectDate(day, month, year)
             },
             onTimeSelected = { hour, minute ->
-                selectedHour = hour
-                selectedMinute = minute
+                dateState = dateState.selectStartTime(hour, minute)
             },
             onEndTimeSelected = { hour, minute ->
-                endHour = hour
-                endMinute = minute
+                dateState = dateState.selectEndTime(hour, minute)
             },
             onAllDayChanged = { isAllDay = it },
             onRemindersSelected = { selectedReminders = it },
@@ -997,6 +973,9 @@ internal fun DateReminderRow(
     selectedYear: Int,
     selectedHour: Int,
     selectedMinute: Int,
+    endDay: Int = 0,
+    endMonth: Int = 0,
+    endYear: Int = 0,
     endHour: Int = -1,
     endMinute: Int = 0,
     isAllDay: Boolean = false,
@@ -1005,6 +984,7 @@ internal fun DateReminderRow(
     selectedRecurrence: RecurrenceType,
     isCompleted: Boolean,
     onToggleComplete: () -> Unit,
+    onClearDate: () -> Unit = {},
     onClick: () -> Unit,
 ) {
     val hasDate = selectedDay > 0 && selectedMonth > 0 && selectedYear > 0
@@ -1073,14 +1053,26 @@ internal fun DateReminderRow(
                 .padding(vertical = dimens.paddingMedium),
         ) {
             // Line 1: Date + Time + reminder icon
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 // Build date string: e.g., "Next Fri, Mar 20, 1:00AM"
                 val fdow = dayOfWeekIndex(selectedYear, selectedMonth, 1)
                 val dowName = dayOfWeekName(fdow, selectedDay)
                 val monthShort = monthNameShort(selectedMonth)
-                val hasDuration = durationReminders.isNotBlank()
+                val hasEndDate = endDay > 0 && endMonth > 0 && endYear > 0
+                val isMultiDay = hasEndDate &&
+                    (endDay != selectedDay || endMonth != selectedMonth || endYear != selectedYear)
+                val hasDuration = endHour >= 0 && (hasEndDate || durationReminders.isNotBlank())
                 val dateText = buildString {
                     append("$dowName, $monthShort $selectedDay")
+                    if (isMultiDay && endYear != selectedYear) append(", $selectedYear")
+                    if (isMultiDay) {
+                        val endDow = dayOfWeekName(dayOfWeekIndex(endYear, endMonth, 1), endDay)
+                        append(" – $endDow, ${monthNameShort(endMonth)} $endDay")
+                        if (endYear != selectedYear) append(", $endYear")
+                    }
                     if (isAllDay) {
                         append(" · ")
                         append(stringResource(Res.string.all_day))
@@ -1096,6 +1088,7 @@ internal fun DateReminderRow(
                 }
                 Text(
                     text = dateText,
+                    modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onBackground,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -1106,6 +1099,17 @@ internal fun DateReminderRow(
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(dimens.iconMedium),
+                    )
+                }
+                IconButton(
+                    onClick = onClearDate,
+                    modifier = Modifier.minimumInteractiveTargetSize(),
+                ) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_close),
+                        contentDescription = stringResource(Res.string.clear_date),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(dimens.iconSmall),
                     )
                 }
             }

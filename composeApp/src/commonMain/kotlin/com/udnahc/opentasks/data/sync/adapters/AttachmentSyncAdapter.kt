@@ -8,6 +8,7 @@ import com.udnahc.opentasks.data.attachment.AttachmentImageDecodeException
 import com.udnahc.opentasks.data.attachment.AttachmentTombstoneFileCleanup
 import com.udnahc.opentasks.data.attachment.StoredAttachmentFile
 import com.udnahc.opentasks.data.dao.AttachmentDao
+import com.udnahc.opentasks.data.dao.AttachmentDownloadInstallBasis
 import com.udnahc.opentasks.data.dao.AttachmentTombstoneMergeResult
 import com.udnahc.opentasks.data.dao.TaskDao
 import com.udnahc.opentasks.data.model.ATTACHMENT_KIND_IMAGE
@@ -150,8 +151,9 @@ open class AttachmentSyncAdapter(
                     continue
                 }
             }
+            val installBasis = captureDownloadInstallBasis(record, local)
             val skipIncoming = try {
-                shouldSkipIncomingRecord(record, local)
+                shouldSkipIncomingRecord(record, local, installBasis)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: SyncDegradedException) {
@@ -179,12 +181,13 @@ open class AttachmentSyncAdapter(
                 upsertRemotePolicyBlock(incoming, local)
                 continue
             }
-            val healthySameFile = local?.let {
-                it.isSynced &&
-                    it.syncState == AttachmentSyncState.SYNCED &&
-                    it.remoteFileName == record.file &&
-                    it.hasCompleteLocalFiles()
-            } == true
+            val healthySameFile = installBasis?.allowsEqualTimestampRepair != true &&
+                local?.let {
+                    it.isSynced &&
+                        it.syncState == AttachmentSyncState.SYNCED &&
+                        it.remoteFileName == record.file &&
+                        it.hasCompleteLocalFiles()
+                } == true
             if (healthySameFile) {
                 upsertRemoteSameFile(incoming)
                 continue
@@ -199,7 +202,7 @@ open class AttachmentSyncAdapter(
                     throw SyncAdapterException("Protected attachment downloads require the owner-scoped gateway")
                 }
                 val stored = fileStorage.storeRemoteImage(record.file, bytes)
-                upsertRemoteDownloadSuccess(incoming, stored, local)
+                upsertRemoteDownloadSuccess(incoming, stored, local, installBasis)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -282,6 +285,7 @@ open class AttachmentSyncAdapter(
         incoming: Attachment,
         stored: StoredAttachmentFile,
         local: Attachment?,
+        basis: AttachmentDownloadInstallBasis? = null,
     ) {
         val replacement = incoming.copy(
             localPath = stored.localPath,
@@ -295,7 +299,10 @@ open class AttachmentSyncAdapter(
         val candidatePaths = replacement.filePaths()
         try {
             leaseRecorder.lease(candidatePaths)
-            dao.installDownloadedRemoteIfNewer(replacement)
+            dao.installDownloadedRemoteIfNewer(
+                replacement,
+                basis ?: local?.let { AttachmentDownloadInstallBasis(it, false) },
+            )
         } catch (error: CancellationException) {
             resolveDownloadInstall(replacement)
             throw error
@@ -312,7 +319,11 @@ open class AttachmentSyncAdapter(
         }
     }
 
-    internal suspend fun shouldSkipIncomingRecord(record: AttachmentRecord, local: Attachment?): Boolean {
+    internal suspend fun shouldSkipIncomingRecord(
+        record: AttachmentRecord,
+        local: Attachment?,
+        installBasis: AttachmentDownloadInstallBasis? = null,
+    ): Boolean {
         if (record.isDeleted && !record.file.isNullOrBlank()) {
             throw SyncDegradedException("Attachment tombstone retained a remote file")
         }
@@ -322,13 +333,35 @@ open class AttachmentSyncAdapter(
             throw SyncDegradedException("Attachment has an equal-timestamp divergent metadata payload")
         }
         if (record.updatedAtUtc > local.updatedAt) return false
-        val localFileMissing = !local.isDeleted &&
-                !record.isDeleted &&
-                !record.file.isNullOrBlank() &&
-                !local.hasCompleteLocalFiles()
+        val localFileMissing = (installBasis ?: captureDownloadInstallBasis(record, local))
+            ?.allowsEqualTimestampRepair == true
         val retryRemoteDownload = local.syncState == AttachmentSyncState.NEEDS_DOWNLOAD ||
             local.isRemoteOriginDownloadFailure()
         return !localFileMissing && !retryRemoteDownload
+    }
+
+    private suspend fun captureDownloadInstallBasis(
+        record: AttachmentRecord,
+        local: Attachment?,
+    ): AttachmentDownloadInstallBasis? {
+        if (local == null ||
+            local.isDeleted ||
+            record.isDeleted ||
+            record.file.isNullOrBlank() ||
+            record.id.isNullOrBlank() ||
+            local.pbId != record.id ||
+            local.updatedAt != record.updatedAtUtc ||
+            local.remoteFileName != record.file ||
+            !equalTimestampMetadataMatches(local, record) ||
+            !local.isSynced ||
+            local.syncState != AttachmentSyncState.SYNCED
+        ) {
+            return null
+        }
+        return AttachmentDownloadInstallBasis(
+            expectedLocal = local,
+            allowsEqualTimestampRepair = !local.hasCompleteLocalFiles(),
+        )
     }
 
     private suspend fun Attachment.hasCompleteLocalFiles(): Boolean =

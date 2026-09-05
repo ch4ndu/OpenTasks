@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,7 +62,13 @@ import com.udnahc.opentasks.data.auth.activeBindingOrNull
 import com.udnahc.opentasks.data.auth.authenticatedAccountOrNull
 import com.udnahc.opentasks.ExternalInputFailure
 import com.udnahc.opentasks.SharedTaskPayloadEvent
-import com.udnahc.opentasks.claimSharedIcsPayload
+import com.udnahc.opentasks.claimSharedIcsPayloadForReview
+import com.udnahc.opentasks.claimSharedTaskPayloadForReview
+import com.udnahc.opentasks.claimSharedTaskRejectionForReview
+import com.udnahc.opentasks.completeSharedTaskReview
+import com.udnahc.opentasks.deactivateSharedTaskIntake
+import com.udnahc.opentasks.sharedTaskIntakeStatus
+import com.udnahc.opentasks.updateSharedTaskIntakeReadiness
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.TaskFormData
@@ -545,6 +552,27 @@ internal class TaskFormBackHandlerRegistry {
     }
 }
 
+internal fun kotlinx.coroutines.CoroutineScope.launchSharedTaskRejectionFeedback(
+    payloadId: Long,
+    showFeedback: suspend () -> Unit,
+) = launch {
+    try {
+        showFeedback()
+    } finally {
+        completeSharedTaskReview(payloadId)
+    }
+}
+
+internal fun childModalBusyRouteAfterChange(
+    currentBusyRoute: NavKey?,
+    activeRoute: NavKey,
+    reportingRoute: NavKey,
+    isBusy: Boolean,
+): NavKey? {
+    if (reportingRoute != activeRoute) return currentBusyRoute
+    return reportingRoute.takeIf { isBusy }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreen(
@@ -572,6 +600,9 @@ private fun MainScreen(
     val replacementPreview by authViewModel.replacementPreview.collectAsState()
     val isRefreshing by appViewModel.isRefreshing.collectAsState()
     val sharedIcsImportConfirmationId by appViewModel.sharedIcsImportConfirmation.collectAsState()
+    val isSharedIcsIntakeBusy by appViewModel.isSharedIcsIntakeBusy.collectAsState()
+    val sharedPayloadEvent by sharedTaskPayload.collectAsState()
+    val sharedIntakeStatus by sharedTaskIntakeStatus.collectAsState()
     val onPullToRefresh = remember(appViewModel, isRemoteSyncEnabled) {
         if (isRemoteSyncEnabled) ({ appViewModel.triggerSync() }) else ({})
     }
@@ -586,6 +617,8 @@ private fun MainScreen(
     var showImportIcs by remember { mutableStateOf(false) }
     var showImportCsv by remember { mutableStateOf(false) }
     var pendingTaskCreation by remember { mutableStateOf<Screen.CreateTask?>(null) }
+    var sharedTaskReviewId by rememberSaveable(binding.boundaryEpoch) { mutableStateOf<Long?>(null) }
+    var childModalBusyRoute by remember(binding.boundaryEpoch) { mutableStateOf<NavKey?>(null) }
     val taskFormBackHandlerRegistry = remember { TaskFormBackHandlerRegistry() }
     val snackbarHostState = remember { SnackbarHostState() }
     val taskMutationSavedWarning = stringResource(Res.string.task_mutation_saved_warning)
@@ -731,6 +764,17 @@ private fun MainScreen(
 
     // Derive selected tab and visibility from the back stack
     val currentScreen = backStack.last()
+    val currentScreenState = rememberUpdatedState(currentScreen)
+    val onChildModalBusyChanged = remember {
+        { route: NavKey, isBusy: Boolean ->
+            childModalBusyRoute = childModalBusyRouteAfterChange(
+                currentBusyRoute = childModalBusyRoute,
+                activeRoute = currentScreenState.value,
+                reportingRoute = route,
+                isBusy = isBusy,
+            )
+        }
+    }
     val selectedTab = remember(currentScreen) {
         when (currentScreen) {
             is Screen.Matrix, is Screen.QuadrantDetail -> 0
@@ -750,44 +794,119 @@ private fun MainScreen(
             && currentScreen !is Screen.CountdownDetail
             && currentScreen !is Screen.EditCountdown
 
+    val isSharedIntakeUiBusy = currentScreen is Screen.CreateTask ||
+        currentScreen is Screen.QuickAddTask ||
+        currentScreen is Screen.EditTask ||
+        currentScreen is Screen.CreateCountdown ||
+        currentScreen is Screen.EditCountdown ||
+        showCreateNote ||
+        editNoteId != null ||
+        showImportCalendar ||
+        showImportIcs ||
+        showImportCsv ||
+        pendingTaskCreation != null ||
+        taskNotificationEvent != null ||
+        accountOperation != null ||
+        replacementPreview != null ||
+        pendingGlobalPostSaveReminderCheck != null ||
+        isSharedIcsIntakeBusy ||
+        childModalBusyRoute == currentScreen
+
+    LaunchedEffect(binding.accountId, binding.boundaryEpoch, isSharedIntakeUiBusy) {
+        updateSharedTaskIntakeReadiness(
+            accountId = binding.accountId,
+            boundaryEpoch = binding.boundaryEpoch,
+            isMounted = true,
+            isUiBusy = isSharedIntakeUiBusy,
+        )
+    }
+
+    DisposableEffect(binding.accountId, binding.boundaryEpoch) {
+        onDispose {
+            deactivateSharedTaskIntake(binding.accountId, binding.boundaryEpoch)
+        }
+    }
+
+    LaunchedEffect(currentScreen, sharedTaskReviewId) {
+        val reviewId = sharedTaskReviewId ?: return@LaunchedEffect
+        if (currentScreen !is Screen.CreateTask) {
+            completeSharedTaskReview(reviewId)
+            sharedTaskReviewId = null
+        }
+    }
+
     val onSettingsClick = remember { { navController.navigate(Screen.Settings) } }
 
-    LaunchedEffect(navController) {
-        sharedTaskPayload.collect { event ->
-            if (event == null) return@collect
-            when (event) {
-                is SharedTaskPayloadEvent.Rejected -> {
-                    try {
-                        val message = when (event.rejection.reason) {
-                            ExternalInputFailure.TOO_LARGE -> getString(Res.string.shared_content_too_large)
-                            ExternalInputFailure.TOO_MANY_ITEMS -> getString(Res.string.shared_content_too_many_items)
-                            else -> getString(Res.string.shared_content_invalid)
-                        }
-                        snackbarHostState.showSnackbar(message)
-                    } finally {
-                        clearSharedTaskPayload(event.id)
+    LaunchedEffect(
+        sharedPayloadEvent?.id,
+        sharedIntakeStatus.revision,
+        isSharedIntakeUiBusy,
+        binding.accountId,
+        binding.boundaryEpoch,
+    ) {
+        val event = sharedPayloadEvent ?: return@LaunchedEffect
+        if (isSharedIntakeUiBusy ||
+            !sharedIntakeStatus.isAppActive ||
+            !sharedIntakeStatus.isMounted ||
+            sharedIntakeStatus.accountId != binding.accountId ||
+            sharedIntakeStatus.boundaryEpoch != binding.boundaryEpoch
+        ) {
+            return@LaunchedEffect
+        }
+        when (event) {
+            is SharedTaskPayloadEvent.Rejected -> {
+                val rejection = claimSharedTaskRejectionForReview(
+                    event.id,
+                    binding.accountId,
+                    binding.boundaryEpoch,
+                ) ?: return@LaunchedEffect
+                snackbarScope.launchSharedTaskRejectionFeedback(event.id) {
+                    val message = when (rejection.reason) {
+                        ExternalInputFailure.TOO_LARGE -> getString(Res.string.shared_content_too_large)
+                        ExternalInputFailure.TOO_MANY_ITEMS -> getString(Res.string.shared_content_too_many_items)
+                        else -> getString(Res.string.shared_content_invalid)
                     }
+                    snackbarHostState.showSnackbar(message)
                 }
+            }
 
-                is SharedTaskPayloadEvent.Accepted -> {
-                    val payload = event.payload
-                    when {
-                        payload.hasIcsContent -> {
-                            claimSharedIcsPayload(payload.id)?.let(appViewModel::requestSharedIcsImport)
+            is SharedTaskPayloadEvent.Accepted -> {
+                val payload = event.payload
+                when {
+                    payload.hasIcsContent -> {
+                        val claimed = claimSharedIcsPayloadForReview(
+                            payload.id,
+                            binding.accountId,
+                            binding.boundaryEpoch,
+                        )
+                        if (claimed != null && !appViewModel.requestSharedIcsImport(claimed)) {
+                            completeSharedTaskReview(claimed.id)
                         }
-
-                        payload.hasTaskContent -> {
-                            navController.navigate(
-                                Screen.CreateTask(
-                                    description = payload.description,
-                                    url = payload.url,
-                                )
-                            )
-                            clearSharedTaskPayload(payload.id)
-                        }
-
-                        else -> clearSharedTaskPayload(payload.id)
                     }
+
+                    payload.hasTaskContent -> {
+                        val claimed = claimSharedTaskPayloadForReview(
+                            payload.id,
+                            binding.accountId,
+                            binding.boundaryEpoch,
+                        )
+                        if (claimed != null) {
+                            try {
+                                navController.navigate(
+                                    Screen.CreateTask(
+                                        description = claimed.description,
+                                        url = claimed.url,
+                                    )
+                                )
+                                sharedTaskReviewId = claimed.id
+                            } catch (error: Exception) {
+                                completeSharedTaskReview(claimed.id)
+                                throw error
+                            }
+                        }
+                    }
+
+                    else -> clearSharedTaskPayload(payload.id)
                 }
             }
         }
@@ -846,6 +965,9 @@ private fun MainScreen(
                         syncEnabled = isRemoteSyncEnabled,
                         onRefresh = onPullToRefresh,
                         onTaskMutationFailure = onTaskMutationFailure,
+                        onModalBusyChanged = { isBusy ->
+                            onChildModalBusyChanged(Screen.Matrix, isBusy)
+                        },
                     )
                 }
 
@@ -863,6 +985,9 @@ private fun MainScreen(
                         syncEnabled = isRemoteSyncEnabled,
                         onRefresh = onPullToRefresh,
                         onTaskMutationFailure = onTaskMutationFailure,
+                        onModalBusyChanged = { isBusy ->
+                            onChildModalBusyChanged(Screen.TaskList, isBusy)
+                        },
                     )
                 }
 
@@ -890,6 +1015,9 @@ private fun MainScreen(
                         syncEnabled = isRemoteSyncEnabled,
                         onRefresh = onPullToRefresh,
                         onTaskMutationFailure = onTaskMutationFailure,
+                        onModalBusyChanged = { isBusy ->
+                            onChildModalBusyChanged(Screen.Calendar, isBusy)
+                        },
                     )
                 }
 
@@ -925,6 +1053,9 @@ private fun MainScreen(
                         onPrepareReplacement = authViewModel::prepareLocalServerReplacement,
                         onConfirmReplacement = authViewModel::confirmLocalServerReplacement,
                         onCancelReplacementPreparation = authViewModel::cancelLocalServerReplacementPreparation,
+                        onModalBusyChanged = { isBusy ->
+                            onChildModalBusyChanged(Screen.Settings, isBusy)
+                        },
                     )
                 }
 
@@ -943,6 +1074,9 @@ private fun MainScreen(
                             pendingTaskCreation = Screen.CreateTask(priorityOrdinal = taskPriority.ordinal)
                         },
                         onTaskMutationFailure = onTaskMutationFailure,
+                        onModalBusyChanged = { isBusy ->
+                            onChildModalBusyChanged(screen, isBusy)
+                        },
                     )
                 }
 
@@ -1297,6 +1431,9 @@ private fun MainScreen(
                                 navController.navigate(Screen.EditCountdown(screen.countdownId))
                             },
                             onDelete = { viewModel.deleteCountdown(state.countdown) },
+                            onModalBusyChanged = { isBusy ->
+                                onChildModalBusyChanged(screen, isBusy)
+                            },
                         )
                     }
                 }

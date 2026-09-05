@@ -167,6 +167,7 @@ fun SettingsScreen(
     onPrepareReplacement: (endpoint: String, email: String, password: String) -> Unit = { _, _, _ -> },
     onConfirmReplacement: () -> Unit = {},
     onCancelReplacementPreparation: () -> Unit = {},
+    onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
     val viewModel: SettingsViewModel = koinViewModel()
     val syncStatus by viewModel.syncStatus.collectAsState()
@@ -251,6 +252,7 @@ fun SettingsScreen(
         onPrepareReplacement = onPrepareReplacement,
         onConfirmReplacement = onConfirmReplacement,
         onCancelReplacementPreparation = onCancelReplacementPreparation,
+        onModalBusyChanged = onModalBusyChanged,
     )
 }
 
@@ -297,6 +299,7 @@ internal fun SettingsContent(
     onPrepareReplacement: (endpoint: String, email: String, password: String) -> Unit = { _, _, _ -> },
     onConfirmReplacement: () -> Unit = {},
     onCancelReplacementPreparation: () -> Unit = {},
+    onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     var showSwitchAccount by remember { mutableStateOf(false) }
@@ -305,6 +308,15 @@ internal fun SettingsContent(
     var showLogoutConfirm by remember { mutableStateOf(false) }
     var showClearLocalDataConfirm by remember { mutableStateOf(false) }
     var showConnectToPocketBase by remember { mutableStateOf(false) }
+    ModalBusyEffect(
+        showSwitchAccount ||
+            showThemeDialog ||
+            showTextSizeDialog ||
+            showLogoutConfirm ||
+            showClearLocalDataConfirm ||
+            showConnectToPocketBase,
+        onModalBusyChanged,
+    )
     val snackbarHostState = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
     val accountControls = accountControlAvailability(currentAccount, isLocalOnly, accountOperation)

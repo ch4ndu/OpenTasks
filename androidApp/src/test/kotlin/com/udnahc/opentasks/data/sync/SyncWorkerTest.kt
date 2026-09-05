@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.data.sync
 
 import androidx.work.NetworkType
+import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.auth.CacheMode
 import com.udnahc.opentasks.data.auth.LOCAL_CACHE_OWNER_ID
@@ -13,15 +14,32 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
 
 class SyncWorkerTest {
+    private val remoteBoundary = AccountBoundary(
+        canonicalEndpoint = "https://tasks.example.com",
+        serverInstanceId = "server",
+        accountId = "account-a",
+        capabilityVersion = 2,
+        boundaryEpoch = 7L,
+    )
 
     @Test
-    fun noStableClientSkipsOnlyNetworkSyncAndStillRunsLocalMaintenance() = runTest {
+    fun localOnlyBoundarySkipsNetworkAndStillRunsLocalMaintenance() = runTest {
         val calls = mutableListOf<String>()
+        val localBoundary = remoteBoundary.copy(
+            canonicalEndpoint = "",
+            serverInstanceId = "",
+            accountId = LOCAL_CACHE_OWNER_ID,
+            capabilityVersion = 0,
+            mode = CacheMode.LOCAL_ONLY,
+        )
 
-        runScheduledSyncMaintenance(
-            syncNetwork = { false },
-            rebuildReminders = { calls += "reminders" },
-            refreshWidgets = { calls += "widgets" },
+        runWorkerMaintenance(
+            boundary = localBoundary,
+            syncNetwork = { calls += "network" },
+            maintenanceSteps = listOf(
+                { calls += "reminders" },
+                { calls += "widgets" },
+            ),
         )
 
         assertEquals(listOf("reminders", "widgets"), calls)
@@ -31,16 +49,22 @@ class SyncWorkerTest {
     fun configuredMaintenanceRunsSyncBeforeLocalMaintenance() = runTest {
         val calls = mutableListOf<String>()
 
-        runScheduledSyncMaintenance(
+        runWorkerMaintenance(
             syncNetwork = {
                 calls += "network"
-                true
             },
-            rebuildReminders = { calls += "reminders" },
-            refreshWidgets = { calls += "widgets" },
+            maintenanceSteps = listOf(
+                { calls += "reminders" },
+                { calls += "task-widget" },
+                { calls += "calendar-widget" },
+                { calls += "week-widget" },
+            ),
         )
 
-        assertEquals(listOf("network", "reminders", "widgets"), calls)
+        assertEquals(
+            listOf("network", "reminders", "task-widget", "calendar-widget", "week-widget"),
+            calls,
+        )
     }
 
     @Test
@@ -51,19 +75,21 @@ class SyncWorkerTest {
         val widgetFailure = IllegalArgumentException("widgets")
 
         val thrown = assertFailsWith<IllegalStateException> {
-            runScheduledSyncMaintenance(
+            runWorkerMaintenance(
                 syncNetwork = {
                     calls += "network"
                     throw networkFailure
                 },
-                rebuildReminders = {
-                    calls += "reminders"
-                    throw reminderFailure
-                },
-                refreshWidgets = {
-                    calls += "widgets"
-                    throw widgetFailure
-                },
+                maintenanceSteps = listOf(
+                    {
+                        calls += "reminders"
+                        throw reminderFailure
+                    },
+                    {
+                        calls += "widgets"
+                        throw widgetFailure
+                    },
+                ),
             )
         }
 
@@ -78,13 +104,15 @@ class SyncWorkerTest {
         val cancellation = CancellationException("cancelled")
 
         val thrown = assertFailsWith<CancellationException> {
-            runScheduledSyncMaintenance(
+            runWorkerMaintenance(
                 syncNetwork = {
                     calls += "network"
                     throw cancellation
                 },
-                rebuildReminders = { calls += "reminders" },
-                refreshWidgets = { calls += "widgets" },
+                maintenanceSteps = listOf(
+                    { calls += "reminders" },
+                    { calls += "widgets" },
+                ),
             )
         }
 
@@ -124,5 +152,18 @@ class SyncWorkerTest {
         assertEquals(NetworkType.NOT_REQUIRED, request.workSpec.constraints.requiredNetworkType)
         assertEquals(LOCAL_CACHE_OWNER_ID, request.workSpec.input.getString(SyncWorker.KEY_ACCOUNT_ID))
         assertEquals(12L, request.workSpec.input.getLong(SyncWorker.KEY_BOUNDARY_EPOCH, 0L))
+    }
+
+    private suspend fun runWorkerMaintenance(
+        boundary: AccountBoundary = remoteBoundary,
+        syncNetwork: suspend (AccountBoundary) -> Unit,
+        maintenanceSteps: List<suspend (AccountBoundary) -> Unit>,
+    ) {
+        runScheduledSyncMaintenance(
+            capturedBoundary = boundary,
+            syncNetwork = syncNetwork,
+            withRevalidatedBoundary = { expected, block -> block(expected) },
+            maintenanceSteps = maintenanceSteps,
+        )
     }
 }
