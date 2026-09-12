@@ -5,6 +5,8 @@ import com.udnahc.opentasks.data.model.Tag
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
 import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import com.udnahc.opentasks.data.sync.PocketBaseFilter
+import com.udnahc.opentasks.data.sync.syncRecordJson
+import com.udnahc.opentasks.data.sync.tagRecordPayloadSchema
 import com.udnahc.opentasks.data.sync.records.TagRecord
 import com.udnahc.opentasks.data.sync.records.toTag
 import com.udnahc.opentasks.data.sync.records.toTagRecord
@@ -18,6 +20,7 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
 
     override val collectionName = "tags"
     override val order = 5
+    override val recordPayloadSchema = tagRecordPayloadSchema
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllTagsOnce()
@@ -43,6 +46,8 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
     }
     override suspend fun upsert(entity: Tag) = dao.upsert(entity)
     override suspend fun mergeRemoteIfNewer(entity: Tag): RemoteMergeResult = dao.mergeRemoteIfNewer(entity)
+    override fun copyForSyncRecovery(entity: Tag, remoteId: String, updatedAt: Long) =
+        entity.copy(pbId = remoteId, updatedAt = updatedAt, isSynced = false)
 
     override fun localId(entity: Tag) = entity.id
     override fun pbId(entity: Tag) = entity.pbId
@@ -57,7 +62,7 @@ class TagSyncAdapter(private val dao: TagDao) : BaseSyncAdapter<Tag, TagRecord>(
     override fun toRecord(entity: Tag) = entity.toTagRecord()
     override fun toEntity(record: TagRecord) = record.toTag()
     override fun recordFromJson(json: JsonObject): TagRecord = gatewayJson.decodeFromJsonElement(json)
-    override fun toJsonBody(entity: Tag) = Json.encodeToString(entity.toTagRecord())
+    override fun toJsonBody(entity: Tag) = syncRecordJson.encodeToString(entity.toTagRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<TagRecord>(collectionName, 200)

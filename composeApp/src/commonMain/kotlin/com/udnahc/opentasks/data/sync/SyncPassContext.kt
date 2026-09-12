@@ -20,6 +20,7 @@ class SyncPassContext internal constructor(
     val client: PocketbaseClient,
     internal val gateway: PocketBaseRecordGateway?,
     private val writerTransactionRunner: SyncWriterTransactionRunner,
+    internal val allowNormalConflictRecovery: Boolean = false,
 ) {
     suspend fun runWriterTransaction(block: suspend () -> Unit) {
         writerTransactionRunner.run(block)
@@ -29,6 +30,19 @@ class SyncPassContext internal constructor(
         runWriterTransaction(block)
     }
 
+    /** Enables normal-pass conflict recovery only after any pending seed path is bypassed. */
+    internal fun withNormalConflictRecovery(): SyncPassContext =
+        if (allowNormalConflictRecovery) {
+            this
+        } else {
+            SyncPassContext(
+                client = client,
+                gateway = gateway,
+                writerTransactionRunner = writerTransactionRunner,
+                allowNormalConflictRecovery = true,
+            )
+        }
+
     internal companion object {
         fun standalone(
             client: PocketbaseClient,
@@ -37,6 +51,7 @@ class SyncPassContext internal constructor(
             client = client,
             gateway = gateway,
             writerTransactionRunner = SyncWriterTransactionRunner { block -> block() },
+            allowNormalConflictRecovery = false,
         )
     }
 }
@@ -46,7 +61,10 @@ class SyncPassContextFactory(
     private val database: AppDatabase? = null,
     private val gatewayFactory: PocketBaseRecordGatewayFactory = PocketBaseRecordGatewayFactory(),
 ) {
-    fun create(client: PocketbaseClient): SyncPassContext {
+    fun create(
+        client: PocketbaseClient,
+        allowNormalConflictRecovery: Boolean = false,
+    ): SyncPassContext {
         val metadata = PocketBaseClientProvider.metadataFor(client)
             ?: throw IllegalStateException("Sync pass requires registered PocketBase client metadata")
         val binding = metadata.binding
@@ -71,6 +89,7 @@ class SyncPassContextFactory(
             client = client,
             gateway = gatewayFactory.create(client, endpoint, binding),
             writerTransactionRunner = runner,
+            allowNormalConflictRecovery = allowNormalConflictRecovery,
         )
     }
 }

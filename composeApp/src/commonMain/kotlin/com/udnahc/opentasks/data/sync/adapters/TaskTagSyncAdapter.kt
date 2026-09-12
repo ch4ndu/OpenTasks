@@ -6,6 +6,8 @@ import com.udnahc.opentasks.data.model.TaskTag
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
 import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import com.udnahc.opentasks.data.sync.PocketBaseFilter
+import com.udnahc.opentasks.data.sync.syncRecordJson
+import com.udnahc.opentasks.data.sync.taskTagRecordPayloadSchema
 import com.udnahc.opentasks.data.sync.records.TaskTagRecord
 import com.udnahc.opentasks.data.sync.records.taskTagLocalId
 import com.udnahc.opentasks.data.sync.records.toTaskTag
@@ -23,6 +25,7 @@ class TaskTagSyncAdapter(
 
     override val collectionName = "task_tags"
     override val order = 20
+    override val recordPayloadSchema = taskTagRecordPayloadSchema
     private var existingTaskIds: Set<String>? = null
     private var existingTagIds: Set<String>? = null
 
@@ -60,6 +63,8 @@ class TaskTagSyncAdapter(
     override suspend fun upsert(entity: TaskTag) = dao.upsertTaskTag(entity)
     override suspend fun mergeRemoteIfNewer(entity: TaskTag): RemoteMergeResult =
         dao.mergeRemoteTaskTagIfNewer(entity)
+    override fun copyForSyncRecovery(entity: TaskTag, remoteId: String, updatedAt: Long) =
+        entity.copy(pbId = remoteId, updatedAt = updatedAt, isSynced = false)
 
     override fun localId(entity: TaskTag) = taskTagLocalId(entity.taskId, entity.tagId)
     override fun pbId(entity: TaskTag) = entity.pbId
@@ -73,8 +78,16 @@ class TaskTagSyncAdapter(
 
     override fun toRecord(entity: TaskTag) = entity.toTaskTagRecord()
     override fun toEntity(record: TaskTagRecord) = record.toTaskTag()
-    override fun recordFromJson(json: JsonObject): TaskTagRecord = gatewayJson.decodeFromJsonElement(json)
-    override fun toJsonBody(entity: TaskTag) = Json.encodeToString(entity.toTaskTagRecord())
+    override fun recordFromJson(json: JsonObject): TaskTagRecord {
+        val record = gatewayJson.decodeFromJsonElement<TaskTagRecord>(json)
+        require(
+            record.taskId.isNotBlank() &&
+                record.tagId.isNotBlank() &&
+                record.localId == taskTagLocalId(record.taskId, record.tagId),
+        ) { "Invalid task_tags relation identity" }
+        return record
+    }
+    override fun toJsonBody(entity: TaskTag) = syncRecordJson.encodeToString(entity.toTaskTagRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<TaskTagRecord>(collectionName, 200)

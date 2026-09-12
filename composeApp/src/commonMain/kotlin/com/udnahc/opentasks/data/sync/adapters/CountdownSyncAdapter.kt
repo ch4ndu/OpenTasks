@@ -5,6 +5,8 @@ import com.udnahc.opentasks.data.model.Countdown
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
 import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import com.udnahc.opentasks.data.sync.PocketBaseFilter
+import com.udnahc.opentasks.data.sync.countdownRecordPayloadSchema
+import com.udnahc.opentasks.data.sync.syncRecordJson
 import com.udnahc.opentasks.data.sync.records.CountdownRecord
 import com.udnahc.opentasks.data.sync.records.toCountdown
 import com.udnahc.opentasks.data.sync.records.toCountdownRecord
@@ -19,6 +21,7 @@ class CountdownSyncAdapter(private val dao: CountdownDao) :
 
     override val collectionName = "countdowns"
     override val order = 40
+    override val recordPayloadSchema = countdownRecordPayloadSchema
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllCountdownsOnce()
@@ -39,6 +42,8 @@ class CountdownSyncAdapter(private val dao: CountdownDao) :
     override suspend fun hardDeleteLocalNeverSynced(entity: Countdown) = dao.delete(entity)
     override suspend fun upsert(entity: Countdown) = dao.upsert(entity)
     override suspend fun mergeRemoteIfNewer(entity: Countdown): RemoteMergeResult = dao.mergeRemoteIfNewer(entity)
+    override fun copyForSyncRecovery(entity: Countdown, remoteId: String, updatedAt: Long) =
+        entity.copy(pbId = remoteId, updatedAt = updatedAt, isSynced = false)
 
     override fun localId(entity: Countdown) = entity.id
     override fun pbId(entity: Countdown) = entity.pbId
@@ -53,7 +58,7 @@ class CountdownSyncAdapter(private val dao: CountdownDao) :
     override fun toRecord(entity: Countdown) = entity.toCountdownRecord()
     override fun toEntity(record: CountdownRecord) = record.toCountdown()
     override fun recordFromJson(json: JsonObject): CountdownRecord = gatewayJson.decodeFromJsonElement(json)
-    override fun toJsonBody(entity: Countdown) = Json.encodeToString(entity.toCountdownRecord())
+    override fun toJsonBody(entity: Countdown) = syncRecordJson.encodeToString(entity.toCountdownRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<CountdownRecord>(collectionName, 200)

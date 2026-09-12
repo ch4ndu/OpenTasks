@@ -83,6 +83,33 @@ class SyncRecordMappingTest {
     }
 
     @Test
+    fun taskRecordNormalizesNativeAndLegacySubtaskArrays() {
+        val native = Json.decodeFromString<TaskRecord>(
+            """
+            {
+              "id": "pb-task",
+              "localId": "task-1",
+              "title": "Task",
+              "subtasks": [{"isChecked": false, "text": "First", "id": "sub-1"}]
+            }
+            """.trimIndent(),
+        )
+        val legacy = Json.decodeFromString<TaskRecord>(
+            """
+            {
+              "id": "pb-task",
+              "localId": "task-1",
+              "title": "Task",
+              "subtasks": "[ { \"text\": \"First\", \"id\": \"sub-1\", \"isChecked\": false } ]"
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("[{\"id\":\"sub-1\",\"text\":\"First\",\"isChecked\":false}]", native.subtasks)
+        assertEquals(native.subtasks, legacy.subtasks)
+    }
+
+    @Test
     fun nonTaskRecordRoundTripsPreserveLocalIdsAndSyncFlags() {
         assertTrue(testCategory(id = "cat", name = "Inbox").toCategoryRecord().toCategory().isSynced)
         assertEquals("Inbox", testCategory(id = "cat", name = "Inbox").toCategoryRecord().toCategory().name)

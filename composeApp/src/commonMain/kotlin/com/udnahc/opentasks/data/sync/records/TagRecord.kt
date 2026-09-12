@@ -18,7 +18,7 @@ class TagRecord(
 fun TagRecord.toTag(): Tag = Tag(
     id = localId,
     name = name,
-    color = color,
+    color = color?.takeUnless(String::isEmpty),
     pbId = id,
     isSynced = true,
     isDeleted = isDeleted,
@@ -29,7 +29,7 @@ fun TagRecord.toTag(): Tag = Tag(
 fun Tag.toTagRecord(): TagRecord = TagRecord(
     localId = id,
     name = name,
-    color = color,
+    color = color.orEmpty(),
     isDeleted = isDeleted,
     createdAtUtc = createdAt,
     updatedAtUtc = updatedAt,

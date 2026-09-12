@@ -4,6 +4,11 @@ import com.udnahc.opentasks.data.auth.CacheBinding
 import com.udnahc.opentasks.data.auth.AccountAuthenticationRejectionHandler
 import com.udnahc.opentasks.data.auth.AccountBoundary
 import com.udnahc.opentasks.data.auth.MutexAccountMutationGate
+import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.sync.records.TaskRecord
+import com.udnahc.opentasks.data.sync.records.toTask
+import com.udnahc.opentasks.data.sync.records.toTaskRecord
+import com.udnahc.opentasks.testutil.testTask
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
 import io.ktor.client.HttpClient
@@ -27,13 +32,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
+import io.ktor.http.content.TextContent
 import kotlin.coroutines.cancellation.CancellationException
 
 class BaseSyncAdapterTest {
@@ -269,6 +277,197 @@ class BaseSyncAdapterTest {
         assertEquals("current-pb", adapter.local.single().pbId)
         assertEquals("local", adapter.remote.single().value)
         assertTrue(adapter.local.single().synced)
+    }
+
+    @Test
+    fun guardedUpdateRejectsInvalidJsonAcknowledgements() = runBlocking {
+        val acknowledgements = listOf(
+            "missing body" to "",
+            "missing key" to """{"id":"pb-one","localId":"one","isDeleted":false,"localUpdatedAt":30}""",
+            "missing id" to """{"localId":"one","value":"local","isDeleted":false,"localUpdatedAt":30}""",
+            "wrong update id" to """{"id":"other-pb","localId":"one","value":"local","isDeleted":false,"localUpdatedAt":30}""",
+            "wrong local id" to """{"id":"pb-one","localId":"other","value":"local","isDeleted":false,"localUpdatedAt":30}""",
+            "wrong payload" to """{"id":"pb-one","localId":"one","value":"other","isDeleted":false,"localUpdatedAt":30}""",
+        )
+
+        acknowledgements.forEach { (label, acknowledgement) ->
+            val gateway = PocketBaseRecordGateway(HttpClient(MockEngine { request ->
+                when {
+                    request.method == HttpMethod.Get && request.url.encodedPath.endsWith("/pb-one") ->
+                        respond(
+                            content = fakeRecordJson("pb-one", "one", "remote", 20),
+                            status = HttpStatusCode.OK,
+                            headers = jsonHeaders(),
+                        )
+                    request.method == HttpMethod.Patch && request.url.encodedPath.endsWith("/pb-one") ->
+                        respond(
+                            content = acknowledgement,
+                            status = HttpStatusCode.OK,
+                            headers = jsonHeaders(),
+                        )
+                    else -> error("Unexpected request ${request.method.value} ${request.url}")
+                }
+            }), "https://example.test")
+            val adapter = GuardedFakeAdapter(
+                local = mutableListOf(
+                    FakeEntity(id = "one", pbId = "pb-one", value = "local", synced = false, updatedAt = 30),
+                ),
+                gateway = gateway,
+            )
+
+            assertFailsWith<SyncAdapterException>(label) { adapter.pushAll(client) }
+            assertFalse(adapter.local.single().synced, label)
+            assertEquals("pb-one", adapter.local.single().pbId, label)
+        }
+    }
+
+    @Test
+    fun guardedUpdateRejectsUnknownEnumAcknowledgementBeforeRecordFallback() = runBlocking {
+        val local = testTask(id = "task-enum", pbId = "pb-task-enum", isSynced = false, updatedAt = 30L)
+        val remote = local.copy(isSynced = true, updatedAt = 20L)
+        val invalidAcknowledgement = buildJsonObject {
+            taskWireJson(local, "pb-task-enum").forEach { (key, value) -> put(key, value) }
+            put("recurrenceType", "BROKEN")
+        }
+        val gateway = PocketBaseRecordGateway(HttpClient(MockEngine { request ->
+            when {
+                request.method == HttpMethod.Get && request.url.encodedPath.endsWith("/pb-task-enum") ->
+                    respond(taskWireJson(remote, "pb-task-enum").toString(), HttpStatusCode.OK, jsonHeaders())
+                request.method == HttpMethod.Patch && request.url.encodedPath.endsWith("/pb-task-enum") ->
+                    respond(invalidAcknowledgement.toString(), HttpStatusCode.OK, jsonHeaders())
+                else -> error("Unexpected request ${request.method.value} ${request.url}")
+            }
+        }), "https://example.test")
+        val adapter = TaskWireAdapter(mutableListOf(local), gateway)
+
+        assertFailsWith<SyncAdapterException> { adapter.pushAll(client) }
+        assertFalse(adapter.local.single().isSynced)
+        assertEquals("pb-task-enum", adapter.local.single().pbId)
+    }
+
+    @Test
+    fun ambiguousCreateRecoversOnlyAfterMatchingOwnerScopedRowAndAcknowledgement() = runBlocking {
+        val local = testTask(id = "task-create", pbId = null, isSynced = false, updatedAt = 30L)
+        val recovered = local.copy(isSynced = true, updatedAt = 20L)
+        val gateway = PocketBaseRecordGateway(HttpClient(MockEngine { request ->
+            when {
+                request.method == HttpMethod.Post && request.url.encodedPath.endsWith("/tasks/records") ->
+                    respond("{}", HttpStatusCode.OK, jsonHeaders())
+                request.method == HttpMethod.Get && request.url.encodedPath.endsWith("/tasks/records") ->
+                    respond(pageJson(taskWireJson(recovered, "recovered-task")), HttpStatusCode.OK, jsonHeaders())
+                request.method == HttpMethod.Patch && request.url.encodedPath.endsWith("/recovered-task") ->
+                    respond(taskWireJson(local, "recovered-task").toString(), HttpStatusCode.OK, jsonHeaders())
+                else -> error("Unexpected request ${request.method.value} ${request.url}")
+            }
+        }), "https://example.test")
+        val adapter = TaskWireAdapter(mutableListOf(local), gateway)
+
+        adapter.pushAll(client)
+
+        assertEquals("recovered-task", adapter.local.single().pbId)
+        assertTrue(adapter.local.single().isSynced)
+    }
+
+    @Test
+    fun ambiguousCreateRemainsUnsyncedWhenOwnerScopedRecoveryIsAbsent() = runBlocking {
+        val local = testTask(id = "task-create-missing", pbId = null, isSynced = false, updatedAt = 30L)
+        val gateway = PocketBaseRecordGateway(HttpClient(MockEngine { request ->
+            when {
+                request.method == HttpMethod.Post && request.url.encodedPath.endsWith("/tasks/records") ->
+                    respond("{}", HttpStatusCode.OK, jsonHeaders())
+                request.method == HttpMethod.Get && request.url.encodedPath.endsWith("/tasks/records") ->
+                    respond(pageJson(null), HttpStatusCode.OK, jsonHeaders())
+                else -> error("Unexpected request ${request.method.value} ${request.url}")
+            }
+        }), "https://example.test")
+        val adapter = TaskWireAdapter(mutableListOf(local), gateway)
+
+        assertFailsWith<SyncAdapterException> { adapter.pushAll(client) }
+        assertEquals(local, adapter.local.single())
+        assertFalse(adapter.local.single().isSynced)
+        assertEquals(null, adapter.local.single().pbId)
+    }
+
+    @Test
+    fun guardedPatchMergesClearedRecurringTaskFieldsAndNextPullStaysConsistent() = runBlocking {
+        val local = testTask(
+            id = "task-reset",
+            pbId = "pb-task-reset",
+            isSynced = false,
+            updatedAt = 200L,
+        ).copy(
+            recurrenceType = com.udnahc.opentasks.data.model.RecurrenceType.NONE,
+            recurrenceAnchorDay = null,
+            deadline = null,
+            endDeadline = null,
+            completedAt = null,
+            section = null,
+            sourceExternalId = null,
+        )
+        var remote = taskWireJson(
+            testTask(
+                id = local.id,
+                pbId = local.pbId,
+                isSynced = true,
+                updatedAt = 100L,
+                recurrenceType = com.udnahc.opentasks.data.model.RecurrenceType.WEEKLY,
+            ).copy(
+                recurrenceAnchorDay = 5,
+                deadline = 10L,
+                endDeadline = 20L,
+                completedAt = 30L,
+                section = "Recurring",
+                sourceExternalId = "remote-source",
+            ),
+        )
+        val requests = mutableListOf<HttpMethod>()
+        val gateway = PocketBaseRecordGateway(
+            client = HttpClient(MockEngine { request ->
+                requests += request.method
+                when {
+                    request.method == HttpMethod.Get &&
+                        request.url.encodedPath.endsWith("/api/collections/tasks/records/pb-task-reset") ->
+                        respond(remote.toString(), HttpStatusCode.OK, jsonHeaders())
+                    request.method == HttpMethod.Patch &&
+                        request.url.encodedPath.endsWith("/api/collections/tasks/records/pb-task-reset") -> {
+                        val submitted = Json.parseToJsonElement((request.body as TextContent).text).jsonObject
+                        remote = buildJsonObject {
+                            remote.forEach { (key, value) -> put(key, value) }
+                            submitted.forEach { (key, value) -> put(key, value) }
+                            put("id", "pb-task-reset")
+                            put("account", "account-a")
+                        }
+                        respond(remote.toString(), HttpStatusCode.OK, jsonHeaders())
+                    }
+                    request.method == HttpMethod.Get &&
+                        request.url.encodedPath.endsWith("/api/collections/tasks/records") ->
+                        respond(pageJson(remote), HttpStatusCode.OK, jsonHeaders())
+                    else -> error("Unexpected request ${request.method.value} ${request.url}")
+                }
+            }),
+            baseUrl = "https://example.test",
+            ownerBinding = CacheBinding(
+                canonicalEndpoint = "https://example.test",
+                serverInstanceId = "server",
+                accountId = "account-a",
+                capabilityVersion = 2,
+                boundaryEpoch = 1L,
+            ),
+        )
+        val adapter = TaskWireAdapter(mutableListOf(local), gateway)
+
+        adapter.pushAll(client)
+
+        assertEquals("NONE", remote["recurrenceType"]?.jsonPrimitive?.content)
+        assertEquals(0L, remote["recurrenceAnchorDay"]?.jsonPrimitive?.long)
+        assertEquals(0L, remote["deadline"]?.jsonPrimitive?.long)
+        assertEquals("", remote["section"]?.jsonPrimitive?.content)
+        assertTrue(adapter.local.single().isSynced)
+
+        adapter.pullAll(client)
+
+        assertEquals(local.copy(isSynced = true), adapter.local.single())
+        assertEquals(listOf(HttpMethod.Get, HttpMethod.Patch, HttpMethod.Get), requests)
     }
 
     @Test
@@ -968,6 +1167,99 @@ class BaseSyncAdapterTest {
             token = "test-token",
         )
     }
+}
+
+private fun jsonHeaders() = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+
+private fun pageJson(record: JsonObject?): String = buildJsonObject {
+    put("items", record?.let { JsonArray(listOf(it)) } ?: JsonArray(emptyList()))
+    put("page", 1)
+    put("totalPages", 1)
+}.toString()
+
+private fun fakeRecordJson(id: String, localId: String, value: String, updatedAt: Long): String =
+    """{"id":"$id","localId":"$localId","value":"$value","isDeleted":false,"localUpdatedAt":$updatedAt}"""
+
+private fun taskWireJson(task: Task, serverId: String = task.pbId ?: "pb-task"): JsonObject {
+    val encoded = Json.parseToJsonElement(syncRecordJson.encodeToString(task.toTaskRecord())).jsonObject
+    return buildJsonObject {
+        encoded.forEach { (key, value) -> put(key, value) }
+        put("id", serverId)
+        put("account", "account-a")
+    }
+}
+
+private class TaskWireAdapter(
+    val local: MutableList<Task>,
+    private val gateway: PocketBaseRecordGateway,
+) : BaseSyncAdapter<Task, TaskRecord>() {
+    override val collectionName = "tasks"
+    override val recordPayloadSchema = taskRecordPayloadSchema
+
+    override suspend fun getUnsynced() = local.filterNot(Task::isSynced)
+    override suspend fun getAllOnce() = local.toList()
+    override suspend fun getById(localId: String) = local.firstOrNull { it.id == localId }
+
+    override suspend fun markSyncedIfUnchanged(localId: String, updatedAt: Long, isDeleted: Boolean): Int {
+        val index = local.indexOfFirst {
+            it.id == localId && it.updatedAt == updatedAt && it.isDeleted == isDeleted
+        }
+        if (index < 0) return 0
+        local[index] = local[index].copy(isSynced = true)
+        return 1
+    }
+
+    override suspend fun updatePbId(localId: String, pbId: String) {
+        val index = local.indexOfFirst { it.id == localId }
+        if (index >= 0) local[index] = local[index].copy(pbId = pbId)
+    }
+
+    override suspend fun markUnsynced(localId: String) {
+        val index = local.indexOfFirst { it.id == localId }
+        if (index >= 0) local[index] = local[index].copy(isSynced = false)
+    }
+
+    override suspend fun hardDeleteLocalNeverSynced(entity: Task) {
+        local.removeAll { it.id == entity.id }
+    }
+
+    override suspend fun upsert(entity: Task) {
+        local.removeAll { it.id == entity.id }
+        local += entity
+    }
+
+    override suspend fun mergeRemoteIfNewer(entity: Task): RemoteMergeResult {
+        val current = getById(entity.id)
+        if (current != null && current.updatedAt >= entity.updatedAt) return RemoteMergeResult.KeptLocal
+        upsert(entity)
+        return RemoteMergeResult.Applied
+    }
+
+    override fun localId(entity: Task) = entity.id
+    override fun pbId(entity: Task) = entity.pbId
+    override fun isDeleted(entity: Task) = entity.isDeleted
+    override fun isSynced(entity: Task) = entity.isSynced
+    override fun updatedAt(entity: Task) = entity.updatedAt
+
+    override fun recordLocalId(record: TaskRecord) = record.localId
+    override fun recordIsDeleted(record: TaskRecord) = record.isDeleted
+    override fun recordUpdatedAt(record: TaskRecord) = record.updatedAtUtc
+
+    override fun toRecord(entity: Task) = entity.toTaskRecord()
+    override fun toEntity(record: TaskRecord) = record.toTask()
+    override fun recordFromJson(json: JsonObject): TaskRecord = gatewayJson.decodeFromJsonElement(json)
+    override fun toJsonBody(entity: Task) = syncRecordJson.encodeToString(entity.toTaskRecord())
+
+    override suspend fun fetchAllRecords(client: PocketbaseClient): List<TaskRecord> = emptyList()
+    override suspend fun verifyCollection(client: PocketbaseClient) = Unit
+    override suspend fun createRecord(client: PocketbaseClient, body: String): TaskRecord =
+        error("TaskWireAdapter test uses the guarded gateway")
+    override suspend fun updateRecord(client: PocketbaseClient, pbId: String, body: String): TaskRecord =
+        error("TaskWireAdapter test uses the guarded gateway")
+    override suspend fun findRecordByLocalId(client: PocketbaseClient, localId: String): TaskRecord? =
+        error("TaskWireAdapter test uses the guarded gateway")
+
+    override fun recordGateway(client: PocketbaseClient): PocketBaseRecordGateway = gateway
 }
 
 private data class FakeEntity(

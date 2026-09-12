@@ -9,7 +9,7 @@ import org.lighthousegames.logging.logging
 
 fun initKoin(config: KoinAppDeclaration = {}) {
     if (!isDebugBuild()) {
-        KmLogging.setLogLevel(LogLevel.Warn)
+        KmLogging.setLogLevel(LogLevel.Verbose)
     }
     val log = logging("KoinInit")
     log.w { "Initializing Koin (debug=${isDebugBuild()})" }

@@ -44,6 +44,7 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 - `androidApp` is the Android application shell. It owns the application ID/version/build types, manifest, `OpenTasksApplication`, `MainActivity`, notification receivers, sync worker, widget components, and Android resources.
 - Android component packages remain `com.udnahc.opentasks...` so the manifest names, Room database location, widget bindings, notifications, and WorkManager class names stay stable.
 - Build the Android APK with `./gradlew :androidApp:assembleDebug`.
+- Release builds retain verbose application logging through `initKoin`. Sync conflict diagnostics report failure types and differing schema field names without logging record values or credentials.
 
 ## Key Files
 

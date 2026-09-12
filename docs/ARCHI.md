@@ -200,11 +200,14 @@ Conflict resolution is last-write-wins using app-managed UTC `updatedAt` and Poc
 
 - a strictly newer remote row may replace local state;
 - a strictly newer unsynced local row may update remote state;
-- equal timestamps are accepted only when canonical payloads match;
+- normal sync preserves the phone row on a validated equal divergence, while initial and seed paths remain strict;
 - durable deletes are synchronized as tombstones;
 - active local rows missing after a trustworthy full remote fetch are marked unsynced for recreation.
 
 Remote record updates use PocketBase's `PATCH` endpoint. If a locally stored PocketBase record ID is stale, guarded recovery resolves the record by owner-scoped `localId`, retries only when the local timestamp is newer, and updates local bookkeeping without weakening owner validation.
+
+Complete sync payload, wire-normalization, raw-response, and acknowledgement rules are canonical in [docs/ai/data-sync-time.md](ai/data-sync-time.md). Ordinary adapters emit complete application payloads through the owner-scoped gateway; guarded writes require exact identity, timestamp, and payload proof, with owner-localId recovery for ambiguous creates. Active attachment multipart writes validate their metadata and server file separately while preserving the tombstone protocol.
+The normal sync pass preserves the phone row on a validated equal-timestamp divergence, advances its sync timestamp, and retries once through the guarded writer; initial pulls and seed operations remain fail-closed while a newer server row wins.
 
 Account switching is restricted to the same canonical server/capability. It refreshes and fully synchronizes the source, requires zero unsynced rows, writes a durable transition, atomically replaces account-owned Room content and binding, activates the destination token, and performs an initial pull. Crash recovery treats the post-transaction destination binding as authoritative and never falls back to rendering the source cache. Logout uses the same source-sync safety gate.
 

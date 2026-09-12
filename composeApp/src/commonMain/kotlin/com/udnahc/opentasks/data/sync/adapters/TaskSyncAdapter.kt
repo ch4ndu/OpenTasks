@@ -7,6 +7,8 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
 import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import com.udnahc.opentasks.data.sync.PocketBaseFilter
+import com.udnahc.opentasks.data.sync.syncRecordJson
+import com.udnahc.opentasks.data.sync.taskRecordPayloadSchema
 import com.udnahc.opentasks.data.sync.records.TaskRecord
 import com.udnahc.opentasks.data.sync.records.toTask
 import com.udnahc.opentasks.data.sync.records.toTaskRecord
@@ -23,6 +25,7 @@ class TaskSyncAdapter(
 ) : BaseSyncAdapter<Task, TaskRecord>() {
 
     override val collectionName = "tasks"
+    override val recordPayloadSchema = taskRecordPayloadSchema
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllTasksOnce()
@@ -51,6 +54,8 @@ class TaskSyncAdapter(
     }
     override suspend fun upsert(entity: Task) = dao.upsert(entity)
     override suspend fun mergeRemoteIfNewer(entity: Task): RemoteMergeResult = dao.mergeRemoteIfNewer(entity)
+    override fun copyForSyncRecovery(entity: Task, remoteId: String, updatedAt: Long) =
+        entity.copy(pbId = remoteId, updatedAt = updatedAt, isSynced = false)
 
     override fun localId(entity: Task) = entity.id
     override fun pbId(entity: Task) = entity.pbId
@@ -65,7 +70,7 @@ class TaskSyncAdapter(
     override fun toRecord(entity: Task) = entity.toTaskRecord()
     override fun toEntity(record: TaskRecord) = record.toTask()
     override fun recordFromJson(json: JsonObject): TaskRecord = gatewayJson.decodeFromJsonElement(json)
-    override fun toJsonBody(entity: Task) = Json.encodeToString(entity.toTaskRecord())
+    override fun toJsonBody(entity: Task) = syncRecordJson.encodeToString(entity.toTaskRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<TaskRecord>(collectionName, 200)

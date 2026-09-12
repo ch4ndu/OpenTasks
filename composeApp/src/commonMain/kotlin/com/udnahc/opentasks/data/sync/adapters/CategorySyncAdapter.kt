@@ -5,6 +5,8 @@ import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
 import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import com.udnahc.opentasks.data.sync.PocketBaseFilter
+import com.udnahc.opentasks.data.sync.categoryRecordPayloadSchema
+import com.udnahc.opentasks.data.sync.syncRecordJson
 import com.udnahc.opentasks.data.sync.records.CategoryRecord
 import com.udnahc.opentasks.data.sync.records.toCategory
 import com.udnahc.opentasks.data.sync.records.toCategoryRecord
@@ -19,6 +21,7 @@ class CategorySyncAdapter(private val dao: CategoryDao) :
 
     override val collectionName = "categories"
     override val order = 0 // Push before tasks (tasks reference categories)
+    override val recordPayloadSchema = categoryRecordPayloadSchema
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllCategoriesOnce()
@@ -39,6 +42,8 @@ class CategorySyncAdapter(private val dao: CategoryDao) :
     override suspend fun hardDeleteLocalNeverSynced(entity: Category) = dao.delete(entity)
     override suspend fun upsert(entity: Category) = dao.upsert(entity)
     override suspend fun mergeRemoteIfNewer(entity: Category): RemoteMergeResult = dao.mergeRemoteIfNewer(entity)
+    override fun copyForSyncRecovery(entity: Category, remoteId: String, updatedAt: Long) =
+        entity.copy(pbId = remoteId, updatedAt = updatedAt, isSynced = false)
 
     override fun localId(entity: Category) = entity.id
     override fun pbId(entity: Category) = entity.pbId
@@ -53,7 +58,7 @@ class CategorySyncAdapter(private val dao: CategoryDao) :
     override fun toRecord(entity: Category) = entity.toCategoryRecord()
     override fun toEntity(record: CategoryRecord) = record.toCategory()
     override fun recordFromJson(json: JsonObject): CategoryRecord = gatewayJson.decodeFromJsonElement(json)
-    override fun toJsonBody(entity: Category) = Json.encodeToString(entity.toCategoryRecord())
+    override fun toJsonBody(entity: Category) = syncRecordJson.encodeToString(entity.toCategoryRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<CategoryRecord>(collectionName, 200)

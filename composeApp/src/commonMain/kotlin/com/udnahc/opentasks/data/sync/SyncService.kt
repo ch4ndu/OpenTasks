@@ -124,7 +124,7 @@ class SyncService(
                             .onFailure {
                                 if (it is CancellationException) throw it
                                 it.rethrowSyncAuthenticationRejected()
-                                log.e { "Initial pull $collectionName failed" }
+                                log.e { "Initial pull $collectionName failed: ${it.syncFailureTypes()}" }
                                 failedPulls += collectionName
                                 failures += SyncCollectionFailure(collectionName, "initial_pull", it, startingBoundary)
                             }
@@ -208,6 +208,7 @@ class SyncService(
         pass: SyncPassContext,
         boundary: com.udnahc.opentasks.data.auth.AccountBoundary,
     ): List<SyncCollectionFailure> {
+        val normalPass = pass.withNormalConflictRecovery()
         val failures = mutableListOf<SyncCollectionFailure>()
         val failedPulls = mutableSetOf<String>()
 
@@ -216,11 +217,11 @@ class SyncService(
             if (shouldSkipPull(collectionName, failedPulls)) {
                 log.w { "Skipping pull $collectionName because a parent collection pull failed" }
             } else {
-                runCatching { adapter.pullAll(pass) }
+                runCatching { adapter.pullAll(normalPass) }
                     .onFailure {
                         if (it is CancellationException) throw it
                         it.rethrowSyncAuthenticationRejected()
-                        log.e { "Pull $collectionName failed" }
+                        log.e { "Pull $collectionName failed: ${it.syncFailureTypes()}" }
                         failedPulls += collectionName
                         failures += SyncCollectionFailure(collectionName, "pull", it, boundary)
                     }
@@ -229,11 +230,11 @@ class SyncService(
             if (shouldSkipPush(collectionName, failedPulls)) {
                 log.w { "Skipping push $collectionName because pull dependencies failed" }
             } else {
-                runCatching { adapter.pushAll(pass) }
+                runCatching { adapter.pushAll(normalPass) }
                     .onFailure {
                         if (it is CancellationException) throw it
                         it.rethrowSyncAuthenticationRejected()
-                        log.e { "Push $collectionName failed" }
+                        log.e { "Push $collectionName failed: ${it.syncFailureTypes()}" }
                         failures += SyncCollectionFailure(collectionName, "push", it, boundary)
                     }
             }
@@ -321,3 +322,13 @@ class SyncService(
         const val COLLECTION_TASK_TAGS = "task_tags"
     }
 }
+
+private fun Throwable.syncFailureTypes(): String =
+    generateSequence(this) { it.cause }.take(5).joinToString(" -> ") {
+        when (it) {
+            is SyncDegradedException -> "consistency_check"
+            is SyncAdapterException -> "adapter_failure"
+            is kotlinx.serialization.SerializationException -> "record_decoding"
+            else -> it::class.simpleName ?: "unknown"
+        }
+    }

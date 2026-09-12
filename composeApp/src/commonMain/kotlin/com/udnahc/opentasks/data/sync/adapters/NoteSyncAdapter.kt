@@ -5,6 +5,8 @@ import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.data.sync.BaseSyncAdapter
 import com.udnahc.opentasks.data.sync.RemoteMergeResult
 import com.udnahc.opentasks.data.sync.PocketBaseFilter
+import com.udnahc.opentasks.data.sync.noteRecordPayloadSchema
+import com.udnahc.opentasks.data.sync.syncRecordJson
 import com.udnahc.opentasks.data.sync.records.NoteRecord
 import com.udnahc.opentasks.data.sync.records.toNote
 import com.udnahc.opentasks.data.sync.records.toNoteRecord
@@ -18,6 +20,7 @@ class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteReco
 
     override val collectionName = "notes"
     override val order = 30
+    override val recordPayloadSchema = noteRecordPayloadSchema
 
     override suspend fun getUnsynced() = dao.getUnsynced()
     override suspend fun getAllOnce() = dao.getAllNotesOnce()
@@ -38,6 +41,8 @@ class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteReco
     override suspend fun hardDeleteLocalNeverSynced(entity: Note) = dao.delete(entity)
     override suspend fun upsert(entity: Note) = dao.upsert(entity)
     override suspend fun mergeRemoteIfNewer(entity: Note): RemoteMergeResult = dao.mergeRemoteIfNewer(entity)
+    override fun copyForSyncRecovery(entity: Note, remoteId: String, updatedAt: Long) =
+        entity.copy(pbId = remoteId, updatedAt = updatedAt, isSynced = false)
 
     override fun localId(entity: Note) = entity.id
     override fun pbId(entity: Note) = entity.pbId
@@ -52,7 +57,7 @@ class NoteSyncAdapter(private val dao: NoteDao) : BaseSyncAdapter<Note, NoteReco
     override fun toRecord(entity: Note) = entity.toNoteRecord()
     override fun toEntity(record: NoteRecord) = record.toNote()
     override fun recordFromJson(json: JsonObject): NoteRecord = gatewayJson.decodeFromJsonElement(json)
-    override fun toJsonBody(entity: Note) = Json.encodeToString(entity.toNoteRecord())
+    override fun toJsonBody(entity: Note) = syncRecordJson.encodeToString(entity.toNoteRecord())
 
     override suspend fun fetchAllRecords(client: PocketbaseClient) =
         client.records.getFullList<NoteRecord>(collectionName, 200)

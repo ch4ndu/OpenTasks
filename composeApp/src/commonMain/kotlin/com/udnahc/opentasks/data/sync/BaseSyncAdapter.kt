@@ -2,10 +2,12 @@ package com.udnahc.opentasks.data.sync
 
 import io.github.agrevster.pocketbaseKotlin.PocketbaseClient
 import io.github.agrevster.pocketbaseKotlin.models.utils.BaseModel
+import com.udnahc.opentasks.data.extensions.utcNow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlin.coroutines.cancellation.CancellationException
@@ -19,6 +21,9 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
 
     /** PocketBase collection name (e.g., "tasks", "categories"). */
     abstract val collectionName: String
+
+    /** Complete application payload contract for production JSON records. */
+    protected open val recordPayloadSchema: SyncRecordPayloadSchema? = null
 
     /** Push ordering -- lower values are pushed first. Categories should be 0 (pushed before tasks). */
     open val order: Int = 10
@@ -48,6 +53,16 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     open suspend fun shouldHardDeleteLocalNeverSynced(entity: Entity): Boolean = true
 
     abstract suspend fun upsert(entity: Entity)
+
+    /**
+     * Copy only sync metadata during a normal equal-timestamp rebase.  Each
+     * adapter keeps its complete local entity, including local-only fields.
+     */
+    protected open fun copyForSyncRecovery(
+        entity: Entity,
+        remoteId: String,
+        updatedAt: Long,
+    ): Entity = error("$collectionName does not provide a sync recovery copy")
     /**
      * Atomically rereads and merges an incoming record at the Room writer boundary.
      * The pull snapshot is intentionally never used to authorize an overwrite.
@@ -123,7 +138,12 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     /** Complete deterministic local snapshot projection used only for destructive reconfirmation. */
     suspend fun localInventoryFingerprintRows(): List<String> = getAllOnce()
         .map { entity ->
-            val body = runCatching { Json.parseToJsonElement(stripId(toJsonBody(entity))) }
+            val body = runCatching {
+                val parsed = Json.parseToJsonElement(stripId(toJsonBody(entity)))
+                val payload = parsed as? JsonObject
+                    ?: throw SyncRecordPayloadException("Local $collectionName payload is not a JSON object")
+                recordPayloadSchema?.project(payload, requireId = false) ?: payload
+            }
                 .getOrElse { throw SyncAdapterException("Unable to fingerprint local $collectionName inventory", it) }
             "${localId(entity)}|${isDeleted(entity)}|${body.canonicalFingerprintText()}"
         }
@@ -148,7 +168,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                     "Unable to fetch $collectionName through the owner-scoped gateway (HTTP ${response.status.value})",
                 )
             pagination.accept(page, result)
-            rows += result.items.map { recordFromJson(it) }
+            rows += result.items.map { recordFromJson(validateRecordPayload(it)) }
             totalPages = result.totalPages
             page += 1
         } while (page <= totalPages)
@@ -213,19 +233,49 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 val body = stripId(toJsonBody(entity))
 
                 if (pushPbId != null) {
-                    val result = updateByPbIdOrRecover(pass, entityLocalId, pushPbId, body)
-                    if (result == PushResolution.Pushed) {
-                        markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
-                    } else if (result == PushResolution.Failed) {
-                        failures += SyncAdapterException("Failed to update a $collectionName record")
+                    val initial = updateByPbIdOrRecover(
+                        pass,
+                        entityLocalId,
+                        pushPbId,
+                        body,
+                        allowConflictRecovery = pass.allowNormalConflictRecovery,
+                    )
+                    val result = when (initial) {
+                        is PushResolution.Conflict -> retryAfterEqualConflict(pass, initial)
+                        else -> initial
+                    }
+                    when (result) {
+                        PushResolution.Pushed ->
+                            markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
+                        is PushResolution.RebasedPushed ->
+                            markSyncedAfterPush(entityLocalId, result.updatedAt, result.isDeleted)
+                        PushResolution.RemoteWon -> Unit
+                        PushResolution.Failed,
+                        is PushResolution.Conflict,
+                        -> failures += SyncAdapterException("Failed to update a $collectionName record")
                     }
                 } else {
-                    when (createOrRecover(pass, entityLocalId, entityUpdatedAt, body)) {
+                    val initial = createOrRecover(
+                        pass,
+                        entityLocalId,
+                        entityUpdatedAt,
+                        body,
+                        allowConflictRecovery = pass.allowNormalConflictRecovery,
+                    )
+                    val result = when (initial) {
+                        is PushResolution.Conflict -> retryAfterEqualConflict(pass, initial)
+                        else -> initial
+                    }
+                    when (result) {
                         PushResolution.Pushed -> {
-                        markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
+                            markSyncedAfterPush(entityLocalId, entityUpdatedAt, entityIsDeleted)
                         }
+                        is PushResolution.RebasedPushed ->
+                            markSyncedAfterPush(entityLocalId, result.updatedAt, result.isDeleted)
                         PushResolution.RemoteWon -> Unit
-                        PushResolution.Failed -> failures += SyncAdapterException("Failed to create a $collectionName record")
+                        PushResolution.Failed,
+                        is PushResolution.Conflict,
+                        -> failures += SyncAdapterException("Failed to create a $collectionName record")
                     }
                 }
             } catch (e: Exception) {
@@ -261,7 +311,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             )
         }
         val json = response.body ?: return TombstoneRemoteLookup.Absent
-        val record = runCatching { recordFromJson(json) }.getOrElse { error ->
+        val record = runCatching { recordFromJson(validateRecordPayload(json)) }.getOrElse { error ->
             throw SyncAdapterException("Unable to decode the recovered $collectionName record", error)
         }
         return TombstoneRemoteLookup.Found(validatedRemoteId(record, localId))
@@ -356,8 +406,22 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 val deleted = isDeleted(entity)
                 val body = stripId(toJsonBody(entity))
                 val resolution = pbId(entity)?.let {
-                    updateByPbIdOrRecover(pass, id, it, body, allowRemoteMerge)
-                } ?: createOrRecover(pass, id, timestamp, body, allowRemoteMerge)
+                    updateByPbIdOrRecover(
+                        pass,
+                        id,
+                        it,
+                        body,
+                        allowRemoteMerge = allowRemoteMerge,
+                        allowConflictRecovery = false,
+                    )
+                } ?: createOrRecover(
+                    pass,
+                    id,
+                    timestamp,
+                    body,
+                    allowRemoteMerge = allowRemoteMerge,
+                    allowConflictRecovery = false,
+                )
                 if (resolution == PushResolution.Pushed) markSyncedAfterPush(id, timestamp, deleted)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -372,7 +436,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
     /** Reject seed resume when the candidate has unknown, newer, or divergent rows. */
     open suspend fun validateSeedInventory(rows: List<JsonObject>): Boolean {
         for (row in rows) {
-            val record = runCatching { recordFromJson(row) }.getOrElse { return false }
+            val record = runCatching { recordFromJson(validateRecordPayload(row)) }.getOrElse { return false }
             val local = getById(recordLocalId(record)) ?: return false
             when {
                 recordUpdatedAt(record) > updatedAt(local) -> return false
@@ -466,6 +530,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             }
         } catch (e: SyncDegradedException) {
             e.rethrowSyncAuthenticationRejected()
+            log.w { "Pull $collectionName rejected by sync consistency checks" }
             throw e
         } catch (e: CancellationException) {
             throw e
@@ -474,6 +539,51 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             log.e { "Failed to pull $collectionName" }
             throw SyncAdapterException("Failed to pull $collectionName", e)
         }
+    }
+
+    /** Validate the raw response before record defaults or enum fallbacks can hide a defect. */
+    protected fun validateRecordPayload(
+        json: JsonObject,
+        requireId: Boolean = true,
+    ): JsonObject {
+        val schema = recordPayloadSchema ?: return json
+        return try {
+            schema.project(json, requireId = requireId)
+            json
+        } catch (error: SyncRecordPayloadException) {
+            log.w { "Rejected raw $collectionName record payload: ${error.message.orEmpty()}" }
+            throw SyncAdapterException("Invalid $collectionName record payload", error)
+        }
+    }
+
+    private fun normalizedPayload(
+        json: JsonObject,
+        requireId: Boolean,
+        ignoredFields: Set<String> = emptySet(),
+    ): JsonObject? = runCatching {
+        recordPayloadSchema?.project(json, requireId, ignoredFields)
+            ?: JsonObject(json.filterKeys { it !in setOf("id", "account", "collectionId", "collectionName", "created", "updated") })
+    }.getOrNull()
+
+    private fun validateWriteAcknowledgement(
+        response: JsonObject?,
+        expectedLocalId: String,
+        expectedBody: JsonObject,
+        expectedUpdateId: String? = null,
+        ignoredFields: Set<String> = emptySet(),
+    ): Boolean {
+        val returned = response ?: return false
+        val returnedId = returned["id"]?.let { element ->
+            (element as? kotlinx.serialization.json.JsonPrimitive)
+                ?.takeUnless { it is kotlinx.serialization.json.JsonNull || !it.isString }
+                ?.content
+        }?.trim().orEmpty()
+        if (returnedId.isBlank() || expectedUpdateId?.let { returnedId != it } == true) return false
+        val expected = normalizedPayload(expectedBody, requireId = false, ignoredFields) ?: return false
+        val actual = normalizedPayload(returned, requireId = true, ignoredFields) ?: return false
+        return actual["localId"] == expected["localId"] &&
+            actual["localId"] == kotlinx.serialization.json.JsonPrimitive(expectedLocalId) &&
+            actual == expected
     }
 
     /** Remove the PocketBase auto-assigned "id" field from JSON to avoid pk_change errors. */
@@ -486,16 +596,41 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
 
     /**
      * A DAO may return KeptLocal because it reread a newer row, or because an
-     * equal timestamp already exists. Equal timestamps are safe only when the
-     * normalized durable payloads agree.
+     * equal timestamp already exists. The enabled normal pass rebases a
+     * divergent equal timestamp locally; initial and seed paths remain strict.
      */
     private suspend fun mergeRemoteAndValidate(
         pass: SyncPassContext,
         record: Record,
     ): RemoteMergeResult {
         val remote = toEntity(record)
+        val remoteBody = rawRemotePayload(record, remote)
         var result: RemoteMergeResult? = null
         pass.runWriterTransaction {
+            val beforeMerge = getById(recordLocalId(record))
+            if (pass.allowNormalConflictRecovery &&
+                beforeMerge != null &&
+                updatedAt(beforeMerge) == recordUpdatedAt(record) &&
+                !canonicalPayloadEquals(
+                    normalizedBody(beforeMerge)
+                        ?: throw SyncDegradedException("Local $collectionName record is not a JSON object"),
+                    remoteBody,
+                )
+            ) {
+                val remoteId = record.id?.trim()?.takeIf(String::isNotBlank)
+                    ?: throw SyncDegradedException(
+                        "$collectionName equal-timestamp conflict has no validated remote id",
+                    )
+                rebaseLocalAfterEqualConflict(
+                    beforeMerge,
+                    recordLocalId(record),
+                    remoteBody,
+                    remoteId,
+                    recordUpdatedAt(record),
+                )
+                result = RemoteMergeResult.KeptLocal
+                return@runWriterTransaction
+            }
             val mergeResult = mergeRemoteIfNewer(remote)
             result = mergeResult
             if (mergeResult != RemoteMergeResult.KeptLocal) return@runWriterTransaction
@@ -509,12 +644,95 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 updatedAt(current) < recordUpdatedAt(record) -> throw SyncDegradedException(
                     "$collectionName record changed while validating a remote row",
                 )
-                !normalizedPayloadEquals(current, remote) -> throw SyncDegradedException(
-                    "$collectionName record has an equal-timestamp divergent payload",
-                )
+                !canonicalPayloadEquals(
+                    normalizedBody(current)
+                        ?: throw SyncDegradedException("Local $collectionName record is not a JSON object"),
+                    remoteBody,
+                ) -> {
+                    val localBody = normalizedBody(current)
+                    val differingFields = (localBody?.keys.orEmpty() + remoteBody?.keys.orEmpty()).filter { field ->
+                        localBody?.get(field) != remoteBody?.get(field)
+                    }.sorted()
+                    log.w {
+                        "Pull $collectionName conflict: reason=equal_timestamp_divergence " +
+                            "localId=${recordLocalId(record)} " +
+                            "localSynced=${isSynced(current)} fields=${differingFields.joinToString(",")} " +
+                            "omittedLocally=${differingFields.filter { it !in localBody?.keys.orEmpty() }.joinToString(",")} " +
+                            "omittedRemotely=${differingFields.filter { it !in remoteBody?.keys.orEmpty() }.joinToString(",")}"
+                    }
+                    throw SyncDegradedException(
+                        "$collectionName record has an equal-timestamp divergent payload",
+                    )
+                }
             }
         }
         return checkNotNull(result) { "Sync merge did not produce a result" }
+    }
+
+    private fun rawRemotePayload(record: Record, remote: Entity): JsonObject {
+        val body = Json.parseToJsonElement(stripId(toJsonBody(remote))) as? JsonObject
+            ?: throw SyncDegradedException("Remote $collectionName record is not a JSON object")
+        val remoteId = record.id?.trim()?.takeIf(String::isNotBlank)
+            ?: throw SyncDegradedException("Remote $collectionName record has no id")
+        return buildJsonObject {
+            put("id", JsonPrimitive(remoteId))
+            body.forEach { (key, value) -> put(key, value) }
+        }
+    }
+
+    /** Rebase the current local row without round-tripping it through a record DTO. */
+    protected suspend fun recoverLocalAfterEqualConflict(
+        pass: SyncPassContext,
+        localId: String,
+        remote: JsonObject,
+        remoteId: String,
+        remoteUpdatedAt: Long,
+    ): Entity? {
+        if (!pass.allowNormalConflictRecovery) return null
+        var recovered: Entity? = null
+        pass.runWriterTransaction {
+            val current = getById(localId) ?: return@runWriterTransaction
+            recovered = rebaseLocalAfterEqualConflict(
+                current,
+                localId,
+                remote,
+                remoteId,
+                remoteUpdatedAt,
+            )
+        }
+        return recovered
+    }
+
+    private suspend fun rebaseLocalAfterEqualConflict(
+        current: Entity,
+        expectedLocalId: String,
+        remote: JsonObject,
+        remoteId: String,
+        remoteUpdatedAt: Long,
+    ): Entity? {
+        if (localId(current) != expectedLocalId || updatedAt(current) != remoteUpdatedAt) return null
+        if (remoteId.isBlank() || canonicalPayloadEquals(normalizedBody(current) ?: return null, remote)) {
+            return null
+        }
+        val currentUpdatedAt = updatedAt(current)
+        if (currentUpdatedAt == Long.MAX_VALUE) {
+            throw SyncDegradedException("Cannot advance $collectionName after Long.MAX_VALUE")
+        }
+        val nextUpdatedAt = maxOf(utcNow(), currentUpdatedAt + 1L)
+        val rebased = copyForSyncRecovery(current, remoteId, nextUpdatedAt)
+        upsert(rebased)
+        val persisted = getById(expectedLocalId)
+        if (persisted == null ||
+            localId(persisted) != expectedLocalId ||
+            pbId(persisted) != remoteId ||
+            isSynced(persisted) ||
+            updatedAt(persisted) != nextUpdatedAt ||
+            persisted != rebased
+        ) {
+            throw SyncAdapterException("$collectionName equal-timestamp recovery was not persisted")
+        }
+        log.d { "Recovered equal-timestamp $collectionName row localId=$expectedLocalId" }
+        return persisted
     }
 
     /** Revalidates the complete snapshot candidate set in one pass-owned writer transaction. */
@@ -570,6 +788,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         pbId: String,
         body: String,
         allowRemoteMerge: Boolean = true,
+        allowConflictRecovery: Boolean = true,
     ): PushResolution {
         val client = pass.client
         if (allowsTestOnlyLegacySdkWrites()) {
@@ -581,6 +800,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             pbId,
             body,
             allowRemoteMerge,
+            allowConflictRecovery,
         )
     }
 
@@ -636,6 +856,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         updatedAt: Long,
         body: String,
         allowRemoteMerge: Boolean = true,
+        allowConflictRecovery: Boolean = true,
     ): PushResolution {
         val client = pass.client
         if (allowsTestOnlyLegacySdkWrites()) {
@@ -647,6 +868,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
             updatedAt,
             body,
             allowRemoteMerge,
+            allowConflictRecovery,
         )
     }
 
@@ -701,12 +923,17 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         pbId: String,
         body: String,
         allowRemoteMerge: Boolean,
+        allowConflictRecovery: Boolean,
     ): PushResolution {
         val bodyObject = Json.parseToJsonElement(body) as? JsonObject ?: return PushResolution.Failed
+        if (normalizedPayload(bodyObject, requireId = false) == null) return PushResolution.Failed
         val preflight = gateway.getRecord(collectionName, pbId)
         if (preflight.isSuccess) {
             val existing = preflight.body ?: return PushResolution.Failed
-            val record = recordFromJson(existing)
+            if (existing["id"]?.toString()?.trim('"') != pbId) return PushResolution.Failed
+            val record = runCatching { recordFromJson(validateRecordPayload(existing)) }
+                .getOrElse { return PushResolution.Failed }
+            if (recordLocalId(record) != localId) return PushResolution.Failed
             val localUpdatedAt = bodyObject["localUpdatedAt"]?.toString()?.trim('"')?.toLongOrNull()
                 ?: return PushResolution.Failed
             return when {
@@ -719,18 +946,49 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 }
                 recordUpdatedAt(record) < localUpdatedAt -> {
                     val updated = gateway.updateJson(collectionName, pbId, bodyObject)
-                    if (updated.isSuccess) {
-                        updated.body?.get("id")?.let { updatePbIdSafely(localId, it.toString().trim('"')) }
+                    if (updated.isSuccess && validateWriteAcknowledgement(
+                            updated.body,
+                            expectedLocalId = localId,
+                            expectedBody = bodyObject,
+                            expectedUpdateId = pbId,
+                        )
+                    ) {
+                        updatePbIdSafely(localId, pbId)
                         PushResolution.Pushed
                     } else {
-                        resolveRejectedGuardedWrite(gateway, localId, bodyObject, updated, allowRemoteMerge)
+                        if (updated.isSuccess) PushResolution.Failed else {
+                            resolveRejectedGuardedWrite(
+                                gateway,
+                                localId,
+                                bodyObject,
+                                updated,
+                                allowRemoteMerge,
+                                allowConflictRecovery,
+                            )
+                        }
                     }
                 }
-                else -> divergentRemoteResolution(allowRemoteMerge)
+                else -> divergentRemoteResolution(
+                    allowRemoteMerge = allowRemoteMerge,
+                    allowConflictRecovery = allowConflictRecovery,
+                    conflict = ValidatedSyncConflict(
+                        localId = localId,
+                        remote = existing,
+                        remoteId = pbId,
+                        remoteUpdatedAt = recordUpdatedAt(record),
+                    ),
+                )
             }
         }
         if (!preflight.isNotFound) return PushResolution.Failed
-        return resolveRejectedGuardedWrite(gateway, localId, bodyObject, preflight, allowRemoteMerge)
+        return resolveRejectedGuardedWrite(
+            gateway,
+            localId,
+            bodyObject,
+            preflight,
+            allowRemoteMerge,
+            allowConflictRecovery,
+        )
     }
 
     private suspend fun guardedCreateOrRecover(
@@ -739,18 +997,37 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         updatedAt: Long,
         body: String,
         allowRemoteMerge: Boolean,
+        allowConflictRecovery: Boolean,
     ): PushResolution {
         val bodyObject = Json.parseToJsonElement(body) as? JsonObject ?: return PushResolution.Failed
+        if (normalizedPayload(bodyObject, requireId = false) == null) return PushResolution.Failed
         val created = gateway.createJson(collectionName, bodyObject)
-        if (created.isSuccess) {
-            created.body?.get("id")?.let { updatePbIdSafely(localId, it.toString().trim('"')) }
+        if (created.isSuccess && validateWriteAcknowledgement(
+                created.body,
+                expectedLocalId = localId,
+                expectedBody = bodyObject,
+            )
+        ) {
+            val createdId = created.body?.get("id")?.toString()?.trim('"')
+                ?.takeIf(String::isNotBlank)
+                ?: return PushResolution.Failed
+            updatePbIdSafely(localId, createdId)
             return PushResolution.Pushed
         }
         val lookup = gateway.findByLocalId(collectionName, localId)
         val existing = lookup.body ?: return PushResolution.Failed
-        val record = recordFromJson(existing)
+        val record = runCatching { recordFromJson(validateRecordPayload(existing)) }
+            .getOrElse { return PushResolution.Failed }
+        if (recordLocalId(record) != localId) return PushResolution.Failed
         return resolveExistingAfterCreateConflict(
-            gateway, localId, updatedAt, bodyObject, existing, record, allowRemoteMerge,
+            gateway,
+            localId,
+            updatedAt,
+            bodyObject,
+            existing,
+            record,
+            allowRemoteMerge,
+            allowConflictRecovery,
         )
     }
 
@@ -760,6 +1037,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         body: JsonObject,
         rejected: GatewayResponse<JsonObject>,
         allowRemoteMerge: Boolean,
+        allowConflictRecovery: Boolean,
     ): PushResolution {
         log.w {
             "Guarded $collectionName update rejected with HTTP ${rejected.status.value}; " +
@@ -773,26 +1051,36 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 body["localUpdatedAt"]?.toString()?.trim('"')?.toLongOrNull() ?: 0L,
                 body.toString(),
                 allowRemoteMerge,
+                allowConflictRecovery,
             )
         } else {
             log.w { "Guarded $collectionName update rejected with HTTP ${rejected.status.value}; lookup failed with HTTP ${lookup.status.value}" }
             PushResolution.Failed
         }
-        val record = recordFromJson(existing)
+        val record = runCatching { recordFromJson(validateRecordPayload(existing)) }
+            .getOrElse { return PushResolution.Failed }
+        val recoveredPbId = existing["id"]?.toString()?.trim('"')
+            ?.takeIf(String::isNotBlank)
+            ?: return PushResolution.Failed
+        if (recordLocalId(record) != localId) return PushResolution.Failed
         val localUpdatedAt = body["localUpdatedAt"]?.toString()?.trim('"')?.toLongOrNull() ?: 0L
         return when {
             recordUpdatedAt(record) > localUpdatedAt -> {
                 resolveRemoteWinner(record, allowRemoteMerge)
             }
             recordUpdatedAt(record) == localUpdatedAt && canonicalPayloadEquals(body, existing) -> {
-                existing["id"]?.toString()?.trim('"')?.let { updatePbIdSafely(localId, it) }
+                updatePbIdSafely(localId, recoveredPbId)
                 PushResolution.Pushed
             }
             recordUpdatedAt(record) < localUpdatedAt -> {
-                val recoveredPbId = existing["id"]?.toString()?.trim('"')
-                    ?: return PushResolution.Failed
                 val updated = gateway.updateJson(collectionName, recoveredPbId, body)
-                if (updated.isSuccess) {
+                if (updated.isSuccess && validateWriteAcknowledgement(
+                        updated.body,
+                        expectedLocalId = localId,
+                        expectedBody = body,
+                        expectedUpdateId = recoveredPbId,
+                    )
+                ) {
                     updatePbIdSafely(localId, recoveredPbId)
                     PushResolution.Pushed
                 } else {
@@ -803,7 +1091,16 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                     PushResolution.Failed
                 }
             }
-            else -> divergentRemoteResolution(allowRemoteMerge)
+            else -> divergentRemoteResolution(
+                allowRemoteMerge = allowRemoteMerge,
+                allowConflictRecovery = allowConflictRecovery,
+                conflict = ValidatedSyncConflict(
+                    localId = localId,
+                    remote = existing,
+                    remoteId = recoveredPbId,
+                    remoteUpdatedAt = recordUpdatedAt(record),
+                ),
+            )
         }
     }
 
@@ -815,25 +1112,51 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         existingJson: JsonObject,
         existing: Record,
         allowRemoteMerge: Boolean,
+        allowConflictRecovery: Boolean,
     ): PushResolution = when {
         recordUpdatedAt(existing) > updatedAt -> {
             resolveRemoteWinner(existing, allowRemoteMerge)
         }
         recordUpdatedAt(existing) == updatedAt && canonicalPayloadEquals(body, existingJson) -> {
-            existingJson["id"]?.toString()?.trim('"')?.let { updatePbIdSafely(localId, it) }
+            val existingId = existingJson["id"]?.toString()?.trim('"')
+                ?.takeIf(String::isNotBlank)
+                ?: return PushResolution.Failed
+            updatePbIdSafely(localId, existingId)
             PushResolution.Pushed
         }
         recordUpdatedAt(existing) < updatedAt -> {
-            val existingId = existingJson["id"]?.toString()?.trim('"') ?: return PushResolution.Failed
+            val existingId = existingJson["id"]?.toString()?.trim('"')
+                ?.takeIf(String::isNotBlank)
+                ?: return PushResolution.Failed
             val updated = gateway.updateJson(collectionName, existingId, body)
-            if (updated.isSuccess) {
+            if (updated.isSuccess && validateWriteAcknowledgement(
+                    updated.body,
+                    expectedLocalId = localId,
+                    expectedBody = body,
+                    expectedUpdateId = existingId,
+                )
+            ) {
                 updatePbIdSafely(localId, existingId)
                 PushResolution.Pushed
             } else {
                 PushResolution.Failed
             }
         }
-        else -> divergentRemoteResolution(allowRemoteMerge)
+        else -> {
+            val existingId = existingJson["id"]?.toString()?.trim('"')
+                ?.takeIf(String::isNotBlank)
+                ?: return PushResolution.Failed
+            divergentRemoteResolution(
+                allowRemoteMerge = allowRemoteMerge,
+                allowConflictRecovery = allowConflictRecovery,
+                conflict = ValidatedSyncConflict(
+                    localId = localId,
+                    remote = existingJson,
+                    remoteId = existingId,
+                    remoteUpdatedAt = recordUpdatedAt(existing),
+                ),
+            )
+        }
     }
 
     private suspend fun resolveRemoteWinner(
@@ -849,17 +1172,62 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         return PushResolution.RemoteWon
     }
 
-    private fun divergentRemoteResolution(allowRemoteMerge: Boolean): PushResolution {
+    private suspend fun retryAfterEqualConflict(
+        pass: SyncPassContext,
+        conflict: PushResolution.Conflict,
+    ): PushResolution {
+        if (!pass.allowNormalConflictRecovery) return PushResolution.Failed
+        recoverLocalAfterEqualConflict(
+            pass = pass,
+            localId = conflict.remote.localId,
+            remote = conflict.remote.remote,
+            remoteId = conflict.remote.remoteId,
+            remoteUpdatedAt = conflict.remote.remoteUpdatedAt,
+        ) ?: return PushResolution.Failed
+        val current = getById(conflict.remote.localId) ?: return PushResolution.Failed
+        val currentPbId = pbId(current) ?: return PushResolution.Failed
+        val body = stripId(toJsonBody(current))
+        return when (
+            val retry = updateByPbIdOrRecover(
+                pass = pass,
+                localId = conflict.remote.localId,
+                pbId = currentPbId,
+                body = body,
+                allowRemoteMerge = true,
+                allowConflictRecovery = false,
+            )
+        ) {
+            PushResolution.Pushed -> PushResolution.RebasedPushed(
+                updatedAt = updatedAt(current),
+                isDeleted = isDeleted(current),
+            )
+            PushResolution.RemoteWon -> PushResolution.RemoteWon
+            PushResolution.Failed,
+            is PushResolution.Conflict,
+            is PushResolution.RebasedPushed,
+            -> PushResolution.Failed
+        }
+    }
+
+    private fun divergentRemoteResolution(
+        allowRemoteMerge: Boolean,
+        allowConflictRecovery: Boolean = false,
+        conflict: ValidatedSyncConflict? = null,
+    ): PushResolution {
         if (!allowRemoteMerge) {
             throw AuthoritativeSeedConflictException(
                 "Authoritative seed found an equal-timestamp divergent $collectionName row",
             )
         }
+        if (allowConflictRecovery && conflict != null) return PushResolution.Conflict(conflict)
         return PushResolution.Failed
     }
 
-    protected fun canonicalPayloadEquals(local: JsonObject, remote: JsonObject): Boolean =
-        local.entries.all { (key, value) -> remote[key] == value }
+    protected open fun canonicalPayloadEquals(local: JsonObject, remote: JsonObject): Boolean {
+        val localPayload = normalizedPayload(local, requireId = false) ?: return false
+        val remotePayload = normalizedPayload(remote, requireId = true) ?: return false
+        return localPayload == remotePayload
+    }
 
     private fun testOnlyCanonicalPayloadEquals(localBody: String, remote: Record): Boolean {
         val local = Json.parseToJsonElement(localBody) as? JsonObject ?: return false
@@ -881,6 +1249,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             log.w { "Failed to mark a $collectionName record as synced; it will be retried" }
+            throw SyncAdapterException("Failed to mark a $collectionName record as synced", e)
         }
     }
 
@@ -893,6 +1262,7 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             log.e { "Failed to save the remote id for a $collectionName record" }
+            throw SyncAdapterException("Failed to save the remote id for a $collectionName record", e)
         }
     }
 
@@ -903,7 +1273,20 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
 
     private enum class HardDeleteDecision { Deleted, Protected, Changed }
 
-    private enum class PushResolution { Pushed, RemoteWon, Failed }
+    private sealed interface PushResolution {
+        data object Pushed : PushResolution
+        data object RemoteWon : PushResolution
+        data object Failed : PushResolution
+        data class Conflict(val remote: ValidatedSyncConflict) : PushResolution
+        data class RebasedPushed(val updatedAt: Long, val isDeleted: Boolean) : PushResolution
+    }
+
+    private data class ValidatedSyncConflict(
+        val localId: String,
+        val remote: JsonObject,
+        val remoteId: String,
+        val remoteUpdatedAt: Long,
+    )
 
     private companion object {
         const val PAGE_SIZE = 200
