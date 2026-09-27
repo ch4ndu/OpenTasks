@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -36,6 +37,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -58,6 +62,8 @@ import opentasks.composeapp.generated.resources.ic_settings
 import opentasks.composeapp.generated.resources.not_urgent_important
 import opentasks.composeapp.generated.resources.not_urgent_unimportant
 import opentasks.composeapp.generated.resources.settings
+import opentasks.composeapp.generated.resources.task_mark_complete
+import opentasks.composeapp.generated.resources.task_mark_incomplete
 import opentasks.composeapp.generated.resources.urgent_important
 import opentasks.composeapp.generated.resources.urgent_unimportant
 import opentasks.composeapp.generated.resources.view_more
@@ -390,6 +396,9 @@ internal fun QuadrantTaskRow(
 ) {
     val dimens = OpenTasksTheme.dimens
     val isCompleted = task.status == TaskStatus.DONE
+    val completionDescription = stringResource(
+        if (isCompleted) Res.string.task_mark_incomplete else Res.string.task_mark_complete
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -397,37 +406,38 @@ internal fun QuadrantTaskRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Square checkbox matching screenshot style
-        TaskSquareCompletionButton(
-            isChecked = isCompleted,
-            onClick = onToggleComplete,
+        Box(
+            modifier = Modifier
+                .size(dimens.checkboxSize)
+                .then(
+                    if (isCompleted) {
+                        Modifier.background(
+                            color.copy(alpha = 0.4f),
+                            RoundedCornerShape(dimens.checkboxCorner)
+                        )
+                    } else {
+                        Modifier.border(
+                            dimens.checkboxBorder,
+                            color,
+                            RoundedCornerShape(dimens.checkboxCorner)
+                        )
+                    }
+                )
+                .toggleable(
+                    value = isCompleted,
+                    role = Role.Checkbox,
+                    onValueChange = { onToggleComplete() },
+                )
+                .semantics { contentDescription = completionDescription },
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(dimens.checkboxSize)
-                    .then(
-                        if (isCompleted) {
-                            Modifier.background(
-                                color.copy(alpha = 0.4f),
-                                RoundedCornerShape(dimens.checkboxCorner)
-                            )
-                        } else {
-                            Modifier.border(
-                                dimens.checkboxBorder,
-                                color,
-                                RoundedCornerShape(dimens.checkboxCorner)
-                            )
-                        }
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (isCompleted) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_check),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(dimens.checkboxIconSize),
-                    )
-                }
+            if (isCompleted) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_check),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(dimens.checkboxIconSize),
+                )
             }
         }
 

@@ -2,43 +2,91 @@
   "sourceLanguage" : "en",
   "strings" : {
     "share.cancel" : {
+      "extractionState" : "stale",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        }
       }
     },
     "share.confirm.message" : {
+      "extractionState" : "stale",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save this shared item for review in OpenTasks?" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save this shared item for review in OpenTasks?"
+          }
+        }
       }
     },
     "share.done" : {
+      "extractionState" : "stale",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Done" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        }
       }
     },
     "share.retry" : {
+      "extractionState" : "stale",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        }
       }
     },
     "share.save" : {
+      "extractionState" : "stale",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Save" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        }
       }
     },
     "share.save.failure" : {
+      "extractionState" : "stale",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unable to save this shared item. Please try again." } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unable to save this shared item. Please try again."
+          }
+        }
       }
     },
     "share.saved.message" : {
+      "extractionState" : "stale",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Saved. Open OpenTasks to review this shared item." } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved. Open OpenTasks to review this shared item."
+          }
+        }
       }
     },
     "share.title" : {
+      "extractionState" : "stale",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "OpenTasks" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenTasks"
+          }
+        }
       }
     }
   },

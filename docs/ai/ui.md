@@ -21,6 +21,7 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 ## Interaction Targets
 
 - Ordinary actions use the shared 48dp minimum interactive container. Keep that container token separate from icon, checkbox, indicator, and other visual-size tokens so accessibility fixes do not enlarge glyphs.
+- Preserve compact Eisenhower Matrix task rows. Their inline completion square uses `checkboxSize` as a measured/semantic size exception, with checkbox state and a localized action label; rely on framework-expanded touch hit bounds without adding a 48dp layout container that widens or raises the row.
 - Preserve `CalendarTaskRows` geometry. The two dense inline completion controls used by Day and Three-Day timelines are approved compact measured/semantic exceptions; they rely only on framework-expanded touch hit bounds and must not grow the surrounding timeline rows.
 - A seven-column `SelectableDayGrid` cannot guarantee 48dp measured/semantic cells when its content width is below 336dp. Compact date pickers retain their seven-column geometry and rely only on framework-expanded touch hit bounds; removing this narrow-layout residual requires a separately approved picker redesign.
 
