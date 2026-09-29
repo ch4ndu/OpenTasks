@@ -25,7 +25,8 @@ Important task workflows:
 - Mark tasks as To Do, In Progress, or Done.
 - Star tasks and use the Starred smart filter.
 - Assign tags for cross-category organization.
-- Use task list filters for category, Starred, Today, Overdue, No Date, High Priority, and Due This Week views.
+- Open the Tasks tab on an overview of the six smart views (Today, Overdue, Starred, No date, High priority, Due this week) and the user's lists, each with a live count of unfinished tasks. Tapping one opens that view inside Tasks; All views or Back returns to the overview, and returning from a task editor restores the open view.
+- Create a list from the overview's New list action.
 - Sort task lists by Recently Updated, Deadline, Priority, or Title.
 - Add more details such as section, location, URL, organizer, event status, and attendees.
 - Open a task location in the platform maps app when a location is present.
@@ -49,14 +50,17 @@ The opening surface supplies category, priority, and an optional Calendar civil 
 
 Task data is stored in the `tasks` Room table. `TaskRepositoryImpl` wraps `TaskDao`, converts timestamps between local app time and UTC storage, and triggers sync after writes.
 
-Reads flow through task use cases such as `ObserveAllTasksUseCase`, `ObserveTasksByPriorityUseCase`, `ObserveTasksForCategoryUseCase`, `ObserveTodayTasksUseCase`, and `ObserveTaskByIdUseCase`. Writes flow through task actions such as `AddTaskAction`, `UpdateTaskAction`, `DeleteTaskAction`, `ToggleTaskCompleteAction`, `UpdateTaskStatusAction`, `UpdateSectionAction`, and import/export actions.
+Reads flow through task use cases such as `ObserveTasksForFilterUseCase`, `ObserveTaskOverviewCountsUseCase`, `ObserveTasksByPriorityUseCase`, and `ObserveTaskByIdUseCase`. Smart-view membership is one shared predicate (`TaskListFilter.includes`) used by both the destination list and the overview counts; counts include only unfinished (TODO or IN_PROGRESS) tasks, while Starred, category, and Today destinations still show their completed section. Writes flow through task actions such as `AddTaskAction`, `UpdateTaskAction`, `DeleteTaskAction`, `ToggleTaskCompleteAction`, `UpdateTaskStatusAction`, `UpdateSectionAction`, and import/export actions.
 
 Screen state lives in feature ViewModels:
 
 - `MatrixViewModel` projects tasks for matrix list and board modes.
-- `TaskListViewModel` projects tasks for category filters, smart filters, sort options, and board/list modes.
+- `TaskOverviewViewModel` projects smart-view and list counts for the Tasks overview and creates lists.
+- `TaskListViewModel` is bound to one `Screen.TaskListDestination` filter and projects that view's tasks, sort options, and board/list modes.
 - `TaskFormViewModel` owns create/edit save flow, including the duplicate-save guard and pending task image handoff.
 - `QuickAddTaskViewModel` captures one reference time and active-cache boundary for its Navigation entry, owns parsing and chip dismissal, rejects duplicate or stale-boundary saves, and delegates persistence to `AddTaskAction`.
+
+The Tasks-tab Add task action creates in the open list's category; the overview and smart views create in Inbox without inferring a date, priority, or star. The task widget's list action has no category and opens the overview.
 
 The full editor retains the complete entry draft across recreation. Editing only text preserves the task's exact valid start/end values, including seconds and milliseconds, overnight ranges, multi-day spans, and imported all-day exclusive end dates. Moving the start date shifts the end date by the same civil-day distance while retaining its wall-clock time; explicit time changes keep the established civil-day span, while a newly created duration starts as same-day. Clearing the date clears the end date, and Save shows a localized validation error without persisting when the end precedes the start. Retained multi-day ranges remain visible in the date summary and duration tab.
 

@@ -19,6 +19,7 @@ import com.udnahc.opentasks.data.database.MIGRATION_11_12
 import com.udnahc.opentasks.data.database.MIGRATION_12_13
 import com.udnahc.opentasks.data.database.MIGRATION_13_14
 import com.udnahc.opentasks.data.model.AppConstants
+import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.auth.AccountCacheInspector
 import com.udnahc.opentasks.data.auth.AccountCacheInspectorContract
 import com.udnahc.opentasks.data.auth.AccountCacheResetter
@@ -138,12 +139,11 @@ import com.udnahc.opentasks.domain.usecase.tag.ObserveTagsForTaskUseCase
 import com.udnahc.opentasks.domain.usecase.task.FetchCalendarEventsUseCase
 import com.udnahc.opentasks.domain.usecase.task.GenerateCsvExportUseCase
 import com.udnahc.opentasks.domain.usecase.task.GenerateIcsExportUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTaskOverviewCountsUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForFilterUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseQuickTaskInputUseCase
@@ -166,6 +166,7 @@ import com.udnahc.opentasks.viewmodel.QuickAddTaskViewModel
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
+import com.udnahc.opentasks.viewmodel.TaskOverviewViewModel
 import com.udnahc.opentasks.viewmodel.TaskNotificationViewModel
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModel
@@ -253,10 +254,8 @@ val sharedModule = module {
     single { AllDayNotificationDismissalStore(get()) }
 
     // UseCases
-    single { ObserveAllTasksUseCase(get()) }
     single { ObserveTasksByPriorityUseCase(get()) }
     single { ObserveTasksByDayUseCase(get()) }
-    factory { ObserveTasksForCategoryUseCase(get()) }
     single { ObserveAllCategoriesUseCase(get()) }
     factory { ObserveTaskImagesUseCase(get()) }
     single { ObserveTaskImageSummariesUseCase(get()) }
@@ -269,7 +268,8 @@ val sharedModule = module {
     single { ObservePocketBaseUrlUseCase(get()) }
     single { ObserveAccountSessionUseCase(get()) }
     single { LocalDaySignal() }
-    single { ObserveTodayTasksUseCase(get(), get()) }
+    single { ObserveTasksForFilterUseCase(get(), get()) }
+    single { ObserveTaskOverviewCountsUseCase(get(), get()) }
     single { ObserveTaskSortOptionUseCase(get()) }
     single { ObserveTaskListViewModeUseCase(get()) }
     single { ObserveThemePreferenceUseCase(get()) }
@@ -456,23 +456,29 @@ val sharedModule = module {
             accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
         )
     }
-    viewModel {
+    viewModel { (filter: TaskListFilter) ->
         TaskListViewModel(
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
-            get(),
+            filter = filter,
+            observeTasksForFilter = get(),
+            observeAllCategories = get(),
+            toggleTaskCompleteAction = get(),
+            toggleTaskStarredAction = get(),
+            observeTaskSortOption = get(),
+            saveTaskSortOptionAction = get(),
+            observeTaskListViewMode = get(),
+            saveTaskListViewModeAction = get(),
+            updateTaskStatusAction = get(),
+            observeTaskImageSummaries = get(),
+            localDaySignal = get(),
+            taskDueTextProvider = get(),
+            accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
+    viewModel {
+        TaskOverviewViewModel(
+            observeTaskOverviewCounts = get(),
+            observeAllCategories = get(),
+            addCategoryAction = get(),
             accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
         )
     }

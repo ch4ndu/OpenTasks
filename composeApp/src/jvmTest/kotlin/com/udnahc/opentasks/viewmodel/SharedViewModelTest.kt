@@ -33,7 +33,6 @@ import com.udnahc.opentasks.data.notification.AllDayNotificationDismissalStore
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.notification.ReminderIdentity
 import com.udnahc.opentasks.data.notification.ReminderKind
-import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.ScheduleCountdownRemindersAction
@@ -66,15 +65,13 @@ import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarListDisplayMo
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarViewPreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskListViewModeUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForFilterUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.data.sync.PocketBaseClientProvider
 import com.udnahc.opentasks.data.sync.SyncService
-import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseIcsUseCase
 import com.udnahc.opentasks.testutil.FakeAppSettingsRepository
 import com.udnahc.opentasks.testutil.FakeAttachmentRepository
@@ -137,13 +134,13 @@ class SharedViewModelTest : MainDispatcherRule() {
                     .copy(completedAt = null, updatedAt = dayStart),
             ),
         )
-        val useCase = ObserveTodayTasksUseCase(
+        val useCase = ObserveTasksForFilterUseCase(
             repository,
             LocalDaySignal(currentDate = { LocalDate(2026, 5, 4) }),
         )
 
-        useCase().test {
-            assertEquals(listOf("completed-now"), awaitItem().completedToday.map { it.id })
+        useCase(TaskListFilter.Today).test {
+            assertEquals(listOf("completed-now"), awaitItem().map { it.id })
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -329,27 +326,24 @@ class SharedViewModelTest : MainDispatcherRule() {
         val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
         val attachmentRepository = FakeAttachmentRepository()
         val localDaySignal = LocalDaySignal()
-        val viewModel = TaskListViewModel(
-            observeTasksForCategory = ObserveTasksForCategoryUseCase(taskRepository),
-            observeAllTasks = ObserveAllTasksUseCase(taskRepository),
+        fun viewModelFor(filter: TaskListFilter) = TaskListViewModel(
+            filter = filter,
+            observeTasksForFilter = ObserveTasksForFilterUseCase(taskRepository, localDaySignal),
             observeAllCategories = ObserveAllCategoriesUseCase(categoryRepository),
             toggleTaskCompleteAction = ToggleTaskCompleteAction(taskRepository, scheduler),
             toggleTaskStarredAction = ToggleTaskStarredAction(taskRepository),
-            addCategoryAction = AddCategoryAction(categoryRepository),
             observeTaskSortOption = ObserveTaskSortOptionUseCase(settingsRepository),
             saveTaskSortOptionAction = SaveTaskSortOptionAction(settingsRepository),
-            observeTodayTasks = ObserveTodayTasksUseCase(taskRepository, localDaySignal),
             observeTaskListViewMode = ObserveTaskListViewModeUseCase(settingsRepository),
             saveTaskListViewModeAction = SaveTaskListViewModeAction(settingsRepository),
             updateTaskStatusAction = UpdateTaskStatusAction(taskRepository, scheduler),
             observeTaskImageSummaries = ObserveTaskImageSummariesUseCase(attachmentRepository),
             localDaySignal = localDaySignal,
         )
+        val viewModel = viewModelFor(TaskListFilter.Category("inbox"))
 
-        viewModel.selectCategory("inbox")
-        viewModel.setCategorySearchQuery("wo")
-        viewModel.filteredCategories.test {
-            assertEquals(listOf("work"), awaitMatching { it.map { category -> category.id } == listOf("work") }.map { it.id })
+        viewModel.categoryName.test {
+            assertEquals("Inbox", awaitMatching { it.isNotEmpty() })
             cancelAndIgnoreRemainingEvents()
         }
 
@@ -366,13 +360,11 @@ class SharedViewModelTest : MainDispatcherRule() {
             cancelAndIgnoreRemainingEvents()
         }
 
-        viewModel.selectFilter(TaskListFilter.Starred)
-        viewModel.tasksForSelectedCategory.test {
+        viewModelFor(TaskListFilter.Starred).tasksForSelectedCategory.test {
             assertEquals(listOf("starred"), awaitMatching { it.map { task -> task.id } == listOf("starred") }.map { it.id })
             cancelAndIgnoreRemainingEvents()
         }
 
-        viewModel.selectCategory("inbox")
         viewModel.tasksByStatus.test {
             val byStatus = awaitMatching { byStatus ->
                 byStatus[TaskStatus.TODO]?.map { it.id } == listOf("todo") &&
@@ -399,15 +391,13 @@ class SharedViewModelTest : MainDispatcherRule() {
         val settingsRepository = FakeAppSettingsRepository()
         val scheduler = ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository)
         val viewModel = TaskListViewModel(
-            observeTasksForCategory = ObserveTasksForCategoryUseCase(taskRepository),
-            observeAllTasks = ObserveAllTasksUseCase(taskRepository),
+            filter = TaskListFilter.Today,
+            observeTasksForFilter = ObserveTasksForFilterUseCase(taskRepository, localDaySignal),
             observeAllCategories = ObserveAllCategoriesUseCase(FakeCategoryRepository()),
             toggleTaskCompleteAction = ToggleTaskCompleteAction(taskRepository, scheduler),
             toggleTaskStarredAction = ToggleTaskStarredAction(taskRepository),
-            addCategoryAction = AddCategoryAction(FakeCategoryRepository()),
             observeTaskSortOption = ObserveTaskSortOptionUseCase(settingsRepository),
             saveTaskSortOptionAction = SaveTaskSortOptionAction(settingsRepository),
-            observeTodayTasks = ObserveTodayTasksUseCase(taskRepository, localDaySignal),
             observeTaskListViewMode = ObserveTaskListViewModeUseCase(settingsRepository),
             saveTaskListViewModeAction = SaveTaskListViewModeAction(settingsRepository),
             updateTaskStatusAction = UpdateTaskStatusAction(taskRepository, scheduler),
@@ -415,7 +405,6 @@ class SharedViewModelTest : MainDispatcherRule() {
             localDaySignal = localDaySignal,
         )
 
-        viewModel.selectFilter(TaskListFilter.Today)
         viewModel.tasksForSelectedCategory.test {
             assertEquals(emptyList(), awaitItem())
 
@@ -531,15 +520,13 @@ class SharedViewModelTest : MainDispatcherRule() {
                 "localized-matrix:${task.deadline}"
         }
         val viewModel = TaskListViewModel(
-            observeTasksForCategory = ObserveTasksForCategoryUseCase(taskRepository),
-            observeAllTasks = ObserveAllTasksUseCase(taskRepository),
+            filter = TaskListFilter.Category("inbox"),
+            observeTasksForFilter = ObserveTasksForFilterUseCase(taskRepository, LocalDaySignal()),
             observeAllCategories = ObserveAllCategoriesUseCase(categoryRepository),
             toggleTaskCompleteAction = ToggleTaskCompleteAction(taskRepository, scheduler),
             toggleTaskStarredAction = ToggleTaskStarredAction(taskRepository),
-            addCategoryAction = AddCategoryAction(categoryRepository),
             observeTaskSortOption = ObserveTaskSortOptionUseCase(FakeAppSettingsRepository()),
             saveTaskSortOptionAction = SaveTaskSortOptionAction(FakeAppSettingsRepository()),
-            observeTodayTasks = ObserveTodayTasksUseCase(taskRepository, LocalDaySignal()),
             observeTaskListViewMode = ObserveTaskListViewModeUseCase(FakeAppSettingsRepository()),
             saveTaskListViewModeAction = SaveTaskListViewModeAction(FakeAppSettingsRepository()),
             updateTaskStatusAction = UpdateTaskStatusAction(taskRepository, scheduler),
@@ -548,7 +535,6 @@ class SharedViewModelTest : MainDispatcherRule() {
             taskDueTextProvider = dueTextProvider,
         )
 
-        viewModel.selectCategory("inbox")
         viewModel.taskDueTextById.test {
             assertEquals(
                 "localized-list:$dayStart",

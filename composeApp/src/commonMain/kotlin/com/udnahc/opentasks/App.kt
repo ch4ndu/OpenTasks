@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +73,7 @@ import com.udnahc.opentasks.updateSharedTaskIntakeReadiness
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.TaskFormData
+import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.isCountdownItem
@@ -111,6 +113,7 @@ import com.udnahc.opentasks.ui.screens.QuickAddTaskScreen
 import com.udnahc.opentasks.ui.screens.SettingsScreen
 import com.udnahc.opentasks.ui.screens.TaskCreationChoiceBottomSheet
 import com.udnahc.opentasks.ui.screens.TaskListScreen
+import com.udnahc.opentasks.ui.screens.TaskOverviewScreen
 import com.udnahc.opentasks.ui.screens.TaskNotificationBottomSheet
 import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
 import com.udnahc.opentasks.ui.screens.countdown.CountdownDetailScreen
@@ -144,6 +147,7 @@ import com.udnahc.opentasks.viewmodel.TaskFormSaveEvent
 import com.udnahc.opentasks.viewmodel.TaskFormDestinationState
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
+import com.udnahc.opentasks.viewmodel.TaskOverviewViewModel
 import com.udnahc.opentasks.viewmodel.TaskNotificationViewModel
 import com.udnahc.opentasks.viewmodel.TaskNotificationSheetFeedback
 import com.udnahc.opentasks.viewmodel.SharedIcsImportResult
@@ -524,16 +528,21 @@ internal fun Screen.QuickAddTask.creationContext(): QuickTaskCreationContext = Q
 
 internal fun taskFabCreationScreen(
     selectedTab: Int,
-    selectedListId: String,
+    currentScreen: NavKey,
     calendarDay: Int,
     calendarMonth: Int,
     calendarYear: Int,
 ): Screen.CreateTask = Screen.CreateTask(
-    categoryId = if (selectedTab == 1) selectedListId else AppConstants.DEFAULT_INBOX_ID,
+    categoryId = taskListCreationCategoryId(currentScreen),
     day = if (selectedTab == 2) calendarDay else 0,
     month = if (selectedTab == 2) calendarMonth else 0,
     year = if (selectedTab == 2) calendarYear else 0,
 )
+
+/** Only a list destination implies a category; smart views and the overview create in Inbox. */
+internal fun taskListCreationCategoryId(currentScreen: NavKey): String =
+    ((currentScreen as? Screen.TaskListDestination)?.filter as? TaskListFilter.Category)?.id
+        ?: AppConstants.DEFAULT_INBOX_ID
 
 /** Keeps a departing form from unregistering the handler that replaced it. */
 internal class TaskFormBackHandlerRegistry {
@@ -606,7 +615,6 @@ private fun MainScreen(
     val onPullToRefresh = remember(appViewModel, isRemoteSyncEnabled) {
         if (isRemoteSyncEnabled) ({ appViewModel.triggerSync() }) else ({})
     }
-    var selectedListId by rememberSaveable { mutableStateOf(AppConstants.DEFAULT_INBOX_ID) }
     var calendarSelectedYear by remember { mutableIntStateOf(0) }
     var calendarSelectedMonth by remember { mutableIntStateOf(0) }
     var calendarSelectedDay by remember { mutableIntStateOf(0) }
@@ -778,7 +786,7 @@ private fun MainScreen(
     val selectedTab = remember(currentScreen) {
         when (currentScreen) {
             is Screen.Matrix, is Screen.QuadrantDetail -> 0
-            is Screen.TaskList -> 1
+            is Screen.TaskList, is Screen.TaskListDestination -> 1
             is Screen.Calendar -> 2
             is Screen.Notes -> 3
             is Screen.Countdown -> 4
@@ -972,21 +980,45 @@ private fun MainScreen(
                 }
 
                 entry<Screen.TaskList> {
-                    val taskListViewModel: TaskListViewModel = koinViewModel()
-                    TaskListScreen(
-                        viewModel = taskListViewModel,
-                        selectedCategoryId = selectedListId,
-                        onSelectedCategoryChanged = { selectedListId = it },
-                        onTaskClick = { task ->
-                            navController.navigate(Screen.EditTask(task.id))
+                    val taskOverviewViewModel: TaskOverviewViewModel = koinViewModel()
+                    TaskOverviewScreen(
+                        viewModel = taskOverviewViewModel,
+                        onViewClick = { filter ->
+                            navController.navigate(Screen.TaskListDestination(filter))
                         },
                         onSettingsClick = onSettingsClick,
                         isRefreshing = isRefreshing,
                         syncEnabled = isRemoteSyncEnabled,
                         onRefresh = onPullToRefresh,
-                        onTaskMutationFailure = onTaskMutationFailure,
                         onModalBusyChanged = { isBusy ->
                             onChildModalBusyChanged(Screen.TaskList, isBusy)
+                        },
+                    )
+                }
+
+                entry<Screen.TaskListDestination> { screen ->
+                    val taskListViewModel: TaskListViewModel = koinViewModel(
+                        key = "taskList:${screen.filter}",
+                        parameters = { parametersOf(screen.filter) },
+                    )
+                    TaskListScreen(
+                        viewModel = taskListViewModel,
+                        onAllViewsClick = {
+                            if (navController.previousScreen == Screen.TaskList) {
+                                navController.popBackStack()
+                            } else {
+                                navController.setRoot(Screen.TaskList)
+                            }
+                        },
+                        onTaskClick = { task ->
+                            navController.navigate(Screen.EditTask(task.id))
+                        },
+                        isRefreshing = isRefreshing,
+                        syncEnabled = isRemoteSyncEnabled,
+                        onRefresh = onPullToRefresh,
+                        onTaskMutationFailure = onTaskMutationFailure,
+                        onModalBusyChanged = { isBusy ->
+                            onChildModalBusyChanged(screen, isBusy)
                         },
                     )
                 }
@@ -1517,6 +1549,7 @@ private fun MainScreen(
             modifier = Modifier.align(Alignment.BottomEnd),
         ) {
             CreateTaskFab(
+                isLabeled = selectedTab == 1,
                 onClick = {
                     if (selectedTab == 4) {
                         navController.navigate(Screen.CreateCountdown())
@@ -1525,7 +1558,7 @@ private fun MainScreen(
                     } else {
                         pendingTaskCreation = taskFabCreationScreen(
                             selectedTab = selectedTab,
-                            selectedListId = selectedListId,
+                            currentScreen = currentScreen,
                             calendarDay = calendarSelectedDay,
                             calendarMonth = calendarSelectedMonth,
                             calendarYear = calendarSelectedYear,
@@ -1855,25 +1888,45 @@ private fun CalendarTabIcon(
 
 @Composable
 private fun CreateTaskFab(
+    isLabeled: Boolean,
     onClick: () -> Unit,
 ) {
-    FloatingActionButton(
-        onClick = onClick,
-        shape = CircleShape,
-        containerColor = PrimaryBlue,
-        contentColor = Color.White,
-        modifier = Modifier
-            .navigationBarsPadding()
-            .padding(
-                end = OpenTasksTheme.dimens.paddingXLarge,
-                bottom = OpenTasksTheme.dimens.fabBottomPadding
-            ),
-    ) {
-        Icon(
-            painter = painterResource(Res.drawable.ic_add),
-            contentDescription = stringResource(Res.string.add_task),
-            tint = Color.White,
+    val modifier = Modifier
+        .navigationBarsPadding()
+        .padding(
+            end = OpenTasksTheme.dimens.paddingXLarge,
+            bottom = OpenTasksTheme.dimens.fabBottomPadding
         )
+    if (isLabeled) {
+        ExtendedFloatingActionButton(
+            onClick = onClick,
+            shape = CircleShape,
+            containerColor = PrimaryBlue,
+            contentColor = Color.White,
+            modifier = modifier,
+            icon = {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_add),
+                    contentDescription = null,
+                    tint = Color.White,
+                )
+            },
+            text = { Text(text = stringResource(Res.string.add_task)) },
+        )
+    } else {
+        FloatingActionButton(
+            onClick = onClick,
+            shape = CircleShape,
+            containerColor = PrimaryBlue,
+            contentColor = Color.White,
+            modifier = modifier,
+        ) {
+            Icon(
+                painter = painterResource(Res.drawable.ic_add),
+                contentDescription = stringResource(Res.string.add_task),
+                tint = Color.White,
+            )
+        }
     }
 }
 

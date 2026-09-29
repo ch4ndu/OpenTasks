@@ -3,6 +3,7 @@ package com.udnahc.opentasks.navigation
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.serialization.NavBackStackSerializer
+import com.udnahc.opentasks.data.model.TaskListFilter
 import kotlinx.serialization.PolymorphicSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -18,6 +19,8 @@ class NavigationSerializationTest {
         val screens: List<NavKey> = listOf(
             Screen.Matrix,
             Screen.TaskList,
+            Screen.TaskListDestination(TaskListFilter.Category("work")),
+            Screen.TaskListDestination(TaskListFilter.Today),
             Screen.Calendar,
             Screen.Notes,
             Screen.QuadrantDetail(priorityOrdinal = 2),

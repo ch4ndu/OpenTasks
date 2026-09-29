@@ -13,139 +13,103 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskListViewMode
 import com.udnahc.opentasks.data.model.TaskSortOption
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
+import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel.ActiveTaskListSection
 import com.udnahc.opentasks.viewmodel.TaskListViewModel.SectionGroup
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.all_views
 import opentasks.composeapp.generated.resources.completed
-import opentasks.composeapp.generated.resources.due_this_week
-import opentasks.composeapp.generated.resources.high_priority
-import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_attach
+import opentasks.composeapp.generated.resources.ic_chevron_left
+import opentasks.composeapp.generated.resources.ic_grid_view
 import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_unfold
-import opentasks.composeapp.generated.resources.inbox
 import opentasks.composeapp.generated.resources.image_attachment
-import opentasks.composeapp.generated.resources.no_date
 import opentasks.composeapp.generated.resources.no_tasks
 import opentasks.composeapp.generated.resources.overdue
-import opentasks.composeapp.generated.resources.select
-import opentasks.composeapp.generated.resources.sort_by
+import opentasks.composeapp.generated.resources.sort
 import opentasks.composeapp.generated.resources.sort_by_deadline
 import opentasks.composeapp.generated.resources.sort_by_priority
 import opentasks.composeapp.generated.resources.sort_by_title
+import opentasks.composeapp.generated.resources.sort_current_description
 import opentasks.composeapp.generated.resources.sort_recently_updated
-import opentasks.composeapp.generated.resources.starred
-import opentasks.composeapp.generated.resources.today
-import opentasks.composeapp.generated.resources.toggle_view_mode
+import opentasks.composeapp.generated.resources.task_view_board
+import opentasks.composeapp.generated.resources.task_view_list
 import opentasks.composeapp.generated.resources.upcoming
+import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskListScreen(
     viewModel: TaskListViewModel,
-    selectedCategoryId: String,
-    onSelectedCategoryChanged: (String) -> Unit,
+    onAllViewsClick: () -> Unit,
     onTaskClick: (Task) -> Unit,
-    onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
     onTaskMutationFailure: () -> Unit = {},
     onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
-    // Sync parent's selectedCategoryId into ViewModel for the derived flow
-    LaunchedEffect(selectedCategoryId) { viewModel.selectCategory(selectedCategoryId) }
-
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
-    val currentFilter by viewModel.currentFilter.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
-    var showCategoryPicker by remember { mutableStateOf(false) }
+    val categoryName by viewModel.categoryName.collectAsState()
     var isSortMenuBusy by remember { mutableStateOf(false) }
     ModalBusyEffect(
-        taskPendingSeriesChoice != null || showCategoryPicker || isSortMenuBusy,
+        taskPendingSeriesChoice != null || isSortMenuBusy,
         onModalBusyChanged,
     )
-
-    val categories by viewModel.categories.collectAsState()
-    val defaultListName = stringResource(Res.string.inbox)
-    val starredName = stringResource(Res.string.starred)
-    val todayName = stringResource(Res.string.today)
-    val overdueStr = stringResource(Res.string.overdue)
-    val noDateStr = stringResource(Res.string.no_date)
-    val highPriorityStr = stringResource(Res.string.high_priority)
-    val dueThisWeekStr = stringResource(Res.string.due_this_week)
-    val selectedListName = remember(
-        categories,
-        currentFilter,
-        defaultListName,
-        starredName,
-        todayName,
-        overdueStr,
-        noDateStr,
-        highPriorityStr,
-        dueThisWeekStr
-    ) {
-        when (currentFilter) {
-            is TaskListFilter.Starred -> starredName
-            is TaskListFilter.Today -> todayName
-            is TaskListFilter.Overdue -> overdueStr
-            is TaskListFilter.NoDate -> noDateStr
-            is TaskListFilter.HighPriority -> highPriorityStr
-            is TaskListFilter.DueThisWeek -> dueThisWeekStr
-            is TaskListFilter.Category -> {
-                val catId = (currentFilter as TaskListFilter.Category).id
-                categories.find { it.id == catId }?.name ?: defaultListName
-            }
-        }
+    val listName = if (viewModel.filter is TaskListFilter.Category) {
+        categoryName
+    } else {
+        taskListFilterTitle(viewModel.filter)
     }
-
-    val density = LocalDensity.current
-    val statusBarHeight = with(density) {
-        WindowInsets.statusBars.getTop(this).toDp()
-    }
-    val navBarHeight = with(density) {
+    val navBarHeight = with(LocalDensity.current) {
         WindowInsets.navigationBars.getBottom(this).toDp()
     }
-    val dimens = OpenTasksTheme.dimens
-    val topBarHeight = dimens.topBarHeight + statusBarHeight
 
     when (viewMode) {
         TaskListViewMode.LIST -> {
@@ -154,7 +118,7 @@ fun TaskListScreen(
             val taskContentPreviews by viewModel.taskContentPreviews.collectAsState()
             val taskDueTextById by viewModel.taskDueTextById.collectAsState()
             TaskListContent(
-                listName = selectedListName,
+                listName = listName,
                 completedTasks = listProjection.completedTasks,
                 groupedActiveTasks = listProjection.groupedActiveTasks,
                 taskImageSummaries = taskImageSummaries,
@@ -163,12 +127,11 @@ fun TaskListScreen(
                 onTaskClick = onTaskClick,
                 onToggleComplete = { viewModel.toggleComplete(it) },
                 onToggleStar = { viewModel.toggleStar(it) },
-                onListClick = { showCategoryPicker = true },
-                onSettingsClick = onSettingsClick,
+                onAllViewsClick = onAllViewsClick,
                 sortOption = sortOption,
                 onSortOptionSelected = { viewModel.setSortOption(it) },
                 viewMode = viewMode,
-                onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.BOARD) },
+                onViewModeSelected = { viewModel.setViewMode(it) },
                 isRefreshing = isRefreshing,
                 syncEnabled = syncEnabled,
                 onRefresh = onRefresh,
@@ -179,14 +142,23 @@ fun TaskListScreen(
         TaskListViewMode.BOARD -> {
             val tasksByStatus by viewModel.tasksByStatus.collectAsState()
             val taskDueTextById by viewModel.boardTaskDueTextById.collectAsState()
-            Box(
+            Column(
                 modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
             ) {
+                TaskListTopBar(
+                    listName = listName,
+                    onAllViewsClick = onAllViewsClick,
+                    sortOption = sortOption,
+                    onSortOptionSelected = { viewModel.setSortOption(it) },
+                    viewMode = viewMode,
+                    onViewModeSelected = { viewModel.setViewMode(it) },
+                    onSortMenuBusyChanged = { isSortMenuBusy = it },
+                )
                 SyncPullToRefresh(
                     isRefreshing = isRefreshing,
                     enabled = syncEnabled,
                     onRefresh = onRefresh,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                 ) {
                     KanbanBoardContent(
                         tasksByStatus = tasksByStatus,
@@ -199,22 +171,10 @@ fun TaskListScreen(
                             )
                         },
                         onToggleStar = { viewModel.toggleStar(it) },
-                        topBarHeight = topBarHeight,
+                        topBarHeight = 0.dp,
                         navBarHeight = navBarHeight,
                     )
                 }
-
-                // Translucent top bar overlay for board mode
-                TaskListTopBar(
-                    listName = selectedListName,
-                    onListClick = { showCategoryPicker = true },
-                    onSettingsClick = onSettingsClick,
-                    sortOption = sortOption,
-                    onSortOptionSelected = { viewModel.setSortOption(it) },
-                    viewMode = viewMode,
-                    onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.LIST) },
-                    onSortMenuBusyChanged = { isSortMenuBusy = it },
-                )
             }
         }
     }
@@ -232,45 +192,8 @@ fun TaskListScreen(
         consume = viewModel::consumeTaskMutationFailureEvent,
         onFailure = onTaskMutationFailure,
     )
-
-    if (showCategoryPicker) {
-        val filteredCategories by viewModel.filteredCategories.collectAsState()
-        val categorySearchQuery by viewModel.categorySearchQuery.collectAsState()
-        val listPickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        CategoryPickerBottomSheet(
-            sheetState = listPickerState,
-            categories = filteredCategories,
-            selectedCategoryId = if (currentFilter is TaskListFilter.Category) {
-                (currentFilter as TaskListFilter.Category).id
-            } else {
-                ""
-            },
-            onCategorySelected = { category ->
-                viewModel.selectFilter(TaskListFilter.Category(category.id))
-                onSelectedCategoryChanged(category.id)
-                viewModel.setCategorySearchQuery("")
-                showCategoryPicker = false
-            },
-            onAddCategory = { name -> viewModel.addCategory(name) },
-            onDismiss = {
-                viewModel.setCategorySearchQuery("")
-                showCategoryPicker = false
-            },
-            showTitle = false,
-            showSearch = false,
-            searchQuery = categorySearchQuery,
-            onSearchQueryChange = { viewModel.setCategorySearchQuery(it) },
-            selectedFilter = currentFilter,
-            onFilterSelected = { filter ->
-                viewModel.selectFilter(filter)
-                viewModel.setCategorySearchQuery("")
-                showCategoryPicker = false
-            },
-        )
-    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TaskListContent(
     listName: String,
@@ -282,38 +205,40 @@ internal fun TaskListContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     onToggleStar: (Task) -> Unit = {},
-    onListClick: () -> Unit = {},
-    onSettingsClick: () -> Unit = {},
+    onAllViewsClick: () -> Unit = {},
     sortOption: TaskSortOption = TaskSortOption.RECENTLY_UPDATED,
     onSortOptionSelected: (TaskSortOption) -> Unit = {},
     viewMode: TaskListViewMode = TaskListViewMode.LIST,
-    onViewModeToggle: () -> Unit = {},
+    onViewModeSelected: (TaskListViewMode) -> Unit = {},
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
     onSortMenuBusyChanged: (Boolean) -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
-    val density = LocalDensity.current
-    val statusBarHeight = with(density) {
-        WindowInsets.statusBars.getTop(this).toDp()
-    }
-    val navBarHeight = with(density) {
+    val navBarHeight = with(LocalDensity.current) {
         WindowInsets.navigationBars.getBottom(this).toDp()
     }
-    // TopAppBar default height + status bar
-    val topBarHeight = dimens.topBarHeight + statusBarHeight
 
-    var overdueCollapsed by remember { mutableStateOf(false) }
-    var upcomingCollapsed by remember { mutableStateOf(false) }
-    var completedCollapsed by remember { mutableStateOf(false) }
+    var overdueCollapsed by rememberSaveable { mutableStateOf(false) }
+    var upcomingCollapsed by rememberSaveable { mutableStateOf(false) }
+    var completedCollapsed by rememberSaveable { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        TaskListTopBar(
+            listName = listName,
+            onAllViewsClick = onAllViewsClick,
+            sortOption = sortOption,
+            onSortOptionSelected = onSortOptionSelected,
+            viewMode = viewMode,
+            onViewModeSelected = onViewModeSelected,
+            onSortMenuBusyChanged = onSortMenuBusyChanged,
+        )
         SyncPullToRefresh(
             isRefreshing = isRefreshing,
             enabled = syncEnabled,
             onRefresh = onRefresh,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth().weight(1f),
         ) {
             // Task list — fills entire screen, scrolls behind top bar and bottom nav
             if (groupedActiveTasks.isEmpty() && completedTasks.isEmpty()) {
@@ -325,7 +250,6 @@ internal fun TaskListContent(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        top = topBarHeight,
                         bottom = navBarHeight + dimens.fabAreaBottom + dimens.fabBottomPadding,
                     ),
                 ) {
@@ -415,79 +339,93 @@ internal fun TaskListContent(
                 }
             }
         }
-
-        // Translucent Top bar overlay — content scrolls behind this
-        TaskListTopBar(
-            listName = listName,
-            onListClick = onListClick,
-            onSettingsClick = onSettingsClick,
-            sortOption = sortOption,
-            onSortOptionSelected = onSortOptionSelected,
-            viewMode = viewMode,
-            onViewModeToggle = onViewModeToggle,
-            onSortMenuBusyChanged = onSortMenuBusyChanged,
-        )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TaskListTopBar(
     listName: String,
-    onListClick: () -> Unit,
-    onSettingsClick: () -> Unit = {},
+    onAllViewsClick: () -> Unit,
     sortOption: TaskSortOption = TaskSortOption.RECENTLY_UPDATED,
     onSortOptionSelected: (TaskSortOption) -> Unit = {},
     viewMode: TaskListViewMode = TaskListViewMode.LIST,
-    onViewModeToggle: () -> Unit = {},
+    onViewModeSelected: (TaskListViewMode) -> Unit = {},
     onSortMenuBusyChanged: (Boolean) -> Unit = {},
 ) {
+    val dimens = OpenTasksTheme.dimens
     var showSortMenu by remember { mutableStateOf(false) }
     ModalBusyEffect(showSortMenu, onSortMenuBusyChanged)
 
-    OpenTasksTopBar(
-        containerStyle = OpenTasksTopBarContainerStyle.Translucent,
-        titleContent = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clickable(onClick = onListClick)
-                    .minimumInteractiveTargetSize(),
-            ) {
-                Text(
-                    text = listName,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Spacer(Modifier.width(OpenTasksTheme.dimens.spacerMedium))
-                Icon(
-                    painter = painterResource(Res.drawable.ic_unfold),
-                    contentDescription = stringResource(Res.string.select),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(OpenTasksTheme.dimens.iconDefault),
-                )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingSmall),
+    ) {
+        TextButton(onClick = onAllViewsClick) {
+            Icon(
+                painter = painterResource(Res.drawable.ic_chevron_left),
+                contentDescription = null,
+                tint = PrimaryBlue,
+                modifier = Modifier.size(dimens.iconDefault),
+            )
+            Spacer(Modifier.width(dimens.spacerSmall))
+            Text(text = stringResource(Res.string.all_views), color = PrimaryBlue)
+        }
+        Text(
+            text = listName,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .semantics { heading() }
+                .padding(horizontal = dimens.paddingMedium, vertical = dimens.paddingSmall),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = dimens.paddingSmall),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.weight(1f)) {
+                TaskListViewMode.entries.forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = mode == viewMode,
+                        onClick = { onViewModeSelected(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(index, TaskListViewMode.entries.size),
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = PrimaryBlue,
+                            activeContentColor = Color.White,
+                        ),
+                        icon = {
+                            Icon(
+                                painter = painterResource(viewModeIcon(mode)),
+                                contentDescription = null,
+                                modifier = Modifier.size(dimens.iconDefault),
+                            )
+                        },
+                    ) {
+                        Text(text = viewModeLabel(mode), maxLines = 1)
+                    }
+                }
             }
-        },
-        actions = {
-            IconButton(onClick = onViewModeToggle) {
-                Icon(
-                    painter = painterResource(
-                        when (viewMode) {
-                            TaskListViewMode.LIST -> Res.drawable.ic_grid_view
-                            TaskListViewMode.BOARD -> Res.drawable.ic_list
-                        }
-                    ),
-                    contentDescription = stringResource(Res.string.toggle_view_mode),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Spacer(Modifier.width(dimens.spacerLarge))
             Box {
-                IconButton(onClick = { showSortMenu = true }) {
+                val sortDescription = stringResource(
+                    Res.string.sort_current_description,
+                    sortOptionLabel(sortOption),
+                )
+                OutlinedButton(
+                    onClick = { showSortMenu = true },
+                    modifier = Modifier.semantics { contentDescription = sortDescription },
+                ) {
                     Icon(
                         painter = painterResource(Res.drawable.ic_unfold),
-                        contentDescription = stringResource(Res.string.sort_by),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        contentDescription = null,
+                        modifier = Modifier.size(dimens.iconDefault),
                     )
+                    Spacer(Modifier.width(dimens.spacerSmall))
+                    Text(text = stringResource(Res.string.sort), maxLines = 1)
                 }
                 SortOptionDropdown(
                     expanded = showSortMenu,
@@ -496,9 +434,19 @@ internal fun TaskListTopBar(
                     onDismiss = { showSortMenu = false },
                 )
             }
-            OpenTasksSettingsButton(onClick = onSettingsClick)
-        },
-    )
+        }
+    }
+}
+
+private fun viewModeIcon(mode: TaskListViewMode): DrawableResource = when (mode) {
+    TaskListViewMode.LIST -> Res.drawable.ic_list
+    TaskListViewMode.BOARD -> Res.drawable.ic_grid_view
+}
+
+@Composable
+private fun viewModeLabel(mode: TaskListViewMode): String = when (mode) {
+    TaskListViewMode.LIST -> stringResource(Res.string.task_view_list)
+    TaskListViewMode.BOARD -> stringResource(Res.string.task_view_board)
 }
 
 @Composable

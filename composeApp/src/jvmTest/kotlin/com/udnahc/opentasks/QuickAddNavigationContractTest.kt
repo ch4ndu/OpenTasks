@@ -1,6 +1,7 @@
 package com.udnahc.opentasks
 
 import com.udnahc.opentasks.data.model.AppConstants
+import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.navigation.Screen
 import com.udnahc.opentasks.navigation.asQuickAddTask
@@ -15,15 +16,21 @@ class QuickAddNavigationContractTest {
     fun matrixTaskListAndCalendarFabContextsMatchExistingFullEditorDefaults() {
         assertEquals(
             Screen.CreateTask(),
-            taskFabCreationScreen(0, "ignored", 9, 8, 2030),
+            taskFabCreationScreen(0, Screen.Matrix, 9, 8, 2030),
         )
         assertEquals(
             Screen.CreateTask(categoryId = "projects"),
-            taskFabCreationScreen(1, "projects", 9, 8, 2030),
+            taskFabCreationScreen(
+                1,
+                Screen.TaskListDestination(TaskListFilter.Category("projects")),
+                9,
+                8,
+                2030,
+            ),
         )
         assertEquals(
             Screen.CreateTask(day = 9, month = 8, year = 2030),
-            taskFabCreationScreen(2, "ignored", 9, 8, 2030),
+            taskFabCreationScreen(2, Screen.Calendar, 9, 8, 2030),
         )
     }
 

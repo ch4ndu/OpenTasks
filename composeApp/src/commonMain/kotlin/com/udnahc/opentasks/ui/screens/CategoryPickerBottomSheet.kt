@@ -33,37 +33,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import com.udnahc.opentasks.data.model.Category
-import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
-import com.udnahc.opentasks.ui.theme.PriorityHigh
-import com.udnahc.opentasks.ui.theme.StarGold
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_list
 import opentasks.composeapp.generated.resources.cancel
 import opentasks.composeapp.generated.resources.close
-import opentasks.composeapp.generated.resources.due_this_week
-import opentasks.composeapp.generated.resources.filters
-import opentasks.composeapp.generated.resources.high_priority
 import opentasks.composeapp.generated.resources.ic_add
-import opentasks.composeapp.generated.resources.ic_alarm
-import opentasks.composeapp.generated.resources.ic_calendar
 import opentasks.composeapp.generated.resources.ic_check
 import opentasks.composeapp.generated.resources.ic_close
-import opentasks.composeapp.generated.resources.ic_flag
 import opentasks.composeapp.generated.resources.ic_inbox
 import opentasks.composeapp.generated.resources.ic_list
-import opentasks.composeapp.generated.resources.ic_schedule
-import opentasks.composeapp.generated.resources.ic_star
 import opentasks.composeapp.generated.resources.list_name
 import opentasks.composeapp.generated.resources.lists
 import opentasks.composeapp.generated.resources.move_to
-import opentasks.composeapp.generated.resources.no_date
 import opentasks.composeapp.generated.resources.ok
-import opentasks.composeapp.generated.resources.overdue
 import opentasks.composeapp.generated.resources.search
-import opentasks.composeapp.generated.resources.starred
-import opentasks.composeapp.generated.resources.today
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -77,12 +62,8 @@ fun CategoryPickerBottomSheet(
     onCategorySelected: (Category) -> Unit,
     onAddCategory: (String) -> Unit,
     onDismiss: () -> Unit,
-    showTitle: Boolean = true,
-    showSearch: Boolean = true,
     searchQuery: String = "",
     onSearchQueryChange: (String) -> Unit = {},
-    selectedFilter: TaskListFilter = TaskListFilter.Category(""),
-    onFilterSelected: (TaskListFilter) -> Unit = {},
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -95,15 +76,11 @@ fun CategoryPickerBottomSheet(
         CategoryPickerContent(
             categories = categories,
             selectedCategoryId = selectedCategoryId,
-            showTitle = showTitle,
-            showSearch = showSearch,
             searchQuery = searchQuery,
             onSearchQueryChange = onSearchQueryChange,
             onCategorySelected = onCategorySelected,
             onAddCategoryClick = { showAddDialog = true },
             onDismiss = onDismiss,
-            selectedFilter = selectedFilter,
-            onFilterSelected = onFilterSelected,
         )
     }
 
@@ -122,15 +99,11 @@ fun CategoryPickerBottomSheet(
 internal fun CategoryPickerContent(
     categories: List<Category>,
     selectedCategoryId: String,
-    showTitle: Boolean,
-    showSearch: Boolean = true,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onCategorySelected: (Category) -> Unit,
     onAddCategoryClick: () -> Unit,
     onDismiss: () -> Unit,
-    selectedFilter: TaskListFilter = TaskListFilter.Category(""),
-    onFilterSelected: (TaskListFilter) -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     Column(
@@ -156,38 +129,34 @@ internal fun CategoryPickerContent(
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            if (showTitle) {
-                Text(
-                    text = stringResource(Res.string.move_to),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            Text(
+                text = stringResource(Res.string.move_to),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
 
         // Search bar
-        if (showSearch) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = {
-                    Text(
-                        text = stringResource(Res.string.search),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingMedium),
-                shape = RoundedCornerShape(dimens.cornerXLarge),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.outline,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                ),
-            )
-        }
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            placeholder = {
+                Text(
+                    text = stringResource(Res.string.search),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingMedium),
+            shape = RoundedCornerShape(dimens.cornerXLarge),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.outline,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+            ),
+        )
 
         Spacer(Modifier.height(dimens.spacerSmall))
 
@@ -195,83 +164,15 @@ internal fun CategoryPickerContent(
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
         ) {
-            // Filters section header
-            item(key = "filters_header") {
-                SectionDivider(label = stringResource(Res.string.filters))
-            }
-
-            // Smart filter rows
-            item(key = "starred_filter") {
-                SmartFilterRow(
-                    iconRes = Res.drawable.ic_star,
-                    iconTint = StarGold,
-                    label = stringResource(Res.string.starred),
-                    isSelected = selectedFilter is TaskListFilter.Starred,
-                    onClick = { onFilterSelected(TaskListFilter.Starred) },
-                )
-            }
-
-            item(key = "today_filter") {
-                SmartFilterRow(
-                    iconRes = Res.drawable.ic_alarm,
-                    iconTint = PrimaryBlue,
-                    label = stringResource(Res.string.today),
-                    isSelected = selectedFilter is TaskListFilter.Today,
-                    onClick = { onFilterSelected(TaskListFilter.Today) },
-                )
-            }
-
-            item(key = "overdue_filter") {
-                SmartFilterRow(
-                    iconRes = Res.drawable.ic_alarm,
-                    iconTint = PriorityHigh,
-                    label = stringResource(Res.string.overdue),
-                    isSelected = selectedFilter is TaskListFilter.Overdue,
-                    onClick = { onFilterSelected(TaskListFilter.Overdue) },
-                )
-            }
-
-            item(key = "no_date_filter") {
-                SmartFilterRow(
-                    iconRes = Res.drawable.ic_schedule,
-                    iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    label = stringResource(Res.string.no_date),
-                    isSelected = selectedFilter is TaskListFilter.NoDate,
-                    onClick = { onFilterSelected(TaskListFilter.NoDate) },
-                )
-            }
-
-            item(key = "high_priority_filter") {
-                SmartFilterRow(
-                    iconRes = Res.drawable.ic_flag,
-                    iconTint = PriorityHigh,
-                    label = stringResource(Res.string.high_priority),
-                    isSelected = selectedFilter is TaskListFilter.HighPriority,
-                    onClick = { onFilterSelected(TaskListFilter.HighPriority) },
-                )
-            }
-
-            item(key = "due_this_week_filter") {
-                SmartFilterRow(
-                    iconRes = Res.drawable.ic_calendar,
-                    iconTint = PrimaryBlue,
-                    label = stringResource(Res.string.due_this_week),
-                    isSelected = selectedFilter is TaskListFilter.DueThisWeek,
-                    onClick = { onFilterSelected(TaskListFilter.DueThisWeek) },
-                )
-            }
-
             // Lists section header
             item(key = "lists_header") {
                 SectionDivider(label = stringResource(Res.string.lists))
             }
 
             items(categories, key = { it.id }) { category ->
-                val filterCategory = selectedFilter as? TaskListFilter.Category
-                val isSelected = filterCategory != null && filterCategory.id == category.id
                 CategoryPickerRow(
                     category = category,
-                    isSelected = isSelected,
+                    isSelected = category.id == selectedCategoryId,
                     onClick = { onCategorySelected(category) },
                 )
             }
@@ -300,24 +201,6 @@ private fun SectionDivider(label: String) {
             horizontal = dimens.paddingXLarge,
             vertical = dimens.paddingMedium
         ),
-    )
-}
-
-@Composable
-private fun SmartFilterRow(
-    iconRes: DrawableResource,
-    iconTint: Color,
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-) {
-    SelectableIconRow(
-        iconRes = iconRes,
-        iconTint = iconTint,
-        label = label,
-        labelColor = if (isSelected) PrimaryBlue else MaterialTheme.colorScheme.onSurface,
-        isSelected = isSelected,
-        onClick = onClick,
     )
 }
 
@@ -384,7 +267,7 @@ private fun SelectableIconRow(
 }
 
 @Composable
-private fun AddCategoryDialog(
+internal fun AddCategoryDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {

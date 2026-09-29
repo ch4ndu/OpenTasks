@@ -17,7 +17,6 @@ private fun CategoryPickerPreview() {
         CategoryPickerContent(
             categories = sampleCategories,
             selectedCategoryId = "1",
-            showTitle = true,
             searchQuery = "",
             onSearchQueryChange = {},
             onCategorySelected = {},

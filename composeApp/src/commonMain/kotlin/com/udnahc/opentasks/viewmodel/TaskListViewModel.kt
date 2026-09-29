@@ -4,15 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
-import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.AttachmentSummary
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskListViewMode
-import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskSortOption
 import com.udnahc.opentasks.data.model.TaskStatus
-import com.udnahc.opentasks.domain.action.category.AddCategoryAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskListViewModeAction
 import com.udnahc.opentasks.domain.action.settings.SaveTaskSortOptionAction
 import com.udnahc.opentasks.domain.action.task.TaskCompletionHandler
@@ -24,9 +21,7 @@ import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskListViewModeUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForCategoryUseCase
-import com.udnahc.opentasks.domain.usecase.task.ObserveTodayTasksUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForFilterUseCase
 import com.udnahc.opentasks.domain.usecase.task.PlainTaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.taskPreviewTextById
@@ -44,20 +39,16 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.plus
 
 class TaskListViewModel(
-    observeTasksForCategory: ObserveTasksForCategoryUseCase,
-    observeAllTasks: ObserveAllTasksUseCase,
+    val filter: TaskListFilter,
+    observeTasksForFilter: ObserveTasksForFilterUseCase,
     observeAllCategories: ObserveAllCategoriesUseCase,
     toggleTaskCompleteAction: ToggleTaskCompleteAction,
     private val toggleTaskStarredAction: ToggleTaskStarredAction,
-    addCategoryAction: AddCategoryAction,
     observeTaskSortOption: ObserveTaskSortOptionUseCase,
     private val saveTaskSortOptionAction: SaveTaskSortOptionAction,
-    observeTodayTasks: ObserveTodayTasksUseCase,
     observeTaskListViewMode: ObserveTaskListViewModeUseCase,
     private val saveTaskListViewModeAction: SaveTaskListViewModeAction,
     private val updateTaskStatusAction: UpdateTaskStatusAction,
@@ -82,18 +73,6 @@ class TaskListViewModel(
         UPCOMING
     }
 
-    private val _filter = MutableStateFlow<TaskListFilter>(
-        TaskListFilter.Category(AppConstants.DEFAULT_INBOX_ID)
-    )
-    val currentFilter: StateFlow<TaskListFilter> = _filter
-
-    private val categoryPicker = CategoryPickerDelegate(
-        observeAllCategories,
-        addCategoryAction,
-        viewModelScope,
-        accountBoundaryExecutor,
-    )
-
     private val mutationLauncher = ForegroundMutationLauncher(
         accountBoundaryExecutor,
         viewModelScope,
@@ -117,45 +96,17 @@ class TaskListViewModel(
     )
     val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val tasksForSelectedCategory: StateFlow<List<Task>> = _filter
-        .flatMapLatest { filter ->
-            when (filter) {
-                is TaskListFilter.Category -> observeTasksForCategory(filter.id)
-                is TaskListFilter.Starred -> observeAllTasks().map { tasks ->
-                    tasks.filter { it.isStarred }
-                }
-
-                is TaskListFilter.Today -> observeTodayTasks().map { todayTasks ->
-                    todayTasks.overdue + todayTasks.today + todayTasks.completedToday
-                }
-
-                is TaskListFilter.Overdue -> combine(observeAllTasks(), localDaySignal.dates) { tasks, today ->
-                    val startOfToday =
-                        startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)
-                    tasks.filter { it.status != TaskStatus.DONE && it.deadline != null && it.deadline < startOfToday }
-                }
-
-                is TaskListFilter.NoDate -> observeAllTasks().map { tasks ->
-                    tasks.filter { it.status != TaskStatus.DONE && it.deadline == null }
-                }
-
-                is TaskListFilter.HighPriority -> observeAllTasks().map { tasks ->
-                    tasks.filter { it.status != TaskStatus.DONE && it.priority == TaskPriority.HIGH }
-                }
-
-                is TaskListFilter.DueThisWeek -> combine(observeAllTasks(), localDaySignal.dates) { tasks, today ->
-                    val startOfToday =
-                        startOfDayLocalMillis(today.year, today.monthNumber, today.dayOfMonth)
-                    val endDate = today.plus(7, DateTimeUnit.DAY)
-                    val endOfWeek =
-                        startOfDayLocalMillis(endDate.year, endDate.monthNumber, endDate.dayOfMonth)
-                    tasks.filter { it.status != TaskStatus.DONE && it.deadline != null && it.deadline >= startOfToday && it.deadline < endOfWeek }
-                }
-            }
-        }
-        .flowOn(Dispatchers.Default)
+    val tasksForSelectedCategory: StateFlow<List<Task>> = observeTasksForFilter(filter)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val categoryName: StateFlow<String> = if (filter is TaskListFilter.Category) {
+        observeAllCategories()
+            .map { categories -> categories.find { it.id == filter.id }?.name.orEmpty() }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    } else {
+        MutableStateFlow("")
+    }
 
     val sortOption: StateFlow<TaskSortOption> = observeTaskSortOption()
         .stateIn(
@@ -224,22 +175,6 @@ class TaskListViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ListProjection())
 
-    val categories = categoryPicker.categories
-    val categorySearchQuery = categoryPicker.categorySearchQuery
-    val filteredCategories = categoryPicker.filteredCategories
-
-    fun setCategorySearchQuery(query: String) {
-        categoryPicker.setCategorySearchQuery(query)
-    }
-
-    fun selectFilter(filter: TaskListFilter) {
-        _filter.value = filter
-    }
-
-    fun selectCategory(categoryId: String) {
-        selectFilter(TaskListFilter.Category(categoryId))
-    }
-
     fun toggleComplete(task: Task) = completionHandler.toggleComplete(
         task.id,
         task.status,
@@ -271,10 +206,6 @@ class TaskListViewModel(
                 -> taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
             }
         }
-    }
-
-    fun addCategory(name: String) {
-        categoryPicker.addCategory(name)
     }
 
     fun setSortOption(option: TaskSortOption) {

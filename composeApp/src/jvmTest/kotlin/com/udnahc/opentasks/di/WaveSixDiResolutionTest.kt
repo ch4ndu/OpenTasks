@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.database.AppDatabase
+import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.domain.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.domain.action.countdown.AddCountdownAction
 import com.udnahc.opentasks.domain.action.countdown.DeleteCountdownAction
@@ -32,6 +33,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import org.koin.core.parameter.parametersOf
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
 import kotlin.test.AfterTest
@@ -76,7 +78,7 @@ class WaveSixDiResolutionTest {
                 get<PendingTaskImageHandoff>()
                 get<GenerateCsvExportUseCase>()
                 get<GenerateIcsExportUseCase>()
-                get<TaskListViewModel>()
+                get<TaskListViewModel> { parametersOf(TaskListFilter.Today) }
                 get<MatrixViewModel>()
                 get<TaskFormViewModel>()
                 get<ImportCsvViewModel>()

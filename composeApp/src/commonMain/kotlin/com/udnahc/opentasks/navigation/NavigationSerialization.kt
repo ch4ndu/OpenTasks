@@ -15,6 +15,7 @@ val screenNavSerializersModule: SerializersModule = SerializersModule {
     polymorphic(NavKey::class) {
         subclass(Screen.Matrix::class)
         subclass(Screen.TaskList::class)
+        subclass(Screen.TaskListDestination::class)
         subclass(Screen.Calendar::class)
         subclass(Screen.Notes::class)
         subclass(Screen.QuadrantDetail::class)

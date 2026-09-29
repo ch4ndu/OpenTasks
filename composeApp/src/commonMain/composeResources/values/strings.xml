@@ -529,4 +529,18 @@
     <string name="status_in_progress">In Progress</string>
     <string name="status_done">Done</string>
     <string name="move_to_status">Move to</string>
+
+    <!-- Tasks overview -->
+    <string name="all_views">All views</string>
+    <string name="your_lists">Your lists</string>
+    <string name="new_list">New list</string>
+    <string name="task_view_list">List</string>
+    <string name="task_view_board">Board</string>
+    <string name="sort">Sort</string>
+    <string name="sort_current_description">Sort, %1$s</string>
+    <string name="unfinished_task_count">%1$d unfinished tasks</string>
+    <string name="filter_overdue">Overdue</string>
+    <string name="filter_no_date">No date</string>
+    <string name="filter_high_priority">High priority</string>
+    <string name="filter_due_this_week">Due this week</string>
 </resources>

@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.navigation
 
 import com.udnahc.opentasks.data.model.AppConstants
+import com.udnahc.opentasks.data.model.TaskListFilter
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -9,6 +10,8 @@ sealed class Screen : NavClass() {
     data object Matrix : Screen()
     @Serializable
     data object TaskList : Screen()
+    @Serializable
+    data class TaskListDestination(val filter: TaskListFilter) : Screen()
     @Serializable
     data object Calendar : Screen()
     @Serializable
