@@ -287,7 +287,9 @@ sudo systemctl status pocketbase
 
 The included migrations (`pocketbase/pb_migrations/`) create the following collections:
 
-**`tasks`** — localId, title, content, subtasks, priority, deadline, endDeadline, notifyBeforeValue, notifyBeforeUnit, recurrenceType, recurrenceInterval, status, isStarred, section, isUrgent, isImportant, categoryId, isAllDay, sourceExternalId, location, url, organizer, eventStatus, attendees, durationReminders, dateReminders, isDeleted, localCreatedAt, localUpdatedAt
+**`tasks`** — localId, title, content, subtasks, priority, deadline, endDeadline, notifyBeforeValue, notifyBeforeUnit, recurrenceType, recurrenceInterval, status, isStarred, isShortlisted, section, isUrgent, isImportant, categoryId, isAllDay, sourceExternalId, location, url, organizer, eventStatus, attendees, durationReminders, dateReminders, isDeleted, localCreatedAt, localUpdatedAt
+
+`tasks.isShortlisted` (migration 013) must exist before any client with Shortlist syncs. Apply 013 first, then update every synced client: older clients reject the new key, and updated clients reject records without it.
 
 `tasks.subtasks` stores a JSON array of `{ "id": "uuid", "text": "Call vendor", "isChecked": false }` entries for subtask-mode editor state.
 

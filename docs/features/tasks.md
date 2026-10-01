@@ -34,6 +34,16 @@ Important task workflows:
 - Open task reminder notifications into a home-screen bottom sheet with Mark Done, Got It, and Edit Task actions.
 - Delete tasks through soft deletion so sync can propagate tombstones.
 
+## Shortlist
+
+Shortlist is an explicit, persistent selection of unfinished tasks to tackle next. The overview shows it as a card above the smart views with its remaining count.
+
+- Choose tasks opens a sheet with Suggestions and All tasks. Suggestions group unfinished, non-shortlisted tasks by the first matching rule: Not Urgent & Important (MEDIUM priority), then due today, then no due date. All tasks lists every unfinished, non-shortlisted task. Tasks are added only through their Add control.
+- Completing a task removes it from the Shortlist, including when a recurring occurrence advances. Reopening does not restore membership. Remove from Shortlist in the row menu clears membership only; it never deletes or edits the task.
+- The task editor has an Add to / Remove from Shortlist action for unfinished tasks. It commits immediately, like Delete, and is not part of the draft.
+- Due & overdue shows unfinished overdue or due-today tasks outside the Shortlist and links to Today.
+- Membership never resets by date and never changes due dates, reminders, list, star, or priority. Rows follow the task-list sort option with task ID as the tie-breaker.
+
 ## Quick Add
 
 Quick Add is an offline, deterministic English parser for short task titles. It recognizes only trailing, token-bounded clauses:
@@ -69,6 +79,8 @@ Ordinary Save preserves TODO and IN_PROGRESS. Marking the task complete uses DON
 Task detail fields live in the create/edit task flow. Location, URL, organizer, event status, and attendees are stored on the task so imported calendar metadata and manually entered details survive local persistence and sync.
 
 Task reminder notification taps route through a shared notification event payload. Task notifications open the matrix home tab and show a task notification bottom sheet. Mark Done follows `MarkTaskNotificationDoneAction` through `UpdateTaskAction` and `TaskWriteIntent.NotificationMarkDone`, so the persisted-truth coordinator advances the notified recurring occurrence. Got It mirrors Android's notification action semantics by dismissing the all-day ongoing notification state without completing the task or cancelling future reminders. Countdown notification taps continue to open countdown detail.
+
+Shortlist membership is the synced `tasks.isShortlisted` field. `SetTaskShortlistedAction` writes it through `TaskWriteIntent.SetShortlisted`; `TaskWriteNormalizer` clears it whenever a task is persisted as DONE and `TaskWriteCoordinator` clears it when a recurring occurrence advances. `ObserveShortlistUseCase` projects the Shortlist, suggestions, and the Due & overdue count for `ShortlistViewModel`.
 
 Task sync uses `TaskSyncAdapter` and `TaskRecord`. Task-tag assignments are separate `task_tags` records. Task images are separate `attachments` records with `ownerType = "task"`.
 

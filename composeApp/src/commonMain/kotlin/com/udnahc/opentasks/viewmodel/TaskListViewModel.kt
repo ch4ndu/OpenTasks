@@ -24,6 +24,7 @@ import com.udnahc.opentasks.domain.usecase.settings.ObserveTaskSortOptionUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForFilterUseCase
 import com.udnahc.opentasks.domain.usecase.task.PlainTaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
+import com.udnahc.opentasks.domain.usecase.task.sortedFor
 import com.udnahc.opentasks.domain.usecase.task.taskPreviewTextById
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import kotlinx.coroutines.Dispatchers
@@ -140,7 +141,7 @@ class TaskListViewModel(
     val activeTasksForSelectedCategory: StateFlow<List<Task>> =
         combine(tasksForSelectedCategory, sortOption) { tasks, sort ->
             val active = tasks.filter { it.status != TaskStatus.DONE }
-            sortTasks(active, sort)
+            active.sortedFor(sort)
         }
             .flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -165,7 +166,7 @@ class TaskListViewModel(
                     val active = tasks.filter { it.status != TaskStatus.DONE }
                     ListProjection(
                         completedTasks = tasks.filter { it.status == TaskStatus.DONE },
-                        groupedActiveTasks = groupActiveTasks(sortTasks(active, sort), today),
+                        groupedActiveTasks = groupActiveTasks(active.sortedFor(sort), today),
                     )
                 }
             } else {
@@ -215,7 +216,7 @@ class TaskListViewModel(
     val tasksByStatus: StateFlow<Map<TaskStatus, List<Task>>> =
         combine(tasksForSelectedCategory, sortOption) { tasks, sort ->
             TaskStatus.entries.associateWith { status ->
-                sortTasks(tasks.filter { it.status == status }, sort)
+                tasks.filter { it.status == status }.sortedFor(sort)
             }
         }
             .flowOn(Dispatchers.Default)
@@ -250,18 +251,6 @@ class TaskListViewModel(
                     -> taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
                 }
             }
-        }
-    }
-
-    private fun sortTasks(
-        tasks: List<Task>,
-        sort: TaskSortOption
-    ): List<Task> = when (sort) {
-        TaskSortOption.RECENTLY_UPDATED -> tasks.sortedByDescending { it.updatedAt }
-        TaskSortOption.BY_DEADLINE -> tasks.sortedWith(compareBy(nullsLast()) { it.deadline })
-        TaskSortOption.BY_PRIORITY -> tasks.sortedBy { it.priority.ordinal }
-        TaskSortOption.BY_TITLE -> tasks.sortedWith { first, second ->
-            first.title.compareTo(second.title, ignoreCase = true)
         }
     }
 

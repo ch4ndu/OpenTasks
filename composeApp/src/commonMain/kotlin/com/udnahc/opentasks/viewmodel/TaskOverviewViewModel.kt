@@ -21,6 +21,7 @@ data class SmartViewCount(val filter: TaskListFilter, val count: Int)
 data class ListCount(val category: Category, val count: Int)
 
 data class TaskOverviewState(
+    val shortlistCount: Int = 0,
     val smartViews: List<SmartViewCount> = taskOverviewSmartFilters.map { SmartViewCount(it, 0) },
     val lists: List<ListCount> = emptyList(),
 )
@@ -42,6 +43,7 @@ class TaskOverviewViewModel(
     val state: StateFlow<TaskOverviewState> =
         combine(observeTaskOverviewCounts(), categoryPicker.categories) { counts, categories ->
             TaskOverviewState(
+                shortlistCount = counts[TaskListFilter.Shortlist] ?: 0,
                 smartViews = taskOverviewSmartFilters.map { SmartViewCount(it, counts[it] ?: 0) },
                 lists = categories.map { category ->
                     ListCount(category, counts[TaskListFilter.Category(category.id)] ?: 0)

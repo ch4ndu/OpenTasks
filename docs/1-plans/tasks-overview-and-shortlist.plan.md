@@ -1,7 +1,7 @@
 # Tasks overview and Shortlist
 
 Date: 2026-09-29
-Status: Design and implementation plan; Shortlist decisions below remain open.
+Status: Phase A implemented (531edcd). Phase B implemented with the resolved decisions below; PocketBase migration 013 is prepared, not deployed.
 Source baseline inspected: `a71f332`; re-check the live tree before implementation.
 Authorization for this turn: write this plan only. No implementation, commit, release, or server migration is authorized by this document.
 

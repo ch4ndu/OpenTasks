@@ -73,8 +73,10 @@ import com.udnahc.opentasks.updateSharedTaskIntakeReadiness
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.TaskFormData
+import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.model.TaskPriority
+import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
@@ -111,8 +113,10 @@ import com.udnahc.opentasks.ui.screens.MissingDestinationScreen
 import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
 import com.udnahc.opentasks.ui.screens.QuickAddTaskScreen
 import com.udnahc.opentasks.ui.screens.SettingsScreen
+import com.udnahc.opentasks.ui.screens.ShortlistScreen
 import com.udnahc.opentasks.ui.screens.TaskCreationChoiceBottomSheet
 import com.udnahc.opentasks.ui.screens.TaskListScreen
+import com.udnahc.opentasks.ui.screens.TaskMutationFailureEffect
 import com.udnahc.opentasks.ui.screens.TaskOverviewScreen
 import com.udnahc.opentasks.ui.screens.TaskNotificationBottomSheet
 import com.udnahc.opentasks.ui.screens.calendar.CalendarScreen
@@ -146,6 +150,7 @@ import com.udnahc.opentasks.viewmodel.QuickAddTaskViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormSaveEvent
 import com.udnahc.opentasks.viewmodel.TaskFormDestinationState
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
+import com.udnahc.opentasks.viewmodel.ShortlistViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.viewmodel.TaskOverviewViewModel
 import com.udnahc.opentasks.viewmodel.TaskNotificationViewModel
@@ -997,30 +1002,46 @@ private fun MainScreen(
                 }
 
                 entry<Screen.TaskListDestination> { screen ->
-                    val taskListViewModel: TaskListViewModel = koinViewModel(
-                        key = "taskList:${screen.filter}",
-                        parameters = { parametersOf(screen.filter) },
-                    )
-                    TaskListScreen(
-                        viewModel = taskListViewModel,
-                        onAllViewsClick = {
-                            if (navController.previousScreen == Screen.TaskList) {
-                                navController.popBackStack()
-                            } else {
-                                navController.setRoot(Screen.TaskList)
-                            }
-                        },
-                        onTaskClick = { task ->
-                            navController.navigate(Screen.EditTask(task.id))
-                        },
-                        isRefreshing = isRefreshing,
-                        syncEnabled = isRemoteSyncEnabled,
-                        onRefresh = onPullToRefresh,
-                        onTaskMutationFailure = onTaskMutationFailure,
-                        onModalBusyChanged = { isBusy ->
-                            onChildModalBusyChanged(screen, isBusy)
-                        },
-                    )
+                    val onAllViewsClick = {
+                        if (navController.previousScreen == Screen.TaskList) {
+                            navController.popBackStack()
+                        } else {
+                            navController.setRoot(Screen.TaskList)
+                        }
+                    }
+                    val onTaskClick = { task: Task -> navController.navigate(Screen.EditTask(task.id)) }
+                    val onModalBusyChanged = { isBusy: Boolean -> onChildModalBusyChanged(screen, isBusy) }
+                    if (screen.filter == TaskListFilter.Shortlist) {
+                        val shortlistViewModel: ShortlistViewModel = koinViewModel(key = "shortlist")
+                        ShortlistScreen(
+                            viewModel = shortlistViewModel,
+                            onAllViewsClick = { onAllViewsClick() },
+                            onViewTodayClick = {
+                                navController.navigate(Screen.TaskListDestination(TaskListFilter.Today))
+                            },
+                            onTaskClick = onTaskClick,
+                            isRefreshing = isRefreshing,
+                            syncEnabled = isRemoteSyncEnabled,
+                            onRefresh = onPullToRefresh,
+                            onTaskMutationFailure = onTaskMutationFailure,
+                            onModalBusyChanged = onModalBusyChanged,
+                        )
+                    } else {
+                        val taskListViewModel: TaskListViewModel = koinViewModel(
+                            key = "taskList:${screen.filter}",
+                            parameters = { parametersOf(screen.filter) },
+                        )
+                        TaskListScreen(
+                            viewModel = taskListViewModel,
+                            onAllViewsClick = { onAllViewsClick() },
+                            onTaskClick = onTaskClick,
+                            isRefreshing = isRefreshing,
+                            syncEnabled = isRemoteSyncEnabled,
+                            onRefresh = onPullToRefresh,
+                            onTaskMutationFailure = onTaskMutationFailure,
+                            onModalBusyChanged = onModalBusyChanged,
+                        )
+                    }
                 }
 
                 entry<Screen.Calendar> {
@@ -1332,6 +1353,12 @@ private fun MainScreen(
                     val isSaving by taskFormViewModel.isSaving.collectAsState()
                     val pendingFormCompletion by taskFormViewModel.pendingFormCompletion.collectAsState()
                     val retainedFormDraft by taskFormViewModel.retainedFormDraft.collectAsState()
+                    val isShortlistPending by taskFormViewModel.isShortlistPending.collectAsState()
+                    TaskMutationFailureEffect(
+                        eventFlow = taskFormViewModel.taskMutationFailureEvent,
+                        consume = taskFormViewModel::consumeTaskMutationFailureEvent,
+                        onFailure = onTaskMutationFailure,
+                    )
                     when (val state = destinationState) {
                         TaskFormDestinationState.Loading -> DestinationLoadingScreen()
                         TaskFormDestinationState.Missing -> MissingDestinationScreen(
@@ -1365,6 +1392,13 @@ private fun MainScreen(
                                 onRemoveTaskImage = { taskFormViewModel.removeTaskImage(it) },
                                 onDelete = {
                                     taskFormViewModel.deleteTask(screen.taskId)
+                                },
+                                isShortlisted = state.task.isShortlisted,
+                                isShortlistPending = isShortlistPending,
+                                onShortlistChange = if (state.task.status != TaskStatus.DONE) {
+                                    { shortlisted -> taskFormViewModel.setShortlisted(screen.taskId, shortlisted) }
+                                } else {
+                                    null
                                 },
                                 onExternalLaunchFailure = {
                                     snackbarScope.launch {

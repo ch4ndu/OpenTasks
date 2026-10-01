@@ -12,6 +12,9 @@ import kotlinx.datetime.plus
 internal class TaskFilterDay(today: LocalDate) {
     val startOfToday: Long = today.startOfDayMillis()
     val startOfTomorrow: Long = today.plus(1, DateTimeUnit.DAY).startOfDayMillis()
+
+    fun isDueToday(deadline: Long?): Boolean =
+        deadline != null && deadline >= startOfToday && deadline < startOfTomorrow
     val endOfWeek: Long = today.plus(7, DateTimeUnit.DAY).startOfDayMillis()
 }
 
@@ -23,6 +26,7 @@ internal fun TaskListFilter.includes(task: Task, day: TaskFilterDay): Boolean {
     val deadline = task.deadline
     return when (this) {
         is TaskListFilter.Category -> task.categoryId == id
+        TaskListFilter.Shortlist -> !isDone && task.isShortlisted
         TaskListFilter.Starred -> task.isStarred
         TaskListFilter.Today -> if (isDone) {
             task.completedAt != null &&

@@ -543,4 +543,26 @@
     <string name="filter_no_date">No date</string>
     <string name="filter_high_priority">High priority</string>
     <string name="filter_due_this_week">Due this week</string>
+
+    <!-- Shortlist -->
+    <string name="shortlist">Shortlist</string>
+    <string name="shortlist_subtitle">Tasks you've chosen to tackle</string>
+    <string name="shortlist_remaining">%1$d remaining</string>
+    <string name="shortlist_choose_tasks">Choose tasks</string>
+    <string name="shortlist_to_tackle">To tackle (%1$d)</string>
+    <string name="shortlist_add_to">Add to Shortlist</string>
+    <string name="shortlist_remove_from">Remove from Shortlist</string>
+    <string name="shortlist_add_task_description">Add %1$s to Shortlist</string>
+    <string name="shortlist_more_options_description">More options for %1$s</string>
+    <string name="shortlist_empty">Choose a few tasks to tackle next.</string>
+    <string name="shortlist_due_overdue">Due &amp; overdue</string>
+    <string name="shortlist_due_outside">%1$d tasks outside your shortlist</string>
+    <string name="shortlist_view_today">View Today</string>
+    <string name="shortlist_sheet_description">Keep original due dates and lists.</string>
+    <string name="shortlist_suggestions">Suggestions</string>
+    <string name="shortlist_all_tasks">All tasks</string>
+    <string name="shortlist_group_due_today">Due today</string>
+    <string name="shortlist_group_no_date">No due date</string>
+    <string name="shortlist_sheet_footer">Tasks stay shortlisted until completed or removed.</string>
+    <string name="shortlist_no_candidates">No other unfinished tasks to add.</string>
 </resources>

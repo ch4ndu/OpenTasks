@@ -242,3 +242,9 @@ val MIGRATION_13_14 = object : Migration(13, 14) {
         )
     }
 }
+
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.addColumnIfMissing("tasks", "isShortlisted", "isShortlisted INTEGER NOT NULL DEFAULT 0")
+    }
+}

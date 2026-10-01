@@ -291,6 +291,7 @@ internal val taskRecordPayloadSchema = SyncRecordPayloadSchema(
         "status" to stringField(allowedValues = taskStatusValues, emptyEnumDefault = "TODO"),
         "completedAt" to numberField(),
         "isStarred" to booleanField(),
+        "isShortlisted" to booleanField(),
         "section" to stringField(),
         "isUrgent" to booleanField(),
         "isImportant" to booleanField(),

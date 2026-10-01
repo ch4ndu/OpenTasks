@@ -17,6 +17,7 @@ import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.domain.action.task.FormCompletionScope
 import com.udnahc.opentasks.domain.action.task.TaskWriteIntent
+import com.udnahc.opentasks.domain.action.task.SetTaskShortlistedAction
 import com.udnahc.opentasks.domain.action.task.TaskWriteResult
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
 import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImagesUseCase
@@ -96,6 +97,7 @@ class TaskFormViewModel(
     private val pendingTaskImageHandoff: PendingTaskImageHandoff = PendingTaskImageHandoff(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     accountBoundaryExecutor: AccountBoundaryExecutor? = null,
+    private val setTaskShortlistedAction: SetTaskShortlistedAction,
 ) : ViewModel() {
 
     private val _taskId = MutableStateFlow<String?>(null)
@@ -114,6 +116,10 @@ class TaskFormViewModel(
         viewModelScope,
         ioDispatcher,
     )
+    private val taskMutationFailureEvents = TaskMutationFailureEventStore()
+    val taskMutationFailureEvent = taskMutationFailureEvents.event
+    private val _isShortlistPending = MutableStateFlow(false)
+    val isShortlistPending: StateFlow<Boolean> = _isShortlistPending
     private val categoryPicker = CategoryPickerDelegate(
         observeAllCategories,
         addCategoryAction,
@@ -321,6 +327,36 @@ class TaskFormViewModel(
                 }
             } finally {
                 _isSaving.value = false
+            }
+        }
+    }
+
+    fun consumeTaskMutationFailureEvent(event: TaskMutationFailureEvent): Boolean =
+        taskMutationFailureEvents.consume(event)
+
+    fun setShortlisted(taskId: String, shortlisted: Boolean) {
+        if (!_isShortlistPending.compareAndSet(expect = false, update = true)) return
+        mutationLauncher.launch(
+            onBoundaryRejected = {
+                _isShortlistPending.value = false
+                taskMutationFailureEvents.publish(TaskMutationFailureReason.BOUNDARY_CHANGED)
+            },
+            onFailure = {
+                taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+            },
+        ) {
+            try {
+                when (setTaskShortlistedAction(taskId, shortlisted)) {
+                    is TaskWriteResult.Updated,
+                    TaskWriteResult.NoOp,
+                    -> Unit
+                    is TaskWriteResult.CompletionChoiceRequired,
+                    TaskWriteResult.Missing,
+                    TaskWriteResult.StaleOccurrence,
+                    -> taskMutationFailureEvents.publish(TaskMutationFailureReason.OPERATION_FAILED)
+                }
+            } finally {
+                _isShortlistPending.value = false
             }
         }
     }

@@ -362,27 +362,8 @@ internal fun TaskListTopBar(
             .statusBarsPadding()
             .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingSmall),
     ) {
-        TextButton(onClick = onAllViewsClick) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_chevron_left),
-                contentDescription = null,
-                tint = PrimaryBlue,
-                modifier = Modifier.size(dimens.iconDefault),
-            )
-            Spacer(Modifier.width(dimens.spacerSmall))
-            Text(text = stringResource(Res.string.all_views), color = PrimaryBlue)
-        }
-        Text(
-            text = listName,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .semantics { heading() }
-                .padding(horizontal = dimens.paddingMedium, vertical = dimens.paddingSmall),
-        )
+        AllViewsButton(onClick = onAllViewsClick)
+        TaskViewTitle(title = listName)
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = dimens.paddingSmall),
             verticalAlignment = Alignment.CenterVertically,
@@ -436,6 +417,37 @@ internal fun TaskListTopBar(
             }
         }
     }
+}
+
+@Composable
+internal fun AllViewsButton(onClick: () -> Unit) {
+    val dimens = OpenTasksTheme.dimens
+    TextButton(onClick = onClick) {
+        Icon(
+            painter = painterResource(Res.drawable.ic_chevron_left),
+            contentDescription = null,
+            tint = PrimaryBlue,
+            modifier = Modifier.size(dimens.iconDefault),
+        )
+        Spacer(Modifier.width(dimens.spacerSmall))
+        Text(text = stringResource(Res.string.all_views), color = PrimaryBlue)
+    }
+}
+
+@Composable
+internal fun TaskViewTitle(title: String) {
+    val dimens = OpenTasksTheme.dimens
+    Text(
+        text = title,
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onBackground,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .semantics { heading() }
+            .padding(horizontal = dimens.paddingMedium, vertical = dimens.paddingSmall),
+    )
 }
 
 private fun viewModeIcon(mode: TaskListViewMode): DrawableResource = when (mode) {

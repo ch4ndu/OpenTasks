@@ -92,6 +92,7 @@ import opentasks.composeapp.generated.resources.description_hint
 import opentasks.composeapp.generated.resources.done
 import opentasks.composeapp.generated.resources.ic_alarm
 import opentasks.composeapp.generated.resources.ic_check
+import opentasks.composeapp.generated.resources.ic_checklist
 import opentasks.composeapp.generated.resources.ic_close
 import opentasks.composeapp.generated.resources.ic_delete
 import opentasks.composeapp.generated.resources.ic_flag
@@ -104,6 +105,8 @@ import opentasks.composeapp.generated.resources.loading
 import opentasks.composeapp.generated.resources.priority
 import opentasks.composeapp.generated.resources.ok
 import opentasks.composeapp.generated.resources.select
+import opentasks.composeapp.generated.resources.shortlist_add_to
+import opentasks.composeapp.generated.resources.shortlist_remove_from
 import opentasks.composeapp.generated.resources.subtasks
 import opentasks.composeapp.generated.resources.task_date_range_invalid
 import opentasks.composeapp.generated.resources.title_hint
@@ -190,6 +193,9 @@ fun CreateTaskScreen(
     onBackRequestChanged: (owner: Any, onBack: (() -> Unit)?) -> Unit = { _, _ -> },
     onRemoveTaskImage: (Attachment) -> Unit = {},
     onDelete: (() -> Unit)? = null,
+    isShortlisted: Boolean = false,
+    isShortlistPending: Boolean = false,
+    onShortlistChange: ((Boolean) -> Unit)? = null,
     onExternalLaunchFailure: () -> Unit = {},
 ) {
     CreateTaskContent(
@@ -221,6 +227,9 @@ fun CreateTaskScreen(
         onBackRequestChanged = onBackRequestChanged,
         onRemoveTaskImage = onRemoveTaskImage,
         onDelete = onDelete,
+        isShortlisted = isShortlisted,
+        isShortlistPending = isShortlistPending,
+        onShortlistChange = onShortlistChange,
         onExternalLaunchFailure = onExternalLaunchFailure,
     )
 }
@@ -256,6 +265,9 @@ private fun CreateTaskContent(
     onBackRequestChanged: (owner: Any, onBack: (() -> Unit)?) -> Unit = { _, _ -> },
     onRemoveTaskImage: (Attachment) -> Unit = {},
     onDelete: (() -> Unit)? = null,
+    isShortlisted: Boolean = false,
+    isShortlistPending: Boolean = false,
+    onShortlistChange: ((Boolean) -> Unit)? = null,
     onExternalLaunchFailure: () -> Unit = {},
 ) {
     val stateKey = editTask?.id ?: listOf(
@@ -476,6 +488,9 @@ private fun CreateTaskContent(
             onBack = { requestBack() },
             onListClick = { showCategoryPicker = true },
             onDelete = onDelete,
+            isShortlisted = isShortlisted,
+            isShortlistPending = isShortlistPending,
+            onShortlistChange = onShortlistChange,
             isSubtaskMode = isSubtaskMode,
             onToggleSubtaskMode = { toggleSubtaskMode() },
             onDone = { saveTask() },
@@ -865,6 +880,9 @@ internal fun CreateTaskTopBar(
     onBack: () -> Unit,
     onListClick: () -> Unit = {},
     onDelete: (() -> Unit)? = null,
+    isShortlisted: Boolean = false,
+    isShortlistPending: Boolean = false,
+    onShortlistChange: ((Boolean) -> Unit)? = null,
     isSubtaskMode: Boolean,
     onToggleSubtaskMode: () -> Unit,
     onDone: () -> Unit,
@@ -913,6 +931,20 @@ internal fun CreateTaskTopBar(
                     onDismiss = { onShowPriorityMenu(false) },
                     onSelected = onPrioritySelected,
                 )
+            }
+            if (onShortlistChange != null) {
+                IconButton(
+                    onClick = { onShortlistChange(!isShortlisted) },
+                    enabled = !isSaving && !isShortlistPending,
+                ) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_checklist),
+                        contentDescription = stringResource(
+                            if (isShortlisted) Res.string.shortlist_remove_from else Res.string.shortlist_add_to
+                        ),
+                        tint = if (isShortlisted) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (onDelete != null) {
                 IconButton(onClick = { showDeleteConfirm = true }) {

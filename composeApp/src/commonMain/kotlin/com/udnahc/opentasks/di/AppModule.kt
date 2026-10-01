@@ -18,6 +18,7 @@ import com.udnahc.opentasks.data.database.MIGRATION_10_11
 import com.udnahc.opentasks.data.database.MIGRATION_11_12
 import com.udnahc.opentasks.data.database.MIGRATION_12_13
 import com.udnahc.opentasks.data.database.MIGRATION_13_14
+import com.udnahc.opentasks.data.database.MIGRATION_14_15
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.TaskListFilter
 import com.udnahc.opentasks.data.auth.AccountCacheInspector
@@ -113,6 +114,7 @@ import com.udnahc.opentasks.domain.action.task.DismissTaskNotificationAction
 import com.udnahc.opentasks.domain.action.task.MarkTaskNotificationDoneAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskCompleteAction
+import com.udnahc.opentasks.domain.action.task.SetTaskShortlistedAction
 import com.udnahc.opentasks.domain.action.task.ToggleTaskStarredAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskStatusAction
@@ -142,6 +144,7 @@ import com.udnahc.opentasks.domain.usecase.task.GenerateIcsExportUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTaskByIdUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveShortlistUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTaskOverviewCountsUseCase
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForFilterUseCase
 import com.udnahc.opentasks.domain.usecase.task.ParseCsvUseCase
@@ -165,6 +168,7 @@ import com.udnahc.opentasks.viewmodel.NoteViewModel
 import com.udnahc.opentasks.viewmodel.QuickAddTaskViewModel
 import com.udnahc.opentasks.viewmodel.SettingsViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormViewModel
+import com.udnahc.opentasks.viewmodel.ShortlistViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.viewmodel.TaskOverviewViewModel
 import com.udnahc.opentasks.viewmodel.TaskNotificationViewModel
@@ -194,6 +198,7 @@ val sharedModule = module {
                 MIGRATION_11_12,
                 MIGRATION_12_13,
                 MIGRATION_13_14,
+                MIGRATION_14_15,
             )
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
@@ -270,6 +275,7 @@ val sharedModule = module {
     single { LocalDaySignal() }
     single { ObserveTasksForFilterUseCase(get(), get()) }
     single { ObserveTaskOverviewCountsUseCase(get(), get()) }
+    single { ObserveShortlistUseCase(get(), get()) }
     single { ObserveTaskSortOptionUseCase(get()) }
     single { ObserveTaskListViewModeUseCase(get()) }
     single { ObserveThemePreferenceUseCase(get()) }
@@ -302,6 +308,7 @@ val sharedModule = module {
     single { MarkTaskNotificationDoneAction(get()) }
     single { DismissTaskNotificationAction(get(), get(), get<NotificationScheduler>()) }
     single { ToggleTaskStarredAction(get(), get<AccountBoundaryExecutor>()) }
+    single { SetTaskShortlistedAction(get(), get<AccountBoundaryExecutor>()) }
     single { AddCategoryAction(get(), get<AccountBoundaryExecutor>()) }
     single { AddNoteAction(get()) }
     single { AddCountdownAction(get(), get(), get(), get<AccountBoundaryExecutor>()) }
@@ -434,6 +441,7 @@ val sharedModule = module {
         TaskFormViewModel(
             get(), get(), get(), get(), get(), get(), get(), get(), get(), get(),
             accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+            setTaskShortlistedAction = get(),
         )
     }
     viewModel { (context: QuickTaskCreationContext) ->
@@ -470,6 +478,17 @@ val sharedModule = module {
             updateTaskStatusAction = get(),
             observeTaskImageSummaries = get(),
             localDaySignal = get(),
+            taskDueTextProvider = get(),
+            accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+        )
+    }
+    viewModel {
+        ShortlistViewModel(
+            observeShortlist = get(),
+            observeAllCategories = get(),
+            observeTaskSortOption = get(),
+            toggleTaskCompleteAction = get(),
+            setTaskShortlistedAction = get(),
             taskDueTextProvider = get(),
             accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
         )

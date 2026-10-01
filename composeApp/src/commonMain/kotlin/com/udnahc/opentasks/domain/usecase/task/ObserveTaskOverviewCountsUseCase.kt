@@ -19,7 +19,9 @@ val taskOverviewSmartFilters: List<TaskListFilter> = listOf(
     TaskListFilter.DueThisWeek,
 )
 
-/** Unfinished-task counts keyed by smart filter and by `TaskListFilter.Category`. */
+private val countedFilters = taskOverviewSmartFilters + TaskListFilter.Shortlist
+
+/** Unfinished-task counts keyed by smart filter, Shortlist, and `TaskListFilter.Category`. */
 class ObserveTaskOverviewCountsUseCase(
     private val repository: TaskRepository,
     private val localDaySignal: LocalDaySignal,
@@ -29,7 +31,7 @@ class ObserveTaskOverviewCountsUseCase(
             val day = TaskFilterDay(today)
             val counts = mutableMapOf<TaskListFilter, Int>()
             tasks.filter { it.status != TaskStatus.DONE }.forEach { task ->
-                taskOverviewSmartFilters.forEach { filter ->
+                countedFilters.forEach { filter ->
                     if (filter.includes(task, day)) counts[filter] = (counts[filter] ?: 0) + 1
                 }
                 val category = TaskListFilter.Category(task.categoryId)

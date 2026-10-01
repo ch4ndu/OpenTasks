@@ -35,6 +35,7 @@ data class Task(
     /** Local completion time. It is meaningful only while [status] is DONE. */
     val completedAt: Long? = null,
     val isStarred: Boolean = false,
+    val isShortlisted: Boolean = false,
     val section: String? = null,
     val isUrgent: Boolean = false,
     val isImportant: Boolean = false,

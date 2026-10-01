@@ -58,6 +58,7 @@ import opentasks.composeapp.generated.resources.filter_overdue
 import opentasks.composeapp.generated.resources.ic_add
 import opentasks.composeapp.generated.resources.ic_alarm
 import opentasks.composeapp.generated.resources.ic_calendar
+import opentasks.composeapp.generated.resources.ic_checklist
 import opentasks.composeapp.generated.resources.ic_chevron_right
 import opentasks.composeapp.generated.resources.ic_flag
 import opentasks.composeapp.generated.resources.ic_inbox
@@ -65,6 +66,9 @@ import opentasks.composeapp.generated.resources.ic_list
 import opentasks.composeapp.generated.resources.ic_schedule
 import opentasks.composeapp.generated.resources.ic_star
 import opentasks.composeapp.generated.resources.new_list
+import opentasks.composeapp.generated.resources.shortlist
+import opentasks.composeapp.generated.resources.shortlist_remaining
+import opentasks.composeapp.generated.resources.shortlist_subtitle
 import opentasks.composeapp.generated.resources.starred
 import opentasks.composeapp.generated.resources.tasks
 import opentasks.composeapp.generated.resources.today
@@ -146,6 +150,12 @@ internal fun TaskOverviewContent(
                 horizontalArrangement = Arrangement.spacedBy(dimens.spacerXLarge),
                 verticalArrangement = Arrangement.spacedBy(dimens.spacerXLarge),
             ) {
+                item(key = "shortlist", span = { GridItemSpan(maxLineSpan) }) {
+                    ShortlistCard(
+                        remaining = state.shortlistCount,
+                        onClick = { onViewClick(TaskListFilter.Shortlist) },
+                    )
+                }
                 items(state.smartViews, key = { "view:${it.filter}" }) { view ->
                     SmartViewTile(view = view, onClick = { onViewClick(view.filter) })
                 }
@@ -209,6 +219,58 @@ private fun SmartViewTile(
                 )
                 UnfinishedCountText(view.count)
             }
+            ChevronIcon()
+        }
+    }
+}
+
+@Composable
+private fun ShortlistCard(
+    remaining: Int,
+    onClick: () -> Unit,
+) {
+    val dimens = OpenTasksTheme.dimens
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(dimens.cornerXLarge),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = dimens.minimumInteractiveTargetSize)
+                .padding(dimens.paddingLarge),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(Res.drawable.ic_checklist),
+                contentDescription = null,
+                tint = PrimaryBlue,
+                modifier = Modifier.size(dimens.iconXLarge),
+            )
+            Spacer(Modifier.width(dimens.spacerXLarge))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(Res.string.shortlist),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = stringResource(Res.string.shortlist_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(dimens.spacerLarge))
+            Text(
+                text = stringResource(Res.string.shortlist_remaining, remaining),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(dimens.spacerLarge))
             ChevronIcon()
         }
     }
@@ -309,6 +371,7 @@ private fun ChevronIcon() {
 @Composable
 internal fun taskListFilterTitle(filter: TaskListFilter): String = when (filter) {
     is TaskListFilter.Category -> ""
+    TaskListFilter.Shortlist -> stringResource(Res.string.shortlist)
     TaskListFilter.Today -> stringResource(Res.string.today)
     TaskListFilter.Overdue -> stringResource(Res.string.filter_overdue)
     TaskListFilter.Starred -> stringResource(Res.string.starred)
@@ -319,6 +382,7 @@ internal fun taskListFilterTitle(filter: TaskListFilter): String = when (filter)
 
 private fun taskListFilterIcon(filter: TaskListFilter): DrawableResource = when (filter) {
     is TaskListFilter.Category -> Res.drawable.ic_list
+    TaskListFilter.Shortlist -> Res.drawable.ic_checklist
     TaskListFilter.Today, TaskListFilter.Overdue -> Res.drawable.ic_alarm
     TaskListFilter.Starred -> Res.drawable.ic_star
     TaskListFilter.NoDate -> Res.drawable.ic_schedule
@@ -328,7 +392,7 @@ private fun taskListFilterIcon(filter: TaskListFilter): DrawableResource = when 
 
 @Composable
 private fun taskListFilterTint(filter: TaskListFilter): Color = when (filter) {
-    TaskListFilter.Today, TaskListFilter.DueThisWeek -> PrimaryBlue
+    TaskListFilter.Shortlist, TaskListFilter.Today, TaskListFilter.DueThisWeek -> PrimaryBlue
     TaskListFilter.Overdue, TaskListFilter.HighPriority -> PriorityHigh
     TaskListFilter.Starred -> StarGold
     is TaskListFilter.Category, TaskListFilter.NoDate -> MaterialTheme.colorScheme.onSurfaceVariant

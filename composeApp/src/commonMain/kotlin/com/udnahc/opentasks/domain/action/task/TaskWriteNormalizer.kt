@@ -60,6 +60,7 @@ class TaskWriteNormalizer {
         return proposal.copy(
             recurrenceAnchorDay = anchor,
             completedAt = completedAt,
+            isShortlisted = proposal.isShortlisted && proposal.status != TaskStatus.DONE,
             createdAt = previous?.createdAt ?: proposal.createdAt.takeIf { it != 0L } ?: now,
             updatedAt = previous?.let { maxOf(now, it.updatedAt + 1) } ?: now,
             isSynced = false,

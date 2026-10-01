@@ -140,5 +140,6 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - Push bookkeeping must mark rows synced only if `updatedAt` and `isDeleted` still match the pushed state.
 - Task-tag assignments sync through `task_tags` with derived `localId = "$taskId:$tagId"` and local primary key `(taskId, tagId)`.
 - Task-tag restore and tombstone writes preserve `createdAt` inside their DAO transaction; a repository-side read followed by upsert is not safe.
+- `tasks.isShortlisted` is Shortlist membership. It is never a form field; only `TaskWriteIntent.SetShortlisted` sets it, the normalizer clears it whenever a task is persisted as DONE, and recurring advancement clears it. PocketBase migration 013 adds the field without a capability bump, so the strict payload schema fails closed across versions: apply 013 before updating synced clients.
 - `tasks.subtasks` is a synced JSON array string for editor subtask state. Each entry must contain exactly `id`, `text`, and `isChecked`; blank subtask rows are dropped before save. Existing task content is not automatically migrated into this field.
 - Device clock skew is a known limitation: a bad device clock can incorrectly win last-write-wins conflicts.

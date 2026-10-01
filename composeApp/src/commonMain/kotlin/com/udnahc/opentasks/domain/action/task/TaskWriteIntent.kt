@@ -14,6 +14,7 @@ sealed interface TaskWriteIntent {
     ) : TaskWriteIntent
     data class SetStatus(val status: TaskStatus) : TaskWriteIntent
     data object ToggleStar : TaskWriteIntent
+    data class SetShortlisted(val shortlisted: Boolean) : TaskWriteIntent
     data object ToggleCompletion : TaskWriteIntent
     data class CompleteOccurrence(val expectedOccurrence: Long) : TaskWriteIntent
     data class CompleteSeries(val expectedOccurrence: Long? = null) : TaskWriteIntent

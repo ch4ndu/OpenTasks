@@ -20,6 +20,7 @@ import com.udnahc.opentasks.domain.action.countdown.UpdateCountdownAction
 import com.udnahc.opentasks.domain.action.task.AddTaskAction
 import com.udnahc.opentasks.domain.action.task.DeleteTaskAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
+import com.udnahc.opentasks.domain.action.task.SetTaskShortlistedAction
 import com.udnahc.opentasks.domain.action.task.UpdateTaskAction
 import com.udnahc.opentasks.domain.attachment.PendingTaskImageHandoff
 import com.udnahc.opentasks.domain.time.LocalDaySignal
@@ -69,6 +70,7 @@ class FormViewModelTest : MainDispatcherRule() {
             removeTaskImageAction = RemoveTaskImageAction(attachmentRepository, attachmentFileStorage, MutexAccountMutationGate()),
             addCategoryAction = AddCategoryAction(categoryRepository),
             ioDispatcher = dispatcher,
+            setTaskShortlistedAction = SetTaskShortlistedAction(taskRepository),
         )
 
         viewModel.setTaskId("task")
@@ -782,6 +784,7 @@ class FormViewModelTest : MainDispatcherRule() {
             addCategoryAction = AddCategoryAction(categoryRepository),
             pendingTaskImageHandoff = pendingTaskImageHandoff,
             ioDispatcher = dispatcher,
+            setTaskShortlistedAction = SetTaskShortlistedAction(taskRepository),
         )
     }
 }

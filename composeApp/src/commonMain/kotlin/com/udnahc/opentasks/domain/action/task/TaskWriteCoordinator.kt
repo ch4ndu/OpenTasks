@@ -71,6 +71,14 @@ class TaskWriteCoordinator(
                     } else previous.copy(status = intent.status)
                 }
                 TaskWriteIntent.ToggleStar -> previous.copy(isStarred = !previous.isStarred)
+                is TaskWriteIntent.SetShortlisted -> {
+                    // A DONE task cannot hold membership, so adding one would only bump updatedAt.
+                    if (previous.isShortlisted == intent.shortlisted ||
+                        (intent.shortlisted && previous.status == TaskStatus.DONE)
+                    ) {
+                        null
+                    } else previous.copy(isShortlisted = intent.shortlisted)
+                }
                 TaskWriteIntent.ToggleCompletion -> {
                     if (previous.status == TaskStatus.DONE) previous.copy(status = TaskStatus.TODO)
                     else if (previous.recurrenceType != RecurrenceType.NONE && previous.deadline != null) {
@@ -210,6 +218,7 @@ class TaskWriteCoordinator(
             recurrenceAnchorDay = anchor,
             status = TaskStatus.TODO,
             completedAt = null,
+            isShortlisted = false,
         )
     }
 

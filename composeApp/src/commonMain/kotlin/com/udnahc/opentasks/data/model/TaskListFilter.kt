@@ -7,6 +7,8 @@ sealed interface TaskListFilter {
     @Serializable
     data class Category(val id: String) : TaskListFilter
     @Serializable
+    data object Shortlist : TaskListFilter
+    @Serializable
     data object Starred : TaskListFilter
     @Serializable
     data object Today : TaskListFilter
