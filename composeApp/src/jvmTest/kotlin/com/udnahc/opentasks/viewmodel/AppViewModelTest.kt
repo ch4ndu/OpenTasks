@@ -35,6 +35,7 @@ import com.udnahc.opentasks.testutil.FakeTaskRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -58,9 +59,8 @@ class AppViewModelTest : MainDispatcherRule() {
 
         viewModel.importSharedIcs(payload)
         viewModel.importSharedIcs(payload)
-        advanceUntilIdle()
 
-        val result = assertIs<SharedIcsImportResult.Success>(viewModel.sharedIcsImportResult.value)
+        val result = assertIs<SharedIcsImportResult.Success>(viewModel.sharedIcsImportResult.first { it != null })
         assertEquals(7L, result.payloadId)
         assertEquals(1, result.importedCount)
         assertEquals(1, taskRepository.inserted.size)
@@ -116,15 +116,13 @@ class AppViewModelTest : MainDispatcherRule() {
 
         viewModel.importSharedIcs(SharedTaskPayload(id = 10L, icsContent = validIcs("first")))
         viewModel.importSharedIcs(SharedTaskPayload(id = 11L, icsContent = validIcs("second")))
-        advanceUntilIdle()
 
-        val first = assertIs<SharedIcsImportResult.Success>(viewModel.sharedIcsImportResult.value)
+        val first = assertIs<SharedIcsImportResult.Success>(viewModel.sharedIcsImportResult.first { it != null })
         assertEquals(10L, first.payloadId)
         assertEquals(1, taskRepository.inserted.size)
         assertTrue(viewModel.consumeSharedIcsImportResult(first))
-        advanceUntilIdle()
 
-        val second = assertIs<SharedIcsImportResult.Success>(viewModel.sharedIcsImportResult.value)
+        val second = assertIs<SharedIcsImportResult.Success>(viewModel.sharedIcsImportResult.first { it != null })
         assertEquals(11L, second.payloadId)
         assertEquals(2, taskRepository.inserted.size)
         assertTrue(viewModel.consumeSharedIcsImportResult(second))
@@ -143,8 +141,8 @@ class AppViewModelTest : MainDispatcherRule() {
             assertEquals(payloadId, sharedTaskIntakeStatus.value.activeReviewId)
 
             assertTrue(viewModel.confirmSharedIcsImport(payloadId))
-            advanceUntilIdle()
-            val result = assertIs<SharedIcsImportResult.Success>(viewModel.sharedIcsImportResult.value)
+            // Resource loading can suspend outside the virtual test dispatcher.
+            val result = assertIs<SharedIcsImportResult.Success>(viewModel.sharedIcsImportResult.first { it != null })
             assertTrue(viewModel.isSharedIcsIntakeBusy.value)
             assertEquals(payloadId, sharedTaskIntakeStatus.value.activeReviewId)
 
@@ -206,7 +204,7 @@ class AppViewModelTest : MainDispatcherRule() {
         val viewModel = fixture(taskRepository).viewModel
         try {
             assertTrue(viewModel.importSharedIcs(claimIcsForReview(payloadId, "cancel-review")))
-            advanceUntilIdle()
+            viewModel.isSharedIcsIntakeBusy.first { !it }
 
             assertNull(viewModel.sharedIcsImportResult.value)
             assertFalse(viewModel.isSharedIcsIntakeBusy.value)
@@ -225,13 +223,12 @@ class AppViewModelTest : MainDispatcherRule() {
         taskRepository.insertError = CancellationException("cancel this import")
 
         fixture.viewModel.importSharedIcs(SharedTaskPayload(id = 12L, icsContent = validIcs("cancelled")))
-        advanceUntilIdle()
+        fixture.viewModel.isSharedIcsIntakeBusy.first { !it }
         assertNull(fixture.viewModel.sharedIcsImportResult.value)
 
         taskRepository.insertError = null
         fixture.viewModel.importSharedIcs(SharedTaskPayload(id = 13L, icsContent = validIcs("retry")))
-        advanceUntilIdle()
-        val result = assertIs<SharedIcsImportResult.Success>(fixture.viewModel.sharedIcsImportResult.value)
+        val result = assertIs<SharedIcsImportResult.Success>(fixture.viewModel.sharedIcsImportResult.first { it != null })
         assertEquals(13L, result.payloadId)
     }
 
@@ -296,8 +293,7 @@ class AppViewModelTest : MainDispatcherRule() {
             val taskRepository = FakeTaskRepository()
             val fixture = fixture(taskRepository)
             fixture.viewModel.importSharedIcs(claimed)
-            advanceUntilIdle()
-            assertIs<SharedIcsImportResult.Success>(fixture.viewModel.sharedIcsImportResult.value)
+            assertIs<SharedIcsImportResult.Success>(fixture.viewModel.sharedIcsImportResult.first { it != null })
 
             store = ViewModelStore().also { it.put("shared-ics-pending-result", fixture.viewModel) }
             store.clear()

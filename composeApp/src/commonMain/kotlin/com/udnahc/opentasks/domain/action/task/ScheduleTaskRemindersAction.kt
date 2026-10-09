@@ -102,7 +102,7 @@ class ScheduleTaskRemindersAction(
         var afterOccurrence: Long? = null
         repeat(occurrenceLimit) {
             val occurrence = task.schedulingOccurrence(now, afterOccurrence) ?: return requests
-            requests += task.requestsForOccurrence(occurrence, now)
+            requests += requestsForOccurrence(task, occurrence, now)
             afterOccurrence = occurrence.deadlineUtcMillis
             if (task.recurrenceType == RecurrenceType.NONE) return requests
         }
@@ -141,11 +141,12 @@ class ScheduleTaskRemindersAction(
         return false
     }
 
-    private suspend fun Task.requestsForOccurrence(
+    private suspend fun requestsForOccurrence(
+        task: Task,
         occurrence: SchedulingOccurrence,
         now: Long,
     ): List<ReminderRequest> {
-        val taskForOccurrence = copy(
+        val taskForOccurrence = task.copy(
             deadline = occurrence.deadlineUtcMillis,
             endDeadline = occurrence.endDeadlineUtcMillis,
         )
@@ -161,8 +162,8 @@ class ScheduleTaskRemindersAction(
         val overdueAt = occurrence.deadlineUtcMillis.takeIf { it > now && !hasDueNow }
         val dateRequests = dateTriggers.mapIndexed { ordinal, trigger ->
             ReminderRequest(
-                identity = ReminderIdentity(id, occurrence.deadlineUtcMillis, ReminderKind.DATE, ordinal),
-                title = title,
+                identity = ReminderIdentity(task.id, occurrence.deadlineUtcMillis, ReminderKind.DATE, ordinal),
+                title = task.title,
                 body = textProvider.taskDue(trigger.minutesForLabel),
                 triggerAtUtcMillis = trigger.triggerAtUtcMillis,
                 allowMarkDone = trigger.triggerAtUtcMillis == occurrence.deadlineUtcMillis,
@@ -177,8 +178,8 @@ class ScheduleTaskRemindersAction(
                 }
             ) ?: return@mapIndexed null
             ReminderRequest(
-                identity = ReminderIdentity(id, occurrence.deadlineUtcMillis, ReminderKind.DURATION, ordinal),
-                title = title,
+                identity = ReminderIdentity(task.id, occurrence.deadlineUtcMillis, ReminderKind.DURATION, ordinal),
+                title = task.title,
                 body = if (minutes == -1) {
                     textProvider.taskEndingNow()
                 } else {
@@ -189,8 +190,8 @@ class ScheduleTaskRemindersAction(
         }.filterNotNull().filter { it.triggerAtUtcMillis > now }
         val overdueRequest = overdueAt?.let { triggerAt ->
             ReminderRequest(
-                identity = ReminderIdentity(id, occurrence.deadlineUtcMillis, ReminderKind.OVERDUE, 0),
-                title = title,
+                identity = ReminderIdentity(task.id, occurrence.deadlineUtcMillis, ReminderKind.OVERDUE, 0),
+                title = task.title,
                 body = textProvider.taskOverdue(),
                 triggerAtUtcMillis = triggerAt,
                 allowMarkDone = true,
@@ -200,7 +201,7 @@ class ScheduleTaskRemindersAction(
         val lastTriggerAt = requests.maxOfOrNull(ReminderRequest::triggerAtUtcMillis)
         return requests.map { request ->
             request.copy(
-                rescheduleAfterFire = recurrenceType != RecurrenceType.NONE &&
+                rescheduleAfterFire = task.recurrenceType != RecurrenceType.NONE &&
                     request.triggerAtUtcMillis == lastTriggerAt,
             )
         }
@@ -233,7 +234,7 @@ class ScheduleTaskRemindersAction(
 
         scheduleAllDayOngoingIfNeeded(taskForOccurrence, now)
 
-        task.requestsForOccurrence(occurrence, now).forEach { request ->
+        requestsForOccurrence(task, occurrence, now).forEach { request ->
             log.v { "Scheduling ${request.identity.kind} reminder at ${request.triggerAtUtcMillis}" }
             scheduler.schedule(request)
         }

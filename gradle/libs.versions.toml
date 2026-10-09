@@ -1,68 +1,56 @@
 [versions]
-# Empirically verified project pin: Kotlin 2.4.10 builds with AGP 9.2.1 here.
-# Kotlin 2.4.10's published KMP compatibility table lists support through AGP 9.1.0;
-# retain this verified pin until a supported Kotlin line or a separately authorized upgrade validates a newer AGP.
+# Kotlin 2.4.21 supports the retained AGP 9.2.1 / Gradle 9.4.1 pair.
 #noinspection AndroidGradlePluginVersion
 agp = "9.2.1"
-# Stable Android platform ceiling: API 36; API 37 remains beta.
+# Compose 1.12 and Lifecycle 2.11 require stable API 37 to compile.
 #noinspection GradleDependency
-android-compileSdk = "36"
+android-compileSdk = "37"
 android-minSdk = "26"
 #noinspection OldTargetApi
 android-targetSdk = "36"
 androidx-activity = "1.13.0"
-androidx-appcompat = "1.7.1"
-# Compatibility pin: Core 1.19.0 AAR metadata requires compileSdk 37; 1.18.0 is the latest API-36-compatible release.
-# Reproduced by `./gradlew :androidApp:lintDebug` with compileSdk 36; remove when stable API 37 is approved.
-#noinspection GradleDependency
-androidx-core = "1.18.0"
+androidx-appcompat = "1.8.0"
+androidx-core = "1.19.1"
 androidx-exifinterface = "1.4.2"
 androidx-espresso = "3.7.0"
-# Compatibility pin: Lifecycle 2.11.0 AAR metadata requires compileSdk 37; 2.10.0 remains compatible with API 36.
-# Reproduced by `./gradlew :androidApp:lintDebug` with compileSdk 36; remove when stable API 37 is approved.
-#noinspection NewerVersionAvailable
-androidx-lifecycle = "2.10.0"
+androidx-lifecycle = "2.11.0"
 androidx-testExt = "1.3.0"
 composeHotReload = "1.2.0"
-# Compose Multiplatform 1.11.1 is the compatibility baseline for RichEditor 1.0.0.
-composeMultiplatform = "1.11.1"
+# RichEditor 1.2.1 requires Compose Multiplatform 1.12.
+composeMultiplatform = "1.12.1"
 junit = "4.13.2"
-kotlin = "2.4.10"
+kotlin = "2.4.21"
 kotlinx-coroutines = "1.11.0"
 kotlinx-datetime = "0.8.0"
 turbine = "1.2.1"
-# Preview-only: Compose Multiplatform has no compatible stable Material 3 release.
-material3 = "1.11.0-alpha07"
+# Material 3 version used by RichEditor 1.2.1 on the Compose 1.12 line.
+material3 = "1.12.0-alpha03"
 
-room = "2.8.4"
-ksp = "2.3.10"
-kover = "0.9.9"
-sqlite = "2.7.0"
+room = "2.8.5"
+ksp = "2.3.12"
+kover = "0.9.11"
+sqlite = "2.7.1"
 koin-bom = "4.2.2"
 
 kmlog = "2.0.3"
-slf4jApi = "2.0.18"
-logback = "1.6.1"
+slf4jApi = "2.0.20"
+logback = "1.6.5"
 javaKeyring = "1.0.4"
 
-nav3Core = "1.1.5"
-multiplatform-nav3-ui = "1.1.1"
-kotlinSerialization = "2.4.10"
+# Keep runtime aligned with the stable JetBrains Navigation 3 UI line.
+#noinspection GradleDependency
+nav3Core = "1.1.7"
+multiplatform-nav3-ui = "1.1.2"
+kotlinSerialization = "2.4.21"
 kotlinxSerializationCore = "1.11.0"
-# Compatibility pin: lifecycle-viewmodel-navigation3 2.11.0 AAR metadata requires compileSdk 37; 2.10.0 remains compatible with API 36.
-# Reproduced by `./gradlew :androidApp:lintDebug` with compileSdk 36; remove when stable API 37 is approved.
-#noinspection NewerVersionAvailable
-compose-multiplatform-lifecycle = "2.10.0"
-# Compatibility pin: adaptive Navigation 3 1.3.0-beta02 AAR metadata requires compileSdk 37; alpha04 remains compatible with API 36.
-# Reproduced by `./gradlew :androidApp:lintDebug` with compileSdk 36; remove when stable API 37 is approved.
-#noinspection NewerVersionAvailable
-compose-multiplatform-adaptive = "1.3.0-alpha04"
-# RichEditor 1.0.0 is paired with Compose Multiplatform 1.11.1.
-richeditor = "1.0.0"
+compose-multiplatform-lifecycle = "2.11.0"
+compose-multiplatform-adaptive = "1.3.0"
+richeditor = "1.2.1"
+markdown = "0.7.16"
 pocketbase = "2.7.4"
-ktor = "3.5.2"
-work = "2.11.2"
-glance = "1.1.1"
+ktor = "3.6.0"
+work = "2.12.0"
+glance = "1.2.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -83,6 +71,7 @@ compose-material3 = { module = "org.jetbrains.compose.material3:material3", vers
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
 compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "composeMultiplatform" }
 compose-uiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
@@ -111,6 +100,7 @@ koin-compose-viewmodel = { module = "io.insert-koin:koin-compose-viewmodel" }
 koin-android = { module = "io.insert-koin:koin-android" }
 
 richeditor-compose = { module = "com.mohamedrejeb.richeditor:richeditor-compose", version.ref = "richeditor" }
+markdown = { module = "org.jetbrains:markdown", version.ref = "markdown" }
 
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4jApi" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4jApi" }
@@ -119,6 +109,7 @@ java-keyring = { module = "com.github.javakeyring:java-keyring", version.ref = "
 kmlog = { module = "org.lighthousegames:logging", version.ref = "kmlog" }
 
 pocketbase = { module = "io.github.agrevster:pocketbase-kotlin", version.ref = "pocketbase" }
+ktor-bom = { module = "io.ktor:ktor-bom", version.ref = "ktor" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }

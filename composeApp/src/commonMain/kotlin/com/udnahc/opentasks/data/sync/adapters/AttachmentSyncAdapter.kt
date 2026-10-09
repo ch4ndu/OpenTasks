@@ -240,7 +240,7 @@ open class AttachmentSyncAdapter(
                     it.isSynced &&
                         it.syncState == AttachmentSyncState.SYNCED &&
                         it.remoteFileName == record.file &&
-                        it.hasCompleteLocalFiles()
+                        hasCompleteLocalFiles(it)
                 } == true
             if (healthySameFile) {
                 upsertRemoteSameFile(incoming)
@@ -425,15 +425,15 @@ open class AttachmentSyncAdapter(
         }
         return AttachmentDownloadInstallBasis(
             expectedLocal = local,
-            allowsEqualTimestampRepair = !local.hasCompleteLocalFiles(),
+            allowsEqualTimestampRepair = !hasCompleteLocalFiles(local),
         )
     }
 
-    private suspend fun Attachment.hasCompleteLocalFiles(): Boolean =
-        localPath.isNotBlank() &&
-            thumbnailPath.isNotBlank() &&
-            fileStorage.exists(localPath) &&
-            fileStorage.exists(thumbnailPath)
+    private suspend fun hasCompleteLocalFiles(attachment: Attachment): Boolean =
+        attachment.localPath.isNotBlank() &&
+            attachment.thumbnailPath.isNotBlank() &&
+            fileStorage.exists(attachment.localPath) &&
+            fileStorage.exists(attachment.thumbnailPath)
 
     /**
      * Attachment bytes and their derived local media details are not stable

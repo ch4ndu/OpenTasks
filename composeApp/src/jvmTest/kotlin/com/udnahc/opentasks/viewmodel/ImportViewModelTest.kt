@@ -16,6 +16,7 @@ import com.udnahc.opentasks.testutil.FakeCategoryRepository
 import com.udnahc.opentasks.testutil.FakeTagRepository
 import com.udnahc.opentasks.testutil.FakeTaskRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDateTime
@@ -179,7 +180,8 @@ class ImportViewModelTest : MainDispatcherRule() {
         assertEquals(99, viewModel.uiState.value.rangeValue)
         viewModel.updateRangeValue(1)
         viewModel.importEvents()
-        advanceUntilIdle()
+        // Resource loading can suspend outside the virtual test dispatcher.
+        val result = viewModel.uiState.first { it.importedCount != null || it.error != null }
 
         val startLocal = Instant.fromEpochMilliseconds(provider.lastStartUtcMillis ?: 0L)
             .toLocalDateTime(timeZone)
@@ -187,7 +189,8 @@ class ImportViewModelTest : MainDispatcherRule() {
             .toLocalDateTime(timeZone)
         assertEquals(LocalDateTime(2026, 2, 28, 10, 30), startLocal)
         assertEquals(LocalDateTime(2026, 4, 30, 10, 30), endLocal)
-        assertEquals(1, viewModel.uiState.value.importedCount)
+        assertNull(result.error)
+        assertEquals(1, result.importedCount)
         assertEquals("Planning", taskRepository.inserted.single().title)
     }
 

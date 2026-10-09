@@ -119,7 +119,7 @@ The current source also includes Weekly review, a retained Completion logbook, b
 
 ## Building & Running
 
-**Prerequisites:** JDK 17, Android Studio (for Android), Xcode (for iOS). Both JVM modules pin
+**Prerequisites:** JDK 17, Android Studio with Android SDK 37 (for Android), Xcode (for iOS). Both JVM modules pin
 the JDK 17 toolchain; the Gradle 9.4.1 wrapper distribution is checksum-verified.
 
 ```bash

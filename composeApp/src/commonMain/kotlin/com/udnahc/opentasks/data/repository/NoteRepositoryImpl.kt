@@ -53,7 +53,7 @@ class NoteRepositoryImpl(
             withContext(ioDispatcher) {
                 noteDao.insert(committed.withUtcTimestamps())
             }
-            committed.withSyncWarning()
+            withSyncWarning(committed)
         }
 
     override suspend fun update(note: Note) {
@@ -70,7 +70,7 @@ class NoteRepositoryImpl(
             withContext(ioDispatcher) {
                 noteDao.update(committed.withUtcTimestamps())
             }
-            committed.withSyncWarning()
+            withSyncWarning(committed)
         }
 
     override suspend fun delete(note: Note) {
@@ -88,11 +88,11 @@ class NoteRepositoryImpl(
             withContext(ioDispatcher) {
                 noteDao.update(committed.withUtcTimestamps())
             }
-            committed.withSyncWarning()
+            withSyncWarning(committed)
         }
 
-    private suspend fun Note.withSyncWarning(): CommittedMutation<Note> =
-        CommittedMutation(this).withPostCommitWarning(
+    private suspend fun withSyncWarning(note: Note): CommittedMutation<Note> =
+        CommittedMutation(note).withPostCommitWarning(
             warning = triggerSyncAfterCommit(),
             phase = PostCommitWarningPhase.SYNC,
         )

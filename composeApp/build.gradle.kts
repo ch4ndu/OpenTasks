@@ -145,6 +145,7 @@ kotlin {
 
             // DateTime
             implementation(libs.kotlinx.datetime)
+            implementation(libs.kotlinx.coroutines.core)
 
             // Room
             implementation(libs.androidx.room.runtime)
@@ -158,9 +159,13 @@ kotlin {
 
             // Rich Text Editor
             implementation(libs.richeditor.compose)
+            // Pick up parser fixes beyond the version bundled by RichEditor.
+            implementation(libs.markdown)
 
             // PocketBase
             implementation(libs.pocketbase)
+            // Keep SDK runtime clients and the test mock engine on the same Ktor version.
+            implementation(project.dependencies.platform(libs.ktor.bom))
 
             // SLF4J API (required by Ktor / PocketBase SDK)
             implementation(libs.slf4j.api)
