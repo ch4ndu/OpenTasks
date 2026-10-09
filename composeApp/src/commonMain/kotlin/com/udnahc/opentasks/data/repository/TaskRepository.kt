@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.data.repository
 
+import com.udnahc.opentasks.data.model.TaskCompletion
 import com.udnahc.opentasks.data.model.Task
 import kotlinx.coroutines.flow.Flow
 
@@ -16,6 +17,7 @@ interface TaskRepository {
      */
     suspend fun mutateExisting(
         id: String,
+        completion: ((Task, Task) -> TaskCompletion?)? = null,
         transform: (Task) -> Task?,
     ): CommittedMutation<TaskMutationResult>
 

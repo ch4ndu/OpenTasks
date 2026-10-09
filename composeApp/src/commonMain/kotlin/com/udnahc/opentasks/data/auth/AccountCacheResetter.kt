@@ -41,7 +41,7 @@ internal class AccountCacheInspector(
             taskDao.getUnsynced().size +
             attachmentDao.getUnsynced().size +
             noteDao.getUnsynced().size +
-            countdownDao.getUnsynced().size
+            countdownDao.getUnsynced().size + database.taskCompletionDao().getUnsynced().size
 
         val categories = categoryDao.getAllCategoriesOnce()
         val isPristineInboxOnly = categories.singleOrNull()?.isPristineInboxPlaceholder() == true &&
@@ -51,7 +51,7 @@ internal class AccountCacheInspector(
             attachmentDao.getAllOnce().isEmpty() &&
             attachmentDao.getAttachmentFileCleanupPaths().isEmpty() &&
             noteDao.getAllNotesOnce().isEmpty() &&
-            countdownDao.getAllCountdownsOnce().isEmpty()
+            countdownDao.getAllCountdownsOnce().isEmpty() && database.taskCompletionDao().getAllTaskCompletionsOnce().isEmpty()
 
         LegacyCacheSnapshot(unsyncedRowCount, isPristineInboxOnly)
     }
@@ -129,6 +129,7 @@ internal class AccountCacheResetter(
             database.attachmentDao().deleteAllAttachmentFileCleanup()
             database.attachmentDao().deleteAll()
             database.countdownDao().deleteAll()
+            database.taskCompletionDao().deleteAll()
             database.tagDao().deleteAllTags()
             database.taskDao().deleteAll()
             database.noteDao().deleteAll()

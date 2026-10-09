@@ -61,3 +61,9 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 
 - Put `@Preview` composables in `androidMain`, not `commonMain`.
 - Previews should not call `kotlinx-datetime`; use preview sample data.
+
+## Review, logbook, bulk actions, and note links
+
+- Weekly review, logbook, bulk selection, and note-task destinations own separate entry ViewModels. Projections and date filtering run off the UI thread; task/history lists remain lazy with stable IDs.
+- The note-to-linked-tasks action saves the open draft and navigates only on the matching successful note operation. A plain Save or Delete clears a pending linked-task navigation request. Source-note navigation from a task retains that task editor entry and its draft.
+- All workflow destinations count as busy for shared intake, preventing a system share from replacing an active review or batch-selection flow.

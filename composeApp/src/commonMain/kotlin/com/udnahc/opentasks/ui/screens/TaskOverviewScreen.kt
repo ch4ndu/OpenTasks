@@ -73,6 +73,9 @@ import opentasks.composeapp.generated.resources.starred
 import opentasks.composeapp.generated.resources.tasks
 import opentasks.composeapp.generated.resources.today
 import opentasks.composeapp.generated.resources.unfinished_task_count
+import opentasks.composeapp.generated.resources.weekly_review
+import opentasks.composeapp.generated.resources.completion_logbook
+import opentasks.composeapp.generated.resources.bulk_tasks
 import opentasks.composeapp.generated.resources.your_lists
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
@@ -83,6 +86,9 @@ fun TaskOverviewScreen(
     viewModel: TaskOverviewViewModel,
     onViewClick: (TaskListFilter) -> Unit,
     onSettingsClick: () -> Unit,
+    onWeeklyReview: () -> Unit = {},
+    onLogbook: () -> Unit = {},
+    onBulkTasks: () -> Unit = {},
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
@@ -97,6 +103,9 @@ fun TaskOverviewScreen(
         onViewClick = onViewClick,
         onNewListClick = { showNewListDialog = true },
         onSettingsClick = onSettingsClick,
+        onWeeklyReview = onWeeklyReview,
+        onLogbook = onLogbook,
+        onBulkTasks = onBulkTasks,
         isRefreshing = isRefreshing,
         syncEnabled = syncEnabled,
         onRefresh = onRefresh,
@@ -119,6 +128,9 @@ internal fun TaskOverviewContent(
     onViewClick: (TaskListFilter) -> Unit,
     onNewListClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onWeeklyReview: () -> Unit = {},
+    onLogbook: () -> Unit = {},
+    onBulkTasks: () -> Unit = {},
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
@@ -158,6 +170,13 @@ internal fun TaskOverviewContent(
                 }
                 items(state.smartViews, key = { "view:${it.filter}" }) { view ->
                     SmartViewTile(view = view, onClick = { onViewClick(view.filter) })
+                }
+                item(key = "workflow_actions", span = { GridItemSpan(maxLineSpan) }) {
+                    androidx.compose.foundation.layout.FlowRow {
+                        androidx.compose.material3.TextButton(onClick = onWeeklyReview) { Text(stringResource(Res.string.weekly_review)) }
+                        androidx.compose.material3.TextButton(onClick = onLogbook) { Text(stringResource(Res.string.completion_logbook)) }
+                        androidx.compose.material3.TextButton(onClick = onBulkTasks) { Text(stringResource(Res.string.bulk_tasks)) }
+                    }
                 }
                 item(key = "lists_header", span = { GridItemSpan(maxLineSpan) }) {
                     YourListsHeader(onNewListClick = onNewListClick)

@@ -79,6 +79,11 @@ class WaveSixDiResolutionTest {
                 get<GenerateCsvExportUseCase>()
                 get<GenerateIcsExportUseCase>()
                 get<TaskListViewModel> { parametersOf(TaskListFilter.Today) }
+                get<com.udnahc.opentasks.viewmodel.WeeklyReviewViewModel>()
+                get<com.udnahc.opentasks.viewmodel.LogbookViewModel>()
+                get<com.udnahc.opentasks.viewmodel.BulkTasksViewModel> { parametersOf(null) }
+                get<com.udnahc.opentasks.viewmodel.BulkTasksViewModel> { parametersOf(TaskListFilter.Today) }
+                get<com.udnahc.opentasks.viewmodel.NoteTasksViewModel> { parametersOf("note") }
                 get<MatrixViewModel>()
                 get<TaskFormViewModel>()
                 get<ImportCsvViewModel>()

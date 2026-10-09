@@ -58,6 +58,7 @@ import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
 import com.udnahc.opentasks.viewmodel.TaskListViewModel.ActiveTaskListSection
 import com.udnahc.opentasks.viewmodel.TaskListViewModel.SectionGroup
+import opentasks.composeapp.generated.resources.bulk_tasks
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.all_views
 import opentasks.composeapp.generated.resources.completed
@@ -86,6 +87,7 @@ import org.jetbrains.compose.resources.stringResource
 fun TaskListScreen(
     viewModel: TaskListViewModel,
     onAllViewsClick: () -> Unit,
+    onBulkTasks: (() -> Unit)? = null,
     onTaskClick: (Task) -> Unit,
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
@@ -128,6 +130,7 @@ fun TaskListScreen(
                 onToggleComplete = { viewModel.toggleComplete(it) },
                 onToggleStar = { viewModel.toggleStar(it) },
                 onAllViewsClick = onAllViewsClick,
+                onBulkTasks = onBulkTasks,
                 sortOption = sortOption,
                 onSortOptionSelected = { viewModel.setSortOption(it) },
                 viewMode = viewMode,
@@ -148,6 +151,7 @@ fun TaskListScreen(
                 TaskListTopBar(
                     listName = listName,
                     onAllViewsClick = onAllViewsClick,
+                onBulkTasks = onBulkTasks,
                     sortOption = sortOption,
                     onSortOptionSelected = { viewModel.setSortOption(it) },
                     viewMode = viewMode,
@@ -206,6 +210,7 @@ internal fun TaskListContent(
     onToggleComplete: (Task) -> Unit,
     onToggleStar: (Task) -> Unit = {},
     onAllViewsClick: () -> Unit = {},
+    onBulkTasks: (() -> Unit)? = null,
     sortOption: TaskSortOption = TaskSortOption.RECENTLY_UPDATED,
     onSortOptionSelected: (TaskSortOption) -> Unit = {},
     viewMode: TaskListViewMode = TaskListViewMode.LIST,
@@ -228,6 +233,7 @@ internal fun TaskListContent(
         TaskListTopBar(
             listName = listName,
             onAllViewsClick = onAllViewsClick,
+                onBulkTasks = onBulkTasks,
             sortOption = sortOption,
             onSortOptionSelected = onSortOptionSelected,
             viewMode = viewMode,
@@ -346,6 +352,7 @@ internal fun TaskListContent(
 internal fun TaskListTopBar(
     listName: String,
     onAllViewsClick: () -> Unit,
+    onBulkTasks: (() -> Unit)? = null,
     sortOption: TaskSortOption = TaskSortOption.RECENTLY_UPDATED,
     onSortOptionSelected: (TaskSortOption) -> Unit = {},
     viewMode: TaskListViewMode = TaskListViewMode.LIST,
@@ -362,7 +369,10 @@ internal fun TaskListTopBar(
             .statusBarsPadding()
             .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingSmall),
     ) {
-        AllViewsButton(onClick = onAllViewsClick)
+        androidx.compose.foundation.layout.FlowRow {
+            AllViewsButton(onClick = onAllViewsClick)
+            if (onBulkTasks != null) androidx.compose.material3.TextButton(onClick = onBulkTasks) { Text(stringResource(Res.string.bulk_tasks)) }
+        }
         TaskViewTitle(title = listName)
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = dimens.paddingSmall),

@@ -63,7 +63,7 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 
 - A durable `CacheBinding` authorizes the single Room cache in either `LOCAL_ONLY` or `POCKETBASE` mode. Task UI is mounted for `AccountSessionState.LocalOnly` or `AccountSessionState.Authenticated`; restoring, transitions, and invalid mixed token/binding states keep it unmounted.
 - Local-only mode uses a reserved local owner plus boundary epoch and must not initialize PocketBase. PocketBase mode uses pre-created `users` accounts and proves endpoint, server instance, account, capability version, and epoch before activation.
-- All seven sync collections require an owner relation. PocketBase rules enforce owner-only access, and the structured gateway scopes every query/mutation and rejects raw cross-owner responses before DAO writes.
+- All eight sync collections require an owner relation. PocketBase rules enforce owner-only access, and the structured gateway scopes every query/mutation and rejects raw cross-owner responses before DAO writes.
 - `AccountMutationGate` is the process-wide boundary for user writes, active-cache callbacks, sync mutation, local clear, account switch/logout, and one-cache replacement. Do not construct independent production gates.
 - Local foreground/background work uses active-cache boundaries. Provider activation, normal sync, manual/pull refresh, account switching, logout, and reauthentication remain PocketBase-only.
 - Switch/logout require an online source refresh, successful final sync, and zero unsynced rows. A durable transition marker makes crash recovery fail closed; task UI remains unmounted until the authoritative cache is activated and initially pulled.
@@ -74,7 +74,7 @@ Platform directories are `androidMain/`, `iosMain/`, and `jvmMain/`. Use `expect
 - `AccountClientSession` owns temporary authenticator HTTP clients. Every authenticate, refresh, capability, inventory, and validation session closes on success, ordinary failure, and cancellation.
 - Account-bound delayed callbacks carry `accountId` and `boundaryEpoch`; receivers, workers, and widgets reject stale payloads before reading or mutating task data.
 - Repositories soft-delete durable rows and trigger sync; `SyncService` and adapters use DAOs directly to avoid sync loops during pull.
-- Collections sync in dependency order: categories, tags, tasks, attachments, task_tags, notes, countdowns.
+- Collections sync in dependency order: categories, tags, tasks, attachments, task_tags, notes, countdowns, task_completions.
 - Each collection pulls before pushing and uses last-write-wins by local database `updatedAt` / server `localUpdatedAt`.
 - Remote rows with newer timestamps overwrite local rows, including older unsynced local edits; unsynced local rows push only when newer. Equal timestamps succeed only when canonical payloads match.
 - App deletes are server tombstones (`isDeleted = true`) retained indefinitely, not PocketBase hard deletes. Never-synced local tombstones without `pbId` may be hard-deleted locally.

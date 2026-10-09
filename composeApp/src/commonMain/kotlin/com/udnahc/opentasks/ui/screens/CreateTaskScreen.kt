@@ -77,6 +77,7 @@ import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.ui.util.PlatformBackHandler
 import com.udnahc.opentasks.ui.util.rememberTaskImagePickerActions
 import com.udnahc.opentasks.ui.util.rememberOpenInMapsAction
+import opentasks.composeapp.generated.resources.source_note
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.all_day
 import opentasks.composeapp.generated.resources.cancel
@@ -196,6 +197,7 @@ fun CreateTaskScreen(
     isShortlisted: Boolean = false,
     isShortlistPending: Boolean = false,
     onShortlistChange: ((Boolean) -> Unit)? = null,
+    onOpenSourceNote: (() -> Unit)? = null,
     onExternalLaunchFailure: () -> Unit = {},
 ) {
     CreateTaskContent(
@@ -230,6 +232,7 @@ fun CreateTaskScreen(
         isShortlisted = isShortlisted,
         isShortlistPending = isShortlistPending,
         onShortlistChange = onShortlistChange,
+        onOpenSourceNote = onOpenSourceNote,
         onExternalLaunchFailure = onExternalLaunchFailure,
     )
 }
@@ -268,6 +271,7 @@ private fun CreateTaskContent(
     isShortlisted: Boolean = false,
     isShortlistPending: Boolean = false,
     onShortlistChange: ((Boolean) -> Unit)? = null,
+    onOpenSourceNote: (() -> Unit)? = null,
     onExternalLaunchFailure: () -> Unit = {},
 ) {
     val stateKey = editTask?.id ?: listOf(
@@ -503,6 +507,9 @@ private fun CreateTaskContent(
                 .weight(1f)
                 .padding(horizontal = dimens.paddingXLarge)
         ) {
+            if (onOpenSourceNote != null) {
+                androidx.compose.material3.TextButton(onClick = onOpenSourceNote, enabled = !isSaving) { Text(stringResource(Res.string.source_note)) }
+            }
             // Date and Reminder row
             DateReminderRow(
                 selectedDay = dateState.selectedDay,

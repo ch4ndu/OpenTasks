@@ -18,6 +18,18 @@ import com.udnahc.opentasks.data.database.MIGRATION_10_11
 import com.udnahc.opentasks.data.database.MIGRATION_11_12
 import com.udnahc.opentasks.data.database.MIGRATION_12_13
 import com.udnahc.opentasks.data.database.MIGRATION_13_14
+import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
+import com.udnahc.opentasks.domain.usecase.task.ObserveCompletionsUseCase
+import com.udnahc.opentasks.domain.action.task.BulkUpdateTasksAction
+import com.udnahc.opentasks.viewmodel.WeeklyReviewViewModel
+import com.udnahc.opentasks.viewmodel.LogbookViewModel
+import com.udnahc.opentasks.viewmodel.BulkTasksViewModel
+import com.udnahc.opentasks.viewmodel.NoteTasksViewModel
+import com.udnahc.opentasks.domain.time.LocalizedDateTimeFormatter
+import com.udnahc.opentasks.data.database.MIGRATION_15_16
+import com.udnahc.opentasks.data.repository.CompletionRepository
+import com.udnahc.opentasks.data.repository.CompletionRepositoryImpl
+import com.udnahc.opentasks.data.sync.adapters.TaskCompletionSyncAdapter
 import com.udnahc.opentasks.data.database.MIGRATION_14_15
 import com.udnahc.opentasks.data.model.AppConstants
 import com.udnahc.opentasks.data.model.TaskListFilter
@@ -199,6 +211,7 @@ val sharedModule = module {
                 MIGRATION_12_13,
                 MIGRATION_13_14,
                 MIGRATION_14_15,
+                MIGRATION_15_16,
             )
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
@@ -213,6 +226,16 @@ val sharedModule = module {
             .build()
     }
     single { get<AppDatabase>().taskDao() }
+    single { get<AppDatabase>().taskCompletionDao() }
+    single<CompletionRepository> { CompletionRepositoryImpl(get()) }
+    single { ObserveAllTasksUseCase(get()) }
+    single { ObserveCompletionsUseCase(get()) }
+    single { BulkUpdateTasksAction(get(), get(), get<AccountBoundaryExecutor>()) }
+    viewModel { WeeklyReviewViewModel(get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { LogbookViewModel(get(), get(), get(), LocalizedDateTimeFormatter()) }
+    viewModel { (filter: TaskListFilter?) -> BulkTasksViewModel(filter, get(), get(), get(), get(), get(), get()) }
+    viewModel { (noteId: String) -> NoteTasksViewModel(noteId, get(), get(), get(), get()) }
+    single { TaskCompletionSyncAdapter(get()) }
     single { get<AppDatabase>().categoryDao() }
     single { get<AppDatabase>().noteDao() }
     single<TaskRepository> { TaskRepositoryImpl(get(), get(), get(), mutationGate = get()) }
@@ -366,7 +389,7 @@ val sharedModule = module {
             listOf(
                 get<CategorySyncAdapter>(), get<TagSyncAdapter>(), get<TaskSyncAdapter>(),
                 get<AttachmentSyncAdapter>(), get<TaskTagSyncAdapter>(), get<NoteSyncAdapter>(),
-                get<CountdownSyncAdapter>(),
+                get<CountdownSyncAdapter>(), get<TaskCompletionSyncAdapter>(),
             ),
             accountStateStore = get<AccountStateStore>(),
             passContextFactory = get(),
@@ -377,7 +400,7 @@ val sharedModule = module {
             adapters = listOf(
                 get<CategorySyncAdapter>(), get<TagSyncAdapter>(), get<TaskSyncAdapter>(),
                 get<AttachmentSyncAdapter>(), get<TaskTagSyncAdapter>(), get<NoteSyncAdapter>(),
-                get<CountdownSyncAdapter>(),
+                get<CountdownSyncAdapter>(), get<TaskCompletionSyncAdapter>(),
             ),
             seedExecutor = get(),
             migrationCoordinator = get(),
@@ -394,7 +417,7 @@ val sharedModule = module {
                 get<AttachmentSyncAdapter>(),
                 get<TaskTagSyncAdapter>(),
                 get<NoteSyncAdapter>(),
-                get<CountdownSyncAdapter>(),
+                get<CountdownSyncAdapter>(), get<TaskCompletionSyncAdapter>(),
             ),
         )
     }
@@ -408,7 +431,7 @@ val sharedModule = module {
                 get<AttachmentSyncAdapter>(),
                 get<TaskTagSyncAdapter>(),
                 get<NoteSyncAdapter>(),
-                get<CountdownSyncAdapter>(),
+                get<CountdownSyncAdapter>(), get<TaskCompletionSyncAdapter>(),
             ),
             get(),
             get(),

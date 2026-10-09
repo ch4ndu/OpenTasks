@@ -72,4 +72,5 @@ private val SAFE_SYNC_COLLECTIONS = setOf(
     "task_tags",
     "notes",
     "countdowns",
+    "task_completions",
 )

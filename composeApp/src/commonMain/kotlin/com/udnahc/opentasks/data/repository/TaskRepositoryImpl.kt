@@ -9,6 +9,9 @@ import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.localToUtc
 import com.udnahc.opentasks.data.extensions.utcNow
 import com.udnahc.opentasks.data.extensions.utcToLocal
+import com.udnahc.opentasks.data.extensions.uuid4
+import com.udnahc.opentasks.data.model.TaskStatus
+import com.udnahc.opentasks.data.model.TaskCompletion
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.ATTACHMENT_OWNER_TASK
 import com.udnahc.opentasks.data.auth.AccountMutationGate
@@ -56,7 +59,24 @@ class TaskRepositoryImpl(
     override suspend fun insert(task: Task): CommittedMutation<Long> = mutationGate.withExclusive {
         log.v { "Inserting task: ${task.id}" }
         val result = withContext(ioDispatcher) {
-            taskDao.insert(task.withDefaultTimestamps().withUtcTimestamps())
+            database.useWriterConnection { connection ->
+                connection.immediateTransaction {
+                    val prepared = task.withDefaultTimestamps()
+                    if (prepared.sourceNoteId != null) {
+                        require(database.noteDao().getNoteById(prepared.sourceNoteId) != null)
+                    }
+                    val rowId = taskDao.insert(prepared.withUtcTimestamps())
+                    if (prepared.status == TaskStatus.DONE) {
+                        val time = prepared.completedAt ?: prepared.updatedAt
+                        recordCompletion(TaskCompletion(
+                            id = uuid4(), taskId = prepared.id,
+                            title = prepared.title, categoryId = prepared.categoryId,
+                            completedAt = time, createdAt = time, updatedAt = time,
+                        ))
+                    }
+                    rowId
+                }
+            }
         }
         CommittedMutation(result).withPostCommitWarning(
             triggerSyncAfterCommit(),
@@ -66,13 +86,24 @@ class TaskRepositoryImpl(
 
     override suspend fun mutateExisting(
         id: String,
+        completion: ((Task, Task) -> TaskCompletion?)?,
         transform: (Task) -> Task?,
     ): CommittedMutation<TaskMutationResult> = mutationGate.withExclusive {
         val result = withContext(ioDispatcher) {
-            taskDao.mutateActive(id) { stored ->
-                transform(stored.withLocalTimestamps())
-                    ?.withUtcTimestamps()
-                    ?.copy(isSynced = false)
+            database.useWriterConnection { connection ->
+                connection.immediateTransaction {
+                    val stored = taskDao.getTaskById(id)
+                        ?: return@immediateTransaction TaskMutationStorageResult.Missing
+                    val previous = stored.withLocalTimestamps()
+                    val next = transform(previous)
+                    val nextStored = next?.withUtcTimestamps()?.copy(isSynced = false)
+                    if (next != null && nextStored != null) {
+                        require(next.id == id)
+                        taskDao.update(nextStored)
+                        completion?.invoke(previous, next)?.let { recordCompletion(it) }
+                    }
+                    TaskMutationStorageResult.Existing(stored, nextStored)
+                }
             }
         }
         val mapped = when (result) {
@@ -153,6 +184,21 @@ class TaskRepositoryImpl(
         withContext(ioDispatcher) {
             taskDao.getActiveTasksOnce()
         }
+
+    /** Called only inside the task writer transaction. */
+    private suspend fun recordCompletion(event: TaskCompletion) {
+        val occurrenceUtc = event.occurrenceAt?.let(::localToUtc)
+        val stored = event.copy(
+            id = occurrenceUtc?.let { "${event.taskId}:$it" } ?: event.id,
+            categoryName = database.categoryDao().getCategoryById(event.categoryId)?.name.orEmpty(),
+            completedAt = localToUtc(event.completedAt), occurrenceAt = occurrenceUtc,
+            createdAt = localToUtc(event.createdAt), updatedAt = localToUtc(event.updatedAt),
+        )
+        // A recurring occurrence can only contribute one entry, even after a repeated notification.
+        if (database.taskCompletionDao().findTaskCompletionByIdAnyState(stored.id) == null) {
+            database.taskCompletionDao().insert(stored)
+        }
+    }
 
     /** Fills in 0L timestamps with current local time before insert. */
     private fun Task.withDefaultTimestamps(): Task {

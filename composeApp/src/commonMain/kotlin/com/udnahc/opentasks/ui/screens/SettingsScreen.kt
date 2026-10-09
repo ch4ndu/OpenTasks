@@ -60,6 +60,7 @@ import com.udnahc.opentasks.viewmodel.SettingsLaunchFailureEvent
 import com.udnahc.opentasks.viewmodel.SettingsLaunchTarget
 import com.udnahc.opentasks.viewmodel.SyncStatus
 import com.udnahc.opentasks.viewmodel.displayLabel
+import opentasks.composeapp.generated.resources.completion_logbook
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.account
 import opentasks.composeapp.generated.resources.account_current
@@ -875,6 +876,7 @@ private fun replacementCollectionLabel(collection: String): String = when (colle
     "tasks" -> stringResource(Res.string.replacement_collection_tasks)
     "attachments" -> stringResource(Res.string.replacement_collection_attachments)
     "task_tags" -> stringResource(Res.string.replacement_collection_task_tags)
+    "task_completions" -> stringResource(Res.string.completion_logbook)
     "notes" -> stringResource(Res.string.notes)
     "countdowns" -> stringResource(Res.string.replacement_collection_countdowns)
     else -> error("Unknown replacement collection: $collection")

@@ -1,6 +1,7 @@
 package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.model.TaskFormData
+import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
 
 enum class FormCompletionScope { OCCURRENCE, SERIES }
@@ -13,6 +14,8 @@ sealed interface TaskWriteIntent {
         val scope: FormCompletionScope,
     ) : TaskWriteIntent
     data class SetStatus(val status: TaskStatus) : TaskWriteIntent
+    data class SetCategory(val categoryId: String) : TaskWriteIntent
+    data class SetPriority(val priority: TaskPriority) : TaskWriteIntent
     data object ToggleStar : TaskWriteIntent
     data class SetShortlisted(val shortlisted: Boolean) : TaskWriteIntent
     data object ToggleCompletion : TaskWriteIntent

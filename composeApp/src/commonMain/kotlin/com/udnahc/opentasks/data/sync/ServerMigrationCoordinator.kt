@@ -27,7 +27,8 @@ class ServerMigrationCoordinator(
             database.tagDao().getAllTaskTagsOnce().isEmpty() &&
             database.attachmentDao().getAllOnce().isEmpty() &&
             database.noteDao().getAllNotesOnce().isEmpty() &&
-            database.countdownDao().getAllCountdownsOnce().isEmpty()
+            database.countdownDao().getAllCountdownsOnce().isEmpty() &&
+            database.taskCompletionDao().getAllTaskCompletionsOnce().isEmpty()
         if (hasOnlyPristineInbox && noOtherRows) LocalStorageState.FRESH else LocalStorageState.NONEMPTY
     }
 
@@ -58,6 +59,7 @@ class ServerMigrationCoordinator(
             database.attachmentDao().getAllOnce().any { remoteIdsByLocalId[it.id] == it.pbId } ||
             database.noteDao().getAllNotesOnce().any { remoteIdsByLocalId[it.id] == it.pbId } ||
             database.countdownDao().getAllCountdownsOnce().any { remoteIdsByLocalId[it.id] == it.pbId } ||
+            database.taskCompletionDao().getAllTaskCompletionsOnce().any { remoteIdsByLocalId[it.id] == it.pbId } ||
             database.tagDao().getAllTaskTagsOnce().any { taskTag ->
                 remoteIdsByLocalId["${taskTag.taskId}:${taskTag.tagId}"] == taskTag.pbId
             }
@@ -98,6 +100,7 @@ class ServerMigrationCoordinator(
         database.tagDao().resetTaskTagSyncMetadataForServerSeed()
         database.noteDao().resetSyncMetadataForServerSeed()
         database.countdownDao().resetSyncMetadataForServerSeed()
+        database.taskCompletionDao().resetSyncMetadataForServerSeed()
     }
 
     companion object {

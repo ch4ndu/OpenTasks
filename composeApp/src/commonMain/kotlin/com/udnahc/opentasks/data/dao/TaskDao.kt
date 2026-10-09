@@ -24,17 +24,6 @@ interface TaskDao {
     @Delete
     suspend fun delete(task: Task)
 
-    @Transaction
-    suspend fun mutateActive(
-        id: String,
-        transform: (Task) -> Task?,
-    ): TaskMutationStorageResult {
-        val previous = getTaskById(id) ?: return TaskMutationStorageResult.Missing
-        val next = transform(previous)
-        if (next != null) update(next)
-        return TaskMutationStorageResult.Existing(previous, next)
-    }
-
     @Query("SELECT * FROM tasks WHERE isDeleted = 0 ORDER BY updatedAt DESC")
     fun getAllTasks(): Flow<List<Task>>
 

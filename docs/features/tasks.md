@@ -44,6 +44,32 @@ Shortlist is an explicit, persistent selection of unfinished tasks to tackle nex
 - Due & overdue shows unfinished overdue or due-today tasks outside the Shortlist and links to Today.
 - Membership never resets by date and never changes due dates, reminders, list, star, or priority. Rows follow the task-list sort option with task ID as the tie-breaker.
 
+## Weekly review
+
+Tasks overview → Weekly review opens four steps: Inbox, overdue work, important undated work (HIGH or MEDIUM), and the persistent Shortlist. Each step shows unfinished tasks. Open a task to edit it, complete it using the existing occurrence/series choice, or add/remove Shortlist membership. Previous/Next navigates the review; Finish review returns to the overview. Review does not reset the Shortlist or change dates automatically.
+
+## Completion logbook
+
+Tasks overview → Completion logbook shows completion snapshots with Last 7 days, Last 30 days, and All time filters, plus a list filter. The date windows include today and use local civil-day boundaries. Entries retain the title and list name captured when the task was completed, even if the task is subsequently renamed, moved, reopened, or deleted. A retained entry opens the task when it still exists; deleted tasks are identified as unavailable.
+
+Each accepted recurring occurrence completion is recorded once using the task ID and occurrence UTC instant as its identity. Ordinary tasks completed again after reopening produce another entry. Task updates and completion insertion commit in one Room writer transaction. Recurrence advancement, notification completion, editor completion, and board/list/Matrix completion use the same write boundary. Sync pulls do not manufacture additional entries.
+
+Completing the same non-recurring task independently on two offline devices can retain two entries after sync. Imported completed CSV rows use their supplied completion time, or the import time when it is missing.
+
+Room migration 15 → 16 seeds entries for existing active DONE tasks with a known positive completion timestamp. Earlier recurring occurrences and unknown completion times cannot be reconstructed. History is independent of task/category deletion, uses the owner-scoped `task_completions` collection, and is included in account clearing, unsynced checks, server inventories, and exact seed/replacement. PocketBase migration 014 is required for synced clients; see the [workflow upgrade procedure](../runbooks/task-workflows-upgrade.md).
+
+## Bulk task actions
+
+Open Bulk task actions from the Tasks overview for all unfinished tasks, or from a task list/Shortlist for that view. Select rows individually or select all visible rows. Available operations are moving to a list, changing priority, and adding/removing Shortlist membership. Moving clears the old list's section. Dates, content, recurrence, tags, note links, and other unrelated fields are preserved.
+
+Operations are idempotent narrow writes against current persisted tasks, under the foreground account boundary. A batch reports the number updated and failed, removes successful selections, and retains still-visible failed selections for explicit retry. It does not claim transaction-wide atomicity. Cancellation stops further work; already committed rows remain changed. Bulk completion/deletion and date rescheduling are outside this feature.
+
+## Tasks linked to notes
+
+From an existing note, Save and open linked tasks saves the note draft before opening its task list. Create task from note opens the full editor with the note title prefilled. Saving creates a task with the synced `sourceNoteId`; cancelling creates nothing. The linked-tasks view includes active and completed tasks. The task editor's Source note action returns to that view, where Open note opens the original note.
+
+A source note must still exist when the new task is saved. Ordinary task edits preserve the link. Deleting a task hides it from the note's linked list; deleting the note retains tasks and displays an unavailable-source message. These links belong to the active account cache and never use the task's external URL field.
+
 ## Quick Add
 
 Quick Add is an offline, deterministic English parser for short task titles. It recognizes only trailing, token-bounded clauses:

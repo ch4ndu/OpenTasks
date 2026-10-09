@@ -42,6 +42,7 @@ data class Task(
     val categoryId: String = AppConstants.DEFAULT_INBOX_ID,
     val isAllDay: Boolean = false,
     val sourceExternalId: String? = null,
+    val sourceNoteId: String? = null,
     val location: String = "",
     val url: String = "",
     val organizer: String = "",

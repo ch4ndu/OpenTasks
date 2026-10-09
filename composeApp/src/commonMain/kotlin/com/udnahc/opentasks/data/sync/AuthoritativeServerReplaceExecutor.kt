@@ -163,6 +163,7 @@ class AuthoritativeServerReplaceExecutor(
 
     companion object {
         val DELETE_ORDER = listOf(
+            "task_completions",
             "task_tags",
             "attachments",
             "tasks",

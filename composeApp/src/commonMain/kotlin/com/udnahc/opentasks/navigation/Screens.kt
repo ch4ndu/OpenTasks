@@ -15,6 +15,14 @@ sealed class Screen : NavClass() {
     @Serializable
     data object Calendar : Screen()
     @Serializable
+    data object WeeklyReview : Screen()
+    @Serializable
+    data object Logbook : Screen()
+    @Serializable
+    data class BulkTasks(val filter: TaskListFilter? = null) : Screen()
+    @Serializable
+    data class NoteTasks(val noteId: String) : Screen()
+    @Serializable
     data object Notes : Screen()
     @Serializable
     data class QuadrantDetail(val priorityOrdinal: Int) : Screen()
@@ -28,6 +36,7 @@ sealed class Screen : NavClass() {
         val title: String = "",
         val description: String = "",
         val url: String = "",
+        val sourceNoteId: String? = null,
     ) : Screen()
 
     @Serializable

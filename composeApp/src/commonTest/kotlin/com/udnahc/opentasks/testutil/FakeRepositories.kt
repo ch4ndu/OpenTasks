@@ -84,6 +84,7 @@ class FakeTaskRepository(initialTasks: List<Task> = emptyList()) : TaskRepositor
 
     override suspend fun mutateExisting(
         id: String,
+        completion: ((Task, Task) -> com.udnahc.opentasks.data.model.TaskCompletion?)?,
         transform: (Task) -> Task?,
     ): CommittedMutation<com.udnahc.opentasks.data.repository.TaskMutationResult> = writerMutex.withLock {
         mutateExistingCalls++

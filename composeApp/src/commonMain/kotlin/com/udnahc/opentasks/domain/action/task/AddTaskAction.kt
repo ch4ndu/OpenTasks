@@ -49,6 +49,7 @@ class AddTaskAction(
         durationReminders: String = "",
         dateReminders: String = "",
         status: TaskStatus = TaskStatus.TODO,
+        sourceNoteId: String? = null,
     ): CommittedMutation<Task> = accountBoundaryExecutor.withForegroundActionBoundary {
         log.d { "Adding task" }
         val now = localNow()
@@ -76,6 +77,7 @@ class AddTaskAction(
             durationReminders = durationReminders,
             dateReminders = dateReminders,
             status = status,
+            sourceNoteId = sourceNoteId,
             createdAt = now,
             updatedAt = now,
         )

@@ -5,6 +5,8 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.RoomDatabaseConstructor
 import androidx.room.TypeConverters
+import com.udnahc.opentasks.data.dao.TaskCompletionDao
+import com.udnahc.opentasks.data.model.TaskCompletion
 import com.udnahc.opentasks.data.dao.AppSettingsDao
 import com.udnahc.opentasks.data.dao.AttachmentDao
 import com.udnahc.opentasks.data.dao.CategoryDao
@@ -23,13 +25,14 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskTag
 
 @Database(
-    entities = [Task::class, Category::class, Note::class, Tag::class, TaskTag::class, AppSettings::class, Countdown::class, Attachment::class, AttachmentFileCleanup::class],
-    version = 15
+    entities = [TaskCompletion::class, Task::class, Category::class, Note::class, Tag::class, TaskTag::class, AppSettings::class, Countdown::class, Attachment::class, AttachmentFileCleanup::class],
+    version = 16
 )
 @TypeConverters(Converters::class)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
+    abstract fun taskCompletionDao(): TaskCompletionDao
     abstract fun categoryDao(): CategoryDao
     abstract fun noteDao(): NoteDao
     abstract fun tagDao(): TagDao

@@ -103,6 +103,6 @@ class PocketBaseServerInventoryReader(
     companion object {
         const val CAPABILITY_VERSION = 2
         const val PAGE_SIZE = 200
-        val COLLECTIONS = listOf("categories", "tags", "tasks", "attachments", "task_tags", "notes", "countdowns")
+        val COLLECTIONS = listOf("categories", "tags", "tasks", "attachments", "task_tags", "notes", "countdowns", "task_completions")
     }
 }

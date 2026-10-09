@@ -2,6 +2,8 @@ package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.extensions.computeNextDeadlineLocal
 import com.udnahc.opentasks.data.extensions.extractDay
+import com.udnahc.opentasks.data.extensions.uuid4
+import com.udnahc.opentasks.data.model.TaskCompletion
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.model.Task
@@ -49,7 +51,9 @@ class TaskWriteCoordinator(
         }
         val now = localNow()
         var outcome: TaskWriteResult = TaskWriteResult.NoOp
-        val stored = repository.mutateExisting(id) { previous ->
+        val stored = repository.mutateExisting(id, completion = { previous, next ->
+            completionForWrite(previous, next, intent, now)
+        }) { previous ->
             val proposal = when (intent) {
                 is TaskWriteIntent.FormUpdate -> {
                     val form = normalizer.overlayForm(previous, intent.formData)
@@ -70,6 +74,10 @@ class TaskWriteCoordinator(
                         null
                     } else previous.copy(status = intent.status)
                 }
+                is TaskWriteIntent.SetCategory -> if (previous.categoryId == intent.categoryId) null
+                    else previous.copy(categoryId = intent.categoryId, section = null)
+                is TaskWriteIntent.SetPriority -> if (previous.priority == intent.priority) null
+                    else previous.copy(priority = intent.priority)
                 TaskWriteIntent.ToggleStar -> previous.copy(isStarred = !previous.isStarred)
                 is TaskWriteIntent.SetShortlisted -> {
                     // A DONE task cannot hold membership, so adding one would only bump updatedAt.
@@ -229,4 +237,21 @@ class TaskWriteCoordinator(
         recurrenceAnchorDay = null,
     )
 
+}
+
+internal fun completionForWrite(previous: Task, next: Task, intent: TaskWriteIntent, now: Long): TaskCompletion? {
+    if (previous.status == TaskStatus.DONE) return null
+    val occurrence = when (intent) {
+        is TaskWriteIntent.CompleteOccurrence -> intent.expectedOccurrence
+        is TaskWriteIntent.NotificationMarkDone -> intent.expectedOccurrence.takeIf { previous.recurrenceType != RecurrenceType.NONE }
+        is TaskWriteIntent.ApplyFormAndComplete -> intent.expectedOccurrence
+        is TaskWriteIntent.CompleteSeries -> previous.deadline.takeIf { previous.recurrenceType != RecurrenceType.NONE }
+        else -> null
+    }
+    if (next.status != TaskStatus.DONE && occurrence == null) return null
+    return TaskCompletion(
+        id = uuid4(), taskId = previous.id,
+        title = next.title, categoryId = next.categoryId, completedAt = now,
+        occurrenceAt = occurrence, createdAt = now, updatedAt = now,
+    )
 }

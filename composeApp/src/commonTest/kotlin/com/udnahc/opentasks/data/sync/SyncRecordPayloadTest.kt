@@ -51,7 +51,7 @@ class SyncRecordPayloadTest {
                 "localId", "title", "content", "subtasks", "priority", "deadline", "endDeadline",
                 "notifyBeforeValue", "notifyBeforeUnit", "recurrenceType", "recurrenceInterval",
                 "recurrenceAnchorDay", "status", "completedAt", "isStarred", "isShortlisted", "section", "isUrgent",
-                "isImportant", "categoryId", "isAllDay", "sourceExternalId", "location", "url",
+                "isImportant", "categoryId", "isAllDay", "sourceExternalId", "sourceNoteId", "location", "url",
                 "organizer", "eventStatus", "attendees", "durationReminders", "dateReminders", "isDeleted",
                 "localCreatedAt", "localUpdatedAt",
             ),

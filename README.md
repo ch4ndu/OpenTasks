@@ -71,6 +71,8 @@ See [docs/README.md](docs/README.md) for feature behavior and technical design n
 - **Tags** — Color-coded tags for flexible cross-category organization
 - **Soft Deletes** — Non-destructive deletion with sync-safe tracking
 
+The current source also includes Weekly review, a retained Completion logbook, bulk list/priority/Shortlist actions, and links between notes and tasks. These additions require [PocketBase migration 014](docs/runbooks/task-workflows-upgrade.md) for synced use; the release number above remains the last published release.
+
 ### Calendar
 - **6 Calendar Views** — Year, month, week, 3-day, day, and list views
 - **Calendar Import** — Import events directly from your device calendar with configurable date range
@@ -219,7 +221,7 @@ On first launch, choose **Use without sync** to create a durable local-only cach
 
 PocketBase mode supports two pre-created accounts. Each account owns its tasks, attachments, categories, notes, countdowns, tags, and task-tag assignments; PocketBase authorization rules and client-side owner validation prevent one account from reading or writing another account's records. After an authenticated boundary has been proven and stored durably, that account can continue using its bound Room cache offline.
 
-Connecting an existing local-only cache is not a merge. The app authenticates without changing the active cache, shows sanitized destination-owner counts, and requires an explicit destructive confirmation. It then deletes only that owner's seven synchronized collections, verifies emptiness, preserves and resets the complete local snapshot's sync metadata, exact-seeds it, and activates the remote session only after final inventory equality. Once confirmed, recovery is resumable and cannot be cancelled.
+Connecting an existing local-only cache is not a merge. The app authenticates without changing the active cache, shows sanitized destination-owner counts, and requires an explicit destructive confirmation. It then deletes only that owner's eight synchronized collections, verifies emptiness, preserves and resets the complete local snapshot's sync metadata, exact-seeds it, and activates the remote session only after final inventory equality. Once confirmed, recovery is resumable and cannot be cancelled.
 
 Production upgrades must follow [the PocketBase cutover and migration runbook](docs/runbooks/pocketbase-multi-user-cutover.md). It covers migration 011 ownership cutover, migration 012 authoritative-replacement capability, backups, authorization/file probes, rollback, and client rollout order. Do not apply either migration to production without its corresponding procedure.
 
@@ -307,7 +309,7 @@ The included migrations (`pocketbase/pb_migrations/`) create the following colle
 
 Each synchronized collection has a required `account` relation and a unique `(account, localId)` index, so both accounts may use stable local IDs such as Inbox. Collection rules require authentication and enforce stored/request owner equality. Normal application deletes remain tombstones; migration 012 additionally allows a record's authenticated stored owner to hard-delete it only for the confirmed authoritative-replacement workflow. The `users` collection does not expose public CRUD/list/view APIs.
 
-Sync runs one collection at a time in this order: categories, tags, tasks, attachments, task_tags, notes, countdowns. Each collection pulls before pushing. Conflicts use last-write-wins by the app-managed `localUpdatedAt` timestamp; if a remote row is newer it overwrites local state, and if an unsynced local row is newer or equal it is pushed. Deletes are durable tombstones (`isDeleted = true`) rather than PocketBase hard deletes. A physically missing server row is treated as server damage/manual deletion and the synced active local row is marked unsynced so the next push recreates it. Device clock skew can make the wrong edit win.
+Sync runs one collection at a time in this order: categories, tags, tasks, attachments, task_tags, notes, countdowns, task_completions. Each collection pulls before pushing. Conflicts use last-write-wins by the app-managed `localUpdatedAt` timestamp; if a remote row is newer it overwrites local state, and if an unsynced local row is newer or equal it is pushed. Deletes are durable tombstones (`isDeleted = true`) rather than PocketBase hard deletes. A physically missing server row is treated as server damage/manual deletion and the synced active local row is marked unsynced so the next push recreates it. Device clock skew can make the wrong edit win.
 
 ### Manual Setup
 

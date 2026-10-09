@@ -24,6 +24,7 @@ import com.udnahc.opentasks.data.model.AttachmentSyncState
 import com.udnahc.opentasks.data.model.AppSettings
 import com.udnahc.opentasks.data.model.ATTACHMENT_OWNER_TASK
 import com.udnahc.opentasks.data.model.Countdown
+import com.udnahc.opentasks.data.model.TaskCompletion
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.data.dao.AttachmentDownloadInstallBasis
 import com.udnahc.opentasks.data.dao.AttachmentDownloadInstallResult
@@ -47,6 +48,7 @@ import com.udnahc.opentasks.data.sync.SyncPassContext
 import com.udnahc.opentasks.data.sync.SyncSettingsKeys
 import com.udnahc.opentasks.data.sync.SyncWriterTransactionRunner
 import com.udnahc.opentasks.data.sync.adapters.AttachmentFileDownloadException
+import com.udnahc.opentasks.data.sync.adapters.AttachmentLocalFileMissingException
 import com.udnahc.opentasks.data.sync.adapters.AttachmentSyncAdapter
 import com.udnahc.opentasks.data.sync.adapters.TaskSyncAdapter
 import com.udnahc.opentasks.data.sync.records.AttachmentRecord
@@ -72,6 +74,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -824,6 +827,7 @@ class PersistenceTest {
 
     @Test
     fun clearLocalDataDeletesEveryEntityAndStoredFileThenRecreatesInbox() = runTest {
+        database.taskCompletionDao().insert(TaskCompletion("completion", "task", "Finished", "list", completedAt = 10L, createdAt = 10L, updatedAt = 10L))
         database.categoryDao().insert(testCategory(id = "category-clear"))
         database.taskDao().insert(testTask(id = "task-clear", categoryId = "category-clear"))
         database.noteDao().insert(testNote(id = "note-clear"))
@@ -841,6 +845,7 @@ class PersistenceTest {
         val trigger = TriggerSyncAction(provider, service)
         clearLocalData(storage, service, trigger)
 
+        assertTrue(database.taskCompletionDao().getAllTaskCompletionsOnce().isEmpty())
         assertTrue(storage.clearAllCalled)
         assertFalse(provider.isConfigured)
         assertTrue(database.attachmentDao().getAllOnce().isEmpty())
@@ -857,6 +862,7 @@ class PersistenceTest {
 
     @Test
     fun authoritativeSeedResetRetainsCompleteGraphAndLocalAttachmentPathsWhileClearingAllSyncMetadata() = runTest {
+        database.taskCompletionDao().insert(TaskCompletion("completion", "task", "Finished", "list", completedAt = 10L, createdAt = 10L, updatedAt = 10L, pbId = "remote", isSynced = true))
         database.categoryDao().insert(testCategory(id = "category-replace", pbId = "pb-category", isSynced = true))
         database.taskDao().insert(
             testTask(
@@ -912,6 +918,10 @@ class PersistenceTest {
 
         ServerMigrationCoordinator(database, stateStore).resetForAuthoritativeSeed(binding, transition)
 
+        val history = database.taskCompletionDao().getAllTaskCompletionsOnce().single()
+        assertEquals("Finished", history.title)
+        assertNull(history.pbId)
+        assertFalse(history.isSynced)
         assertEquals("task-replace", database.taskDao().getAllTasksOnce().single().id)
         assertNull(database.taskDao().getAllTasksOnce().single().pbId)
         assertFalse(database.taskDao().getAllTasksOnce().single().isSynced)
@@ -972,6 +982,92 @@ class PersistenceTest {
         createdAt = utcToLocal(createdAt),
         updatedAt = utcToLocal(updatedAt),
     )
+
+
+    @Test
+    fun completionSnapshotsSurviveReopenRenameAndDeletion() = runTest {
+        database.categoryDao().insert(testCategory(id = "work", name = "Work"))
+        val repository = TaskRepositoryImpl(database.taskDao(), NoOpSyncTrigger, database, mutationGate = mutationGate)
+        val coordinator = com.udnahc.opentasks.domain.action.task.TaskWriteCoordinator(repository)
+        coordinator.create(testTask(id = "history", title = "Original title", categoryId = "work"))
+        coordinator.write("history", com.udnahc.opentasks.domain.action.task.TaskWriteIntent.SetStatus(TaskStatus.DONE))
+        coordinator.write("history", com.udnahc.opentasks.domain.action.task.TaskWriteIntent.SetStatus(TaskStatus.DONE))
+        assertEquals(1, database.taskCompletionDao().getAllTaskCompletionsOnce().size)
+        coordinator.write("history", com.udnahc.opentasks.domain.action.task.TaskWriteIntent.SetStatus(TaskStatus.TODO))
+        repository.mutateExisting("history") { it.copy(title = "Renamed", categoryId = "other") }
+        coordinator.write("history", com.udnahc.opentasks.domain.action.task.TaskWriteIntent.SetStatus(TaskStatus.DONE))
+        coordinator.deleteGraph("history")
+        val history = database.taskCompletionDao().getAllTaskCompletionsOnce()
+        assertEquals(2, history.size)
+        assertTrue(history.any { it.title == "Original title" && it.categoryName == "Work" })
+        assertTrue(history.any { it.title == "Renamed" })
+        assertTrue(history.all { !it.isDeleted && !it.isSynced })
+        assertNull(repository.getTaskById("history"))
+    }
+
+    @Test
+    fun recurringCompletionKeepsEachOccurrenceAndIgnoresStaleDelivery() = runTest {
+        val repository = TaskRepositoryImpl(database.taskDao(), NoOpSyncTrigger, database, mutationGate = mutationGate)
+        val coordinator = com.udnahc.opentasks.domain.action.task.TaskWriteCoordinator(repository)
+        val first = com.udnahc.opentasks.data.extensions.startOfDayLocalMillis(2026, 10, 2)
+        coordinator.create(testTask(id = "repeat", deadline = first,
+            recurrenceType = com.udnahc.opentasks.data.model.RecurrenceType.DAILY, recurrenceInterval = 1))
+        coordinator.write("repeat", com.udnahc.opentasks.domain.action.task.TaskWriteIntent.CompleteOccurrence(first))
+        coordinator.write("repeat", com.udnahc.opentasks.domain.action.task.TaskWriteIntent.CompleteOccurrence(first))
+        val second = assertNotNull(repository.getTaskById("repeat")?.deadline)
+        coordinator.write("repeat", com.udnahc.opentasks.domain.action.task.TaskWriteIntent.NotificationMarkDone(second))
+        val history = database.taskCompletionDao().getAllTaskCompletionsOnce()
+        assertEquals(setOf(localToUtc(first), localToUtc(second)), history.map { it.occurrenceAt }.toSet())
+        assertEquals(2, history.size)
+        assertEquals(TaskStatus.TODO, repository.getTaskById("repeat")?.status)
+    }
+
+    @Test
+    fun completionFailureRollsBackTheTaskWrite() = runTest {
+        val repository = TaskRepositoryImpl(database.taskDao(), NoOpSyncTrigger, database, mutationGate = mutationGate)
+        repository.insert(testTask(id = "atomic"))
+        assertFailsWith<IllegalStateException> {
+            repository.mutateExisting("atomic", completion = { _, _ -> error("history failure") }) { it.copy(status = TaskStatus.DONE) }
+        }
+        assertEquals(TaskStatus.TODO, repository.getTaskById("atomic")?.status)
+        assertTrue(database.taskCompletionDao().getAllTaskCompletionsOnce().isEmpty())
+    }
+
+    @Test
+    fun linkedTaskRequiresLiveNoteAtCreationAndKeepsLinkAfterEditsAndNoteDeletion() = runTest {
+        val repository = TaskRepositoryImpl(database.taskDao(), NoOpSyncTrigger, database, mutationGate = mutationGate)
+        assertFailsWith<IllegalArgumentException> { repository.insert(testTask(id = "missing").copy(sourceNoteId = "note")) }
+        database.noteDao().insert(testNote(id = "note"))
+        repository.insert(testTask(id = "linked").copy(sourceNoteId = "note"))
+        val coordinator = com.udnahc.opentasks.domain.action.task.TaskWriteCoordinator(repository)
+        coordinator.write("linked", com.udnahc.opentasks.domain.action.task.TaskWriteIntent.SetPriority(com.udnahc.opentasks.data.model.TaskPriority.MEDIUM))
+        database.noteDao().update(testNote(id = "note").copy(isDeleted = true))
+        assertEquals("note", repository.getTaskById("linked")?.sourceNoteId)
+    }
+
+    @Test
+    fun migrationFifteenToSixteenKeepsKnownCompletionsAndAddsNoteLink() {
+        val file = File.createTempFile("opentasks-migration-15-16", ".db")
+        val connection = BundledSQLiteDriver().open(file.absolutePath)
+        try {
+            connection.execSQL("CREATE TABLE tasks (id TEXT PRIMARY KEY, title TEXT, categoryId TEXT, status TEXT, completedAt INTEGER, isDeleted INTEGER)")
+            connection.execSQL("CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT)")
+            connection.execSQL("INSERT INTO categories VALUES ('work', 'Work')")
+            connection.execSQL("INSERT INTO tasks VALUES ('done', 'Known', 'work', 'DONE', 1234, 0), ('unknown', 'Unknown', 'work', 'DONE', NULL, 0), ('open', 'Open', 'work', 'TODO', NULL, 0)")
+            MIGRATION_15_16.migrate(connection)
+            connection.prepare("SELECT id, categoryName, completedAt FROM task_completions").use { query ->
+                assertTrue(query.step())
+                assertEquals("legacy:done", query.getText(0))
+                assertEquals("Work", query.getText(1))
+                assertEquals(1234L, query.getLong(2))
+                assertFalse(query.step())
+            }
+            connection.prepare("SELECT sourceNoteId FROM tasks WHERE id = 'done'").use { query ->
+                assertTrue(query.step())
+                assertTrue(query.isNull(0))
+            }
+        } finally { connection.close(); file.delete() }
+    }
 
     private suspend fun clearLocalData(
         storage: AttachmentFileStorage,
@@ -1109,12 +1205,17 @@ class PersistenceTest {
             fileStorage = FakeAttachmentFileStorage(),
         )
 
-        adapter.pushAll(PocketBaseClientProvider().createClient("http://localhost:8090"))
+        val failure = assertFailsWith<SyncAdapterException> {
+            adapter.pushAll(PocketBaseClientProvider().createClient("http://localhost:8090"))
+        }
+        assertIs<AttachmentLocalFileMissingException>(failure.cause)
 
-        val attachment = database.attachmentDao().findByIdAnyState("missing-local-file")
-        assertEquals(AttachmentSyncState.FAILED, attachment?.syncState)
-        assertEquals("local_file_missing", attachment?.lastSyncError)
-        assertFalse(attachment?.isSynced ?: true)
+        val attachment = assertNotNull(database.attachmentDao().findByIdAnyState("missing-local-file"))
+        assertEquals(AttachmentSyncState.FAILED, attachment.syncState)
+        assertEquals("local_file_missing", attachment.lastSyncError)
+        assertFalse(attachment.isSynced)
+        assertFalse(attachment.isDeleted)
+        assertNull(attachment.pbId)
     }
 
     @Test

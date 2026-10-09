@@ -38,6 +38,7 @@ import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
 import com.udnahc.opentasks.viewmodel.NoteMutationOperation
 import com.udnahc.opentasks.viewmodel.NoteMutationState
+import opentasks.composeapp.generated.resources.note_save_open_tasks
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.back
 import opentasks.composeapp.generated.resources.cancel
@@ -63,6 +64,7 @@ fun CreateNoteBottomSheet(
     mutationState: NoteMutationState = NoteMutationState.Idle,
     onSave: (title: String, content: String) -> Unit,
     onDelete: (() -> Unit)? = null,
+    onSaveAndOpenTasks: ((String, String) -> Unit)? = null,
 ) {
     val isBusy = mutationState.isOwnedBy(requestToken, editNote?.id)
     ModalBottomSheet(
@@ -77,6 +79,7 @@ fun CreateNoteBottomSheet(
             onDismiss = onDismiss,
             onSave = onSave,
             onDelete = onDelete,
+            onSaveAndOpenTasks = onSaveAndOpenTasks,
             isBusy = isBusy,
         )
     }
@@ -88,6 +91,7 @@ internal fun CreateNoteBottomSheetContent(
     onDismiss: () -> Unit,
     onSave: (title: String, content: String) -> Unit,
     onDelete: (() -> Unit)? = null,
+    onSaveAndOpenTasks: ((String, String) -> Unit)? = null,
     isBusy: Boolean = false,
 ) {
     val stateKey = editNote?.id ?: CREATE_NOTE_STATE_KEY
@@ -149,6 +153,11 @@ internal fun CreateNoteBottomSheetContent(
 
         val dimens = OpenTasksTheme.dimens
 
+        if (onSaveAndOpenTasks != null) {
+            TextButton(onClick = { onSaveAndOpenTasks(title, richTextState.toHtml()) }, enabled = !isBusy) {
+                Text(stringResource(Res.string.note_save_open_tasks))
+            }
+        }
         // Title field
         BasicTextField(
             value = title,

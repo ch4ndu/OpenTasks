@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,6 +50,7 @@ import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.ShortlistRow
 import com.udnahc.opentasks.viewmodel.ShortlistUiState
 import com.udnahc.opentasks.viewmodel.ShortlistViewModel
+import opentasks.composeapp.generated.resources.bulk_tasks
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.ic_add
 import opentasks.composeapp.generated.resources.ic_chevron_right
@@ -71,6 +73,7 @@ import org.jetbrains.compose.resources.stringResource
 fun ShortlistScreen(
     viewModel: ShortlistViewModel,
     onAllViewsClick: () -> Unit,
+    onBulkTasks: (() -> Unit)? = null,
     onViewTodayClick: () -> Unit,
     onTaskClick: (Task) -> Unit,
     isRefreshing: Boolean = false,
@@ -89,6 +92,7 @@ fun ShortlistScreen(
         state = state,
         pendingTaskIds = pendingTaskIds,
         onAllViewsClick = onAllViewsClick,
+        onBulkTasks = onBulkTasks,
         onChooseTasksClick = { showChooser = true },
         onViewTodayClick = onViewTodayClick,
         onTaskClick = onTaskClick,
@@ -129,6 +133,7 @@ internal fun ShortlistContent(
     state: ShortlistUiState,
     pendingTaskIds: Set<String>,
     onAllViewsClick: () -> Unit,
+    onBulkTasks: (() -> Unit)? = null,
     onChooseTasksClick: () -> Unit,
     onViewTodayClick: () -> Unit,
     onTaskClick: (Task) -> Unit,
@@ -146,6 +151,7 @@ internal fun ShortlistContent(
         ShortlistHeader(
             remaining = state.toTackle.size,
             onAllViewsClick = onAllViewsClick,
+        onBulkTasks = onBulkTasks,
             onChooseTasksClick = onChooseTasksClick,
         )
         SyncPullToRefresh(
@@ -214,6 +220,7 @@ internal fun ShortlistContent(
 private fun ShortlistHeader(
     remaining: Int,
     onAllViewsClick: () -> Unit,
+    onBulkTasks: (() -> Unit)? = null,
     onChooseTasksClick: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
@@ -223,7 +230,10 @@ private fun ShortlistHeader(
             .statusBarsPadding()
             .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingSmall),
     ) {
-        AllViewsButton(onClick = onAllViewsClick)
+        androidx.compose.foundation.layout.FlowRow {
+            AllViewsButton(onClick = onAllViewsClick)
+            if (onBulkTasks != null) TextButton(onClick = onBulkTasks) { Text(stringResource(Res.string.bulk_tasks)) }
+        }
         TaskViewTitle(title = stringResource(Res.string.shortlist))
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = dimens.paddingMedium),

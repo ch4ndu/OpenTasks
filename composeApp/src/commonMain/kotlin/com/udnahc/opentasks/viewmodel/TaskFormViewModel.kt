@@ -195,7 +195,7 @@ class TaskFormViewModel(
         _pendingImages.value = emptyList()
     }
 
-    fun saveNewTask(formData: TaskFormData) {
+    fun saveNewTask(formData: TaskFormData, sourceNoteId: String? = null) {
         if (!_isSaving.compareAndSet(expect = false, update = true)) return
         mutationLauncher.launch(
             onBoundaryRejected = { handleMutationFailure(AccountBoundaryRejectedException()) },
@@ -223,6 +223,7 @@ class TaskFormViewModel(
                     durationReminders = formData.durationReminders,
                     dateReminders = formData.dateReminders,
                     status = formData.status,
+                    sourceNoteId = sourceNoteId,
                 )
                 val task = committed.value
                 val imageResult = savePendingImages(task.id)

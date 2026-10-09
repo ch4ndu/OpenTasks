@@ -248,3 +248,30 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
         connection.addColumnIfMissing("tasks", "isShortlisted", "isShortlisted INTEGER NOT NULL DEFAULT 0")
     }
 }
+
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.addColumnIfMissing("tasks", "sourceNoteId", "sourceNoteId TEXT DEFAULT NULL")
+        connection.execSQL("""
+            CREATE TABLE IF NOT EXISTS task_completions (
+                id TEXT NOT NULL PRIMARY KEY, taskId TEXT NOT NULL, title TEXT NOT NULL,
+                categoryId TEXT NOT NULL, categoryName TEXT NOT NULL, completedAt INTEGER NOT NULL,
+                occurrenceAt INTEGER, pbId TEXT, isSynced INTEGER NOT NULL, isDeleted INTEGER NOT NULL,
+                createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL
+            )
+        """.trimIndent())
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_task_completions_isDeleted_completedAt ON task_completions(isDeleted, completedAt)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_task_completions_isSynced ON task_completions(isSynced)")
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_task_completions_pbId ON task_completions(pbId)")
+        // Only existing, known completion timestamps can be recovered. Never invent past occurrences.
+        connection.execSQL("""
+            INSERT INTO task_completions (id, taskId, title, categoryId, categoryName, completedAt,
+                occurrenceAt, pbId, isSynced, isDeleted, createdAt, updatedAt)
+            SELECT 'legacy:' || tasks.id, tasks.id, tasks.title, tasks.categoryId,
+                COALESCE(categories.name, ''), tasks.completedAt, NULL, NULL, 0, 0,
+                tasks.completedAt, tasks.completedAt
+            FROM tasks LEFT JOIN categories ON categories.id = tasks.categoryId
+            WHERE tasks.status = 'DONE' AND tasks.completedAt IS NOT NULL AND tasks.completedAt > 0 AND tasks.isDeleted = 0
+        """.trimIndent())
+    }
+}

@@ -71,7 +71,7 @@ class PocketBaseAccountAuthenticatorTest {
                 it.url.encodedPath.endsWith("/records") &&
                 !it.url.encodedPath.endsWith("/opentasks_sync_meta/records")
         }
-        assertEquals(8, inventoryRequests.size)
+        assertEquals(9, inventoryRequests.size)
         PocketBaseServerInventoryReader.COLLECTIONS.forEach { collection ->
             val requests = inventoryRequests.filter {
                 it.url.encodedPath.endsWith("/$collection/records")

@@ -298,6 +298,7 @@ internal val taskRecordPayloadSchema = SyncRecordPayloadSchema(
         "categoryId" to stringField(),
         "isAllDay" to booleanField(),
         "sourceExternalId" to stringField(),
+        "sourceNoteId" to stringField(),
         "location" to stringField(),
         "url" to stringField(),
         "organizer" to stringField(),
@@ -383,3 +384,19 @@ private fun JsonElement.asText(name: String): String {
     }
     return primitive.content
 }
+
+internal val taskCompletionRecordPayloadSchema = SyncRecordPayloadSchema(
+    collectionName = "task_completions",
+    fields = linkedMapOf(
+        "localId" to stringField(requireNonBlank = true),
+        "taskId" to stringField(requireNonBlank = true),
+        "title" to stringField(),
+        "categoryId" to stringField(),
+        "categoryName" to stringField(),
+        "completedAt" to numberField(),
+        "occurrenceAt" to numberField(),
+        "isDeleted" to booleanField(),
+        "localCreatedAt" to numberField(),
+        "localUpdatedAt" to numberField(),
+    ),
+)

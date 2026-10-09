@@ -113,6 +113,14 @@ import com.udnahc.opentasks.ui.screens.MissingDestinationScreen
 import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
 import com.udnahc.opentasks.ui.screens.QuickAddTaskScreen
 import com.udnahc.opentasks.ui.screens.SettingsScreen
+import com.udnahc.opentasks.ui.screens.WeeklyReviewScreen
+import com.udnahc.opentasks.ui.screens.LogbookScreen
+import com.udnahc.opentasks.ui.screens.BulkTasksScreen
+import com.udnahc.opentasks.ui.screens.NoteTasksScreen
+import com.udnahc.opentasks.viewmodel.WeeklyReviewViewModel
+import com.udnahc.opentasks.viewmodel.LogbookViewModel
+import com.udnahc.opentasks.viewmodel.BulkTasksViewModel
+import com.udnahc.opentasks.viewmodel.NoteTasksViewModel
 import com.udnahc.opentasks.ui.screens.ShortlistScreen
 import com.udnahc.opentasks.ui.screens.TaskCreationChoiceBottomSheet
 import com.udnahc.opentasks.ui.screens.TaskListScreen
@@ -513,7 +521,7 @@ private data class TaskFormBackHandler(
 
 /** An entry-scoped store owns lifecycle; this key also separates form destinations by task. */
 internal fun taskFormViewModelKey(screen: Screen): String = when (screen) {
-    is Screen.CreateTask -> "create:${screen.priorityOrdinal}:${screen.categoryId}:${screen.day}:${screen.month}:${screen.year}"
+    is Screen.CreateTask -> "create:${screen.priorityOrdinal}:${screen.categoryId}:${screen.day}:${screen.month}:${screen.year}:${screen.sourceNoteId}"
     is Screen.EditTask -> "edit:${screen.taskId}"
     else -> error("TaskFormViewModel is only valid for task-form navigation entries")
 }
@@ -625,6 +633,7 @@ private fun MainScreen(
     var calendarSelectedDay by remember { mutableIntStateOf(0) }
     var showCreateNote by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
     var editNoteId by rememberSaveable(binding.boundaryEpoch) { mutableStateOf<String?>(null) }
+    var pendingNoteTasksId by rememberSaveable(binding.boundaryEpoch) { mutableStateOf<String?>(null) }
     var noteSheetRequestToken by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(0L) }
     var showImportCalendar by remember { mutableStateOf(false) }
     var showImportIcs by remember { mutableStateOf(false) }
@@ -692,6 +701,7 @@ private fun MainScreen(
     }
 
     fun closeOpenNoteSheet() {
+        pendingNoteTasksId = null
         showCreateNote = false
         editNoteId = null
         noteSheetRequestToken += 1L
@@ -742,7 +752,11 @@ private fun MainScreen(
         when (terminalState) {
             is NoteMutationState.Success -> {
                 val hasWarning = terminalState.hasPostCommitWarning
+                val linkedNoteId = pendingNoteTasksId
                 closeOpenNoteSheet()
+                if (linkedNoteId != null && navController.currentScreen != Screen.NoteTasks(linkedNoteId)) {
+                    navController.navigate(Screen.NoteTasks(linkedNoteId))
+                }
                 if (hasWarning) {
                     snackbarHostState.showSnackbar(noteMutationSavedWarning)
                 }
@@ -798,7 +812,8 @@ private fun MainScreen(
             else -> 0
         }
     }
-    val showBottomNav = currentScreen !is Screen.QuadrantDetail
+    val isWorkflowScreen = currentScreen is Screen.WeeklyReview || currentScreen is Screen.Logbook || currentScreen is Screen.BulkTasks || currentScreen is Screen.NoteTasks
+    val showBottomNav = !isWorkflowScreen && currentScreen !is Screen.QuadrantDetail
             && currentScreen !is Screen.CreateTask
             && currentScreen !is Screen.QuickAddTask
             && currentScreen !is Screen.EditTask
@@ -807,7 +822,7 @@ private fun MainScreen(
             && currentScreen !is Screen.CountdownDetail
             && currentScreen !is Screen.EditCountdown
 
-    val isSharedIntakeUiBusy = currentScreen is Screen.CreateTask ||
+    val isSharedIntakeUiBusy = isWorkflowScreen || currentScreen is Screen.CreateTask ||
         currentScreen is Screen.QuickAddTask ||
         currentScreen is Screen.EditTask ||
         currentScreen is Screen.CreateCountdown ||
@@ -988,6 +1003,9 @@ private fun MainScreen(
                     val taskOverviewViewModel: TaskOverviewViewModel = koinViewModel()
                     TaskOverviewScreen(
                         viewModel = taskOverviewViewModel,
+                        onWeeklyReview = { navController.navigate(Screen.WeeklyReview) },
+                        onLogbook = { navController.navigate(Screen.Logbook) },
+                        onBulkTasks = { navController.navigate(Screen.BulkTasks()) },
                         onViewClick = { filter ->
                             navController.navigate(Screen.TaskListDestination(filter))
                         },
@@ -1015,6 +1033,7 @@ private fun MainScreen(
                         val shortlistViewModel: ShortlistViewModel = koinViewModel(key = "shortlist")
                         ShortlistScreen(
                             viewModel = shortlistViewModel,
+                            onBulkTasks = { navController.navigate(Screen.BulkTasks(TaskListFilter.Shortlist)) },
                             onAllViewsClick = { onAllViewsClick() },
                             onViewTodayClick = {
                                 navController.navigate(Screen.TaskListDestination(TaskListFilter.Today))
@@ -1033,6 +1052,7 @@ private fun MainScreen(
                         )
                         TaskListScreen(
                             viewModel = taskListViewModel,
+                            onBulkTasks = { navController.navigate(Screen.BulkTasks(screen.filter)) },
                             onAllViewsClick = { onAllViewsClick() },
                             onTaskClick = onTaskClick,
                             isRefreshing = isRefreshing,
@@ -1044,6 +1064,24 @@ private fun MainScreen(
                     }
                 }
 
+                entry<Screen.WeeklyReview> {
+                    val model: WeeklyReviewViewModel = koinViewModel()
+                    WeeklyReviewScreen(model, { navController.popBackStack() }, { navController.navigate(Screen.EditTask(it.id)) }, onTaskMutationFailure)
+                }
+                entry<Screen.Logbook> {
+                    val model: LogbookViewModel = koinViewModel()
+                    LogbookScreen(model, { navController.popBackStack() }, { navController.navigate(Screen.EditTask(it)) })
+                }
+                entry<Screen.BulkTasks> { screen ->
+                    val model: BulkTasksViewModel = koinViewModel(key = "bulk:${screen.filter}", parameters = { parametersOf(screen.filter) })
+                    BulkTasksScreen(model, { navController.popBackStack() })
+                }
+                entry<Screen.NoteTasks> { screen ->
+                    val model: NoteTasksViewModel = koinViewModel(key = "noteTasks:${screen.noteId}", parameters = { parametersOf(screen.noteId) })
+                    NoteTasksScreen(model, { navController.popBackStack() }, { navController.navigate(Screen.EditTask(it.id)) },
+                        onCreate = { note -> navController.navigate(Screen.CreateTask(title = note.title, sourceNoteId = note.id)) },
+                        onOpenNote = { note -> openEditNoteSheet(note.id) })
+                }
                 entry<Screen.Calendar> {
                     val calendarViewModel: CalendarViewModel = koinViewModel()
                     CalendarScreen(
@@ -1261,7 +1299,7 @@ private fun MainScreen(
                             taskFormViewModel.setCategorySearchQuery(it)
                         },
                         onAddCategory = { name -> taskFormViewModel.addCategory(name) },
-                        onSave = { formData -> taskFormViewModel.saveNewTask(formData) },
+                        onSave = { formData -> taskFormViewModel.saveNewTask(formData, screen.sourceNoteId) },
                         isSaving = isSaving,
                         pendingImages = pendingImages,
                         onAddPendingImage = { taskFormViewModel.addPendingImage(it) },
@@ -1369,6 +1407,7 @@ private fun MainScreen(
                             CreateTaskScreen(
                                 onBack = { navController.popBackStack() },
                                 editTask = state.task,
+                                onOpenSourceNote = state.task.sourceNoteId?.let { noteId -> { navController.navigate(Screen.NoteTasks(noteId)) } },
                                 currentDate = currentDate,
                                 categories = categories,
                                 filteredCategories = filteredCategories,
@@ -1680,16 +1719,22 @@ private fun MainScreen(
             CreateNoteBottomSheet(
                 sheetState = editNoteSheetState,
                 editNote = note,
+                onSaveAndOpenTasks = { title, content ->
+                    pendingNoteTasksId = note.id
+                    noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
+                },
                 requestToken = noteSheetRequestToken,
                 mutationState = noteMutationState,
                 onDismiss = ::retireOpenNoteSheet,
                 onSave = { title, content ->
+                    pendingNoteTasksId = null
                     noteViewModel.updateNote(
                         noteSheetRequestToken,
                         note.copy(title = title, content = content),
                     )
                 },
                 onDelete = {
+                    pendingNoteTasksId = null
                     noteViewModel.deleteNote(noteSheetRequestToken, note)
                 },
             )
