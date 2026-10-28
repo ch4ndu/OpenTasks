@@ -3,6 +3,13 @@ package com.udnahc.opentasks.ui.screens.calendar
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -11,6 +18,22 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.plus
+import kotlinx.datetime.minus
+import com.udnahc.opentasks.data.extensions.dayOfWeekIndex
+import com.udnahc.opentasks.domain.usecase.task.CalendarVisibleRange
+import kotlinx.datetime.LocalDate
+import com.udnahc.opentasks.data.extensions.daysInMonth
+import com.udnahc.opentasks.ui.theme.isReimagined
+import com.udnahc.opentasks.ui.screens.ReimaginedAddButton
+import opentasks.composeapp.generated.resources.*
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -19,6 +42,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -27,7 +57,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -193,6 +225,7 @@ internal fun calendarYearEntryDate(
 @Composable
 fun CalendarScreen(
     viewModel: CalendarViewModel,
+    onCreateTask: () -> Unit = {},
     onTaskClick: (Task) -> Unit,
     widgetNavigationEvent: WidgetNavigationEvent? = null,
     onWidgetNavigationConsumed: (Long) -> Unit = {},
@@ -204,12 +237,21 @@ fun CalendarScreen(
     onTaskMutationFailure: () -> Unit = {},
     onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
+    val loadState by viewModel.loadState.collectAsState()
     val calendarRenderState by viewModel.calendarRenderState.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
     var isContentModalBusy by remember { mutableStateOf(false) }
     ModalBusyEffect(taskPendingSeriesChoice != null || isContentModalBusy, onModalBusyChanged)
 
+    val stripTaskDayKeys = if (isReimagined && calendarRenderState.viewPreference == CalendarViewPreference.DAY) viewModel.dayStripTaskDayKeys.collectAsState().value else emptySet()
     CalendarContent(
+        stripTaskDayKeys = stripTaskDayKeys,
+        onStripRangeChanged = viewModel::setDayStripRange,
+        loadState = loadState,
+        onRetryLoad = viewModel::retryLoad,
+        onCreateTask = onCreateTask,
+        onAgendaRangeChanged = viewModel::selectAgendaRange,
+        onVisibleRangesChanged = viewModel::setVisibleRanges,
         calendarRenderState = calendarRenderState,
         categoryNamesFlow = viewModel.categoryNames,
         onCalendarViewChanged = { viewModel.saveCalendarViewPreference(it.toPreference()) },
@@ -231,6 +273,7 @@ fun CalendarScreen(
         onModalBusyChanged = { isContentModalBusy = it },
     )
 
+
     if (taskPendingSeriesChoice != null) {
         CompleteSeriesDialog(
             onCompleteOccurrence = { viewModel.completeOccurrence() },
@@ -251,9 +294,16 @@ fun CalendarScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CalendarContent(
+    stripTaskDayKeys: Set<Long>,
+    onStripRangeChanged: (CalendarVisibleRange?) -> Unit,
+    loadState: com.udnahc.opentasks.viewmodel.CalendarLoadState,
+    onRetryLoad: () -> Unit,
+    onCreateTask: () -> Unit = {},
+    onAgendaRangeChanged: (Long?, Int) -> Unit,
+    onVisibleRangesChanged: (Map<CalendarViewPreference, CalendarVisibleRange>) -> Unit,
     calendarRenderState: CalendarRenderState,
     categoryNamesFlow: StateFlow<Map<String, String>>,
-    onCalendarViewChanged: (CalendarViewType) -> Unit,
+    onCalendarViewChanged: (CalendarViewType) -> Deferred<Boolean>,
     onListDisplayModeChanged: (ListDisplayMode) -> Unit,
     onListDaySelected: (Long) -> Unit,
     onMonthDaySelected: (Int, Int, Int) -> Unit,
@@ -269,6 +319,8 @@ private fun CalendarContent(
     onRefresh: () -> Unit = {},
     onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
+    val reimagined = isReimagined
+    val categoryNames = if (calendarRenderState.viewPreference == CalendarViewPreference.LIST || calendarRenderState.viewPreference == CalendarViewPreference.MONTH || reimagined && calendarRenderState.viewPreference != CalendarViewPreference.YEAR) categoryNamesFlow.collectAsState().value else emptyMap()
     val currentView = calendarRenderState.viewPreference.toCalendarViewType()
     val listDisplayMode = calendarRenderState.listDisplayModePreference.toListDisplayMode()
     val pagerAnchor = remember(calendarRenderState.today) {
@@ -279,15 +331,20 @@ private fun CalendarContent(
     val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val navBarHeight = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
     val dimens = OpenTasksTheme.dimens
-    val topBarHeight = dimens.topBarHeight + statusBarHeight
+    val topBarHeight = if (reimagined) 0.dp else dimens.topBarHeight + statusBarHeight
 
     val todayYear = pagerAnchor.year
     val todayMonth = pagerAnchor.month
     val todayDay = pagerAnchor.day
 
     var showViewPicker by remember { mutableStateOf(false) }
-    ModalBusyEffect(showViewPicker, onModalBusyChanged)
+    var showDatePicker by remember { mutableStateOf(false) }
+    var dateNavigationError by remember { mutableStateOf<StringResource?>(null) }
+    val contentModalOwners = remember { mutableStateMapOf<Any, Boolean>() }
+    ModalBusyEffect(showViewPicker || showDatePicker || contentModalOwners.isNotEmpty(), onModalBusyChanged)
     val scope = rememberCoroutineScope()
+    var calendarNavigationJob by remember { mutableStateOf<Job?>(null) }
+    val latestView by rememberUpdatedState(currentView)
 
     // ── Month-pager state (shared by Month view) ───
     val centreIndex = MONTH_PAGER_CENTRE
@@ -306,6 +363,14 @@ private fun CalendarContent(
         if (current == null || current.year != displayedYear || current.month != displayedMonth) {
             selectedDay = null
             onMonthDayCleared()
+        }
+    }
+
+    LaunchedEffect(reimagined, currentView, displayedYear, displayedMonth, selectedDay) {
+        if (reimagined && currentView == CalendarViewType.MONTH && selectedDay == null) {
+            val day = if (displayedYear == todayYear && displayedMonth == todayMonth) todayDay else 1
+            selectedDay = CalendarDay(displayedYear, displayedMonth, day, true)
+            onMonthDaySelected(displayedYear, displayedMonth, day)
         }
     }
 
@@ -347,15 +412,17 @@ private fun CalendarContent(
 
     // Selected day for list view (defaults to today)
     val todayMillis = pagerAnchor.todayMillis
-    var listSelectedDayMillis by remember(pagerAnchor, weekPagerState.currentPage) {
+    var pendingListSelection by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    var listSelectedDayMillis by remember(pagerAnchor) {
         mutableStateOf(pagerAnchor.weekSelectionAt(weekPagerState.currentPage))
     }
     LaunchedEffect(listSelectedDayMillis) {
         onListDaySelected(listSelectedDayMillis)
     }
 
-    LaunchedEffect(weekPagerState.currentPage, todayMillis) {
-        val targetSelection = pagerAnchor.weekSelectionAt(weekPagerState.currentPage)
+    LaunchedEffect(weekPagerState.currentPage, if (reimagined) weekPagerState.isScrollInProgress else false, todayMillis, calendarNavigationJob, reimagined) {
+        if (reimagined && pendingListSelection != null && (calendarNavigationJob?.isActive == true || weekPagerState.isScrollInProgress)) return@LaunchedEffect
+        val targetSelection = pendingListSelection?.takeIf { it.first == weekPagerState.currentPage }?.second ?: pagerAnchor.weekSelectionAt(weekPagerState.currentPage)
         if (listSelectedDayMillis != targetSelection) listSelectedDayMillis = targetSelection
     }
 
@@ -374,11 +441,13 @@ private fun CalendarContent(
 
     val weekViewCalendarMonth = extractMonth(weekViewSundayMillis)
 
-    var weekViewSelectedDayMillis by remember(pagerAnchor, weekViewPagerState.currentPage) {
+    var pendingWeekSelection by remember { mutableStateOf<Pair<Int, Long>?>(null) }
+    var weekViewSelectedDayMillis by remember(pagerAnchor) {
         mutableStateOf(pagerAnchor.weekSelectionAt(weekViewPagerState.currentPage))
     }
-    LaunchedEffect(weekViewPagerState.currentPage, todayMillis) {
-        val targetSelection = pagerAnchor.weekSelectionAt(weekViewPagerState.currentPage)
+    LaunchedEffect(weekViewPagerState.currentPage, if (reimagined) weekViewPagerState.isScrollInProgress else false, todayMillis, calendarNavigationJob, reimagined) {
+        if (reimagined && pendingWeekSelection != null && (calendarNavigationJob?.isActive == true || weekViewPagerState.isScrollInProgress)) return@LaunchedEffect
+        val targetSelection = pendingWeekSelection?.takeIf { it.first == weekViewPagerState.currentPage }?.second ?: pagerAnchor.weekSelectionAt(weekViewPagerState.currentPage)
         if (weekViewSelectedDayMillis != targetSelection) weekViewSelectedDayMillis = targetSelection
     }
 
@@ -399,6 +468,69 @@ private fun CalendarContent(
     }
 
     val dayViewMonth = extractMonth(dayViewSelectedMillis)
+    DisposableEffect(pagerAnchor, reimagined, widgetNavigationEvent?.id) {
+        onDispose {
+            calendarNavigationJob?.cancel()
+            calendarNavigationJob = null
+            pendingListSelection = null
+            pendingWeekSelection = null
+        }
+    }
+    LaunchedEffect(reimagined, currentView, weekPagerState.currentPage, threeDayStartMillis) {
+        when {
+            !reimagined -> onAgendaRangeChanged(null, 0)
+            currentView == CalendarViewType.LIST -> onAgendaRangeChanged(pagerAnchor.weekStartAt(weekPagerState.currentPage), 7)
+            currentView == CalendarViewType.THREE_DAY -> onAgendaRangeChanged(threeDayStartMillis, 3)
+            else -> onAgendaRangeChanged(null, 0)
+        }
+    }
+
+    // Civil viewport geometry, including at most one pager neighbor per side. No task span controls this window.
+    LaunchedEffect(reimagined, pagerAnchor, pagerState.currentPage, yearPagerState.currentPage,
+        weekPagerState.currentPage, weekViewPagerState.currentPage, threeDayPagerState.currentPage, dayViewPagerState.currentPage) {
+        if (!reimagined) {
+            onVisibleRangesChanged(emptyMap())
+            return@LaunchedEffect
+        }
+        fun dateAt(millis: Long) = LocalDate(extractYear(millis), extractMonth(millis), extractDay(millis))
+        fun dayWindow(page: Int, visibleDays: Int): CalendarVisibleRange {
+            val first = (page - 1).coerceAtLeast(0)
+            val last = (page + visibleDays).coerceAtMost(DAY_PAGER_RANGE - 1)
+            return CalendarVisibleRange(dateAt(pagerAnchor.dayAt(first)), dateAt(pagerAnchor.dayAt(last)).plus(1, DateTimeUnit.DAY))
+        }
+        fun weekWindow(page: Int): CalendarVisibleRange {
+            val first = (page - 1).coerceAtLeast(0)
+            val last = (page + 1).coerceAtMost(WEEK_PAGER_RANGE - 1)
+            return CalendarVisibleRange(dateAt(pagerAnchor.weekStartAt(first)), dateAt(pagerAnchor.weekStartAt(last)).plus(7, DateTimeUnit.DAY))
+        }
+        val firstMonth = pagerAnchor.monthAt((pagerState.currentPage - 1).coerceAtLeast(0))
+        val lastMonth = pagerAnchor.monthAt((pagerState.currentPage + 1).coerceAtMost(MONTH_PAGER_RANGE - 1))
+        val firstMonthDay = LocalDate(firstMonth.year, firstMonth.month, 1)
+        val lastMonthDay = LocalDate(lastMonth.year, lastMonth.month, daysInMonth(lastMonth.year, lastMonth.month))
+        val monthWindow = CalendarVisibleRange(
+            firstMonthDay.minus(dayOfWeekIndex(firstMonth.year, firstMonth.month, 1), DateTimeUnit.DAY),
+            lastMonthDay.plus(7 - dayOfWeekIndex(lastMonth.year, lastMonth.month, lastMonthDay.dayOfMonth), DateTimeUnit.DAY),
+        )
+        val yearWindow = CalendarVisibleRange(
+            LocalDate(pagerAnchor.yearAt((yearPagerState.currentPage - 1).coerceAtLeast(0)), 1, 1),
+            LocalDate(pagerAnchor.yearAt((yearPagerState.currentPage + 1).coerceAtMost(YEAR_PAGER_RANGE - 1)) + 1, 1, 1),
+        )
+        val visibleWeek = weekWindow(weekViewPagerState.currentPage)
+        val miniMonthDate = dateAt(pagerAnchor.weekStartAt(weekViewPagerState.currentPage))
+        val miniMonthStart = LocalDate(miniMonthDate.year, miniMonthDate.monthNumber, 1)
+        val weekGridWindow = CalendarVisibleRange(
+            minOf(visibleWeek.first, miniMonthStart),
+            maxOf(visibleWeek.endExclusive, miniMonthStart.plus(1, DateTimeUnit.MONTH)),
+        )
+        onVisibleRangesChanged(mapOf(
+            CalendarViewPreference.MONTH to monthWindow,
+            CalendarViewPreference.YEAR to yearWindow,
+            CalendarViewPreference.LIST to weekWindow(weekPagerState.currentPage),
+            CalendarViewPreference.WEEK to weekGridWindow,
+            CalendarViewPreference.THREE_DAY to dayWindow(threeDayPagerState.currentPage, 3),
+            CalendarViewPreference.DAY to dayWindow(dayViewPagerState.currentPage, 1),
+        ))
+    }
 
     // Propagate selected date to parent (per-view effects)
     LaunchedEffect(currentView, listSelectedDayMillis) {
@@ -417,13 +549,10 @@ private fun CalendarContent(
             else onSelectedDateChanged(displayedYear, displayedMonth, 0)
         }
     }
-    LaunchedEffect(currentView, weekViewSundayMillis) {
+    LaunchedEffect(currentView, weekViewSelectedDayMillis, weekViewSundayMillis) {
         if (currentView == CalendarViewType.WEEK) {
-            onSelectedDateChanged(
-                extractYear(weekViewSundayMillis),
-                extractMonth(weekViewSundayMillis),
-                extractDay(weekViewSundayMillis)
-            )
+            val selection = if (reimagined) weekViewSelectedDayMillis else weekViewSundayMillis
+            onSelectedDateChanged(extractYear(selection), extractMonth(selection), extractDay(selection))
         }
     }
     LaunchedEffect(currentView, threeDayStartMillis) {
@@ -448,16 +577,6 @@ private fun CalendarContent(
         if (currentView == CalendarViewType.YEAR) {
             onSelectedDateChanged(yearViewYear, yearViewMonth, 0)
         }
-    }
-
-    // ── Navigate from Year → Month ───
-    fun navigateToMonth(
-        year: Int,
-        month: Int
-    ) {
-        val targetPage = pagerAnchor.monthPageFor(year, month) ?: return
-        scope.launch { pagerState.scrollToPage(targetPage) }
-        onCalendarViewChanged(CalendarViewType.MONTH)
     }
 
     // ── Top bar title ───
@@ -494,6 +613,118 @@ private fun CalendarContent(
         }
     }
 
+    val pickerSelected = when (currentView) {
+        CalendarViewType.LIST -> LocalDate(extractYear(listSelectedDayMillis), extractMonth(listSelectedDayMillis), extractDay(listSelectedDayMillis))
+        CalendarViewType.YEAR -> LocalDate(yearViewYear, yearViewMonth, 1)
+        CalendarViewType.MONTH -> selectedDay?.let { LocalDate(it.year, it.month, it.day) } ?: LocalDate(displayedYear, displayedMonth, 1)
+        CalendarViewType.WEEK -> LocalDate(extractYear(weekViewSelectedDayMillis), extractMonth(weekViewSelectedDayMillis), extractDay(weekViewSelectedDayMillis))
+        CalendarViewType.THREE_DAY -> LocalDate(extractYear(threeDayStartMillis), extractMonth(threeDayStartMillis), extractDay(threeDayStartMillis))
+        CalendarViewType.DAY -> LocalDate(extractYear(dayViewSelectedMillis), extractMonth(dayViewSelectedMillis), extractDay(dayViewSelectedMillis))
+    }
+    fun localDate(millis: Long) = LocalDate(extractYear(millis), extractMonth(millis), extractDay(millis))
+    val pickerMin = when (currentView) {
+        CalendarViewType.MONTH -> pagerAnchor.monthAt(0).let { LocalDate(it.year, it.month, 1) }
+        CalendarViewType.YEAR -> LocalDate(pagerAnchor.yearAt(0), 1, 1)
+        CalendarViewType.LIST, CalendarViewType.WEEK -> localDate(pagerAnchor.weekStartAt(0))
+        else -> localDate(pagerAnchor.dayAt(0))
+    }
+    val pickerMax = when (currentView) {
+        CalendarViewType.MONTH -> pagerAnchor.monthAt(MONTH_PAGER_RANGE - 1).let { LocalDate(it.year, it.month, daysInMonth(it.year, it.month)) }
+        CalendarViewType.YEAR -> LocalDate(pagerAnchor.yearAt(YEAR_PAGER_RANGE - 1), 12, 31)
+        CalendarViewType.LIST, CalendarViewType.WEEK -> localDate(pagerAnchor.weekStartAt(WEEK_PAGER_RANGE - 1) + 6 * MILLIS_PER_DAY)
+        else -> localDate(pagerAnchor.dayAt(DAY_PAGER_RANGE - 1))
+    }
+    val reimaginedPeriod = if (!reimagined) "" else when (currentView) {
+        CalendarViewType.YEAR -> topBarTitle
+        CalendarViewType.MONTH -> stringResource(Res.string.calendar_period_month, topBarTitle, pickerSelected.year)
+        CalendarViewType.DAY -> calendarPeriodDay(dayViewSelectedMillis)
+        CalendarViewType.THREE_DAY -> stringResource(Res.string.calendar_period_range, calendarPeriodDay(threeDayStartMillis), calendarPeriodDay(threeDayStartMillis + 2 * MILLIS_PER_DAY))
+        CalendarViewType.WEEK -> stringResource(Res.string.calendar_period_range, calendarPeriodDay(weekViewSundayMillis), calendarPeriodDay(weekViewSundayMillis + 6 * MILLIS_PER_DAY))
+        CalendarViewType.LIST -> {
+            val start = pagerAnchor.weekStartAt(weekPagerState.currentPage)
+            stringResource(Res.string.calendar_period_range, calendarPeriodDay(start), calendarPeriodDay(start + 6 * MILLIS_PER_DAY))
+        }
+    }
+    fun switchReimaginedView(view: CalendarViewType, date: LocalDate = pickerSelected): Boolean {
+        val millis = startOfDayLocalMillis(date.year, date.monthNumber, date.dayOfMonth)
+        val targetPager = when (view) {
+            CalendarViewType.LIST -> weekPagerState
+            CalendarViewType.YEAR -> yearPagerState
+            CalendarViewType.MONTH -> pagerState
+            CalendarViewType.WEEK -> weekViewPagerState
+            CalendarViewType.THREE_DAY -> threeDayPagerState
+            CalendarViewType.DAY -> dayViewPagerState
+        }
+        val page = when (view) {
+            CalendarViewType.MONTH -> pagerAnchor.monthPageFor(date.year, date.monthNumber)
+            CalendarViewType.YEAR -> (YEAR_PAGER_CENTRE + date.year - todayYear).takeIf { it in 0 until YEAR_PAGER_RANGE }
+            CalendarViewType.WEEK, CalendarViewType.LIST -> (WEEK_PAGER_CENTRE + ((startOfWeekLocalMillis(millis) - startOfWeekLocalMillis(todayMillis)) / (7 * MILLIS_PER_DAY)).toInt()).takeIf { it in 0 until WEEK_PAGER_RANGE }
+            else -> (DAY_PAGER_CENTRE + ((millis - todayMillis) / MILLIS_PER_DAY).toInt()).takeIf { it in 0 until DAY_PAGER_RANGE }
+        } ?: run { dateNavigationError = Res.string.calendar_date_out_of_range; return false }
+        dateNavigationError = null
+        fun applySelection() {
+            when (view) {
+                CalendarViewType.MONTH -> { selectedDay = CalendarDay(date.year, date.monthNumber, date.dayOfMonth, true); onMonthDaySelected(date.year, date.monthNumber, date.dayOfMonth) }
+                CalendarViewType.YEAR -> yearViewMonth = date.monthNumber
+                CalendarViewType.LIST -> listSelectedDayMillis = millis
+                CalendarViewType.WEEK -> weekViewSelectedDayMillis = millis
+                else -> Unit
+            }
+        }
+        if (view == currentView && page == targetPager.currentPage && !targetPager.isScrollInProgress && calendarNavigationJob?.isActive != true) {
+            pendingListSelection = if (view == CalendarViewType.LIST) page to millis else null
+            pendingWeekSelection = if (view == CalendarViewType.WEEK) page to millis else null
+            applySelection()
+            return true
+        }
+        calendarNavigationJob?.cancel()
+        val crossView = view != currentView
+        // The ViewModel owns this write even if this navigation is superseded or cancelled.
+        val preferenceSave = onCalendarViewChanged(view)
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                if (crossView && !preferenceSave.await()) {
+                    currentCoroutineContext().ensureActive()
+                    dateNavigationError = Res.string.calendar_view_save_failed
+                    return@launch
+                }
+                currentCoroutineContext().ensureActive()
+                pendingListSelection = if (view == CalendarViewType.LIST) page to millis else null
+                pendingWeekSelection = if (view == CalendarViewType.WEEK) page to millis else null
+                // Activate before scrolling: an inactive pager needs its first layout.
+                snapshotFlow { latestView }.first { it == view }
+                targetPager.scrollToPage(page)
+                snapshotFlow { targetPager.currentPage == page && !targetPager.isScrollInProgress }.first { it }
+                currentCoroutineContext().ensureActive()
+                if (latestView != view) return@launch
+                applySelection()
+            } finally {
+                if (calendarNavigationJob === currentCoroutineContext()[Job]) calendarNavigationJob = null
+            }
+        }
+        calendarNavigationJob = job
+        job.start()
+        return true
+    }
+
+    fun navigateDate(date: LocalDate): Boolean {
+        if (date < pickerMin || date > pickerMax) { dateNavigationError = Res.string.calendar_date_out_of_range; return false }
+        return switchReimaginedView(currentView, date)
+    }
+
+    // ── Navigate from Year → Month ───
+    fun navigateToMonth(year: Int, month: Int) {
+        if (reimagined) {
+            switchReimaginedView(CalendarViewType.MONTH, LocalDate(year, month, 1))
+        } else {
+            val targetPage = pagerAnchor.monthPageFor(year, month) ?: return
+            scope.launch { pagerState.scrollToPage(targetPage) }
+            onCalendarViewChanged(CalendarViewType.MONTH)
+        }
+    }
+
+    androidx.compose.runtime.CompositionLocalProvider(LocalCalendarModalBusy provides { owner, busy -> if (busy) contentModalOwners[owner] = true else contentModalOwners.remove(owner); Unit }, LocalCalendarCategoryNames provides categoryNames) {
+    val body: @Composable () -> Unit = {
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // ── Body ─────────────────────────────────────────────────────
         SyncPullToRefresh(
@@ -504,15 +735,20 @@ private fun CalendarContent(
         ) {
             when (currentView) {
                 CalendarViewType.LIST -> {
-                    val categoryNames by categoryNamesFlow.collectAsState()
                     ListViewContent(
+                        onDisplayModeChanged = onListDisplayModeChanged,
                         dayProjection = calendarRenderState.selectedDayProjection,
                         todayMillis = todayMillis,
                         todayYear = todayYear,
                         todayMonth = todayMonth,
                         todayDay = todayDay,
                         selectedDayMillis = listSelectedDayMillis,
-                        onDaySelected = { listSelectedDayMillis = it },
+                        onDaySelected = { millis ->
+                            if (reimagined) navigateDate(localDate(millis)) else {
+                                pendingListSelection = null
+                                listSelectedDayMillis = millis
+                            }
+                        },
                         weekPagerState = weekPagerState,
                         weekPagerCentre = WEEK_PAGER_CENTRE,
                         calendarDaysByDay = calendarRenderState.calendarDaysByDay,
@@ -540,7 +776,6 @@ private fun CalendarContent(
                 }
 
                 CalendarViewType.MONTH -> {
-                    val categoryNames by categoryNamesFlow.collectAsState()
                     MonthViewContent(
                         selectedDayProjection = calendarRenderState.selectedDayProjection,
                         todayYear = todayYear,
@@ -556,8 +791,9 @@ private fun CalendarContent(
                         navBarHeight = navBarHeight,
                         onDayClick = { day ->
                             if (!day.isCurrentMonth) return@MonthViewContent
+                            if (reimagined) calendarNavigationJob?.cancel()
                             scope.launch {
-                                selectedDay = if (selectedDay == day) {
+                                selectedDay = if (!reimagined && selectedDay == day) {
                                     onMonthDayCleared()
                                     null
                                 } else {
@@ -583,24 +819,45 @@ private fun CalendarContent(
                         calendarYear = extractYear(weekViewSundayMillis),
                         calendarMonth = weekViewCalendarMonth,
                         calendarDaysByDay = calendarRenderState.calendarDaysByDay,
+                        taskDayKeys = calendarRenderState.taskDayKeys,
                         topBarHeight = topBarHeight,
                         navBarHeight = navBarHeight,
                         onTaskClick = onTaskClick,
-                        onWeekSelected = { sundayMillis ->
+                        onToggleComplete = onToggleComplete,
+                        onWeekSelected = selectWeek@ { sundayMillis ->
                             val thisWeekSunMillis = startOfWeekLocalMillis(todayMillis)
                             val offset =
                                 ((sundayMillis - thisWeekSunMillis) / (7 * MILLIS_PER_DAY)).toInt()
+                            val targetPage = WEEK_PAGER_CENTRE + offset
+                            if (reimagined) {
+                                if (targetPage !in 0 until weekViewPagerState.pageCount) {
+                                    dateNavigationError = Res.string.calendar_date_out_of_range
+                                    return@selectWeek
+                                }
+                                dateNavigationError = null
+                                calendarNavigationJob?.cancel()
+                                pendingWeekSelection = null
+                            }
                             scope.launch {
-                                weekViewPagerState.animateScrollToPage(WEEK_PAGER_CENTRE + offset)
+                                weekViewPagerState.animateScrollToPage(targetPage)
                             }
                         },
                         selectedDayMillis = weekViewSelectedDayMillis,
-                        onDaySelected = { weekViewSelectedDayMillis = it },
+                        onDaySelected = { millis ->
+                            if (reimagined) {
+                                calendarNavigationJob?.cancel()
+                                pendingWeekSelection = weekViewPagerState.currentPage to millis
+                            } else pendingWeekSelection = null
+                            weekViewSelectedDayMillis = millis
+                        },
                     )
                 }
 
                 CalendarViewType.THREE_DAY -> {
                     ThreeDayViewContent(
+                        onDaySelected = { millis ->
+                            if (reimagined) switchReimaginedView(CalendarViewType.DAY, localDate(millis))
+                        },
                         todayMillis = todayMillis,
                         todayYear = todayYear,
                         todayMonth = todayMonth,
@@ -618,6 +875,9 @@ private fun CalendarContent(
 
                 CalendarViewType.DAY -> {
                     DayViewContent(
+                        stripTaskDayKeys = stripTaskDayKeys,
+                        onStripRangeChanged = onStripRangeChanged,
+                        onCreateTask = onCreateTask,
                         todayMillis = todayMillis,
                         todayYear = todayYear,
                         todayMonth = todayMonth,
@@ -635,7 +895,55 @@ private fun CalendarContent(
             }
         }
 
-        // ── Top bar overlay ──────────────────────────────────────────
+        if (reimagined && loadState != com.udnahc.opentasks.viewmodel.CalendarLoadState.READY) {
+            androidx.compose.material3.Surface(Modifier.fillMaxSize().pointerInput(Unit) {
+                awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+            }, color = MaterialTheme.colorScheme.background) {
+                com.udnahc.opentasks.ui.screens.ReimaginedReadStatus(loadState == com.udnahc.opentasks.viewmodel.CalendarLoadState.LOADING, onRetryLoad)
+            }
+        }
+    }
+    }
+    if (reimagined) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Column(Modifier.fillMaxWidth()) {
+                Box(Modifier.fillMaxWidth()) {
+                    OpenTasksTopBar(
+                        titleContent = {
+                            TextButton(onClick = { if (dateNavigationError == Res.string.calendar_date_out_of_range) dateNavigationError = null; showDatePicker = true }, contentPadding = PaddingValues(0.dp), modifier = Modifier.fillMaxWidth().heightIn(min = dimens.minimumInteractiveTargetSize)) {
+                                val titleStyle = OpenTasksTheme.typography.appBarTitle
+                                Text(reimaginedPeriod, style = titleStyle.copy(fontSize = titleStyle.fontSize * (14f / 22f), lineHeight = titleStyle.lineHeight * (14f / 22f)), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                Icon(painterResource(Res.drawable.ic_dropdown), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = { navigateDate(calendarRenderState.today) }) {
+                                Icon(painterResource(Res.drawable.ic_calendar), contentDescription = stringResource(Res.string.today), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            ReimaginedAddButton(onCreateTask)
+                            OpenTasksSettingsButton(onClick = onSettingsClick)
+                        },
+                    )
+                    CalendarDatePicker(showDatePicker, pickerSelected, calendarRenderState.today, pickerMin, pickerMax, { showDatePicker = false; if (dateNavigationError == Res.string.calendar_date_out_of_range) dateNavigationError = null }, ::navigateDate)
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = dimens.paddingLarge).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(dimens.paddingSmall)) {
+                    CalendarViewType.entries.forEach { view ->
+                        FilterChip(selected = currentView == view, onClick = { switchReimaginedView(view) }, label = { Text(stringResource(view.labelRes)) }, modifier = Modifier.heightIn(min = dimens.minimumInteractiveTargetSize))
+                    }
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                body()
+                dateNavigationError?.let { error ->
+                    Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(dimens.paddingLarge), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(error), color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { dateNavigationError = null }) { Text(stringResource(Res.string.close)) }
+                    }
+                }
+            }
+        }
+    } else Box(Modifier.fillMaxSize()) {
+        body()
         CalendarTopBar(
             title = topBarTitle,
             currentView = currentView,
@@ -703,6 +1011,8 @@ private fun CalendarContent(
             onSettingsClick = onSettingsClick,
         )
     }
+}
+
 }
 
 // ── Calendar Top Bar ────────────────────────────────────────────────────────

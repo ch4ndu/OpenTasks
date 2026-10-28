@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -44,6 +45,14 @@ import com.udnahc.opentasks.domain.usecase.countdown.CountdownOccurrence
 import com.udnahc.opentasks.ui.screens.OpenTasksSettingsButton
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
+import com.udnahc.opentasks.ui.theme.isReimagined
+import com.udnahc.opentasks.viewmodel.ReimaginedCountdownItem
+import com.udnahc.opentasks.viewmodel.CountdownRelativeLabel
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material3.TextButton
+import opentasks.composeapp.generated.resources.*
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.PriorityHigh
@@ -106,14 +115,22 @@ internal fun countdownTypeInitial(type: CountdownType): String = stringResource(
 
 @Composable
 fun CountdownScreen(
+    onCreateCountdown: () -> Unit = {},
     viewModel: CountdownViewModel,
     onCountdownClick: (Countdown) -> Unit,
     onSettingsClick: () -> Unit = {},
 ) {
-    val countdowns by viewModel.visibleCountdownItems.collectAsState()
     val hasStoredCountdowns by viewModel.hasStoredCountdowns.collectAsState()
     val selectedFilter by viewModel.selectedFilter.collectAsState()
+    if (isReimagined) {
+        val loadState by viewModel.loadState.collectAsState()
+        val items by viewModel.reimaginedCountdownItems.collectAsState()
+        ReimaginedCountdownContent(items, hasStoredCountdowns, selectedFilter, viewModel::selectFilter, onCountdownClick, onCreateCountdown, onSettingsClick, loadState, viewModel::retryLoad)
+        return
+    }
+    val countdowns by viewModel.visibleCountdownItems.collectAsState()
     CountdownContent(
+        onCreateCountdown = onCreateCountdown,
         countdowns = countdowns,
         hasStoredCountdowns = hasStoredCountdowns,
         selectedFilter = selectedFilter,
@@ -126,6 +143,7 @@ fun CountdownScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CountdownContent(
+    onCreateCountdown: () -> Unit = {},
     countdowns: List<CountdownOccurrence>,
     hasStoredCountdowns: Boolean = countdowns.isNotEmpty(),
     selectedFilter: CountdownType?,
@@ -189,6 +207,7 @@ internal fun CountdownContent(
             title = stringResource(Res.string.countdown_title),
             containerStyle = OpenTasksTopBarContainerStyle.Translucent,
             actions = {
+                if (com.udnahc.opentasks.ui.theme.isReimagined) com.udnahc.opentasks.ui.screens.ReimaginedAddButton(onCreateCountdown)
                 OpenTasksSettingsButton(onClick = onSettingsClick)
             },
         )
@@ -213,8 +232,8 @@ private fun FilterChipRow(
             onClick = { onFilterSelected(null) },
             label = { Text(stringResource(Res.string.countdown_filter_all)) },
             colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = PrimaryBlue.copy(alpha = 0.2f),
-                selectedLabelColor = PrimaryBlue,
+                selectedContainerColor = (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue).copy(alpha = 0.2f),
+                selectedLabelColor = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
                 containerColor = MaterialTheme.colorScheme.surface,
                 labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
             ),
@@ -309,7 +328,7 @@ internal fun CountdownCard(
                     text = if (daysLeft == 0) "0" else displayDays.toString(),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (daysLeft < 0 && !isCountUp) MaterialTheme.colorScheme.onSurfaceVariant else PrimaryBlue,
+                    color = if (daysLeft < 0 && !isCountUp) MaterialTheme.colorScheme.onSurfaceVariant else (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue),
                 )
                 Text(
                     text = subtitle,
@@ -370,3 +389,55 @@ internal val previewCountdowns = listOf(
         daysUntil = 90,
     ),
 )
+
+
+@Composable
+private fun ReimaginedCountdownContent(items: List<ReimaginedCountdownItem>, hasStored: Boolean, filter: CountdownType?, onFilter: (CountdownType?) -> Unit, onOpen: (Countdown) -> Unit, onCreate: () -> Unit, onSettings: () -> Unit, loadState: com.udnahc.opentasks.viewmodel.CountdownLoadState, onRetry: () -> Unit) {
+    val d = OpenTasksTheme.dimens
+    Column(Modifier.fillMaxSize().navigationBarsPadding().padding(bottom = d.fabAreaBottom)) {
+        OpenTasksTopBar(titleContent = {}, actions = {
+            com.udnahc.opentasks.ui.screens.ReimaginedAddButton(onCreate, Res.string.countdown_new)
+            OpenTasksSettingsButton(onSettings)
+        })
+        FilterChipRow(filter, onFilter)
+        if (loadState != com.udnahc.opentasks.viewmodel.CountdownLoadState.READY) {
+            com.udnahc.opentasks.ui.screens.ReimaginedReadStatus(loadState == com.udnahc.opentasks.viewmodel.CountdownLoadState.LOADING, onRetry)
+        } else if (items.isEmpty()) {
+            Column(Modifier.fillMaxSize().padding(d.paddingXXLarge), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center) {
+                Text(stringResource(if (hasStored) Res.string.countdown_no_visible_items else Res.string.countdown_no_items))
+                TextButton(onClick = if (filter != null) ({ onFilter(null) }) else onCreate) { Text(stringResource(if (filter != null) Res.string.clear_filter else Res.string.countdown_new)) }
+            }
+        } else {
+            LazyVerticalGrid(GridCells.Adaptive(d.countdownCardMinWidth), modifier = Modifier.weight(1f), contentPadding = PaddingValues(d.paddingXLarge)) {
+                items(items, key = { it.occurrence.countdown.id }) { item -> ReimaginedCountdownRow(item) { onOpen(item.occurrence.countdown) } }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReimaginedCountdownRow(item: ReimaginedCountdownItem, onClick: () -> Unit) {
+    val d = OpenTasksTheme.dimens
+    val source = item.occurrence.countdown
+    val color = countdownTypeColor(source.countdownType)
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(d.paddingSmall), shape = RoundedCornerShape(d.cornerXLarge), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Row(Modifier.fillMaxWidth().padding(d.paddingXLarge), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.width(d.calendarTimeColumnWidth), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(if (item.relativeLabel == CountdownRelativeLabel.TODAY) stringResource(Res.string.today) else item.amount, style = MaterialTheme.typography.headlineMedium, color = if (item.relativeLabel == CountdownRelativeLabel.AGO) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
+                if (item.relativeLabel != CountdownRelativeLabel.TODAY) Text(stringResource(when (item.relativeLabel) {
+                    CountdownRelativeLabel.SINCE -> Res.string.countdown_days_since
+                    CountdownRelativeLabel.UNTIL -> Res.string.countdown_days_until
+                    CountdownRelativeLabel.AGO -> Res.string.countdown_days_ago
+                    else -> Res.string.countdown_days_left
+                }), style = MaterialTheme.typography.labelSmall)
+            }
+            Spacer(Modifier.width(d.spacerXLarge))
+            Column(Modifier.weight(1f)) {
+                Text(source.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(countdownTypeLabelRes(source.countdownType)), style = MaterialTheme.typography.labelMedium, color = color)
+                Text(item.dateText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(recurrenceLabelRes(source.recurrenceType)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}

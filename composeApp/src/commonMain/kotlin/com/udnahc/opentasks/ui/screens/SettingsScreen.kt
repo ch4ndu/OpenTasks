@@ -8,9 +8,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.Alignment
+import com.udnahc.opentasks.ui.theme.isReimagined
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -18,6 +23,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.shape.RoundedCornerShape
+import org.jetbrains.compose.resources.painterResource
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -46,6 +55,10 @@ import com.udnahc.opentasks.data.model.TextSizePreference
 import com.udnahc.opentasks.data.model.ThemeMode
 import com.udnahc.opentasks.data.notification.ExactReminderPermissionStatus
 import com.udnahc.opentasks.data.notification.NotificationCapability
+import com.udnahc.opentasks.data.model.UiExperience
+import opentasks.composeapp.generated.resources.ui_experience
+import opentasks.composeapp.generated.resources.ui_classic
+import opentasks.composeapp.generated.resources.ui_reimagined
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.util.rememberCalendarPermissionLauncher
@@ -61,6 +74,7 @@ import com.udnahc.opentasks.viewmodel.SettingsLaunchTarget
 import com.udnahc.opentasks.viewmodel.SyncStatus
 import com.udnahc.opentasks.viewmodel.displayLabel
 import opentasks.composeapp.generated.resources.completion_logbook
+import opentasks.composeapp.generated.resources.ic_chevron_right
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.account
 import opentasks.composeapp.generated.resources.account_current
@@ -172,6 +186,7 @@ fun SettingsScreen(
 ) {
     val viewModel: SettingsViewModel = koinViewModel()
     val syncStatus by viewModel.syncStatus.collectAsState()
+    val uiExperience by viewModel.uiExperience.collectAsState()
     val themePreference by viewModel.themePreference.collectAsState()
     val textSizePreference by viewModel.textSizePreference.collectAsState()
     val notificationGranted by viewModel.notificationGranted.collectAsState()
@@ -202,6 +217,8 @@ fun SettingsScreen(
     SettingsContent(
         currentEndpoint = currentEndpoint,
         syncStatus = syncStatus,
+        uiExperience = uiExperience,
+        onUiExperienceChanged = viewModel::saveUiExperience,
         themePreference = themePreference,
         textSizePreference = textSizePreference,
         notificationGranted = notificationGranted,
@@ -262,6 +279,8 @@ fun SettingsScreen(
 internal fun SettingsContent(
     currentEndpoint: String?,
     syncStatus: SyncStatus,
+    uiExperience: UiExperience = UiExperience.CLASSIC,
+    onUiExperienceChanged: (UiExperience) -> Unit = {},
     themePreference: ThemeMode = ThemeMode.SYSTEM,
     textSizePreference: TextSizePreference = TextSizePreference.SMALL,
     notificationGranted: Boolean = true,
@@ -377,14 +396,28 @@ internal fun SettingsContent(
             )
         },
     ) { innerPadding ->
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
+                .then(if (isReimagined) Modifier.widthIn(max = dimens.writingMaxWidth) else Modifier)
+                .fillMaxSize(),
         ) {
             // ── Appearance ──
             item(key = "appearance_header") {
                 SettingsCategoryHeader(stringResource(Res.string.appearance))
+            }
+            item(key = "ui_experience") {
+                SettingsCategoryHeader(stringResource(Res.string.ui_experience))
+                Row {
+                    UiExperience.entries.forEach { experience ->
+                        FilterChip(
+                            selected = experience == uiExperience,
+                            onClick = { onUiExperienceChanged(experience) },
+                            label = { Text(stringResource(if (experience == UiExperience.CLASSIC) Res.string.ui_classic else Res.string.ui_reimagined)) },
+                            modifier = Modifier.padding(horizontal = dimens.paddingSmall),
+                        )
+                    }
+                }
             }
             item(key = "theme_preference") {
                 val themeName = when (themePreference) {
@@ -623,6 +656,8 @@ internal fun SettingsContent(
                 }
             }
         }
+    }
+
     }
 
     // Logout confirmation dialog
@@ -888,7 +923,7 @@ internal fun SettingsCategoryHeader(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.labelLarge,
-        color = PrimaryBlue,
+        color = if (isReimagined) MaterialTheme.colorScheme.onSurfaceVariant else PrimaryBlue,
         modifier = Modifier.padding(
             start = dimens.paddingXLarge,
             end = dimens.paddingXLarge,
@@ -906,6 +941,18 @@ internal fun SettingsRow(
     enabled: Boolean = true,
 ) {
     val dimens = OpenTasksTheme.dimens
+    if (isReimagined) {
+        Surface(Modifier.fillMaxWidth().padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingTiny).clickable(enabled = enabled, onClick = onClick), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(dimens.cornerXLarge)) {
+            Row(Modifier.heightIn(min = dimens.minimumInteractiveTargetSize).padding(dimens.paddingLarge), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f))
+                    if (summary != null) Text(summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.38f))
+                }
+                Icon(painterResource(opentasks.composeapp.generated.resources.Res.drawable.ic_chevron_right), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        return
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()

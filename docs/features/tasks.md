@@ -2,6 +2,8 @@
 
 ## Overview
 
+The Reimagined Matrix always includes tasks from all lists, including completed tasks. Its overview shows up to seven tasks per quadrant with access to the complete quadrant list; it has no list filter, completed toggle, or Board mode. Classic retains its existing six-row preview and completed-task inclusion. Both use the same task records, priority meanings, completion choices, and creation chooser. Creating a task from a quadrant preserves its priority and uses Inbox as the default list. Task-list and Shortlist Board modes remain available independently. Reimagined Tasks also exposes the existing Shortlist chooser and completion actions directly in the overview.
+
 Tasks are the main work item in OpenTasks. A task can have a title, rich-text description, subtasks, category, section, tags, priority, status, due date range, recurrence, reminders, calendar metadata, and image attachments.
 
 Tasks appear in multiple views:
@@ -82,6 +84,8 @@ Recognized clauses appear as removable chips. Removing a chip keeps that phrase 
 
 The opening surface supplies category, priority, and an optional Calendar civil date. An explicit parsed date overrides only the fallback date, a parsed time overrides only the time/all-day inference, and parsed recurrence overrides only recurrence. Date-only tasks use the existing 08:00 local storage anchor and create no reminder. A time without any explicit or contextual date uses today when still future and tomorrow otherwise. All other task fields use `AddTaskAction` defaults.
 
+Reimagined Quick Add can open the full editor without saving, transferring its current parsed title, exact deadline, all-day setting, recurrence, list, and priority. The full editor then owns the draft and its normal Save/Back behavior.
+
 ## Technical Design
 
 Task data is stored in the `tasks` Room table. `TaskRepositoryImpl` wraps `TaskDao`, converts timestamps between local app time and UTC storage, and triggers sync after writes.
@@ -120,3 +124,5 @@ Task sync uses `TaskSyncAdapter` and `TaskRecord`. Task-tag assignments are sepa
 ## Current Limitations
 
 Attachments are currently wired only for task images. The attachment infrastructure is owner-based and intended to support other owners later, but notes and countdowns do not have attachment UI or domain actions yet.
+
+Reimagined Quick Add preserves its actual destination list when a list-name read fails. It retains a known name or displays an unavailable label; it never substitutes Inbox for a different destination. The Sort control announces the current ordering to accessibility services.

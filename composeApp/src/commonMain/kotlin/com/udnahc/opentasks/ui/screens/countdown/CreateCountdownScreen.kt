@@ -1,12 +1,24 @@
 package com.udnahc.opentasks.ui.screens.countdown
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextButton
+import com.udnahc.opentasks.ui.screens.ReimaginedScreenHeader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxHeight
+import com.udnahc.opentasks.ui.theme.isReimagined
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -58,6 +70,8 @@ import com.udnahc.opentasks.ui.screens.monthNameShort
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.countdown_name_required
+import opentasks.composeapp.generated.resources.countdown_new
 import opentasks.composeapp.generated.resources.add
 import opentasks.composeapp.generated.resources.countdown_counting_count_up
 import opentasks.composeapp.generated.resources.countdown_counting_countdown
@@ -92,7 +106,7 @@ import kotlinx.datetime.LocalDate
 
 // ---- Reminder options for countdowns ----
 
-private enum class CountdownReminderOption(
+internal enum class CountdownReminderOption(
     val labelRes: StringResource,
     val minutesValue: Int
 ) {
@@ -108,7 +122,7 @@ private fun Set<CountdownReminderOption>.toRemindersString(): String =
     filter { it != CountdownReminderOption.NONE }
         .joinToString(",") { it.minutesValue.toString() }
 
-private fun String.toCountdownReminderSet(): Set<CountdownReminderOption> {
+internal fun String.toCountdownReminderSet(): Set<CountdownReminderOption> {
     if (isBlank()) return emptySet()
     val values = split(",").mapNotNull { it.trim().toIntOrNull() }
     return CountdownReminderOption.entries
@@ -140,7 +154,7 @@ private fun Set<CountdownReminderOption>.displayText(): String {
 
 // ---- Repeat display ----
 
-private fun recurrenceLabelRes(type: RecurrenceType): StringResource = when (type) {
+internal fun recurrenceLabelRes(type: RecurrenceType): StringResource = when (type) {
     RecurrenceType.NONE -> Res.string.none
     RecurrenceType.DAILY -> Res.string.daily
     RecurrenceType.WEEKLY -> Res.string.weekly
@@ -149,7 +163,7 @@ private fun recurrenceLabelRes(type: RecurrenceType): StringResource = when (typ
     RecurrenceType.EVERY_WEEKDAY -> Res.string.countdown_every_weekday
 }
 
-private fun smartListLabelRes(visibility: SmartListVisibility): StringResource = when (visibility) {
+internal fun smartListLabelRes(visibility: SmartListVisibility): StringResource = when (visibility) {
     SmartListVisibility.ON_THE_DAY -> Res.string.countdown_smart_list_on_the_day
     SmartListVisibility.THREE_DAYS_EARLY -> Res.string.countdown_smart_list_3_days_early
     SmartListVisibility.SEVEN_DAYS_EARLY -> Res.string.countdown_smart_list_7_days_early
@@ -157,7 +171,7 @@ private fun smartListLabelRes(visibility: SmartListVisibility): StringResource =
     SmartListVisibility.DO_NOT_SHOW -> Res.string.countdown_smart_list_do_not_show
 }
 
-private fun countingModeLabelRes(mode: CountingMode): StringResource = when (mode) {
+internal fun countingModeLabelRes(mode: CountingMode): StringResource = when (mode) {
     CountingMode.COUNTDOWN -> Res.string.countdown_counting_countdown
     CountingMode.COUNT_UP -> Res.string.countdown_counting_count_up
 }
@@ -211,6 +225,9 @@ internal fun CreateCountdownContent(
     isSaving: Boolean,
 ) {
     val dimens = OpenTasksTheme.dimens
+    val reimagined = isReimagined
+    val accent = if (reimagined) MaterialTheme.colorScheme.primary else PrimaryBlue
+    var showNameError by rememberSaveable { mutableStateOf(false) }
     val stateKey = editCountdown?.id ?: ""
     val initialRecurrenceValue = editCountdown?.recurrenceType ?: RecurrenceType.NONE
     val initialTypeValue = editCountdown?.countdownType ?: initialType
@@ -266,28 +283,66 @@ internal fun CreateCountdownContent(
 
     val typeColor = countdownTypeColor(selectedType)
 
+    fun saveCountdown() {
+        if (isSaving) return
+        if (name.isBlank()) { showNameError = true; return }
+        val targetDateMillis =
+            computeLocalMillis(selectedYear, selectedMonth, selectedDay, 0, 0)
+        val countdown = if (editCountdown != null) {
+            editCountdown.copy(
+                title = name,
+                targetDate = targetDateMillis,
+                countdownType = selectedType,
+                countingMode = selectedCountingMode,
+                reminders = selectedReminders.toRemindersString(),
+                recurrenceType = selectedRecurrence,
+                smartListVisibility = selectedSmartList,
+            )
+        } else {
+            Countdown(
+                title = name,
+                targetDate = targetDateMillis,
+                countdownType = selectedType,
+                countingMode = selectedCountingMode,
+                reminders = selectedReminders.toRemindersString(),
+                recurrenceType = selectedRecurrence,
+                smartListVisibility = selectedSmartList,
+            )
+        }
+        onSave(countdown)
+    }
+
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).then(if (reimagined) Modifier.navigationBarsPadding().imePadding() else Modifier)) {
+        if (reimagined) ReimaginedScreenHeader(stringResource(if (editCountdown != null) Res.string.edit else Res.string.countdown_new), { if (!isSaving) onBack() }) {
+            TextButton(onClick = ::saveCountdown, enabled = !isSaving) { Text(stringResource(Res.string.save)) }
+        }
     Box(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth().weight(1f)
             .background(MaterialTheme.colorScheme.background),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
+            modifier = (if (isReimagined) Modifier.align(Alignment.TopCenter).widthIn(max = dimens.writingMaxWidth).fillMaxHeight().fillMaxWidth() else Modifier.fillMaxSize())
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = dimens.fabAreaBottom),
+                .padding(bottom = if (reimagined) dimens.paddingXLarge else dimens.fabAreaBottom),
         ) {
             // Top bar
-            OpenTasksTopBar(
-                title = stringResource(if (editCountdown != null) Res.string.edit else Res.string.add),
+            if (!reimagined) OpenTasksTopBar(
+                title = stringResource(if (editCountdown != null) Res.string.edit else if (reimagined) Res.string.countdown_new else Res.string.add),
                 containerStyle = OpenTasksTopBarContainerStyle.Transparent,
                 navigationIcon = {
-                    OpenTasksCloseButton(onClick = onBack)
+                    OpenTasksCloseButton(onClick = { if (!reimagined || !isSaving) onBack() })
                 },
             )
 
+            if (reimagined) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = dimens.paddingXLarge), horizontalArrangement = Arrangement.spacedBy(dimens.paddingSmall)) {
+                CountdownType.entries.forEach { type ->
+                    FilterChip(selected = selectedType == type, onClick = { selectedType = type }, enabled = !isSaving, modifier = Modifier.heightIn(min = dimens.minimumInteractiveTargetSize), label = { Text(stringResource(countdownTypeLabelRes(type))) })
+                }
+            }
+
             // Icon placeholder
-            Box(
+            if (!reimagined) Box(
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .padding(vertical = dimens.paddingXLarge),
@@ -320,16 +375,19 @@ internal fun CreateCountdownContent(
             ) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { name = it; showNameError = false },
+                    enabled = !reimagined || !isSaving,
+                    isError = reimagined && showNameError,
+                    supportingText = if (reimagined && showNameError) ({ Text(stringResource(Res.string.countdown_name_required)) }) else null,
                     label = { Text(stringResource(Res.string.name_label)) },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = dimens.paddingMedium, vertical = dimens.paddingSmall),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PrimaryBlue,
-                        cursorColor = PrimaryBlue,
-                        focusedLabelColor = PrimaryBlue,
+                        focusedBorderColor = accent,
+                        cursorColor = accent,
+                        focusedLabelColor = accent,
                     ),
                 )
             }
@@ -351,82 +409,56 @@ internal fun CreateCountdownContent(
                     NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.date),
                         value = "${monthNameShort(selectedMonth)} $selectedDay, $selectedYear",
-                        onClick = { showDatePicker = true },
+                        onClick = { if (!reimagined || !isSaving) showDatePicker = true },
                     )
 
                     // Reminder row
                     NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.reminder),
                         value = selectedReminders.displayText(),
-                        onClick = { showReminderPicker = true },
+                        onClick = { if (!reimagined || !isSaving) showReminderPicker = true },
                     )
 
                     // Repeat row
                     NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.repeat),
                         value = stringResource(recurrenceLabelRes(selectedRecurrence)),
-                        onClick = { showRepeatPicker = true },
+                        onClick = { if (!reimagined || !isSaving) showRepeatPicker = true },
                     )
 
-                    // Type row
-                    NoIconLabelValueNavigationRow(
+                    // Type row (modern type chips use the same selectedType state).
+                    if (!reimagined) NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.countdown_type),
                         value = stringResource(countdownTypeLabelRes(selectedType)),
-                        onClick = { showTypePicker = true },
+                        onClick = { if (!reimagined || !isSaving) showTypePicker = true },
                     )
 
                     // Counting Mode row
                     NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.countdown_counting_mode),
                         value = stringResource(countingModeLabelRes(selectedCountingMode)),
-                        onClick = { showCountingModePicker = true },
+                        onClick = { if (!reimagined || !isSaving) showCountingModePicker = true },
                     )
 
                     // Smart List row
                     NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.countdown_smart_list),
                         value = stringResource(smartListLabelRes(selectedSmartList)),
-                        onClick = { showSmartListPicker = true },
+                        onClick = { if (!reimagined || !isSaving) showSmartListPicker = true },
                     )
                 }
             }
 
             Spacer(Modifier.height(dimens.paddingXXLarge))
 
-            // Save button
-            Button(
+            // Classic save position is retained; modern Save stays above the scrolling form.
+            if (!reimagined) Button(
                 enabled = !isSaving,
-                onClick = {
-                    if (name.isBlank()) return@Button
-                    val targetDateMillis =
-                        computeLocalMillis(selectedYear, selectedMonth, selectedDay, 0, 0)
-                    val countdown = if (editCountdown != null) {
-                        editCountdown.copy(
-                            title = name,
-                            targetDate = targetDateMillis,
-                            countdownType = selectedType,
-                            countingMode = selectedCountingMode,
-                            reminders = selectedReminders.toRemindersString(),
-                            recurrenceType = selectedRecurrence,
-                            smartListVisibility = selectedSmartList,
-                        )
-                    } else {
-                        Countdown(
-                            title = name,
-                            targetDate = targetDateMillis,
-                            countdownType = selectedType,
-                            countingMode = selectedCountingMode,
-                            reminders = selectedReminders.toRemindersString(),
-                            recurrenceType = selectedRecurrence,
-                            smartListVisibility = selectedSmartList,
-                        )
-                    }
-                    onSave(countdown)
-                },
+                onClick = ::saveCountdown,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = dimens.paddingXLarge),
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                colors = ButtonDefaults.buttonColors(containerColor = accent),
                 shape = RoundedCornerShape(dimens.cornerXLarge),
             ) {
                 Text(
@@ -436,6 +468,8 @@ internal fun CreateCountdownContent(
                 )
             }
         }
+    }
+
     }
 
     // ---- Dialogs ----

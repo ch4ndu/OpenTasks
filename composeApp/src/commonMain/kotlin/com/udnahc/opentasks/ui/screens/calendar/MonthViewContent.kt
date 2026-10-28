@@ -45,6 +45,8 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
 import com.udnahc.opentasks.domain.usecase.task.EMPTY_CALENDAR_DAY_PROJECTION
 import com.udnahc.opentasks.domain.usecase.task.calendarTaskPrefix
+import com.udnahc.opentasks.ui.theme.isReimagined
+import androidx.compose.material3.CircularProgressIndicator
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
@@ -77,6 +79,11 @@ internal fun MonthViewContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
 ) {
+    if (isReimagined) {
+        ReimaginedMonthContent(selectedDayProjection, todayYear, todayMonth, todayDay, selectedDay, pagerState, centreIndex,
+            calendarDaysByDay, categoryNames, topBarHeight, navBarHeight, onDayClick, onTaskClick, onToggleComplete)
+        return
+    }
     // We need to know available height so we can interpolate grid height
     // from "fill all space" → "single collapsed week row"
     BoxWithConstraints(
@@ -253,7 +260,7 @@ private fun StackedMonthEvents(
                             .then(
                                 if (isSelected) {
                                     Modifier.background(
-                                        PrimaryBlue.copy(alpha = 0.25f),
+                                        (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue).copy(alpha = 0.25f),
                                         RoundedCornerShape(
                                             topStart = 0.dp,
                                             topEnd = 0.dp,
@@ -481,7 +488,7 @@ private fun WeekRowContent(
                     .then(
                         if (isSelected && collapseProgress > 0f) {
                             Modifier.background(
-                                PrimaryBlue.copy(alpha = 0.25f * collapseProgress),
+                                (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue).copy(alpha = 0.25f * collapseProgress),
                                 RoundedCornerShape(
                                     topStart = dimens.cornerLarge,
                                     topEnd = dimens.cornerLarge,
@@ -499,8 +506,8 @@ private fun WeekRowContent(
 
                 // Day number
                 val textColor = when {
-                    isSelected -> Color.White
-                    isToday -> PrimaryBlue
+                    isSelected -> if (isReimagined) MaterialTheme.colorScheme.onPrimary else Color.White
+                    isToday -> (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
                     day.isCurrentMonth -> MaterialTheme.colorScheme.onBackground
                     else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                 }
@@ -511,7 +518,7 @@ private fun WeekRowContent(
                         .then(
                             when {
                                 isSelected && collapseProgress > 0f -> Modifier.background(
-                                    PrimaryBlue, CircleShape
+                                    (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue), CircleShape
                                 )
 
                                 isToday -> Modifier.background(
@@ -583,6 +590,109 @@ private fun WeekRowContent(
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun ReimaginedMonthContent(
+    selectedProjection: CalendarDayProjection, todayYear: Int, todayMonth: Int, todayDay: Int,
+    selectedDay: CalendarDay?, pager: PagerState, centre: Int, byDay: Map<Long, CalendarDayProjection>,
+    categoryNames: Map<String, String>, topBarHeight: Dp, navBarHeight: Dp,
+    onDayClick: (CalendarDay) -> Unit, onTaskClick: (Task) -> Unit, onComplete: (Task) -> Unit,
+) {
+    val d = OpenTasksTheme.dimens
+    BoxWithConstraints(Modifier.fillMaxSize().padding(top = topBarHeight, bottom = navBarHeight + d.fabAreaBottom)) {
+        val wide = maxWidth >= d.taskOverviewMaxWidth
+        val availableHeight = maxHeight
+        val grid: @Composable (Modifier) -> Unit = { modifier ->
+            Column(modifier) {
+                DayNameHeaders()
+                HorizontalPager(pager, modifier = Modifier.fillMaxWidth().weight(1f)) { page ->
+                    val date = remember(todayYear, todayMonth, page, centre) {
+                        CalendarPagerAnchor(todayYear, todayMonth, todayDay).monthAt(page)
+                    }
+                    val weeks = remember(date) { buildMonthWeeks(date.year, date.month) }
+                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val cellHeight = maxHeight / weeks.size
+                        val contentHeight = (cellHeight - 2.dp - d.paddingTiny * 2).coerceAtLeast(0.dp)
+                        val eventLimit = ((contentHeight - d.calendarDaySize - d.calendarEventOverflowHeight) / d.calendarMonthGridEventHeight).toInt().coerceAtLeast(0)
+                        Column(Modifier.fillMaxSize()) {
+                            weeks.forEach { week ->
+                                Row(Modifier.fillMaxWidth().height(cellHeight)) {
+                                    week.forEach { day ->
+                                        ReimaginedMonthCell(day, byDay[day.dayKey], selectedDay == day,
+                                            day.year == todayYear && day.month == todayMonth && day.day == todayDay,
+                                            wide, eventLimit, onDayClick, onTaskClick, Modifier.weight(1f).fillMaxHeight())
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val agenda: @Composable (Modifier) -> Unit = { modifier ->
+            if (selectedDay != null && selectedProjection.dayKey == selectedDay.dayKey) {
+                val defaultList = stringResource(Res.string.inbox)
+                LazyColumn(modifier, contentPadding = PaddingValues(d.paddingMedium)) {
+                    item(key = "date") { Text(selectedProjection.formattedDate, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(d.paddingLarge)) }
+                    items(selectedProjection.rows, key = { it.task.id }) { row ->
+                        CalendarTaskRow(row, categoryNames[row.task.categoryId] ?: defaultList, { onComplete(row.task) }, { onTaskClick(row.task) })
+                        HorizontalDivider()
+                    }
+                    if (selectedProjection.rows.isEmpty()) item(key = "empty") { EmptyDayPlaceholder() }
+                }
+            } else {
+                Box(modifier, contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            }
+        }
+        if (wide) {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(d.spacerXLarge)) {
+                grid(Modifier.weight(1.5f).fillMaxHeight())
+                agenda(Modifier.weight(1f).fillMaxHeight())
+            }
+        } else {
+            Column(Modifier.fillMaxSize()) {
+                grid(Modifier.fillMaxWidth().height(minOf(availableHeight * 0.65f, d.minimumInteractiveTargetSize * 6 + d.calendarDayHeaderHeight)))
+                HorizontalDivider()
+                agenda(Modifier.fillMaxWidth().weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReimaginedMonthCell(
+    day: CalendarDay, projection: CalendarDayProjection?, selected: Boolean, today: Boolean,
+    wide: Boolean, eventLimit: Int, onDayClick: (CalendarDay) -> Unit, onTaskClick: (Task) -> Unit, modifier: Modifier,
+) {
+    val d = OpenTasksTheme.dimens
+    Box(modifier.padding(1.dp).clip(RoundedCornerShape(d.cornerLarge))
+        .background(if (selected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+        .clickable(enabled = day.isCurrentMonth) { onDayClick(day) }) {
+        Column(Modifier.fillMaxSize().padding(d.paddingTiny), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(d.calendarDaySize).background(if (today) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
+                Text(day.day.toString(), style = MaterialTheme.typography.labelLarge,
+                    color = when { today -> MaterialTheme.colorScheme.onPrimary; !day.isCurrentMonth -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f); else -> MaterialTheme.colorScheme.onSurface })
+            }
+            if (day.isCurrentMonth && projection != null) {
+                if (wide) {
+                    val prefix = remember(projection.rows, eventLimit) { calendarTaskPrefix(projection.rows, eventLimit) }
+                    prefix.rows.forEach { row ->
+                        Text(row.task.title, modifier = Modifier.fillMaxWidth().height(d.calendarMonthGridEventHeight)
+                            .background(priorityColor(row.task.priority).copy(alpha = 0.15f), RoundedCornerShape(d.cornerTiny))
+                            .clickable { onTaskClick(row.task) }.padding(horizontal = d.paddingTiny),
+                            style = OpenTasksTheme.typography.calendarEventTitle, color = priorityColor(row.task.priority), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (prefix.overflowCount > 0) Text(stringResource(Res.string.calendar_overflow, prefix.overflowCount), style = OpenTasksTheme.typography.calendarEventOverflow)
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(d.spacerTiny)) {
+                        projection.monthPreview.rows.forEach { row -> Box(Modifier.size(d.calendarDotSize).background(priorityColor(row.task.priority), CircleShape)) }
                     }
                 }
             }

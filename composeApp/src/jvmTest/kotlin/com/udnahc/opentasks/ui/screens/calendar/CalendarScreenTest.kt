@@ -8,11 +8,28 @@ import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
+import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 class CalendarScreenTest {
+    @Test
+    fun navigationParserRejectsMalformedAndImpossibleDatesWithoutClampingRange() {
+        val min = LocalDate(2028, 2, 1)
+        val max = LocalDate(2028, 3, 31)
+        listOf("2028-2-01", "2028-02-1", " 2028-02-01", "2028-02-01 ", "2028/02/01",
+            "2027-02-29", "2028-02-30", "2028-13-01", "2028-00-01", "2028-03-00").forEach { text ->
+            assertEquals(CalendarNavigationDateResult.Invalid, parseCalendarNavigationDate(text, min, max), text)
+        }
+        listOf("2028-01-31", "2028-04-01").forEach { text ->
+            assertEquals(CalendarNavigationDateResult.OutOfRange, parseCalendarNavigationDate(text, min, max), text)
+        }
+        listOf(min, LocalDate(2028, 2, 29), max).forEach { date ->
+            assertEquals(CalendarNavigationDateResult.Valid(date), parseCalendarNavigationDate(date.toString(), min, max))
+        }
+    }
+
     @Test
     fun pagerAnchorTracksOrdinaryMonthAndYearRollover() {
         val beforeOrdinaryMidnight = CalendarPagerAnchor(2026, 9, 4)

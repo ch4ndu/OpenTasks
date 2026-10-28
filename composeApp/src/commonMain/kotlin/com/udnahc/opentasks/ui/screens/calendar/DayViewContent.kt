@@ -25,6 +25,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.plus
+import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
+import com.udnahc.opentasks.domain.usecase.task.CalendarVisibleRange
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -47,9 +53,11 @@ import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
 import com.udnahc.opentasks.domain.usecase.task.EMPTY_CALENDAR_DAY_PROJECTION
+import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import kotlinx.coroutines.launch
+import opentasks.composeapp.generated.resources.add_task
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.calendar_overflow
 import org.jetbrains.compose.resources.stringResource
@@ -72,6 +80,9 @@ internal fun DayViewContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     timelineHourLabels: List<String>,
+    onCreateTask: () -> Unit = {},
+    stripTaskDayKeys: Set<Long> = emptySet(),
+    onStripRangeChanged: (CalendarVisibleRange?) -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val timeColumnWidth = dimens.calendarTimeColumnWidth
@@ -83,9 +94,29 @@ internal fun DayViewContent(
         initialFirstVisibleItemIndex = pagerCentre - 3,
     )
 
-    val selectedDayMillis by remember {
+    val selectedDayMillis by remember(todayMillis, pagerState, pagerCentre) {
         derivedStateOf { todayMillis + (pagerState.currentPage - pagerCentre) * MILLIS_PER_DAY }
     }
+
+    val reimagined = isReimagined
+    LaunchedEffect(reimagined, stripListState, todayMillis, pagerCentre) {
+        if (!reimagined) return@LaunchedEffect
+        snapshotFlow {
+            val visible = stripListState.layoutInfo.visibleItemsInfo
+            val first = visible.firstOrNull()?.index
+            val last = visible.lastOrNull()?.index
+            if (first == null || last == null) null else first to last
+        }.distinctUntilChanged().collect { indexes ->
+            if (indexes != null) {
+                val today = localMillisToLocalDate(todayMillis)
+                onStripRangeChanged(CalendarVisibleRange(
+                    today.plus(indexes.first - pagerCentre, DateTimeUnit.DAY),
+                    today.plus(indexes.second - pagerCentre + 1, DateTimeUnit.DAY),
+                ))
+            }
+        }
+    }
+    DisposableEffect(reimagined) { onDispose { if (reimagined) onStripRangeChanged(null) } }
 
     // When timeline pager changes, scroll strip only if selected day is off-screen
     LaunchedEffect(pagerState.currentPage) {
@@ -119,7 +150,7 @@ internal fun DayViewContent(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
                         isSelected = index == pagerState.currentPage,
-                        hasTasks = calendarDaysByDay.containsKey(dayKey(dayMillis)),
+                        hasTasks = if (reimagined) dayKey(dayMillis) in stripTaskDayKeys else calendarDaysByDay.containsKey(dayKey(dayMillis)),
                         modifier = Modifier.width(dayStripWidth),
                         onClick = { scope.launch { pagerState.scrollToPage(index) } },
                     )
@@ -142,6 +173,7 @@ internal fun DayViewContent(
             Row(modifier = Modifier.fillMaxSize()) {
                 // ── Time labels column (fixed left) ───
                 Column(modifier = Modifier.width(timeColumnWidth)) {
+                    if (isReimagined) Spacer(Modifier.height(dimens.minimumInteractiveTargetSize))
                     // Spacer for all-day events area
                     Spacer(Modifier.height(dimens.threeDayAllDayHeight))
                     HorizontalDivider(
@@ -186,7 +218,13 @@ internal fun DayViewContent(
                     val dayOffset = page - pagerCentre
                     val dayMillis = todayMillis + dayOffset * MILLIS_PER_DAY
 
-                    DayViewTimeline(
+                    val projection = calendarDaysByDay[dayKey(dayMillis)] ?: EMPTY_CALENDAR_DAY_PROJECTION
+                    if (isReimagined && projection.rows.isEmpty()) {
+                        Column(Modifier.fillMaxSize(), verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                            EmptyDayPlaceholder()
+                            androidx.compose.material3.TextButton(onClick = onCreateTask) { Text(stringResource(opentasks.composeapp.generated.resources.Res.string.add_task)) }
+                        }
+                    } else DayViewTimeline(
                         dayMillis = dayMillis,
                         todayMillis = todayMillis,
                         dayTasks = calendarDaysByDay[dayKey(dayMillis)]
@@ -239,7 +277,7 @@ internal fun DayViewStripItem(
                 .size(dimens.calendarDaySize)
                 .then(
                     when {
-                        isSelected -> Modifier.background(PrimaryBlue, CircleShape)
+                        isSelected -> Modifier.background(if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue, CircleShape)
                         isToday -> Modifier.background(
                             MaterialTheme.colorScheme.surfaceVariant,
                             CircleShape
@@ -255,8 +293,8 @@ internal fun DayViewStripItem(
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
                 color = when {
-                    isSelected -> Color.White
-                    isToday -> PrimaryBlue
+                    isSelected -> if (isReimagined) MaterialTheme.colorScheme.onPrimary else Color.White
+                    isToday -> if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue
                     else -> MaterialTheme.colorScheme.onBackground
                 },
             )
@@ -266,7 +304,7 @@ internal fun DayViewStripItem(
             Box(
                 modifier = Modifier
                     .size(dimens.calendarDotSize)
-                    .background(PrimaryBlue, CircleShape),
+                    .background(if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue, CircleShape),
             )
         } else {
             Spacer(Modifier.height(dimens.spacerMedium))
@@ -295,6 +333,7 @@ private fun DayViewTimeline(
     val timedRows = dayTasks.timedRows
 
     Column(modifier = Modifier.fillMaxSize()) {
+        if (isReimagined) CalendarDayItemsButton(dayTasks, onTaskClick, onToggleComplete)
         // ── All-day events ───
         Box(
             modifier = Modifier
@@ -338,7 +377,7 @@ private fun DayViewTimeline(
         )
 
         // ── Scrollable timeline ───
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
@@ -363,13 +402,13 @@ private fun DayViewTimeline(
 
             // Positioned timed events
             timedRows.forEach { row ->
-                val yOffset = hourHeight * row.startMinutes / 60f
+                val yOffset = hourHeight * (if (isReimagined) row.layoutStartMinutes else row.startMinutes) / 60f
                 TimelineEventBar(
                     row = row,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(dimens.threeDayEventMinHeight)
-                        .offset(y = yOffset)
+                        .fillMaxWidth(if (isReimagined) 1f / row.laneCount else 1f)
+                        .height(if (isReimagined) maxOf(dimens.threeDayEventMinHeight, hourHeight * (row.endMinutes - row.layoutStartMinutes) / 60f) else dimens.threeDayEventMinHeight)
+                        .offset(x = if (isReimagined) maxWidth * row.laneIndex / row.laneCount else 0.dp, y = yOffset)
                         .padding(horizontal = 1.dp),
                     onClick = { onTaskClick(row.task) },
                     onToggleComplete = { onToggleComplete(row.task) },

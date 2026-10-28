@@ -2,6 +2,8 @@
 
 ## Overview
 
+Reimagined presents countdowns as compact rows or an adaptive grid, with type filtering and a detail view showing the original date, effective occurrence, direction, recurrence, reminders, and visibility. Deletion requires confirmation and navigates away only after the existing mutation reports success. There is no deletion Undo. Classic remains available through Settings.
+
 Countdowns track days until or since important dates. They can represent holidays, birthdays, anniversaries, or general countdowns. Countdowns can appear on their own tab and in calendar views.
 
 ## User Flow

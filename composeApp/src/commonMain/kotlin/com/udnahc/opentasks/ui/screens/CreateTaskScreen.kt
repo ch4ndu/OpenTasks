@@ -1,5 +1,8 @@
 package com.udnahc.opentasks.ui.screens
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,9 +14,13 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import com.udnahc.opentasks.ui.theme.isReimagined
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -78,6 +85,7 @@ import com.udnahc.opentasks.ui.util.PlatformBackHandler
 import com.udnahc.opentasks.ui.util.rememberTaskImagePickerActions
 import com.udnahc.opentasks.ui.util.rememberOpenInMapsAction
 import opentasks.composeapp.generated.resources.source_note
+import opentasks.composeapp.generated.resources.*
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.all_day
 import opentasks.composeapp.generated.resources.cancel
@@ -474,11 +482,46 @@ private fun CreateTaskContent(
         }
     }
 
+    val dimens = OpenTasksTheme.dimens
+    val openInMaps = rememberOpenInMapsAction()
+    var showDetails by remember {
+        mutableStateOf(
+            location.isNotBlank() || taskUrl.isNotBlank() || organizer.isNotBlank() ||
+                    eventStatus.isNotBlank() || attendees.isNotBlank()
+        )
+    }
+
+    val detailFields: @Composable () -> Unit = {
+        TaskDetailFields(
+            showDetails = showDetails,
+            onToggleDetails = { showDetails = !showDetails },
+            section = section,
+            onSectionChange = { section = it },
+            location = location,
+            onLocationChange = { location = it },
+            onOpenInMaps = {
+                if (openInMaps(location) == ExternalLaunchResult.FAILURE) {
+                    onExternalLaunchFailure()
+                }
+            },
+            taskUrl = taskUrl,
+            onUrlChange = { taskUrl = it },
+            organizer = organizer,
+            onOrganizerChange = { organizer = it },
+            eventStatus = eventStatus,
+            onStatusChange = { eventStatus = it },
+            attendees = attendees,
+            onAttendeesChange = { attendees = it },
+            modifier = Modifier.padding(horizontal = if (isReimagined) 0.dp else dimens.paddingXLarge),
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .imePadding(),
+            .imePadding()
+            .then(if (isReimagined) Modifier.navigationBarsPadding() else Modifier),
     ) {
         CreateTaskTopBar(
             listName = selectedCategoryName,
@@ -501,10 +544,10 @@ private fun CreateTaskContent(
             isSaving = isSaving,
         )
 
-        val dimens = OpenTasksTheme.dimens
         Column(
             modifier = Modifier
                 .weight(1f)
+                .then(if (isReimagined) Modifier.align(Alignment.CenterHorizontally).widthIn(max = dimens.writingMaxWidth).fillMaxWidth().verticalScroll(rememberScrollState()) else Modifier)
                 .padding(horizontal = dimens.paddingXLarge)
         ) {
             if (onOpenSourceNote != null) {
@@ -551,6 +594,7 @@ private fun CreateTaskContent(
 
             Spacer(Modifier.height(dimens.spacerXLarge))
 
+            if (isReimagined) ReimaginedSectionLabel(stringResource(Res.string.attach))
             TaskImageEditorStrip(
                 existingImages = existingImages,
                 pendingImages = pendingImages,
@@ -563,7 +607,7 @@ private fun CreateTaskContent(
             Spacer(Modifier.height(dimens.spacerLarge))
 
             if (isSubtaskMode) {
-                Box(modifier = Modifier.defaultMinSize(minHeight = dimens.minPagerHeight)) {
+                Box(modifier = if (isReimagined) Modifier.height(dimens.minPagerHeight) else Modifier.defaultMinSize(minHeight = dimens.minPagerHeight)) {
                     SubtaskList(
                         subtasks = subtasks,
                         onSubtaskTextChange = { id, text ->
@@ -602,10 +646,10 @@ private fun CreateTaskContent(
                     richTextState = richTextState,
                     focusRequester = descriptionFocusRequester,
                     onFocused = { },
-                    modifier = Modifier.weight(1f),
+                    modifier = if (isReimagined) Modifier.height(dimens.minPagerHeight) else Modifier.weight(1f),
                 )
             }
-
+            if (isReimagined) detailFields()
         }
 
         // Formatting toolbar -- only visible when NOT in subtask mode
@@ -616,37 +660,7 @@ private fun CreateTaskContent(
             )
         }
 
-        // Detail Fields (outside weighted Column so no nested scroll conflict)
-        val openInMaps = rememberOpenInMapsAction()
-        var showDetails by remember {
-            mutableStateOf(
-                location.isNotBlank() || taskUrl.isNotBlank() || organizer.isNotBlank() ||
-                        eventStatus.isNotBlank() || attendees.isNotBlank()
-            )
-        }
-
-        TaskDetailFields(
-            showDetails = showDetails,
-            onToggleDetails = { showDetails = !showDetails },
-            section = section,
-            onSectionChange = { section = it },
-            location = location,
-            onLocationChange = { location = it },
-            onOpenInMaps = {
-                if (openInMaps(location) == ExternalLaunchResult.FAILURE) {
-                    onExternalLaunchFailure()
-                }
-            },
-            taskUrl = taskUrl,
-            onUrlChange = { taskUrl = it },
-            organizer = organizer,
-            onOrganizerChange = { organizer = it },
-            eventStatus = eventStatus,
-            onStatusChange = { eventStatus = it },
-            attendees = attendees,
-            onAttendeesChange = { attendees = it },
-            modifier = Modifier.padding(horizontal = dimens.paddingXLarge),
-        )
+        if (!isReimagined) detailFields()
 
     }
 
@@ -800,20 +814,20 @@ private fun TaskTitleField(
     BasicTextField(
         value = title,
         onValueChange = onTitleChange,
-        textStyle = MaterialTheme.typography.titleLarge.copy(
+        textStyle = (if (isReimagined) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge).copy(
             color = MaterialTheme.colorScheme.onBackground,
             fontWeight = FontWeight.Normal,
         ),
-        cursorBrush = SolidColor(PrimaryBlue),
+        cursorBrush = SolidColor(if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue),
         decorationBox = { innerTextField ->
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(
+                    .then(if (isReimagined) Modifier else Modifier.border(
                         width = 1.dp,
                         color = MaterialTheme.colorScheme.outlineVariant,
                         shape = RoundedCornerShape(dimens.cornerMedium),
-                    )
+                    ))
                     .padding(horizontal = dimens.paddingLarge, vertical = dimens.paddingMedium),
             ) {
                 if (title.isEmpty()) {
@@ -849,7 +863,7 @@ private fun TaskRichDescriptionField(
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outlineVariant,
-                shape = RoundedCornerShape(dimens.cornerMedium),
+                shape = RoundedCornerShape(if (isReimagined) dimens.cornerXLarge else dimens.cornerMedium),
             )
             .padding(dimens.paddingLarge),
     ) {
@@ -862,10 +876,10 @@ private fun TaskRichDescriptionField(
         }
         BasicRichTextEditor(
             state = richTextState,
-            textStyle = MaterialTheme.typography.bodySmall.copy(
+            textStyle = (if (isReimagined) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodySmall).copy(
                 color = MaterialTheme.colorScheme.onBackground,
             ),
-            cursorBrush = SolidColor(PrimaryBlue),
+            cursorBrush = SolidColor(if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue),
             modifier = Modifier
                 .fillMaxSize()
                 .focusRequester(focusRequester)
@@ -896,7 +910,33 @@ internal fun CreateTaskTopBar(
     isSaving: Boolean = false,
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    OpenTasksTopBar(
+    if (isReimagined) {
+        val d = OpenTasksTheme.dimens
+        Column {
+            ReimaginedScreenHeader(stringResource(if (onDelete == null) Res.string.task_creation_choice_title else Res.string.reimagined_edit_task), onBack) {
+                androidx.compose.material3.FilledTonalButton(onClick = onDone, enabled = !isSaving, modifier = Modifier.minimumInteractiveTargetSize()) {
+                    if (isSaving) CircularProgressIndicator(Modifier.size(d.iconSmall)) else Text(stringResource(Res.string.save))
+                }
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = d.paddingLarge), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.AssistChip(onClick = onListClick, enabled = !isSaving, modifier = Modifier.heightIn(min = d.minimumInteractiveTargetSize), label = { Text(listName) }, trailingIcon = { Icon(painterResource(Res.drawable.ic_dropdown), null) })
+                Spacer(Modifier.width(d.paddingSmall))
+                Box {
+                    androidx.compose.material3.AssistChip(onClick = { onShowPriorityMenu(true) }, enabled = !isSaving, modifier = Modifier.heightIn(min = d.minimumInteractiveTargetSize), label = { Text(stringResource(when (priority) { TaskPriority.HIGH -> Res.string.high_priority; TaskPriority.MEDIUM -> Res.string.medium_priority; TaskPriority.LOW -> Res.string.low_priority; TaskPriority.NONE -> Res.string.no_priority })) })
+                    PriorityDropdown(showPriorityMenu, priority, { onShowPriorityMenu(false) }, onPrioritySelected)
+                }
+                Spacer(Modifier.width(d.paddingSmall))
+                androidx.compose.material3.FilterChip(selected = !isSubtaskMode, onClick = { if (isSubtaskMode) onToggleSubtaskMode() }, enabled = !isSaving, modifier = Modifier.heightIn(min = d.minimumInteractiveTargetSize), label = { Text(stringResource(Res.string.description_hint)) })
+                Spacer(Modifier.width(d.paddingSmall))
+                androidx.compose.material3.FilterChip(selected = isSubtaskMode, onClick = { if (!isSubtaskMode) onToggleSubtaskMode() }, enabled = !isSaving, modifier = Modifier.heightIn(min = d.minimumInteractiveTargetSize), label = { Text(stringResource(Res.string.subtasks)) })
+                if (onShortlistChange != null) {
+                    Spacer(Modifier.width(d.paddingSmall))
+                    androidx.compose.material3.FilterChip(selected = isShortlisted, onClick = { onShortlistChange(!isShortlisted) }, enabled = !isSaving && !isShortlistPending, modifier = Modifier.heightIn(min = d.minimumInteractiveTargetSize), label = { Text(stringResource(Res.string.shortlist)) })
+                }
+                if (onDelete != null) TextButton(onClick = { showDeleteConfirm = true }, enabled = !isSaving) { Text(stringResource(Res.string.delete), color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    } else     OpenTasksTopBar(
         containerStyle = OpenTasksTopBarContainerStyle.Transparent,
         navigationIcon = {
             OpenTasksBackButton(onClick = onBack)

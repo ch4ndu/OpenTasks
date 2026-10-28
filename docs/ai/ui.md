@@ -5,7 +5,7 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 ## Theme And Resources
 
 - Use Material3 with the custom theme in `ui/theme/`.
-- App typography is controlled by `OpenTasksTheme`: window size selects the responsive base typography, then the persisted user text-size preference applies an additional scale.
+- App typography is controlled by `OpenTasksTheme`: window size selects the responsive base typography, then the persisted user text-size preference applies an additional scale. Reimagined app-bar titles are the exception: use the extended `appBarTitle` token based on Material TitleLarge (22sp/28sp regular), scaled by the user preference but not by viewport size. The Calendar date title uses a 14sp base size with proportionally scaled line height and the same user text-size preference, while retaining the same toolbar geometry.
 - Use `OpenTasksTheme.dimens` for `dp` values, except 0-2dp inline spacing and preview containers.
 - Use `stringResource()` for all user-visible strings.
 - Use icons from `composeResources/drawable/`.
@@ -13,7 +13,9 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 
 ## Layout
 
-- Bottom `NavigationBar` and top app bars overlay content with translucent alpha. Screens must pad for them.
+- Classic bottom `NavigationBar` and top app bars overlay content with translucent alpha. Screens must pad for them. Reimagined uses bottom navigation on compact windows and a rail on wider eligible tab routes; its content must account for that rail and safe areas.
+- Reimagined topbars use the shared `OpenTasksTopBar` Material small bar: 64dp content height from the library default, opaque `colorScheme.background`, and one status inset owner. Root tabs omit static tab titles; Calendar retains its single-line date dropdown, and detail/workflow screens retain contextual titles. Settings is the last action where present. Keep search and editor actions in the same bar shell; the editable note title remains body content.
+- Place Reimagined root bars above content and refresh indicators. The Notes editor parent retains its status inset; its bar takes only horizontal safe insets. Other shared bars own their normal default insets. Do not change Classic overlay padding, colors, or responsive dimensions when standardizing Reimagined bars.
 - Prefer dense, functional task-management UI over decorative layouts.
 - Text must fit its container on mobile and desktop.
 - Do not add nested cards or unrelated decorative surfaces.
@@ -22,6 +24,7 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 
 - Ordinary actions use the shared 48dp minimum interactive container. Keep that container token separate from icon, checkbox, indicator, and other visual-size tokens so accessibility fixes do not enlarge glyphs.
 - Preserve compact Eisenhower Matrix task rows. Their inline completion square uses `checkboxSize` as a measured/semantic size exception, with checkbox state and a localized action label; rely on framework-expanded touch hit bounds without adding a 48dp layout container that widens or raises the row.
+- Reimagined Week overflow uses a compact button-role trigger in the existing overflow slot, with a localized full-day item-count description and the shared full-day dialog. This is a compact measured-height exception; preserve the dense grid. Month cell selection opens the full selected-day agenda at both widths.
 - Preserve `CalendarTaskRows` geometry. The two dense inline completion controls used by Day and Three-Day timelines are approved compact measured/semantic exceptions; they rely only on framework-expanded touch hit bounds and must not grow the surrounding timeline rows.
 - A seven-column `SelectableDayGrid` cannot guarantee 48dp measured/semantic cells when its content width is below 336dp. Compact date pickers retain their seven-column geometry and rely only on framework-expanded touch hit bounds; removing this narrow-layout residual requires a separately approved picker redesign.
 
@@ -33,6 +36,11 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 - If a pattern appears in two or more screens, extract or reuse a shared composable.
 
 ## State And Performance
+
+- `UiExperience` is an installation preference with a Classic fallback. Wait asynchronously for its initial value before mounting the UI, keeping auth restoration and account-boundary effects active. Only initial observation failure may fall back; later failures retain the last experience. Keep Classic and Reimagined on the same account-keyed navigation subtree, ViewModels and domain actions. The rail overlays the existing parent and adjusts padding; changing experience or window size must not re-parent `NavDisplay` or bypass editor exit guards.
+- Reimagined Notes owns its draft above width/focus layout branches, keyed by the existing note request token. Reuse App's create/edit flags for share-intake readiness. Save results must match that request, draft baselines must survive create-to-edit transitions, and the note overlay must not replace an underlying task editor's back-handler owner.
+- Keep Classic Matrix's six-row projection separate from Reimagined's seven-row preview and due-label projection. Both include all lists and completed tasks. Full quadrant due labels must cover every task, not only preview rows. Collect each interface's projections only while that branch is active.
+- Reimagined Calendar supplies bounded civil viewport windows to the existing projection owner. Expand multi-day intervals only inside those windows, exclude midnight ending days, preserve original task identities, and clip continuation labels/geometry outside composition. Year computes day keys without formatting rows. Notes navigation outside focus mode must go through the same dirty/busy guard as editor Back; countdown platform Back must respect in-flight mutations.
 
 - Strong skipping is enabled; do not add `@Immutable` or `@Stable`.
 - Do not transform data in composables. Filtering, sorting, mapping, and grouping belong in UseCases or ViewModels.
@@ -47,7 +55,7 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 - The task form keeps its complete draft in entry-keyed saveable state. Ordinary saves preserve TODO or IN_PROGRESS; DONE follows the existing recurring-completion decision, and turning completion off restores the entry's original incomplete status. Title-only edits preserve valid start/end instants including seconds, milliseconds, overnight ranges, and imported all-day exclusive ends. Moving the start day shifts the end by the same civil-day delta, explicit time edits preserve the established span, clearing the date clears the end, and an end before start is rejected visibly before persistence.
 - The active Navigation subtree is shared by valid local-only and authenticated sessions and remains keyed by `CacheBinding.boundaryEpoch`. Transitioning or invalid boundary state must unmount it. Network pull-to-refresh and sync progress/success presentation are installed only for authenticated PocketBase mode.
 - Matrix, Task List, Calendar, and Quadrant Detail task FABs use the shared creation chooser. Quick Add and the full editor must receive the same category, priority, and optional Calendar civil date; Notes and Countdowns retain their direct creation behavior.
-- `QuickAddTaskViewModel` owns parsing, dismissed-token signatures, validation, save/error state, and stale/duplicate-save protection. `QuickAddTaskScreen` renders only the title field, active removable chips, Back/Add/IME Add, progress, and save error; do not move parsing or date math into composition or persist the draft in the navigation key.
+- `QuickAddTaskViewModel` owns parsing, dismissed-token signatures, validation, save/error state, and stale/duplicate-save protection. `QuickAddTaskScreen` renders the title field, active removable chips, Back/Add/IME Add, progress, and save error. Reimagined can transfer the current parsed values to the existing full-editor initializer without saving; that destination then owns its saveable draft. Keep this transfer in the navigation event callback; do not move parsing or date math into composition or persist the draft in the navigation key.
 - Navigation3 task forms install the ViewModel-store entry decorator and resolve `TaskFormViewModel` with a create/edit entry key. Create and edit destinations, and edits for distinct task IDs, must never share draft or completion state.
 - Date and Duration tabs both persist recurrence. Keep bottom-sheet state ownership in `DateReminderBottomSheet`; reusable sheet shells, date pickers, and reminder pickers receive state/callbacks rather than owning form state.
 - Date editors receive their current civil day from the `LocalDaySignal` snapshot held by the app; do not read wall-clock date helpers directly during composition.

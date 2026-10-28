@@ -12,6 +12,7 @@ Users can:
 - In Local only mode, connect to PocketBase through an explicitly destructive local-authoritative replacement or clear all local data.
 - In PocketBase mode, view the authenticated account and read-only endpoint, switch to the other pre-created account, log out, or trigger manual sync.
 - Change theme mode.
+- Choose Classic or Reimagined interface. The installation preference defaults to Classic and does not switch accounts or duplicate data.
 - Change text size.
 - Check notification and exact reminder permission status.
 - Check calendar permission status.

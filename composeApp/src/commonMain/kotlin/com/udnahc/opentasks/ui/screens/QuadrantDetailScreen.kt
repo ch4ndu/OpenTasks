@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,11 +47,13 @@ import com.udnahc.opentasks.data.model.TaskCategory
 import com.udnahc.opentasks.data.model.TaskListViewMode
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
+import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.ui.theme.DateOrange
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
+import opentasks.composeapp.generated.resources.*
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
 import opentasks.composeapp.generated.resources.completed
@@ -83,7 +86,6 @@ fun QuadrantDetailScreen(
 ) {
     LaunchedEffect(priority) { viewModel.selectPriority(priority) }
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
-    val viewMode by viewModel.viewMode.collectAsState()
     ModalBusyEffect(taskPendingSeriesChoice != null, onModalBusyChanged)
 
     val density = LocalDensity.current
@@ -93,84 +95,106 @@ fun QuadrantDetailScreen(
     val dimens = OpenTasksTheme.dimens
     val topBarHeight = dimens.topBarHeight + statusBarHeight
 
-    when (viewMode) {
-        TaskListViewMode.LIST -> {
-            val categorizedTasks by viewModel.categorizedTasks.collectAsState()
-            val categoryNames by viewModel.categoryNames.collectAsState()
-            val taskContentPreviews by viewModel.taskContentPreviews.collectAsState()
-            val taskDueTextById by viewModel.selectedPriorityTaskDueTextById.collectAsState()
-            val defaultCategoryName = stringResource(Res.string.inbox)
-            QuadrantDetailContent(
+    if (isReimagined) {
+        val groups by viewModel.tasksByPriority.collectAsState()
+        val dueText by viewModel.selectedPriorityTaskDueTextById.collectAsState()
+        val images by viewModel.taskImageSummaries.collectAsState()
+        val tasks = groups[priority].orEmpty()
+        Column(Modifier.fillMaxSize()) {
+            OpenTasksTopBar(
                 title = title,
-                priority = priority,
-                categorizedTasks = categorizedTasks,
-                categoryNames = categoryNames,
-                taskContentPreviews = taskContentPreviews,
-                taskDueTextById = taskDueTextById,
-                defaultCategoryName = defaultCategoryName,
-                onBack = onBack,
-                onTaskClick = onTaskClick,
-                onToggleComplete = { viewModel.toggleComplete(it) },
-                onAddTask = { onCreateTask(priority) },
-                viewMode = viewMode,
-                onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.BOARD) },
+                navigationIcon = { OpenTasksBackButton(onBack) },
+                actions = { ReimaginedAddButton(onClick = { onCreateTask(priority) }) },
             )
+            LazyColumn(Modifier.weight(1f).navigationBarsPadding(), contentPadding = PaddingValues(dimens.paddingXLarge)) {
+                items(tasks, key = { it.id }) { task ->
+                    QuadrantTaskRow(task = task, imageSummary = images[task.id], dueText = dueText[task.id].orEmpty(), color = priorityColor(priority), onToggleComplete = { viewModel.toggleComplete(task) }, onClick = { onTaskClick(task) })
+                    Spacer(Modifier.padding(bottom = dimens.paddingLarge))
+                }
+                if (tasks.isEmpty()) item { androidx.compose.material3.TextButton(onClick = { onCreateTask(priority) }) { Text(stringResource(Res.string.add_task)) } }
+            }
         }
-
-        TaskListViewMode.BOARD -> {
-            val tasksByStatus by viewModel.tasksByStatus.collectAsState()
-            val taskDueTextById by viewModel.selectedPriorityTaskDueTextById.collectAsState()
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background),
-            ) {
-                KanbanBoardContent(
-                    tasksByStatus = tasksByStatus,
-                    taskDueTextById = taskDueTextById,
-                    onTaskClick = onTaskClick,
-                    onStatusChange = { task, newStatus ->
-                        viewModel.moveTaskToStatus(
-                            task,
-                            newStatus
-                        )
-                    },
-                    onToggleStar = { viewModel.toggleStar(it) },
-                    topBarHeight = topBarHeight,
-                    navBarHeight = 0.dp,
-                )
-
-                OpenTasksTopBar(
+    } else {
+        val viewMode by viewModel.viewMode.collectAsState()
+        when (viewMode) {
+            TaskListViewMode.LIST -> {
+                val categorizedTasks by viewModel.categorizedTasks.collectAsState()
+                val categoryNames by viewModel.categoryNames.collectAsState()
+                val taskContentPreviews by viewModel.taskContentPreviews.collectAsState()
+                val taskDueTextById by viewModel.selectedPriorityTaskDueTextById.collectAsState()
+                val defaultCategoryName = stringResource(Res.string.inbox)
+                QuadrantDetailContent(
                     title = title,
-                    containerStyle = OpenTasksTopBarContainerStyle.Translucent,
-                    navigationIcon = {
-                        OpenTasksBackButton(onClick = onBack)
-                    },
-                    actions = {
-                        IconButton(onClick = { viewModel.setViewMode(TaskListViewMode.LIST) }) {
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_list),
-                                contentDescription = stringResource(Res.string.toggle_view_mode),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
+                    priority = priority,
+                    categorizedTasks = categorizedTasks,
+                    categoryNames = categoryNames,
+                    taskContentPreviews = taskContentPreviews,
+                    taskDueTextById = taskDueTextById,
+                    defaultCategoryName = defaultCategoryName,
+                    onBack = onBack,
+                    onTaskClick = onTaskClick,
+                    onToggleComplete = { viewModel.toggleComplete(it) },
+                    onAddTask = { onCreateTask(priority) },
+                    viewMode = viewMode,
+                    onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.BOARD) },
                 )
+            }
 
-                FloatingActionButton(
-                    onClick = { onCreateTask(priority) },
-                    shape = CircleShape,
-                    containerColor = PrimaryBlue,
-                    contentColor = Color.White,
+            TaskListViewMode.BOARD -> {
+                val tasksByStatus by viewModel.tasksByStatus.collectAsState()
+                val taskDueTextById by viewModel.selectedPriorityTaskDueTextById.collectAsState()
+                Box(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(dimens.paddingXLarge),
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
                 ) {
-                    Icon(
-                        painter = painterResource(Res.drawable.ic_add),
-                        contentDescription = stringResource(Res.string.add_task),
-                        tint = Color.White,
+                    KanbanBoardContent(
+                        tasksByStatus = tasksByStatus,
+                        taskDueTextById = taskDueTextById,
+                        onTaskClick = onTaskClick,
+                        onStatusChange = { task, newStatus ->
+                            viewModel.moveTaskToStatus(
+                                task,
+                                newStatus
+                            )
+                        },
+                        onToggleStar = { viewModel.toggleStar(it) },
+                        topBarHeight = topBarHeight,
+                        navBarHeight = 0.dp,
                     )
+
+                    OpenTasksTopBar(
+                        title = title,
+                        containerStyle = OpenTasksTopBarContainerStyle.Translucent,
+                        navigationIcon = {
+                            OpenTasksBackButton(onClick = onBack)
+                        },
+                        actions = {
+                            IconButton(onClick = { viewModel.setViewMode(TaskListViewMode.LIST) }) {
+                                Icon(
+                                    painter = painterResource(Res.drawable.ic_list),
+                                    contentDescription = stringResource(Res.string.toggle_view_mode),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        },
+                    )
+
+                    FloatingActionButton(
+                        onClick = { onCreateTask(priority) },
+                        shape = CircleShape,
+                        containerColor = PrimaryBlue,
+                        contentColor = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(dimens.paddingXLarge),
+                    ) {
+                        Icon(
+                            painter = painterResource(Res.drawable.ic_add),
+                            contentDescription = stringResource(Res.string.add_task),
+                            tint = Color.White,
+                        )
+                    }
                 }
             }
         }

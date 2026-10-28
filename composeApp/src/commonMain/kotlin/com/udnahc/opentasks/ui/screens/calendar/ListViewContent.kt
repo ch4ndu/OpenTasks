@@ -33,6 +33,10 @@ import com.udnahc.opentasks.data.extensions.startOfWeekLocalMillis
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
 import com.udnahc.opentasks.domain.usecase.task.CalendarTaskRowProjection
+import com.udnahc.opentasks.ui.theme.isReimagined
+import androidx.compose.material3.FilterChip
+import opentasks.composeapp.generated.resources.show_card_view
+import opentasks.composeapp.generated.resources.show_timeline_view
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
@@ -69,6 +73,7 @@ internal fun ListViewContent(
     displayMode: ListDisplayMode,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
+    onDisplayModeChanged: (ListDisplayMode) -> Unit = {},
 ) {
     // Compute the Sunday of the week containing "today"
     val todayWeekSunMillis = remember(todayMillis) { startOfWeekLocalMillis(todayMillis) }
@@ -98,8 +103,17 @@ internal fun ListViewContent(
             thickness = OpenTasksTheme.dimens.dividerThin,
         )
 
-        // ── Tasks for the selected day ───
-        when (displayMode) {
+        if (isReimagined) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = OpenTasksTheme.dimens.paddingLarge), horizontalArrangement = Arrangement.spacedBy(OpenTasksTheme.dimens.spacerLarge)) {
+                FilterChip(displayMode == ListDisplayMode.TIMELINE, { onDisplayModeChanged(ListDisplayMode.TIMELINE) }, label = { Text(stringResource(Res.string.show_timeline_view)) })
+                FilterChip(displayMode == ListDisplayMode.CARD, { onDisplayModeChanged(ListDisplayMode.CARD) }, label = { Text(stringResource(Res.string.show_card_view)) })
+            }
+            val weekStart = todayWeekSunMillis + (weekPagerState.currentPage - weekPagerCentre) * 7 * MILLIS_PER_DAY
+            val days = remember(weekStart) { List(7) { weekStart + it * MILLIS_PER_DAY } }
+            Box(Modifier.weight(1f).padding(bottom = navBarHeight + OpenTasksTheme.dimens.fabAreaBottom)) {
+                ReimaginedCalendarAgenda(days, calendarDaysByDay, onTaskClick, onToggleComplete, onDaySelected, displayMode)
+            }
+        } else when (displayMode) {
             ListDisplayMode.TIMELINE -> TimelineTaskList(
                 dayRows = dayProjection.rows,
                 navBarHeight = navBarHeight,
@@ -229,7 +243,7 @@ internal fun WeekStripPage(
         weekDays.forEachIndexed { index, day ->
             val isToday = day.millis == todayMillis
             val isSelected = day.millis == selectedDayMillis
-            val hasTasks = calendarDaysByDay.containsKey(day.dayKey)
+            val hasTasks = if (isReimagined) calendarDaysByDay[day.dayKey]?.rows?.isNotEmpty() == true else calendarDaysByDay.containsKey(day.dayKey)
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -240,7 +254,7 @@ internal fun WeekStripPage(
                 Text(
                     text = dayLabels[index],
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isSelected || isToday) PrimaryBlue
+                    color = if (isSelected || isToday) (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(dimens.spacerSmall))
@@ -249,7 +263,7 @@ internal fun WeekStripPage(
                         .size(dimens.calendarDaySize)
                         .then(
                             when {
-                                isSelected -> Modifier.background(PrimaryBlue, CircleShape)
+                                isSelected -> Modifier.background((if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue), CircleShape)
                                 isToday -> Modifier.background(
                                     MaterialTheme.colorScheme.surfaceVariant,
                                     CircleShape
@@ -265,8 +279,8 @@ internal fun WeekStripPage(
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
                         color = when {
-                            isSelected -> Color.White
-                            isToday -> PrimaryBlue
+                            isSelected -> if (isReimagined) MaterialTheme.colorScheme.onPrimary else Color.White
+                            isToday -> (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
                             else -> MaterialTheme.colorScheme.onBackground
                         },
                     )
@@ -276,7 +290,7 @@ internal fun WeekStripPage(
                     Box(
                         modifier = Modifier
                             .size(dimens.calendarDotSize)
-                            .background(PrimaryBlue, CircleShape),
+                            .background((if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue), CircleShape),
                     )
                 } else {
                     Spacer(Modifier.height(dimens.spacerMedium))

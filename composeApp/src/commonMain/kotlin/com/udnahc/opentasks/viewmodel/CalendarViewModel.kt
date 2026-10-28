@@ -21,6 +21,8 @@ import com.udnahc.opentasks.domain.usecase.countdown.ObserveAllCountdownsUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownCalendarTasks
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarListDisplayModePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.settings.ObserveCalendarViewPreferenceUseCase
+import com.udnahc.opentasks.domain.usecase.task.calendarVisibleTaskDayKeys
+import com.udnahc.opentasks.domain.usecase.task.CalendarVisibleRange
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
 import com.udnahc.opentasks.domain.usecase.task.CalendarProjectionCache
 import com.udnahc.opentasks.domain.usecase.task.CalendarRenderState
@@ -28,6 +30,13 @@ import com.udnahc.opentasks.domain.usecase.task.EMPTY_CALENDAR_DAY_PROJECTION
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByDayUseCase
 import com.udnahc.opentasks.domain.usecase.task.projectCalendarDay
 import com.udnahc.opentasks.domain.usecase.task.sortCalendarTasksForDay
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -55,7 +64,11 @@ private data class CalendarRenderRequest(
     val listDisplayModePreference: CalendarListDisplayModePreference,
     val listSelectedDayKey: Long?,
     val monthSelectedDayKey: Long?,
+    val agendaDayKeys: List<Long> = emptyList(),
+    val visibleRanges: Map<CalendarViewPreference, CalendarVisibleRange> = emptyMap(),
 )
+
+enum class CalendarLoadState { LOADING, READY, ERROR }
 
 class CalendarViewModel(
     observeTasksByDay: ObserveTasksByDayUseCase,
@@ -72,6 +85,13 @@ class CalendarViewModel(
     accountBoundaryExecutor: AccountBoundaryExecutor? = null,
     private val dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
 ) : ViewModel() {
+
+    private val readGeneration = MutableStateFlow(0L)
+    private val _sourceLoadState = MutableStateFlow(CalendarLoadState.LOADING)
+    private val _renderLoadState = MutableStateFlow(CalendarLoadState.LOADING)
+    private val _categoryLoadState = MutableStateFlow(CalendarLoadState.LOADING)
+
+    fun retryLoad() { _sourceLoadState.value = CalendarLoadState.LOADING; _renderLoadState.value = CalendarLoadState.LOADING; _categoryLoadState.value = CalendarLoadState.LOADING; readGeneration.value += 1L }
 
     private val taskMutationFailureEvents = TaskMutationFailureEventStore()
     val taskMutationFailureEvent = taskMutationFailureEvents.event
@@ -98,6 +118,11 @@ class CalendarViewModel(
     val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
     private val _listSelectedDayKey = MutableStateFlow<Long?>(null)
     private val _monthSelectedDayKey = MutableStateFlow<Long?>(null)
+    private val _agendaDayKeys = MutableStateFlow<List<Long>>(emptyList())
+    private val dayStripRange = MutableStateFlow<CalendarVisibleRange?>(null)
+    fun setDayStripRange(range: CalendarVisibleRange?) { dayStripRange.value = range }
+
+    private val _visibleRanges = MutableStateFlow<Map<CalendarViewPreference, CalendarVisibleRange>>(emptyMap())
     private val saveCalendarViewPreferenceAction = saveCalendarViewPreference
     private val saveCalendarListDisplayModePreferenceAction =
         saveCalendarListDisplayModePreference
@@ -107,7 +132,9 @@ class CalendarViewModel(
     private val projectionCache = CalendarProjectionCache(dateTimeFormatter)
     private val initialToday = localDaySignal.snapshot()
 
-    private val sourceSnapshots: StateFlow<CalendarSourceSnapshot> = combine(
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val sourceSnapshots: StateFlow<CalendarSourceSnapshot> = readGeneration.flatMapLatest {
+    combine(
         observeTasksByDay(),
         observeAllCountdowns(),
         localDaySignal.dates,
@@ -123,6 +150,12 @@ class CalendarViewModel(
             dayInputs = merged,
             formattingContextKey = dateTimeFormatter.formattingContextKey,
         )
+    }
+        .onEach { _sourceLoadState.value = CalendarLoadState.READY }
+        .catch { error ->
+            if (error is CancellationException) throw error
+            _sourceLoadState.value = CalendarLoadState.ERROR
+        }
     }
         .flowOn(projectionDispatcher)
         .stateIn(
@@ -156,8 +189,15 @@ class CalendarViewModel(
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initialToday)
 
-    val categoryNames: StateFlow<Map<String, String>> = observeAllCategories()
-        .map { cats -> cats.associate { it.id to it.name } }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val categoryNames: StateFlow<Map<String, String>> = readGeneration.flatMapLatest {
+        observeAllCategories().map { cats -> cats.associate { it.id to it.name } }
+            .onEach { _categoryLoadState.value = CalendarLoadState.READY }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                _categoryLoadState.value = CalendarLoadState.ERROR
+            }
+    }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
@@ -179,7 +219,14 @@ class CalendarViewModel(
         .flowOn(projectionDispatcher)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
-    val calendarRenderState: StateFlow<CalendarRenderState> = combine(
+    val dayStripTaskDayKeys: StateFlow<Set<Long>> = combine(sourceSnapshots, dayStripRange) { source, range ->
+        if (range == null) emptySet() else calendarVisibleTaskDayKeys(source.dayInputs, range)
+    }.distinctUntilChanged().flowOn(projectionDispatcher)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val calendarRenderState: StateFlow<CalendarRenderState> = readGeneration.flatMapLatest {
+    combine(
         sourceSnapshots,
         calendarViewPreferenceSource,
         calendarListDisplayModePreferenceSource,
@@ -194,6 +241,8 @@ class CalendarViewModel(
             monthSelectedDayKey = monthSelectedDayKey,
         )
     }
+        .combine(_agendaDayKeys) { request, days -> request.copy(agendaDayKeys = days) }
+        .combine(_visibleRanges) { request, ranges -> request.copy(visibleRanges = ranges) }
         .map { request ->
             projectionCache.render(
                 today = request.source.today,
@@ -203,8 +252,16 @@ class CalendarViewModel(
                 listDisplayModePreference = request.listDisplayModePreference,
                 listSelectedDayKey = request.listSelectedDayKey,
                 monthSelectedDayKey = request.monthSelectedDayKey,
+                agendaDayKeys = request.agendaDayKeys,
+                visibleRange = request.visibleRanges[request.viewPreference],
             )
         }
+        .onEach { _renderLoadState.value = CalendarLoadState.READY }
+        .catch { error ->
+            if (error is CancellationException) throw error
+            _renderLoadState.value = CalendarLoadState.ERROR
+        }
+    }
         .flowOn(projectionDispatcher)
         .stateIn(
             viewModelScope,
@@ -215,6 +272,17 @@ class CalendarViewModel(
                 today = initialToday,
             ),
         )
+
+    val loadState: StateFlow<CalendarLoadState> = combine(
+        _sourceLoadState, _renderLoadState, _categoryLoadState, calendarRenderState,
+    ) { source, render, categories, snapshot ->
+        val categoryState = if (snapshot.viewPreference == CalendarViewPreference.YEAR) CalendarLoadState.READY else categories
+        when {
+            source == CalendarLoadState.ERROR || render == CalendarLoadState.ERROR || categoryState == CalendarLoadState.ERROR -> CalendarLoadState.ERROR
+            source == CalendarLoadState.LOADING || render == CalendarLoadState.LOADING || categoryState == CalendarLoadState.LOADING -> CalendarLoadState.LOADING
+            else -> CalendarLoadState.READY
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CalendarLoadState.LOADING)
 
     val calendarDaysByDay: StateFlow<Map<Long, CalendarDayProjection>> = calendarRenderState
         .map { renderState -> renderState.calendarDaysByDay }
@@ -275,6 +343,17 @@ class CalendarViewModel(
         .flowOn(projectionDispatcher)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    fun setVisibleRanges(ranges: Map<CalendarViewPreference, CalendarVisibleRange>) {
+        _visibleRanges.value = ranges
+    }
+
+    fun selectAgendaRange(startMillis: Long?, dayCount: Int) {
+        _agendaDayKeys.value = if (startMillis == null) emptyList() else {
+            val start = dayKey(startMillis)
+            List(dayCount.coerceIn(0, 7)) { start + it }
+        }
+    }
+
     fun selectListDay(millis: Long) {
         _listSelectedDayKey.value = dayKey(millis)
     }
@@ -283,11 +362,16 @@ class CalendarViewModel(
         _monthSelectedDayKey.value = null
     }
 
-    fun saveCalendarViewPreference(preference: CalendarViewPreference) {
-        viewModelScope.launch(ioDispatcher) {
-            saveCalendarViewPreferenceAction(preference)
+    fun saveCalendarViewPreference(preference: CalendarViewPreference): Deferred<Boolean> =
+        viewModelScope.async(ioDispatcher) {
+            try {
+                saveCalendarViewPreferenceAction(preference)
+                true
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                false
+            }
         }
-    }
 
     fun saveCalendarListDisplayModePreference(preference: CalendarListDisplayModePreference) {
         viewModelScope.launch(ioDispatcher) {

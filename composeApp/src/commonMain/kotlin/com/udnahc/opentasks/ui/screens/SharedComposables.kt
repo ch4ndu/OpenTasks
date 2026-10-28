@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
@@ -74,6 +76,7 @@ internal fun OpenTasksTopBar(
     containerStyle: OpenTasksTopBarContainerStyle = OpenTasksTopBarContainerStyle.Default,
     centerTitle: Boolean = false,
     navigationIcon: @Composable () -> Unit = {},
+    windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     OpenTasksTopBar(
@@ -84,6 +87,7 @@ internal fun OpenTasksTopBar(
         containerStyle = containerStyle,
         centerTitle = centerTitle,
         navigationIcon = navigationIcon,
+        windowInsets = windowInsets,
         actions = actions,
     )
 }
@@ -96,9 +100,10 @@ internal fun OpenTasksTopBar(
     containerStyle: OpenTasksTopBarContainerStyle = OpenTasksTopBarContainerStyle.Default,
     centerTitle: Boolean = false,
     navigationIcon: @Composable () -> Unit = {},
+    windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    val containerColor = when (containerStyle) {
+    val containerColor = if (isReimagined) MaterialTheme.colorScheme.background else when (containerStyle) {
         OpenTasksTopBarContainerStyle.Default -> MaterialTheme.colorScheme.background
         OpenTasksTopBarContainerStyle.Transparent -> Color.Transparent
         OpenTasksTopBarContainerStyle.Translucent -> MaterialTheme.colorScheme.background.copy(alpha = 0.8f)
@@ -108,6 +113,8 @@ internal fun OpenTasksTopBar(
         CenterAlignedTopAppBar(
             modifier = modifier,
             colors = TopAppBarDefaults.topAppBarColors(containerColor = containerColor),
+            expandedHeight = TopAppBarDefaults.TopAppBarExpandedHeight,
+            windowInsets = windowInsets,
             navigationIcon = navigationIcon,
             title = titleContent,
             actions = actions,
@@ -116,6 +123,8 @@ internal fun OpenTasksTopBar(
         TopAppBar(
             modifier = modifier,
             colors = TopAppBarDefaults.topAppBarColors(containerColor = containerColor),
+            expandedHeight = TopAppBarDefaults.TopAppBarExpandedHeight,
+            windowInsets = windowInsets,
             navigationIcon = navigationIcon,
             title = titleContent,
             actions = actions,
@@ -130,9 +139,12 @@ internal fun OpenTasksTopBarTitle(
 ) {
     Text(
         text = title,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onBackground,
+        fontWeight = if (isReimagined) FontWeight.Normal else FontWeight.Bold,
+        style = if (isReimagined) OpenTasksTheme.typography.appBarTitle else androidx.compose.material3.LocalTextStyle.current,
+        color = if (isReimagined) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onBackground,
         modifier = modifier,
+        maxLines = if (isReimagined) 1 else Int.MAX_VALUE,
+        overflow = if (isReimagined) androidx.compose.ui.text.style.TextOverflow.Ellipsis else androidx.compose.ui.text.style.TextOverflow.Clip,
     )
 }
 
@@ -146,7 +158,7 @@ internal fun OpenTasksBackButton(
         contentDescription = stringResource(Res.string.back),
         onClick = onClick,
         modifier = modifier,
-        tint = MaterialTheme.colorScheme.onBackground,
+        tint = if (isReimagined) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onBackground,
     )
 }
 
@@ -160,7 +172,7 @@ internal fun OpenTasksCloseButton(
         contentDescription = stringResource(Res.string.close),
         onClick = onClick,
         modifier = modifier,
-        tint = MaterialTheme.colorScheme.onBackground,
+        tint = if (isReimagined) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onBackground,
     )
 }
 

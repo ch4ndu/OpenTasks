@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.ui.screens
 
+import com.udnahc.opentasks.ui.theme.isReimagined
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,6 +17,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import opentasks.composeapp.generated.resources.*
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.full_task
 import opentasks.composeapp.generated.resources.quick_add
@@ -58,12 +60,14 @@ internal fun TaskCreationChoiceContent(
         )
         ListItem(
             headlineContent = { Text(stringResource(Res.string.quick_add)) },
+            supportingContent = if (isReimagined) ({ Text(stringResource(Res.string.reimagined_quick_add_help)) }) else null,
             modifier = Modifier
                 .semantics { role = Role.Button }
                 .clickable(onClick = onQuickAdd),
         )
         ListItem(
             headlineContent = { Text(stringResource(Res.string.full_task)) },
+            supportingContent = if (isReimagined) ({ Text(stringResource(Res.string.reimagined_full_editor_help)) }) else null,
             modifier = Modifier
                 .semantics { role = Role.Button }
                 .clickable(onClick = onFullTask),

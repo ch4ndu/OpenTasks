@@ -16,6 +16,14 @@ Calendar users can:
 - Open countdown detail from countdown calendar entries.
 - Import events from the platform calendar through Settings.
 
+Reimagined adds an anchored date picker with year selection, Today, and strict `YYYY-MM-DD` entry. Invalid dates and dates outside the current view's pager range show an error rather than jumping to a clamped date. Month keeps its grid and selected-date agenda visible, and Year adapts its columns to window width. Week retains Classic's swipeable two-column, four-row layout: a mini month calendar in the first cell and seven day cells. Day cells select a day and task bars open task details. Reimagined Week’s +N overflow opens the full-day dialog; Month cell selection exposes the full agenda in both compact and wide layouts. Three-day retains the shared timeline at every window width, with hour labels on the left and three day columns advancing one day per horizontal swipe. Day retains its hour gutter even on empty days. Day and Three-day assign overlapping timed items separate lanes with a full-item list for dense schedules. The Reimagined topbar contains the date dropdown, Today icon, Add, and Settings as its rightmost action; all six modes remain labeled controls below it. List exposes Timeline and Cards controls.
+
+Reimagined also displays task continuations on each intersecting civil date in the visible calendar window. Midnight ending dates are excluded, including imported all-day exclusive ends. Continuation rows keep the original task identity and clip their displayed times to that day's segment. Classic retains its existing start-date placement. Projection expands only the bounded visible window and neighboring pager pages, so a task spanning many years cannot cause an unbounded expansion.
+
+Reimagined view-save failures preserve the current selection and show a dismissible error. Date jumps within the same view do not wait on preference persistence; view writes remain owned by the ViewModel when navigation is cancelled. Out-of-range navigation errors are also dismissible.
+
+Read failures offer a retry of the local data stream. Authenticated sync failures retain cached items and expose the existing refresh action; a sync failure is not labeled as proof that the device is offline. Local-only mode does not show network status.
+
 ## Technical Design
 
 `CalendarViewModel` combines task data from `ObserveTasksByDayUseCase`, countdown data from `ObserveAllCountdownsUseCase`, and persisted calendar preferences from settings use cases. Countdown items are mapped to task-like calendar rows with `Countdown.toCalendarTask()`.

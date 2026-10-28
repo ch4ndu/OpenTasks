@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 
 // ── Day name headers (S M T W T F S) ────────────────────────────────────────
@@ -88,8 +89,8 @@ internal fun DayNameHeaders(compact: Boolean = false) {
 /**
  * Renders a day number inside a circle with uniform styling across all calendar views.
  *
- * - **Today**: `surfaceVariant` circle, `PrimaryBlue` text, bold
- * - **Selected**: `PrimaryBlue` circle, white text, bold
+ * - **Today**: `surfaceVariant` circle, experience primary text, bold
+ * - **Selected**: experience primary circle with its matching foreground, bold
  * - **Normal (current month)**: no circle, `onBackground` text, normal weight
  * - **Other month**: no circle, `onSurfaceVariant` at 40% alpha, normal weight
  */
@@ -102,8 +103,8 @@ internal fun CalendarDayCircle(
     size: Dp,
 ) {
     val textColor = when {
-        isSelected -> Color.White
-        isToday -> PrimaryBlue
+        isSelected -> if (isReimagined) MaterialTheme.colorScheme.onPrimary else Color.White
+        isToday -> (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
         isCurrentMonth -> MaterialTheme.colorScheme.onBackground
         else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
     }
@@ -112,7 +113,7 @@ internal fun CalendarDayCircle(
             .size(size)
             .then(
                 when {
-                    isSelected -> Modifier.background(PrimaryBlue, CircleShape)
+                    isSelected -> Modifier.background((if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue), CircleShape)
                     isToday -> Modifier.background(
                         MaterialTheme.colorScheme.surfaceVariant,
                         CircleShape
@@ -176,7 +177,7 @@ internal fun MiniCalendarGrid(
             text = calendarMonthNameShort(month),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
-            color = if (isCurrentMonth) PrimaryBlue
+            color = if (isCurrentMonth) (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
             else MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.padding(bottom = dimens.paddingSmall),
         )
@@ -247,8 +248,8 @@ private fun MiniCalendarAspectRatioGrid(
                         style = OpenTasksTheme.typography.calendarEventOverflow,
                         fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                         color = when {
-                            isToday -> PrimaryBlue
-                            hasTasks && day.isCurrentMonth -> PrimaryBlue
+                            isToday -> (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
+                            hasTasks && day.isCurrentMonth -> (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
                             day.isCurrentMonth -> MaterialTheme.colorScheme.onBackground
                             else -> Color.Transparent
                         },
@@ -314,7 +315,7 @@ private fun MiniCalendarFillGrid(
                     .padding(horizontal = 1.dp)
                     .offset(y = bandOffsetDp)
                     .background(
-                        PrimaryBlue.copy(alpha = 0.12f),
+                        (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue).copy(alpha = 0.12f),
                         RoundedCornerShape(dimens.cornerSmall),
                     ),
             )
@@ -364,8 +365,8 @@ private fun MiniCalendarFillGrid(
                                     style = OpenTasksTheme.typography.calendarEventOverflow,
                                     fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                                     color = when {
-                                        isToday -> PrimaryBlue
-                                        hasTasks && day.isCurrentMonth -> PrimaryBlue
+                                        isToday -> (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
+                                        hasTasks && day.isCurrentMonth -> (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
                                         day.isCurrentMonth -> MaterialTheme.colorScheme.onBackground
                                         else -> Color.Transparent
                                     },

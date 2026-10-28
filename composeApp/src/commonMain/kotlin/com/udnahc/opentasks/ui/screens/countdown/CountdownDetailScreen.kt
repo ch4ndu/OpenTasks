@@ -1,6 +1,16 @@
 package com.udnahc.opentasks.ui.screens.countdown
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
+import com.udnahc.opentasks.ui.theme.isReimagined
+import com.udnahc.opentasks.ui.theme.WindowSizeCategory
+import opentasks.composeapp.generated.resources.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +62,7 @@ import kotlin.math.abs
 @Composable
 fun CountdownDetailScreen(
     countdown: CountdownOccurrence?,
+    isBusy: Boolean = false,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -59,6 +70,7 @@ fun CountdownDetailScreen(
 ) {
     CountdownDetailContent(
         countdown = countdown,
+        isBusy = isBusy,
         onBack = onBack,
         onEdit = onEdit,
         onDelete = onDelete,
@@ -69,12 +81,17 @@ fun CountdownDetailScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CountdownDetailContent(
+    isBusy: Boolean = false,
     countdown: CountdownOccurrence?,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
+    if (isReimagined && countdown != null) {
+        ReimaginedCountdownDetail(countdown, isBusy, onBack, onEdit, onDelete, onModalBusyChanged)
+        return
+    }
     val dimens = OpenTasksTheme.dimens
     var showMenu by remember { mutableStateOf(false) }
     ModalBusyEffect(showMenu, onModalBusyChanged)
@@ -181,7 +198,7 @@ internal fun CountdownDetailContent(
                             text = if (daysLeft == 0) "0" else displayDays.toString(),
                             style = MaterialTheme.typography.displayLarge,
                             fontWeight = FontWeight.Bold,
-                            color = PrimaryBlue,
+                            color = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
                             textAlign = TextAlign.Center,
                         )
 
@@ -229,3 +246,79 @@ internal val previewCountdown = CountdownOccurrence(
     effectiveDate = LocalDate(2026, 4, 1),
     daysUntil = 90,
 )
+
+
+@Composable
+private fun ReimaginedCountdownDetail(item: CountdownOccurrence, isBusy: Boolean, onBack: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit, onModalBusyChanged: (Boolean) -> Unit) {
+    val d = OpenTasksTheme.dimens
+    val source = item.countdown
+    var confirmDelete by remember { mutableStateOf(false) }
+    ModalBusyEffect(confirmDelete || isBusy, onModalBusyChanged)
+    val dateLabel = remember(item.effectiveDate) { formatLocalizedDateWithWeekday(item.effectiveDate) }
+    val originalDateLabel = remember(source.targetDate) {
+        formatLocalizedDateWithWeekday(com.udnahc.opentasks.data.extensions.localMillisToLocalDate(source.targetDate))
+    }
+    val reminders = remember(source.reminders) { source.reminders.toCountdownReminderSet() }
+    val relative = when {
+        item.daysUntil == 0 -> Res.string.today
+        source.countingMode == CountingMode.COUNT_UP && item.daysUntil < 0 -> Res.string.countdown_days_since
+        source.countingMode == CountingMode.COUNT_UP -> Res.string.countdown_days_until
+        item.daysUntil < 0 -> Res.string.countdown_days_ago
+        else -> Res.string.countdown_days_left
+    }
+    val hero: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth().padding(d.paddingXXLarge), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(if (item.daysUntil == 0) stringResource(Res.string.today) else abs(item.daysUntil).toString(), style = MaterialTheme.typography.displayLarge, color = MaterialTheme.colorScheme.primary)
+            if (item.daysUntil != 0) Text(stringResource(relative), style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(d.paddingXLarge))
+            Text(source.title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+            Text(dateLabel, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    val fields: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth().padding(d.paddingXLarge), verticalArrangement = Arrangement.spacedBy(d.spacerLarge)) {
+            CountdownDetailField(stringResource(Res.string.date), originalDateLabel, onEdit, !isBusy)
+            CountdownDetailField(stringResource(Res.string.countdown_type), stringResource(countdownTypeLabelRes(source.countdownType)), onEdit, !isBusy)
+            CountdownDetailField(stringResource(Res.string.countdown_counting_mode), stringResource(countingModeLabelRes(source.countingMode)), onEdit, !isBusy)
+            CountdownDetailField(stringResource(Res.string.repeat), stringResource(recurrenceLabelRes(source.recurrenceType)), onEdit, !isBusy)
+            Text(stringResource(Res.string.reminder), style = MaterialTheme.typography.labelLarge)
+            if (reminders.isEmpty()) Text(stringResource(Res.string.none), style = MaterialTheme.typography.bodyLarge)
+            reminders.forEach { reminder -> Text(stringResource(reminder.labelRes), style = MaterialTheme.typography.bodyLarge) }
+            CountdownDetailField(stringResource(Res.string.countdown_smart_list), stringResource(smartListLabelRes(source.smartListVisibility)), onEdit, !isBusy)
+            Row {
+                Button(onClick = onEdit, enabled = !isBusy) { Text(stringResource(Res.string.edit)) }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { confirmDelete = true }, enabled = !isBusy) { Text(stringResource(Res.string.delete), color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    }
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        OpenTasksTopBar(title = stringResource(Res.string.countdown_title), navigationIcon = { OpenTasksBackButton(onClick = { if (!isBusy) onBack() }) })
+        if (isBusy) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (OpenTasksTheme.windowSizeCategory == WindowSizeCategory.COMPACT) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding()) { hero(); HorizontalDivider(); fields() }
+        } else {
+            Row(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding()) {
+                Box(Modifier.weight(1f)) { hero() }
+                Box(Modifier.weight(1f)) { fields() }
+            }
+        }
+    }
+    if (confirmDelete) AlertDialog(
+        onDismissRequest = { if (!isBusy) confirmDelete = false },
+        title = { Text(stringResource(Res.string.countdown_delete_title)) },
+        text = { Text(stringResource(Res.string.countdown_delete_message)) },
+        confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }, enabled = !isBusy) { Text(stringResource(Res.string.delete)) } },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }, enabled = !isBusy) { Text(stringResource(Res.string.cancel)) } },
+    )
+}
+
+@Composable
+private fun CountdownDetailField(label: String, value: String, onEdit: () -> Unit, enabled: Boolean) {
+    TextButton(onClick = onEdit, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}

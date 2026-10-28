@@ -1,5 +1,8 @@
 package com.udnahc.opentasks.ui.screens
 
+import com.udnahc.opentasks.ui.theme.isReimagined
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -362,6 +365,24 @@ internal fun TaskListTopBar(
     val dimens = OpenTasksTheme.dimens
     var showSortMenu by remember { mutableStateOf(false) }
     ModalBusyEffect(showSortMenu, onSortMenuBusyChanged)
+    if (isReimagined) {
+        Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+            ReimaginedScreenHeader(listName, onAllViewsClick)
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = dimens.paddingLarge), horizontalArrangement = Arrangement.spacedBy(dimens.paddingLarge)) {
+                ReimaginedViewModeControl(viewMode, onViewModeSelected)
+                Box {
+                    val sortDescription = stringResource(Res.string.sort_current_description, sortOptionLabel(sortOption))
+                    OutlinedButton(onClick = { showSortMenu = true }, modifier = Modifier.semantics { contentDescription = sortDescription }) {
+                        Text(stringResource(Res.string.sort))
+                        Icon(painterResource(Res.drawable.ic_unfold), null, modifier = Modifier.size(dimens.iconDefault))
+                    }
+                    SortOptionDropdown(showSortMenu, sortOption, onSortOptionSelected, { showSortMenu = false })
+                }
+                if (onBulkTasks != null) TextButton(onClick = onBulkTasks) { Text(stringResource(Res.string.bulk_tasks)) }
+            }
+        }
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -450,9 +471,9 @@ internal fun TaskViewTitle(title: String) {
     Text(
         text = title,
         style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.Bold,
+        fontWeight = if (isReimagined) FontWeight.Medium else FontWeight.Bold,
         color = MaterialTheme.colorScheme.onBackground,
-        maxLines = 1,
+        maxLines = if (isReimagined) 2 else 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .semantics { heading() }

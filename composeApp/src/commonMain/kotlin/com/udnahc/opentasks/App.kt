@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,9 +40,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.Saver
+import kotlinx.serialization.json.Json
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
@@ -72,6 +76,9 @@ import com.udnahc.opentasks.sharedTaskIntakeStatus
 import com.udnahc.opentasks.updateSharedTaskIntakeReadiness
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
 import com.udnahc.opentasks.data.model.CountdownType
+import com.udnahc.opentasks.data.extensions.extractDay
+import com.udnahc.opentasks.data.extensions.extractMonth
+import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.model.TaskFormData
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskListFilter
@@ -132,8 +139,14 @@ import com.udnahc.opentasks.ui.screens.countdown.CountdownDetailScreen
 import com.udnahc.opentasks.ui.screens.countdown.CountdownScreen
 import com.udnahc.opentasks.ui.screens.countdown.CreateCountdownScreen
 import com.udnahc.opentasks.ui.screens.accountSessionRoute
+import com.udnahc.opentasks.ui.theme.isReimagined
+import com.udnahc.opentasks.ui.theme.WindowSizeCategory
+import com.udnahc.opentasks.data.sync.SyncOutcome
+import com.udnahc.opentasks.ui.screens.ReimaginedNavigation
+import com.udnahc.opentasks.ui.screens.ReimaginedNotesWorkspace
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
+import com.udnahc.opentasks.ui.util.PlatformBackHandler
 import com.udnahc.opentasks.ui.util.FileImportResult
 import com.udnahc.opentasks.ui.util.ImportFileType
 import com.udnahc.opentasks.ui.util.rememberFileImportLauncher
@@ -171,6 +184,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import opentasks.composeapp.generated.resources.inbox
+import opentasks.composeapp.generated.resources.task_list_unavailable
+import opentasks.composeapp.generated.resources.loading
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add_task
 import opentasks.composeapp.generated.resources.exact_reminder_permission_message
@@ -230,6 +246,12 @@ import kotlinx.datetime.LocalDate
 
 private val log = logging("App")
 
+private val retainedWorkspaceSourceSaver = Saver<Screen?, String>(
+    save = { source -> source?.let { Json.encodeToString(Screen.serializer(), it) }.orEmpty() },
+    restore = { encoded -> encoded.takeIf { it.isNotEmpty() }?.let { Json.decodeFromString(Screen.serializer(), it) } },
+)
+
+
 @Composable
 fun App(
     deepLinkNotificationEvent: NotificationDeepLinkEvent? = null,
@@ -241,25 +263,26 @@ fun App(
 ) {
     val appearanceViewModel: AppearanceViewModel = koinViewModel()
     val authViewModel: AuthViewModel = koinViewModel()
+    val uiExperience by appearanceViewModel.uiExperience.collectAsState()
     val themeMode by appearanceViewModel.themePreference.collectAsState()
     val textSizePreference by appearanceViewModel.textSizePreference.collectAsState()
     val sessionState by authViewModel.sessionState.collectAsState()
     val accountOperation by authViewModel.operation.collectAsState()
     val accountError by authViewModel.error.collectAsState()
     val savedEndpoint by authViewModel.savedEndpoint.collectAsState()
+    LaunchedEffect(authViewModel) { authViewModel.restoreSession() }
+    LaunchedEffect(sessionState) {
+        onAccountBoundaryChanged(sessionState.activeBindingOrNull())
+    }
+    val loadedUiExperience = uiExperience ?: return
     OpenTasksTheme(
+        uiExperience = loadedUiExperience,
         themeMode = themeMode,
         textSizePreference = textSizePreference,
     ) {
         val useDarkSystemBarIcons = MaterialTheme.colorScheme.background.luminance() > 0.5f
         SideEffect {
             onSystemBarIconAppearanceChanged(useDarkSystemBarIcons)
-        }
-        LaunchedEffect(authViewModel) { authViewModel.restoreSession() }
-        LaunchedEffect(sessionState) {
-            onAccountBoundaryChanged(
-                sessionState.activeBindingOrNull(),
-            )
         }
         when (accountSessionRoute(sessionState)) {
             AccountSessionRoute.RESTORING -> AccountSessionStatusScreen(
@@ -612,6 +635,10 @@ private fun MainScreen(
     isRemoteSyncEnabled: Boolean,
     authViewModel: AuthViewModel,
 ) {
+    val reimagined = isReimagined
+    val expandedExperience = reimagined && OpenTasksTheme.windowSizeCategory != WindowSizeCategory.COMPACT
+    val syncAction = koinInject<TriggerSyncAction>()
+    val syncOutcome = if (isRemoteSyncEnabled && reimagined) syncAction.outcome.collectAsState().value else SyncOutcome.Idle
     val noteViewModel: NoteViewModel = koinViewModel()
     val matrixViewModel: MatrixViewModel = koinViewModel()
     val taskNotificationViewModel: TaskNotificationViewModel = koinViewModel()
@@ -628,12 +655,87 @@ private fun MainScreen(
     val onPullToRefresh = remember(appViewModel, isRemoteSyncEnabled) {
         if (isRemoteSyncEnabled) ({ appViewModel.triggerSync() }) else ({})
     }
+    // A one-shot initializer; the destination's existing saveable form becomes the draft owner.
+    var quickAddEditorSeed by remember(binding.boundaryEpoch) { mutableStateOf<Pair<Screen.CreateTask, TaskFormData>?>(null) }
     var calendarSelectedYear by remember { mutableIntStateOf(0) }
     var calendarSelectedMonth by remember { mutableIntStateOf(0) }
     var calendarSelectedDay by remember { mutableIntStateOf(0) }
+    var retainedWorkspaceReturnTab by rememberSaveable(binding.boundaryEpoch) { mutableIntStateOf(-1) }
+    var retainedWorkspaceSource by rememberSaveable(binding.boundaryEpoch, stateSaver = retainedWorkspaceSourceSaver) {
+        mutableStateOf<Screen?>(null)
+    }
+    fun workspaceTab(index: Int): NavKey = when (index) {
+        1 -> Screen.TaskList
+        2 -> Screen.Calendar
+        3 -> Screen.Notes
+        4 -> Screen.Countdown
+        else -> Screen.Matrix
+    }
+    fun workspaceTabIndex(key: NavKey): Int = when (key) {
+        Screen.Matrix -> 0
+        Screen.TaskList -> 1
+        Screen.Calendar -> 2
+        Screen.Notes -> 3
+        Screen.Countdown -> 4
+        else -> -1
+    }
+    fun clearRetainedWorkspaceSource() {
+        retainedWorkspaceSource = null
+        retainedWorkspaceReturnTab = -1
+    }
+    fun activeRetainedWorkspaceSource(): Screen? {
+        val source = retainedWorkspaceSource
+        if (source != null && source !in backStack) clearRetainedWorkspaceSource()
+        return source?.takeIf { it in backStack }
+    }
+    fun retainWorkspaceSource() {
+        if (activeRetainedWorkspaceSource() != null) return
+        // A source-note workflow may sit above an earlier task draft. Protect that editor until its own exit.
+        val source = (backStack.firstOrNull {
+            it is Screen.CreateTask || it is Screen.EditTask || it is Screen.QuickAddTask
+        } ?: navController.currentScreen) as? Screen ?: return
+        if (workspaceTabIndex(source) >= 0 || source is Screen.TaskListDestination) return
+        retainedWorkspaceSource = source
+        retainedWorkspaceReturnTab = backStack.asReversed().firstNotNullOfOrNull {
+            workspaceTabIndex(it).takeIf { index -> index >= 0 }
+        } ?: 0
+    }
+    fun selectWorkspaceTab(index: Int) {
+        val target = workspaceTab(index)
+        val source = activeRetainedWorkspaceSource()
+        if (source == null) {
+            clearRetainedWorkspaceSource()
+            if (navController.currentScreen != target) navController.navigateToTab(target)
+            return
+        }
+        retainedWorkspaceReturnTab = index
+        val current = navController.currentScreen
+        if (current == target) return
+        if (current != source && (workspaceTabIndex(current) >= 0 || current is Screen.TaskListDestination)) {
+            navController.replaceTop(target)
+        } else {
+            navController.navigate(target)
+        }
+    }
+    fun popBackStackWithWorkspaceReturn(): Boolean {
+        val source = activeRetainedWorkspaceSource()
+        if (source != null && navController.currentScreen == source) {
+            // Reached only by the source's existing guarded close or committed terminal event.
+            val returnTab = retainedWorkspaceReturnTab.coerceAtLeast(0)
+            clearRetainedWorkspaceSource()
+            navController.setRoot(workspaceTab(returnTab))
+            return true
+        }
+        return navController.popBackStack()
+    }
+    var noteEditorError by remember { mutableStateOf<String?>(null) }
+    var noteCapture by rememberSaveable { mutableStateOf("") }
+    var noteSavedRevision by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(0L) }
+    var retainedWorkspaceNote by remember { mutableStateOf<com.udnahc.opentasks.data.model.Note?>(null) }
     var showCreateNote by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
     var editNoteId by rememberSaveable(binding.boundaryEpoch) { mutableStateOf<String?>(null) }
     var pendingNoteTasksId by rememberSaveable(binding.boundaryEpoch) { mutableStateOf<String?>(null) }
+    var pendingCreatedNoteTasks by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
     var noteSheetRequestToken by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(0L) }
     var showImportCalendar by remember { mutableStateOf(false) }
     var showImportIcs by remember { mutableStateOf(false) }
@@ -642,6 +744,7 @@ private fun MainScreen(
     var sharedTaskReviewId by rememberSaveable(binding.boundaryEpoch) { mutableStateOf<Long?>(null) }
     var childModalBusyRoute by remember(binding.boundaryEpoch) { mutableStateOf<NavKey?>(null) }
     val taskFormBackHandlerRegistry = remember { TaskFormBackHandlerRegistry() }
+    val noteWorkspaceBackHandlerRegistry = remember { TaskFormBackHandlerRegistry() }
     val snackbarHostState = remember { SnackbarHostState() }
     val taskMutationSavedWarning = stringResource(Res.string.task_mutation_saved_warning)
     val taskUpdateFailed = stringResource(Res.string.task_update_failed)
@@ -701,6 +804,7 @@ private fun MainScreen(
     }
 
     fun closeOpenNoteSheet() {
+        pendingCreatedNoteTasks = false
         pendingNoteTasksId = null
         showCreateNote = false
         editNoteId = null
@@ -722,13 +826,20 @@ private fun MainScreen(
         closeOpenNoteSheet()
     }
 
-    fun openCreateNoteSheet() {
+    fun openCreateNoteSheet(capture: String = "") {
         retireOpenNoteSheet()
+        noteEditorError = null
+        noteCapture = capture
+        noteSavedRevision = 0L
         showCreateNote = true
     }
 
     fun openEditNoteSheet(noteId: String) {
         retireOpenNoteSheet()
+        retainedWorkspaceNote = null
+        noteEditorError = null
+        noteCapture = ""
+        noteSavedRevision = 0L
         editNoteId = noteId
     }
 
@@ -752,8 +863,20 @@ private fun MainScreen(
         when (terminalState) {
             is NoteMutationState.Success -> {
                 val hasWarning = terminalState.hasPostCommitWarning
-                val linkedNoteId = pendingNoteTasksId
-                closeOpenNoteSheet()
+                noteEditorError = if (hasWarning) noteMutationSavedWarning else null
+                val linkedNoteId = pendingNoteTasksId ?: terminalState.committedNote?.id?.takeIf {
+                    pendingCreatedNoteTasks && operation is NoteMutationOperation.Create
+                }
+                if (reimagined && operation !is NoteMutationOperation.Delete && linkedNoteId == null) {
+                    retainedWorkspaceNote = terminalState.committedNote
+                    if (operation is NoteMutationOperation.Create) {
+                        showCreateNote = false
+                        editNoteId = terminalState.committedNote?.id
+                    }
+                    noteSavedRevision += 1L
+                } else {
+                    closeOpenNoteSheet()
+                }
                 if (linkedNoteId != null && navController.currentScreen != Screen.NoteTasks(linkedNoteId)) {
                     navController.navigate(Screen.NoteTasks(linkedNoteId))
                 }
@@ -767,6 +890,7 @@ private fun MainScreen(
                 } else {
                     noteSaveFailed
                 }
+                noteEditorError = message
                 snackbarHostState.showSnackbar(message)
             }
             NoteMutationState.Idle,
@@ -791,6 +915,10 @@ private fun MainScreen(
 
     // Derive selected tab and visibility from the back stack
     val currentScreen = backStack.last()
+    LaunchedEffect(currentScreen, quickAddEditorSeed) {
+        val pending = quickAddEditorSeed
+        if (pending != null && currentScreen != pending.first && currentScreen !is Screen.QuickAddTask) quickAddEditorSeed = null
+    }
     val currentScreenState = rememberUpdatedState(currentScreen)
     val onChildModalBusyChanged = remember {
         { route: NavKey, isBusy: Boolean ->
@@ -821,6 +949,15 @@ private fun MainScreen(
             && currentScreen !is Screen.CreateCountdown
             && currentScreen !is Screen.CountdownDetail
             && currentScreen !is Screen.EditCountdown
+
+    val useRail = expandedExperience && showBottomNav
+    val showSyncFailure = reimagined && isRemoteSyncEnabled && showBottomNav && syncOutcome == SyncOutcome.Failed
+
+    val retainedWorkspaceSourcePresent = retainedWorkspaceSource?.let { it in backStack } == true
+    LaunchedEffect(retainedWorkspaceSource, retainedWorkspaceSourcePresent) {
+        val source = retainedWorkspaceSource
+        if (source != null && source !in backStack) clearRetainedWorkspaceSource()
+    }
 
     val isSharedIntakeUiBusy = isWorkflowScreen || currentScreen is Screen.CreateTask ||
         currentScreen is Screen.QuickAddTask ||
@@ -963,7 +1100,9 @@ private fun MainScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         fun handleBack() {
-            taskFormBackHandlerRegistry.handle { navController.popBackStack() }
+            noteWorkspaceBackHandlerRegistry.handle {
+                taskFormBackHandlerRegistry.handle { popBackStackWithWorkspaceReturn() }
+            }
         }
 
         fun registerTaskFormBackHandler(owner: Any, onBack: (() -> Unit)?) {
@@ -973,7 +1112,7 @@ private fun MainScreen(
         NavDisplay(
             backStack = backStack,
             onBack = { handleBack() },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(start = if (useRail) OpenTasksTheme.dimens.reimaginedRailWidth else 0.dp, bottom = if (showSyncFailure) OpenTasksTheme.dimens.minimumInteractiveTargetSize else 0.dp),
             entryDecorators = listOf(
                 rememberSaveableStateHolderNavEntryDecorator(),
                 rememberViewModelStoreNavEntryDecorator<NavKey>(),
@@ -981,6 +1120,7 @@ private fun MainScreen(
             entryProvider = entryProvider {
                 entry<Screen.Matrix> {
                     EisenhowerMatrixScreen(
+                        onCreateTask = { pendingTaskCreation = Screen.CreateTask() },
                         viewModel = matrixViewModel,
                         onTaskClick = { task ->
                             navController.navigate(Screen.EditTask(task.id))
@@ -1001,7 +1141,12 @@ private fun MainScreen(
 
                 entry<Screen.TaskList> {
                     val taskOverviewViewModel: TaskOverviewViewModel = koinViewModel()
+                    val overviewShortlistViewModel: ShortlistViewModel? = if (reimagined) koinViewModel(key = "overviewShortlist") else null
                     TaskOverviewScreen(
+                        shortlistViewModel = overviewShortlistViewModel,
+                        onTaskClick = { task -> navController.navigate(Screen.EditTask(task.id)) },
+                        onTaskMutationFailure = onTaskMutationFailure,
+                        onCreateTask = { pendingTaskCreation = taskFabCreationScreen(selectedTab, currentScreen, calendarSelectedDay, calendarSelectedMonth, calendarSelectedYear) },
                         viewModel = taskOverviewViewModel,
                         onWeeklyReview = { navController.navigate(Screen.WeeklyReview) },
                         onLogbook = { navController.navigate(Screen.Logbook) },
@@ -1022,9 +1167,9 @@ private fun MainScreen(
                 entry<Screen.TaskListDestination> { screen ->
                     val onAllViewsClick = {
                         if (navController.previousScreen == Screen.TaskList) {
-                            navController.popBackStack()
+                            popBackStackWithWorkspaceReturn()
                         } else {
-                            navController.setRoot(Screen.TaskList)
+                            selectWorkspaceTab(1)
                         }
                     }
                     val onTaskClick = { task: Task -> navController.navigate(Screen.EditTask(task.id)) }
@@ -1066,25 +1211,26 @@ private fun MainScreen(
 
                 entry<Screen.WeeklyReview> {
                     val model: WeeklyReviewViewModel = koinViewModel()
-                    WeeklyReviewScreen(model, { navController.popBackStack() }, { navController.navigate(Screen.EditTask(it.id)) }, onTaskMutationFailure)
+                    WeeklyReviewScreen(model, { popBackStackWithWorkspaceReturn() }, { navController.navigate(Screen.EditTask(it.id)) }, onTaskMutationFailure)
                 }
                 entry<Screen.Logbook> {
                     val model: LogbookViewModel = koinViewModel()
-                    LogbookScreen(model, { navController.popBackStack() }, { navController.navigate(Screen.EditTask(it)) })
+                    LogbookScreen(model, { popBackStackWithWorkspaceReturn() }, { navController.navigate(Screen.EditTask(it)) })
                 }
                 entry<Screen.BulkTasks> { screen ->
                     val model: BulkTasksViewModel = koinViewModel(key = "bulk:${screen.filter}", parameters = { parametersOf(screen.filter) })
-                    BulkTasksScreen(model, { navController.popBackStack() })
+                    BulkTasksScreen(model, { popBackStackWithWorkspaceReturn() })
                 }
                 entry<Screen.NoteTasks> { screen ->
                     val model: NoteTasksViewModel = koinViewModel(key = "noteTasks:${screen.noteId}", parameters = { parametersOf(screen.noteId) })
-                    NoteTasksScreen(model, { navController.popBackStack() }, { navController.navigate(Screen.EditTask(it.id)) },
+                    NoteTasksScreen(model, { popBackStackWithWorkspaceReturn() }, { navController.navigate(Screen.EditTask(it.id)) },
                         onCreate = { note -> navController.navigate(Screen.CreateTask(title = note.title, sourceNoteId = note.id)) },
                         onOpenNote = { note -> openEditNoteSheet(note.id) })
                 }
                 entry<Screen.Calendar> {
                     val calendarViewModel: CalendarViewModel = koinViewModel()
                     CalendarScreen(
+                        onCreateTask = { pendingTaskCreation = taskFabCreationScreen(selectedTab, currentScreen, calendarSelectedDay, calendarSelectedMonth, calendarSelectedYear) },
                         viewModel = calendarViewModel,
                         widgetNavigationEvent = calendarNavigationEvent,
                         onWidgetNavigationConsumed = onCalendarNavigationConsumed,
@@ -1116,6 +1262,7 @@ private fun MainScreen(
                     NotesScreen(
                         viewModel = noteViewModel,
                         onNoteClick = { note -> openEditNoteSheet(note.id) },
+                        onCreateNote = { capture -> openCreateNoteSheet(capture) },
                         onSettingsClick = onSettingsClick,
                         isRefreshing = isRefreshing,
                         syncEnabled = isRemoteSyncEnabled,
@@ -1125,7 +1272,7 @@ private fun MainScreen(
 
                 entry<Screen.Settings> {
                     SettingsScreen(
-                        onBack = { navController.popBackStack() },
+                        onBack = { popBackStackWithWorkspaceReturn() },
                         onImportCalendar = { showImportCalendar = true },
                         onImportIcs = { showImportIcs = true },
                         onImportCsv = { showImportCsv = true },
@@ -1157,7 +1304,7 @@ private fun MainScreen(
                         title = quadrantTitle,
                         priority = priority,
                         viewModel = matrixViewModel,
-                        onBack = { navController.popBackStack() },
+                        onBack = { popBackStackWithWorkspaceReturn() },
                         onTaskClick = { task ->
                             navController.navigate(Screen.EditTask(task.id))
                         },
@@ -1177,13 +1324,15 @@ private fun MainScreen(
                         parameters = { parametersOf(screen.creationContext()) },
                     )
                     val state by quickAddViewModel.uiState.collectAsState()
+                    val creationListNames = if (reimagined) matrixViewModel.categoryNames.collectAsState().value else emptyMap()
+                    val creationListReadFailed = if (reimagined) matrixViewModel.categoryNamesReadFailed.collectAsState().value else false
                     LaunchedEffect(quickAddViewModel, screen) {
                         quickAddViewModel.saveEvent.collect { event ->
                             val saveEvent = event ?: return@collect
                             if (!quickAddViewModel.consumeSaveEvent(saveEvent)) return@collect
                             when (saveEvent) {
                                 is QuickAddTaskSaveEvent.Saved -> {
-                                    if (backStack.lastOrNull() == screen) navController.popBackStack()
+                                    if (backStack.lastOrNull() == screen) popBackStackWithWorkspaceReturn()
                                     if (saveEvent.postCommitWarning != null) {
                                         snackbarScope.launch {
                                             snackbarHostState.showSnackbar(taskMutationSavedWarning)
@@ -1195,15 +1344,45 @@ private fun MainScreen(
                     }
                     QuickAddTaskScreen(
                         state = state,
+                        creationListName = creationListNames[screen.categoryId] ?: stringResource(when { screen.categoryId == AppConstants.DEFAULT_INBOX_ID -> Res.string.inbox; creationListReadFailed -> Res.string.task_list_unavailable; else -> Res.string.loading }),
+                        creationPriority = screen.creationContext().priority,
                         onInputChanged = quickAddViewModel::onInputChanged,
                         onDismissToken = quickAddViewModel::dismissToken,
-                        onBack = { navController.popBackStack() },
+                        onBack = { popBackStackWithWorkspaceReturn() },
                         onAdd = quickAddViewModel::save,
                         onErrorShown = quickAddViewModel::clearError,
+                        onOpenFullEditor = if (reimagined) ({
+                            val current = quickAddViewModel.uiState.value
+                            if (!current.isSaving && !current.isSaved) {
+                                val parsed = current.parseResult
+                                val target = Screen.CreateTask(
+                                    priorityOrdinal = screen.priorityOrdinal,
+                                    categoryId = screen.categoryId,
+                                    title = parsed.cleanedTitle,
+                                    day = parsed.deadline?.let(::extractDay) ?: 0,
+                                    month = parsed.deadline?.let(::extractMonth) ?: 0,
+                                    year = parsed.deadline?.let(::extractYear) ?: 0,
+                                )
+                                quickAddEditorSeed = target to TaskFormData(
+                                    title = parsed.cleanedTitle,
+                                    content = "",
+                                    priority = screen.creationContext().priority,
+                                    categoryId = screen.categoryId,
+                                    deadline = parsed.deadline,
+                                    isAllDay = parsed.isAllDay,
+                                    recurrence = parsed.recurrenceType,
+                                )
+                                navController.replaceTop(target)
+                            }
+                        }) else null,
                     )
                 }
 
                 entry<Screen.CreateTask> { screen ->
+                    val editorSeed = quickAddEditorSeed?.takeIf { it.first == screen }
+                    LaunchedEffect(editorSeed) {
+                        if (editorSeed != null && quickAddEditorSeed === editorSeed) quickAddEditorSeed = null
+                    }
                     val taskFormViewModel: TaskFormViewModel = koinViewModel(
                         key = taskFormViewModelKey(screen),
                     )
@@ -1218,7 +1397,7 @@ private fun MainScreen(
                             if (!taskFormViewModel.consumeSaveEvent(saveEvent)) return@collect
                             when (saveEvent) {
                                 is TaskFormSaveEvent.Saved -> {
-                                    navController.popBackStack()
+                                    popBackStackWithWorkspaceReturn()
                                     if (saveEvent.postCommitWarning != null) {
                                         snackbarScope.launch {
                                             snackbarHostState.showSnackbar(taskMutationSavedWarning)
@@ -1271,7 +1450,7 @@ private fun MainScreen(
                                 }
 
                                 is TaskFormSaveEvent.Deleted -> {
-                                    navController.popBackStack()
+                                    popBackStackWithWorkspaceReturn()
                                     if (saveEvent.postCommitWarning != null) {
                                         snackbarScope.launch {
                                             snackbarHostState.showSnackbar(taskMutationSavedWarning)
@@ -1282,10 +1461,11 @@ private fun MainScreen(
                         }
                     }
                     CreateTaskScreen(
-                        onBack = { navController.popBackStack() },
+                        onBack = { popBackStackWithWorkspaceReturn() },
                         initialPriority = TaskPriority.entries[screen.priorityOrdinal],
                         initialCategoryId = screen.categoryId,
                         initialTitle = screen.title,
+                        retainedFormData = editorSeed?.second,
                         initialDescription = screen.description,
                         initialUrl = screen.url,
                         initialDay = screen.day,
@@ -1325,7 +1505,7 @@ private fun MainScreen(
                             if (!taskFormViewModel.consumeSaveEvent(saveEvent)) return@collect
                             when (saveEvent) {
                                 is TaskFormSaveEvent.Saved -> {
-                                    navController.popBackStack()
+                                    popBackStackWithWorkspaceReturn()
                                     if (saveEvent.postCommitWarning != null) {
                                         snackbarScope.launch {
                                             snackbarHostState.showSnackbar(taskMutationSavedWarning)
@@ -1371,7 +1551,7 @@ private fun MainScreen(
                                 }
 
                                 is TaskFormSaveEvent.Deleted -> {
-                                    navController.popBackStack()
+                                    popBackStackWithWorkspaceReturn()
                                     if (saveEvent.postCommitWarning != null) {
                                         snackbarScope.launch {
                                             snackbarHostState.showSnackbar(taskMutationSavedWarning)
@@ -1401,11 +1581,11 @@ private fun MainScreen(
                         TaskFormDestinationState.Loading -> DestinationLoadingScreen()
                         TaskFormDestinationState.Missing -> MissingDestinationScreen(
                             message = taskNotFound,
-                            onBack = { navController.popBackStack() },
+                            onBack = { popBackStackWithWorkspaceReturn() },
                         )
                         is TaskFormDestinationState.Ready -> {
                             CreateTaskScreen(
-                                onBack = { navController.popBackStack() },
+                                onBack = { popBackStackWithWorkspaceReturn() },
                                 editTask = state.task,
                                 onOpenSourceNote = state.task.sourceNoteId?.let { noteId -> { navController.navigate(Screen.NoteTasks(noteId)) } },
                                 currentDate = currentDate,
@@ -1460,6 +1640,7 @@ private fun MainScreen(
                 entry<Screen.Countdown> {
                     val viewModel: CountdownViewModel = koinViewModel()
                     CountdownScreen(
+                        onCreateCountdown = { navController.navigate(Screen.CreateCountdown()) },
                         viewModel = viewModel,
                         onCountdownClick = { countdown ->
                             navController.navigate(Screen.CountdownDetail(countdown.id))
@@ -1471,13 +1652,19 @@ private fun MainScreen(
                 entry<Screen.CreateCountdown> { screen ->
                     val viewModel: CountdownFormViewModel = koinViewModel()
                     val isSaving by viewModel.isSaving.collectAsState()
+                    val countdownBackOwner = remember { Any() }
+                    DisposableEffect(reimagined, isSaving, countdownBackOwner) {
+                        if (reimagined && isSaving) taskFormBackHandlerRegistry.register(countdownBackOwner) {}
+                        onDispose { taskFormBackHandlerRegistry.register(countdownBackOwner, null) }
+                    }
+                    PlatformBackHandler(enabled = reimagined && isSaving, onBack = {})
                     LaunchedEffect(viewModel) {
                         viewModel.mutationEvent.collect { event ->
                             val mutationEvent = event ?: return@collect
                             if (!viewModel.consumeMutationEvent(mutationEvent)) return@collect
                             when (mutationEvent) {
                                 is CountdownMutationEvent.Saved -> {
-                                    navController.popBackStack()
+                                    popBackStackWithWorkspaceReturn()
                                     if (mutationEvent.postCommitWarning != null) {
                                         snackbarHostState.showSnackbar(countdownSavedWarning)
                                     }
@@ -1496,7 +1683,7 @@ private fun MainScreen(
                         initialType = initialType,
                         currentDate = currentDate,
                         onSave = { countdown -> viewModel.addCountdown(countdown) },
-                        onBack = { navController.popBackStack() },
+                        onBack = { if (!reimagined || !isSaving) popBackStackWithWorkspaceReturn() },
                         isSaving = isSaving,
                     )
                 }
@@ -1510,7 +1697,7 @@ private fun MainScreen(
                             if (!viewModel.consumeMutationEvent(mutationEvent)) return@collect
                             when (mutationEvent) {
                                 is CountdownMutationEvent.Deleted -> {
-                                    navController.popBackStack()
+                                    popBackStackWithWorkspaceReturn()
                                     if (mutationEvent.postCommitWarning != null) {
                                         snackbarHostState.showSnackbar(countdownSavedWarning)
                                     }
@@ -1522,16 +1709,24 @@ private fun MainScreen(
                             }
                         }
                     }
+                    val isDeletingCountdown by viewModel.isSaving.collectAsState()
+                    val countdownBackOwner = remember { Any() }
+                    DisposableEffect(reimagined, isDeletingCountdown, countdownBackOwner) {
+                        if (reimagined && isDeletingCountdown) taskFormBackHandlerRegistry.register(countdownBackOwner) {}
+                        onDispose { taskFormBackHandlerRegistry.register(countdownBackOwner, null) }
+                    }
+                    PlatformBackHandler(enabled = reimagined && isDeletingCountdown, onBack = {})
                     val destinationState by viewModel.destinationState.collectAsState()
                     when (val state = destinationState) {
                         CountdownDestinationState.Loading -> DestinationLoadingScreen()
                         CountdownDestinationState.Missing -> MissingDestinationScreen(
                             message = countdownNotFound,
-                            onBack = { navController.popBackStack() },
+                            onBack = { if (!reimagined || !isDeletingCountdown) popBackStackWithWorkspaceReturn() },
                         )
                         is CountdownDestinationState.Ready -> CountdownDetailScreen(
+                            isBusy = isDeletingCountdown,
                             countdown = state.occurrence,
-                            onBack = { navController.popBackStack() },
+                            onBack = { if (!reimagined || !isDeletingCountdown) popBackStackWithWorkspaceReturn() },
                             onEdit = {
                                 navController.navigate(Screen.EditCountdown(screen.countdownId))
                             },
@@ -1547,13 +1742,19 @@ private fun MainScreen(
                     val viewModel: CountdownFormViewModel = koinViewModel()
                     LaunchedEffect(screen.countdownId) { viewModel.setCountdownId(screen.countdownId) }
                     val isSaving by viewModel.isSaving.collectAsState()
+                    val countdownBackOwner = remember { Any() }
+                    DisposableEffect(reimagined, isSaving, countdownBackOwner) {
+                        if (reimagined && isSaving) taskFormBackHandlerRegistry.register(countdownBackOwner) {}
+                        onDispose { taskFormBackHandlerRegistry.register(countdownBackOwner, null) }
+                    }
+                    PlatformBackHandler(enabled = reimagined && isSaving, onBack = {})
                     LaunchedEffect(viewModel) {
                         viewModel.mutationEvent.collect { event ->
                             val mutationEvent = event ?: return@collect
                             if (!viewModel.consumeMutationEvent(mutationEvent)) return@collect
                             when (mutationEvent) {
                                 is CountdownMutationEvent.Saved -> {
-                                    navController.popBackStack()
+                                    popBackStackWithWorkspaceReturn()
                                     if (mutationEvent.postCommitWarning != null) {
                                         snackbarHostState.showSnackbar(countdownSavedWarning)
                                     }
@@ -1570,14 +1771,14 @@ private fun MainScreen(
                         CountdownDestinationState.Loading -> DestinationLoadingScreen()
                         CountdownDestinationState.Missing -> MissingDestinationScreen(
                             message = countdownNotFound,
-                            onBack = { navController.popBackStack() },
+                            onBack = { if (!reimagined || !isSaving) popBackStackWithWorkspaceReturn() },
                         )
                         is CountdownDestinationState.Ready -> CreateCountdownScreen(
                             editCountdown = state.countdown,
                             initialType = state.countdown.countdownType,
                             currentDate = currentDate,
                             onSave = viewModel::updateCountdown,
-                            onBack = { navController.popBackStack() },
+                            onBack = { if (!reimagined || !isSaving) popBackStackWithWorkspaceReturn() },
                             isSaving = isSaving,
                         )
                     }
@@ -1587,7 +1788,7 @@ private fun MainScreen(
 
         // Bottom nav bar — slides out when entering detail screens
         AnimatedVisibility(
-            visible = showBottomNav,
+            visible = showBottomNav && !useRail,
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -1596,27 +1797,29 @@ private fun MainScreen(
                 tabs = tabs,
                 selectedTab = selectedTab,
                 calendarTodayDay = calendarTodayDay,
-                onTabSelected = { index ->
-                    val target: NavKey = when (index) {
-                        0 -> Screen.Matrix
-                        1 -> Screen.TaskList
-                        2 -> Screen.Calendar
-                        3 -> Screen.Notes
-                        4 -> Screen.Countdown
-                        else -> Screen.Matrix
-                    }
-                    navController.navigateToTab(target)
-                },
+                onTabSelected = ::selectWorkspaceTab,
+            )
+        }
+        if (showSyncFailure) {
+            com.udnahc.opentasks.ui.screens.ReimaginedSyncFailure(
+                onRetry = onPullToRefresh,
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = if (useRail) OpenTasksTheme.dimens.reimaginedRailWidth else 0.dp, bottom = if (useRail) OpenTasksTheme.dimens.paddingLarge else OpenTasksTheme.dimens.fabAreaBottom),
             )
         }
         SnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter),
+            modifier = Modifier.align(Alignment.BottomCenter).then(if (reimagined) Modifier.navigationBarsPadding().imePadding() else Modifier).padding(bottom = if (reimagined && showBottomNav && !useRail) OpenTasksTheme.dimens.fabAreaBottom else 0.dp),
+        )
+
+        if (useRail) ReimaginedNavigation(
+            selectedTab = selectedTab,
+            onTabSelected = ::selectWorkspaceTab,
+            onSettings = onSettingsClick,
         )
 
         // FAB — slides out with nav bar
         AnimatedVisibility(
-            visible = showBottomNav,
+            visible = showBottomNav && !(reimagined && (currentScreen == Screen.Matrix || currentScreen == Screen.TaskList || currentScreen == Screen.Calendar || currentScreen == Screen.Notes || currentScreen == Screen.Countdown)),
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
             modifier = Modifier.align(Alignment.BottomEnd),
@@ -1659,7 +1862,7 @@ private fun MainScreen(
     }
 
     // Create note bottom sheet
-    if (showCreateNote) {
+    if (showCreateNote && !reimagined) {
         val createNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         CreateNoteBottomSheet(
             sheetState = createNoteSheetState,
@@ -1714,7 +1917,7 @@ private fun MainScreen(
                 retireOpenNoteSheet()
             }
         }
-        noteForSheet?.let { note ->
+        if (!reimagined) noteForSheet?.let { note ->
             val editNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             CreateNoteBottomSheet(
                 sheetState = editNoteSheetState,
@@ -1739,6 +1942,85 @@ private fun MainScreen(
                 },
             )
         }
+    }
+
+    val selectedWorkspaceNote = if (reimagined && editNoteId != null) noteViewModel.selectedNote.collectAsState().value else null
+    val workspaceNote = selectedWorkspaceNote?.takeIf { it.id == editNoteId }
+        ?: retainedWorkspaceNote?.takeIf { it.id == editNoteId }
+    val workspaceActive = reimagined && (showCreateNote || editNoteId != null)
+    val workspaceLibrary = if (workspaceActive) noteViewModel.libraryItems.collectAsState().value else emptyList()
+    val linkedTasks = if (workspaceActive) noteViewModel.linkedTasks.collectAsState().value else emptyList()
+    val linkedPreview = if (workspaceActive) noteViewModel.linkedTaskPreview.collectAsState().value else emptyList()
+    ReimaginedNotesWorkspace(
+        active = workspaceActive,
+        loading = editNoteId != null && workspaceNote == null,
+        requestToken = noteSheetRequestToken,
+        note = workspaceNote,
+        initialCapture = noteCapture,
+        savedRevision = noteSavedRevision,
+        isBusy = noteMutationState is NoteMutationState.Busy,
+        errorMessage = noteEditorError,
+        library = workspaceLibrary,
+        linkedTasks = linkedPreview,
+        linkedTaskCount = linkedTasks.size,
+        onSelectNote = { openEditNoteSheet(it.id) },
+        onClose = ::retireOpenNoteSheet,
+        onSave = { title, content ->
+            noteEditorError = null
+            pendingCreatedNoteTasks = false
+            pendingNoteTasksId = null
+            if (showCreateNote) noteViewModel.addNote(noteSheetRequestToken, title, content)
+            else workspaceNote?.let { noteViewModel.updateNote(noteSheetRequestToken, it.copy(title = title, content = content)) }
+        },
+        onSaveAndOpenTasks = { title, content ->
+            noteEditorError = null
+            if (showCreateNote) {
+                pendingCreatedNoteTasks = true
+                pendingNoteTasksId = null
+                noteViewModel.addNote(noteSheetRequestToken, title, content)
+            } else workspaceNote?.let { note ->
+                pendingCreatedNoteTasks = false
+                pendingNoteTasksId = note.id
+                noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
+            }
+        },
+        onDelete = workspaceNote?.let { note ->
+            { pendingCreatedNoteTasks = false; pendingNoteTasksId = null; noteViewModel.deleteNote(noteSheetRequestToken, note) }
+        },
+        onLinkedTaskComplete = matrixViewModel::toggleComplete,
+        onBackHandler = noteWorkspaceBackHandlerRegistry::register,
+        navigation = { guardedLeave ->
+            val onWorkspaceTab: (Int) -> Unit = { index ->
+                guardedLeave {
+                    if (!showBottomNav) retainWorkspaceSource()
+                    selectWorkspaceTab(index)
+                }
+            }
+            val onWorkspaceSettings = {
+                guardedLeave {
+                    if (!showBottomNav) retainWorkspaceSource()
+                    onSettingsClick()
+                }
+            }
+            if (OpenTasksTheme.windowSizeCategory == WindowSizeCategory.COMPACT) {
+                BottomNavBar(tabs, 3, calendarTodayDay, onWorkspaceTab)
+            } else {
+                ReimaginedNavigation(3, onWorkspaceTab, onWorkspaceSettings)
+            }
+        },
+    )
+    if (workspaceActive) {
+        com.udnahc.opentasks.ui.screens.TaskMutationFailureEffect(
+            eventFlow = matrixViewModel.taskMutationFailureEvent,
+            consume = matrixViewModel::consumeTaskMutationFailureEvent,
+            onFailure = { noteEditorError = taskUpdateFailed },
+        )
+        val pendingSeries by matrixViewModel.taskPendingSeriesChoice.collectAsState()
+        if (pendingSeries != null) com.udnahc.opentasks.ui.screens.CompleteSeriesDialog(
+            onCompleteOccurrence = matrixViewModel::completeOccurrence,
+            onCompleteSeries = matrixViewModel::completeSeries,
+            onDismiss = matrixViewModel::dismissSeriesChoice,
+        )
     }
 
     if (taskNotificationEvent != null) {
@@ -1930,11 +2212,11 @@ private fun BottomNavBar(
                 label = { Text(stringResource(item.labelRes)) },
                 alwaysShowLabel = true,
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = PrimaryBlue,
-                    selectedTextColor = PrimaryBlue,
+                    selectedIconColor = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
+                    selectedTextColor = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    indicatorColor = Color.Transparent,
+                    indicatorColor = if (isReimagined) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
                 ),
             )
         }

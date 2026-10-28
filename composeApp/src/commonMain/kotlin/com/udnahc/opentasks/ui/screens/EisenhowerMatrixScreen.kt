@@ -22,6 +22,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import com.udnahc.opentasks.ui.theme.isReimagined
+import opentasks.composeapp.generated.resources.*
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -85,6 +89,7 @@ internal fun ModalBusyEffect(
 @Composable
 fun EisenhowerMatrixScreen(
     viewModel: MatrixViewModel,
+    onCreateTask: () -> Unit = {},
     onTaskClick: (Task) -> Unit,
     onQuadrantClick: (TaskPriority) -> Unit,
     onSettingsClick: () -> Unit = {},
@@ -94,12 +99,24 @@ fun EisenhowerMatrixScreen(
     onTaskMutationFailure: () -> Unit = {},
     onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
-    val priorityProjections by viewModel.priorityProjections.collectAsState()
-    val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
-    val taskDueTextById by viewModel.taskDueTextById.collectAsState()
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
     ModalBusyEffect(taskPendingSeriesChoice != null, onModalBusyChanged)
 
+    if (isReimagined) {
+        val loadState by viewModel.loadState.collectAsState()
+        val state by viewModel.reimaginedState.collectAsState()
+        val images by viewModel.taskImageSummaries.collectAsState()
+        ReimaginedMatrixContent(
+            state = state, images = images,
+            onTaskClick = onTaskClick, onToggleComplete = viewModel::toggleComplete,
+            onQuadrantClick = onQuadrantClick, onAdd = onCreateTask, onSettings = onSettingsClick,
+            loadState = loadState, onRetry = viewModel::retryLoad,
+            isRefreshing = isRefreshing, syncEnabled = syncEnabled, onRefresh = onRefresh,
+        )
+    } else {
+    val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
+    val priorityProjections by viewModel.priorityProjections.collectAsState()
+    val taskDueTextById by viewModel.taskDueTextById.collectAsState()
     EisenhowerMatrixContent(
         priorityProjections = priorityProjections,
         taskImageSummaries = taskImageSummaries,
@@ -112,6 +129,8 @@ fun EisenhowerMatrixScreen(
         syncEnabled = syncEnabled,
         onRefresh = onRefresh,
     )
+
+    }
 
     if (taskPendingSeriesChoice != null) {
         CompleteSeriesDialog(
@@ -304,11 +323,12 @@ internal fun QuadrantCard(
         modifier = modifier,
         shape = RoundedCornerShape(dimens.cornerXLarge),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = if (isReimagined) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface,
         ),
     ) {
-        Column(modifier = Modifier.padding(dimens.paddingLarge)) {
-            QuadrantCardHeader(title = title, badge = badge, color = color)
+        if (isReimagined) HorizontalDivider(color = color, thickness = dimens.dividerThick)
+        Column(modifier = Modifier.padding(if (isReimagined) dimens.paddingMedium else dimens.paddingLarge)) {
+            QuadrantCardHeader(title = title, badge = badge, color = color, count = if (isReimagined) priorityProjection.totalCount else null)
 
             Spacer(Modifier.height(dimens.spacerLarge))
 
@@ -329,8 +349,11 @@ internal fun QuadrantCard(
                 }
             }
 
+            if (isReimagined && priorityProjection.totalCount == 0) {
+                Text(stringResource(Res.string.matrix_empty_quadrant), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(dimens.paddingMedium))
+            }
             if (priorityProjection.hasMore) {
-                ViewMoreLabel()
+                ViewMoreLabel(if (isReimagined) priorityProjection.totalCount else null)
             }
         }
     }
@@ -341,8 +364,16 @@ private fun QuadrantCardHeader(
     title: String,
     badge: String,
     color: Color,
+    count: Int? = null,
 ) {
     val dimens = OpenTasksTheme.dimens
+    if (count != null) {
+        Row(verticalAlignment = Alignment.Top) {
+            Text(title, style = MaterialTheme.typography.labelMedium, color = color, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(count.toString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
@@ -372,10 +403,10 @@ private fun QuadrantCardHeader(
 }
 
 @Composable
-private fun ViewMoreLabel() {
+private fun ViewMoreLabel(count: Int? = null) {
     val dimens = OpenTasksTheme.dimens
     Text(
-        text = stringResource(Res.string.view_more),
+        text = if (count != null) stringResource(Res.string.matrix_view_all_count, count) else stringResource(Res.string.view_more),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
@@ -446,7 +477,7 @@ internal fun QuadrantTaskRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = task.title,
-                style = MaterialTheme.typography.labelLarge,
+                style = if (isReimagined) OpenTasksTheme.typography.matrixTaskTitle else MaterialTheme.typography.labelLarge,
                 color = if (task.status == TaskStatus.DONE) MaterialTheme.colorScheme.onSurfaceVariant.copy(
                     alpha = 0.4f
                 )
@@ -459,13 +490,56 @@ internal fun QuadrantTaskRow(
             if (dueText.isNotBlank() && task.status != TaskStatus.DONE) {
                 Text(
                     text = dueText,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = if (isReimagined) OpenTasksTheme.typography.matrixTaskMeta else MaterialTheme.typography.labelSmall,
                     color = DateOrange,
                 )
             }
             if (imageSummary != null && imageSummary.imageCount > 0) {
                 Spacer(Modifier.height(dimens.spacerTiny))
                 AttachmentSyncBadge(imageSummary.worstSyncState)
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun ReimaginedMatrixContent(
+    state: MatrixViewModel.ReimaginedState,
+    images: Map<String, AttachmentSummary>,
+    onTaskClick: (Task) -> Unit,
+    onToggleComplete: (Task) -> Unit,
+    onQuadrantClick: (TaskPriority) -> Unit,
+    onAdd: () -> Unit,
+    onSettings: () -> Unit,
+    loadState: com.udnahc.opentasks.viewmodel.MatrixLoadState,
+    onRetry: () -> Unit,
+    isRefreshing: Boolean,
+    syncEnabled: Boolean,
+    onRefresh: () -> Unit,
+) {
+    val d = OpenTasksTheme.dimens
+    Column(Modifier.fillMaxSize()) {
+        OpenTasksTopBar(titleContent = {}, actions = {
+            ReimaginedAddButton(onAdd)
+            OpenTasksSettingsButton(onSettings)
+        })
+        SyncPullToRefresh(isRefreshing = isRefreshing, enabled = syncEnabled, onRefresh = onRefresh, modifier = Modifier.fillMaxWidth().weight(1f)) {
+            if (loadState != com.udnahc.opentasks.viewmodel.MatrixLoadState.READY) {
+                ReimaginedReadStatus(loadState == com.udnahc.opentasks.viewmodel.MatrixLoadState.LOADING, onRetry, Modifier.navigationBarsPadding().padding(bottom = d.fabAreaBottom))
+            } else if (state.totalCount == 0) {
+                Column(Modifier.fillMaxSize().navigationBarsPadding().padding(bottom = d.fabAreaBottom).padding(d.paddingXXLarge), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(stringResource(Res.string.matrix_empty), style = MaterialTheme.typography.bodyLarge)
+                    TextButton(onClick = onAdd) { Text(stringResource(Res.string.add_task)) }
+                }
+            } else {
+                QuadrantGrid(
+                    state.projections[TaskPriority.HIGH] ?: MatrixViewModel.PriorityProjection(),
+                    state.projections[TaskPriority.LOW] ?: MatrixViewModel.PriorityProjection(),
+                    state.projections[TaskPriority.MEDIUM] ?: MatrixViewModel.PriorityProjection(),
+                    state.projections[TaskPriority.NONE] ?: MatrixViewModel.PriorityProjection(),
+                    images, state.dueText, onTaskClick, onToggleComplete, onQuadrantClick,
+                )
             }
         }
     }

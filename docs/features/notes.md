@@ -8,6 +8,10 @@ Notes provide a lightweight rich-text writing area separate from tasks. Each not
 
 Users open the Notes tab, create a note from the floating action button, edit an existing note from the list, or delete a note from the edit sheet. Note content uses the same rich editor family used for task descriptions.
 
+That flow remains available in Classic. Reimagined adds an on-demand library search opened by a toolbar icon, quick capture into a draft, and a full writing workspace. Settings is the rightmost library toolbar action and is absent from the note details toolbar. Expanded windows show the note library beside the editor; focus mode hides that library and linked-task area. Save keeps the workspace open. Switching notes or closing a changed draft requires Discard or Keep editing, and note mutations block switching until their result is known. Save and open linked tasks also works for a newly created note, using its committed ID. Text-edit Undo/Redo remains part of the rich editor; there is no task-completion or deletion Undo.
+
+Ordinary writing keeps app navigation available; focus mode hides it. Leaving through a tab or Settings uses the same dirty-draft and mutation guard as closing the editor. A note opened from a task retains that source task's editor entry and draft.
+
 ## Linked tasks
 
 Existing notes expose Save and open linked tasks. This saves the current draft before navigation and keeps save failures visible in the editor. The linked-tasks view supports opening tasks, creating a task with the note title, and returning to the note. Tasks store a synced `sourceNoteId`; the note does not contain a second copy of the relationship. Deleting a note leaves its tasks intact. See [Tasks](tasks.md#tasks-linked-to-notes) for the full behavior.
@@ -28,3 +32,5 @@ PocketBase sync uses `NoteSyncAdapter` and `NoteRecord`. Notes are synced as tex
 ## Current Limitations
 
 Notes do not currently support attachments, reminders, tags, categories, or calendar dates.
+
+In the Reimagined library, system Back closes active search and clears its query before navigating away. Linked-task counts and the editor list share one task observation stream.

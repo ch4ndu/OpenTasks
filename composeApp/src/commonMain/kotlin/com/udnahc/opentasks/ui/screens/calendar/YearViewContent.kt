@@ -1,5 +1,7 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
+import com.udnahc.opentasks.ui.theme.isReimagined
+import com.udnahc.opentasks.ui.theme.WindowSizeCategory
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,16 +52,20 @@ internal fun YearViewContent(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
-            // 4 rows × 3 columns
-            for (row in 0..3) {
+            val columns = if (!isReimagined) 3 else when (OpenTasksTheme.windowSizeCategory) {
+                WindowSizeCategory.COMPACT -> 2
+                WindowSizeCategory.MEDIUM -> 3
+                WindowSizeCategory.EXPANDED -> 4
+            }
+            for (row in 0 until 12 / columns) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = dimens.paddingMedium),
                     horizontalArrangement = Arrangement.spacedBy(dimens.spacerLarge),
                 ) {
-                    for (col in 0..2) {
-                        val month = row * 3 + col + 1
+                    for (col in 0 until columns) {
+                        val month = row * columns + col + 1
                         MiniMonthCard(
                             year = year,
                             month = month,

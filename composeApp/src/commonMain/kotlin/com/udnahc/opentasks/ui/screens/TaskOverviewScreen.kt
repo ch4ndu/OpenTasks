@@ -1,5 +1,16 @@
 package com.udnahc.opentasks.ui.screens
 
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.data.model.TaskStatus
+import com.udnahc.opentasks.viewmodel.ShortlistViewModel
+import com.udnahc.opentasks.viewmodel.ShortlistUiState
+import com.udnahc.opentasks.ui.theme.isReimagined
+import opentasks.composeapp.generated.resources.shortlist_choose_tasks
+import opentasks.composeapp.generated.resources.shortlist_open
+import opentasks.composeapp.generated.resources.your_views
+import opentasks.composeapp.generated.resources.reimagined_workflows
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -83,6 +95,10 @@ import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun TaskOverviewScreen(
+    onCreateTask: () -> Unit = {},
+    shortlistViewModel: ShortlistViewModel? = null,
+    onTaskClick: (Task) -> Unit = {},
+    onTaskMutationFailure: () -> Unit = {},
     viewModel: TaskOverviewViewModel,
     onViewClick: (TaskListFilter) -> Unit,
     onSettingsClick: () -> Unit,
@@ -96,9 +112,26 @@ fun TaskOverviewScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var showNewListDialog by remember { mutableStateOf(false) }
-    ModalBusyEffect(showNewListDialog, onModalBusyChanged)
+    var showShortlistChooser by rememberSaveable { mutableStateOf(false) }
+    val shortlistState = if (isReimagined && shortlistViewModel != null) shortlistViewModel.uiState.collectAsState().value else null
+    val pendingSeries = if (isReimagined && shortlistViewModel != null) shortlistViewModel.taskPendingSeriesChoice.collectAsState().value else null
+    ModalBusyEffect(showNewListDialog || showShortlistChooser || pendingSeries != null, onModalBusyChanged)
 
+    if (isReimagined && shortlistViewModel != null) {
+        if (showShortlistChooser) {
+            val chooser by shortlistViewModel.chooserState.collectAsState()
+            val pendingIds by shortlistViewModel.pendingTaskIds.collectAsState()
+            ChooseShortlistTasksBottomSheet(chooser, pendingIds, { shortlistViewModel.setShortlisted(it.id, true) }, { showShortlistChooser = false })
+        }
+        if (pendingSeries != null) CompleteSeriesDialog(shortlistViewModel::completeOccurrence, shortlistViewModel::completeSeries, shortlistViewModel::dismissSeriesChoice)
+        TaskMutationFailureEffect(shortlistViewModel.taskMutationFailureEvent, shortlistViewModel::consumeTaskMutationFailureEvent, onTaskMutationFailure)
+    }
     TaskOverviewContent(
+        shortlistState = shortlistState,
+        onChooseShortlist = { showShortlistChooser = true },
+        onTaskClick = onTaskClick,
+        onCompleteShortlistTask = { shortlistViewModel?.toggleComplete(it) },
+        onCreateTask = onCreateTask,
         state = state,
         onViewClick = onViewClick,
         onNewListClick = { showNewListDialog = true },
@@ -124,6 +157,11 @@ fun TaskOverviewScreen(
 
 @Composable
 internal fun TaskOverviewContent(
+    shortlistState: ShortlistUiState? = null,
+    onChooseShortlist: () -> Unit = {},
+    onTaskClick: (Task) -> Unit = {},
+    onCompleteShortlistTask: (Task) -> Unit = {},
+    onCreateTask: () -> Unit = {},
     state: TaskOverviewState,
     onViewClick: (TaskListFilter) -> Unit,
     onNewListClick: () -> Unit,
@@ -140,65 +178,96 @@ internal fun TaskOverviewContent(
     val statusBarHeight = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
     val navBarHeight = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        SyncPullToRefresh(
-            isRefreshing = isRefreshing,
-            enabled = syncEnabled,
-            onRefresh = onRefresh,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .widthIn(max = dimens.taskOverviewMaxWidth)
-                    .fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = dimens.paddingXLarge,
-                    end = dimens.paddingXLarge,
-                    top = dimens.topBarHeight + statusBarHeight,
-                    bottom = navBarHeight + dimens.fabAreaBottom + dimens.fabBottomPadding,
-                ),
-                horizontalArrangement = Arrangement.spacedBy(dimens.spacerXLarge),
-                verticalArrangement = Arrangement.spacedBy(dimens.spacerXLarge),
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        if (isReimagined) OpenTasksTopBar(titleContent = {}, actions = {
+            ReimaginedAddButton(onCreateTask)
+            OpenTasksSettingsButton(onClick = onSettingsClick)
+        })
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            SyncPullToRefresh(
+                isRefreshing = isRefreshing,
+                enabled = syncEnabled,
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxSize(),
             ) {
-                item(key = "shortlist", span = { GridItemSpan(maxLineSpan) }) {
-                    ShortlistCard(
-                        remaining = state.shortlistCount,
-                        onClick = { onViewClick(TaskListFilter.Shortlist) },
-                    )
-                }
-                items(state.smartViews, key = { "view:${it.filter}" }) { view ->
-                    SmartViewTile(view = view, onClick = { onViewClick(view.filter) })
-                }
-                item(key = "workflow_actions", span = { GridItemSpan(maxLineSpan) }) {
-                    androidx.compose.foundation.layout.FlowRow {
-                        androidx.compose.material3.TextButton(onClick = onWeeklyReview) { Text(stringResource(Res.string.weekly_review)) }
-                        androidx.compose.material3.TextButton(onClick = onLogbook) { Text(stringResource(Res.string.completion_logbook)) }
-                        androidx.compose.material3.TextButton(onClick = onBulkTasks) { Text(stringResource(Res.string.bulk_tasks)) }
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .widthIn(max = dimens.taskOverviewMaxWidth)
+                        .fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = dimens.paddingXLarge,
+                        end = dimens.paddingXLarge,
+                        top = if (isReimagined) 0.dp else dimens.topBarHeight + statusBarHeight,
+                        bottom = navBarHeight + dimens.fabAreaBottom + dimens.fabBottomPadding,
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(dimens.spacerXLarge),
+                    verticalArrangement = Arrangement.spacedBy(dimens.spacerXLarge),
+                ) {
+                    item(key = "shortlist", span = { GridItemSpan(maxLineSpan) }) {
+                        ShortlistCard(
+                            remaining = state.shortlistCount,
+                            onClick = { onViewClick(TaskListFilter.Shortlist) },
+                        )
+                    }
+                    if (shortlistState != null) {
+                        item(key = "shortlist_actions", span = { GridItemSpan(maxLineSpan) }) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                TextButton(onClick = onChooseShortlist) { Text(stringResource(Res.string.shortlist_choose_tasks)) }
+                                TextButton(onClick = { onViewClick(TaskListFilter.Shortlist) }) { Text(stringResource(Res.string.shortlist_open)) }
+                            }
+                        }
+                        items(shortlistState.toTackle, key = { "shortlisted:${it.task.id}" }, span = { GridItemSpan(maxLineSpan) }) { row ->
+                            Row(Modifier.fillMaxWidth().clickable { onTaskClick(row.task) }, verticalAlignment = Alignment.CenterVertically) {
+                                TaskCheckboxButton(row.task.status == TaskStatus.DONE, MaterialTheme.colorScheme.primary, { onCompleteShortlistTask(row.task) })
+                                Column(Modifier.weight(1f)) {
+                                    Text(row.task.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    ShortlistMetaText(row)
+                                }
+                            }
+                        }
+                        item(key = "views_header", span = { GridItemSpan(maxLineSpan) }) { ReimaginedSectionLabel(stringResource(Res.string.your_views)) }
+                    }
+                    items(state.smartViews, key = { "view:${it.filter}" }) { view ->
+                        SmartViewTile(view = view, onClick = { onViewClick(view.filter) })
+                    }
+                    item(key = "workflow_actions", span = { GridItemSpan(maxLineSpan) }) {
+                        if (isReimagined) {
+                            ReimaginedSectionLabel(stringResource(Res.string.reimagined_workflows))
+                            ReimaginedPanel(Modifier.fillMaxWidth()) {
+                                WorkflowOverviewAction(stringResource(Res.string.weekly_review), onWeeklyReview)
+                                WorkflowOverviewAction(stringResource(Res.string.completion_logbook), onLogbook)
+                                WorkflowOverviewAction(stringResource(Res.string.bulk_tasks), onBulkTasks)
+                            }
+                        } else androidx.compose.foundation.layout.FlowRow {
+                            androidx.compose.material3.TextButton(onClick = onWeeklyReview) { Text(stringResource(Res.string.weekly_review)) }
+                            androidx.compose.material3.TextButton(onClick = onLogbook) { Text(stringResource(Res.string.completion_logbook)) }
+                            androidx.compose.material3.TextButton(onClick = onBulkTasks) { Text(stringResource(Res.string.bulk_tasks)) }
+                        }
+                    }
+                    item(key = "lists_header", span = { GridItemSpan(maxLineSpan) }) {
+                        YourListsHeader(onNewListClick = onNewListClick)
+                    }
+                    items(
+                        state.lists,
+                        key = { "list:${it.category.id}" },
+                        span = { GridItemSpan(maxLineSpan) },
+                    ) { list ->
+                        ListCountRow(
+                            list = list,
+                            onClick = { onViewClick(TaskListFilter.Category(list.category.id)) },
+                        )
                     }
                 }
-                item(key = "lists_header", span = { GridItemSpan(maxLineSpan) }) {
-                    YourListsHeader(onNewListClick = onNewListClick)
-                }
-                items(
-                    state.lists,
-                    key = { "list:${it.category.id}" },
-                    span = { GridItemSpan(maxLineSpan) },
-                ) { list ->
-                    ListCountRow(
-                        list = list,
-                        onClick = { onViewClick(TaskListFilter.Category(list.category.id)) },
-                    )
-                }
             }
-        }
 
-        OpenTasksTopBar(
-            title = stringResource(Res.string.tasks),
-            containerStyle = OpenTasksTopBarContainerStyle.Translucent,
-            actions = { OpenTasksSettingsButton(onClick = onSettingsClick) },
-        )
+            if (!isReimagined) OpenTasksTopBar(
+                title = stringResource(Res.string.tasks),
+                containerStyle = OpenTasksTopBarContainerStyle.Translucent,
+                actions = { OpenTasksSettingsButton(onClick = onSettingsClick) },
+            )
+        }
     }
 }
 
@@ -264,7 +333,7 @@ private fun ShortlistCard(
             Icon(
                 painter = painterResource(Res.drawable.ic_checklist),
                 contentDescription = null,
-                tint = PrimaryBlue,
+                tint = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
                 modifier = Modifier.size(dimens.iconXLarge),
             )
             Spacer(Modifier.width(dimens.spacerXLarge))
@@ -313,11 +382,11 @@ private fun YourListsHeader(onNewListClick: () -> Unit) {
             Icon(
                 painter = painterResource(Res.drawable.ic_add),
                 contentDescription = null,
-                tint = PrimaryBlue,
+                tint = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
                 modifier = Modifier.size(dimens.iconDefault),
             )
             Spacer(Modifier.width(dimens.spacerSmall))
-            Text(text = stringResource(Res.string.new_list), color = PrimaryBlue)
+            Text(text = stringResource(Res.string.new_list), color = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
         }
     }
 }
@@ -411,8 +480,16 @@ private fun taskListFilterIcon(filter: TaskListFilter): DrawableResource = when 
 
 @Composable
 private fun taskListFilterTint(filter: TaskListFilter): Color = when (filter) {
-    TaskListFilter.Shortlist, TaskListFilter.Today, TaskListFilter.DueThisWeek -> PrimaryBlue
+    TaskListFilter.Shortlist, TaskListFilter.Today, TaskListFilter.DueThisWeek -> if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue
     TaskListFilter.Overdue, TaskListFilter.HighPriority -> PriorityHigh
     TaskListFilter.Starred -> StarGold
     is TaskListFilter.Category, TaskListFilter.NoDate -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+@Composable
+private fun WorkflowOverviewAction(label: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = OpenTasksTheme.dimens.minimumInteractiveTargetSize), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        ChevronIcon()
+    }
 }

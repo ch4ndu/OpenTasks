@@ -1,5 +1,11 @@
 package com.udnahc.opentasks.viewmodel
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.flatMapLatest
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
@@ -23,13 +29,11 @@ import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.taskPreviewTextById
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -38,6 +42,8 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
+
+enum class MatrixLoadState { LOADING, READY, ERROR }
 
 class MatrixViewModel(
     observeTasksByPriority: ObserveTasksByPriorityUseCase,
@@ -74,6 +80,26 @@ class MatrixViewModel(
         override fun hashCode(): Int = 31 * visibleTasks.hashCode() + totalCount
     }
 
+    data class ReimaginedState(
+        val projections: Map<TaskPriority, PriorityProjection> = emptyMap(),
+        val dueText: Map<String, String> = emptyMap(),
+        val totalCount: Int = 0,
+    )
+
+    private val readGeneration = MutableStateFlow(0L)
+    private val _loadState = MutableStateFlow(MatrixLoadState.LOADING)
+    // The filter-free overview needs only the task source; category names are used by Classic detail/creation.
+    val loadState: StateFlow<MatrixLoadState> = _loadState
+
+    private val _categoryNamesReadFailed = MutableStateFlow(false)
+    val categoryNamesReadFailed: StateFlow<Boolean> = _categoryNamesReadFailed
+
+    fun retryLoad() {
+        _loadState.value = MatrixLoadState.LOADING
+        _categoryNamesReadFailed.value = false
+        readGeneration.value += 1L
+    }
+
     private val _selectedPriority = MutableStateFlow(TaskPriority.HIGH)
     private val _viewMode = MutableStateFlow(TaskListViewMode.LIST)
     private val taskMutationFailureEvents = TaskMutationFailureEventStore()
@@ -104,14 +130,38 @@ class MatrixViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val categoryNames: StateFlow<Map<String, String>> = observeAllCategories()
-        .map { cats -> cats.associate { it.id to it.name } }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val categoryNames: StateFlow<Map<String, String>> = readGeneration.flatMapLatest {
+        observeAllCategories().map { cats -> cats.associate { it.id to it.name } }
+            .onStart { _categoryNamesReadFailed.value = false }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                _categoryNamesReadFailed.value = true
+            }
+    }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val tasksByPriority: StateFlow<Map<TaskPriority, List<Task>>> = observeTasksByPriority()
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val tasksByPriority: StateFlow<Map<TaskPriority, List<Task>>> = readGeneration.flatMapLatest {
+        observeTasksByPriority()
+            .onEach { _loadState.value = MatrixLoadState.READY }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                _loadState.value = MatrixLoadState.ERROR
+            }
+    }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val reimaginedState = combine(tasksByPriority, localDaySignal.dates) { groups, _ ->
+        val projections = groups.mapValues { (_, tasks) -> PriorityProjection(visibleTasks = tasks.take(7), totalCount = tasks.size) }
+        ReimaginedState(
+            totalCount = groups.values.sumOf { it.size },
+            projections = projections,
+            dueText = projections.values.flatMap(PriorityProjection::visibleTasks).associate { it.id to taskDueTextProvider.matrixDueText(it) },
+        )
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ReimaginedState())
 
     private val tasksForSelectedPriority: StateFlow<List<Task>> =
         combine(tasksByPriority, _selectedPriority) { tasks, priority -> tasks[priority].orEmpty() }

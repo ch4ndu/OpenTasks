@@ -29,23 +29,34 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import com.udnahc.opentasks.data.model.Note
+import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.viewmodel.NoteListItem
 import com.udnahc.opentasks.viewmodel.NoteViewModel
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.empty_notes
 import opentasks.composeapp.generated.resources.notes
+import opentasks.composeapp.generated.resources.note_linked_count
+import opentasks.composeapp.generated.resources.note_untitled
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun NotesScreen(
     viewModel: NoteViewModel,
     onNoteClick: (Note) -> Unit,
+    onCreateNote: (String) -> Unit = {},
     onSettingsClick: () -> Unit = {},
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
 ) {
+    if (isReimagined) {
+        val notes by viewModel.libraryItems.collectAsState()
+        val query by viewModel.searchQuery.collectAsState()
+        ReimaginedNotesLibrary(notes, query, { viewModel.searchQuery.value = it }, onNoteClick, onCreateNote, onSettingsClick,
+            isRefreshing = isRefreshing, syncEnabled = syncEnabled, onRefresh = onRefresh)
+        return
+    }
     val notes by viewModel.noteListItems.collectAsState()
     NotesContent(
         notes = notes,
@@ -139,9 +150,9 @@ internal fun NoteCard(
         ),
     ) {
         Column(modifier = Modifier.padding(dimens.paddingLarge)) {
-            if (noteData.title.isNotBlank()) {
+            if (noteData.title.isNotBlank() || isReimagined) {
                 Text(
-                    text = noteData.title,
+                    text = if (noteData.title.isBlank()) stringResource(Res.string.note_untitled) else noteData.title,
                     modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -161,6 +172,7 @@ internal fun NoteCard(
                 )
                 Spacer(Modifier.height(dimens.spacerSmall))
             }
+            if (isReimagined && note.linkedTaskCount > 0) Text(stringResource(Res.string.note_linked_count, note.linkedTaskCount), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             Text(
                 text = note.updatedAtText,
                 style = MaterialTheme.typography.labelSmall,

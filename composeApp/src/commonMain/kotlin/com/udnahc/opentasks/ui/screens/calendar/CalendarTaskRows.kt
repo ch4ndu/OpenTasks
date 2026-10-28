@@ -1,6 +1,12 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import opentasks.composeapp.generated.resources.task_mark_complete
+import opentasks.composeapp.generated.resources.task_mark_incomplete
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +23,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import opentasks.composeapp.generated.resources.calendar_overflow
+import opentasks.composeapp.generated.resources.calendar_all_items
+import opentasks.composeapp.generated.resources.close
+import opentasks.composeapp.generated.resources.inbox
+import opentasks.composeapp.generated.resources.loading
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +46,7 @@ import com.udnahc.opentasks.domain.usecase.task.CalendarTaskRowProjection
 import com.udnahc.opentasks.ui.screens.EmptyPlaceholder
 import com.udnahc.opentasks.ui.screens.TaskCheckboxButton
 import com.udnahc.opentasks.ui.screens.TaskTitleText
+import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
@@ -216,14 +230,14 @@ internal fun CardTaskRow(
                     Text(
                         text = "$dayPrefix$timeStr",
                         style = MaterialTheme.typography.labelMedium,
-                        color = PrimaryBlue,
+                        color = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
                     )
                     if (task.notifyBeforeValue > 0) {
                         Spacer(Modifier.width(dimens.spacerSmall))
                         Icon(
                             painter = painterResource(Res.drawable.ic_alarm),
                             contentDescription = null,
-                            tint = PrimaryBlue,
+                            tint = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
                             modifier = Modifier.size(dimens.iconSmall),
                         )
                     }
@@ -276,9 +290,9 @@ internal fun CalendarTaskRow(
             )
             if (row.cardDateText.isNotEmpty()) {
                 Text(
-                    text = row.cardTimeText,
+                    text = if (isReimagined && row.isAllDay) stringResource(Res.string.all_day) else row.cardTimeText,
                     style = MaterialTheme.typography.labelMedium,
-                    color = PrimaryBlue,
+                    color = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
                 )
             }
         }
@@ -327,6 +341,7 @@ internal fun TimelineEventBar(
         MaterialTheme.colorScheme.onSurfaceVariant else priorityColor
 
     if (effectiveToggle != null) {
+        val completionDescription = stringResource(if (task.status == TaskStatus.DONE) Res.string.task_mark_incomplete else Res.string.task_mark_complete)
         // Day view & 3-Day view: Row with checkbox icon + title (+ optional time)
         Row(
             modifier = modifier
@@ -345,7 +360,8 @@ internal fun TimelineEventBar(
                 tint = contentColor,
                 modifier = Modifier
                     .size(iconSize)
-                    .clickable(onClick = effectiveToggle),
+                    .toggleable(value = task.status == TaskStatus.DONE, role = Role.Checkbox, onValueChange = { effectiveToggle() })
+                    .semantics { contentDescription = completionDescription },
             )
             Spacer(Modifier.width(iconSpacing))
             Text(
@@ -397,4 +413,77 @@ internal fun EmptyDayPlaceholder() {
         text = stringResource(Res.string.no_tasks),
         modifier = Modifier.fillMaxWidth().padding(vertical = dimens.calendarEmptyPadding),
     )
+}
+
+internal val LocalCalendarCategoryNames = androidx.compose.runtime.compositionLocalOf<Map<String, String>> { emptyMap() }
+
+internal val LocalCalendarModalBusy = androidx.compose.runtime.staticCompositionLocalOf<(Any, Boolean) -> Unit> { { _, _ -> } }
+
+/** Full, virtualized access also covers dense lanes and truncated all-day previews. */
+@Composable
+internal fun CalendarDayItemsButton(day: com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection, onTaskClick: (com.udnahc.opentasks.data.model.Task) -> Unit, onToggleComplete: (com.udnahc.opentasks.data.model.Task) -> Unit, compactOverflowCount: Int? = null, modifier: Modifier = Modifier) {
+    val names = LocalCalendarCategoryNames.current
+    val defaultList = stringResource(opentasks.composeapp.generated.resources.Res.string.inbox)
+    var expanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val modalOwner = androidx.compose.runtime.remember { Any() }
+    val reportBusy = LocalCalendarModalBusy.current
+    androidx.compose.runtime.DisposableEffect(modalOwner, expanded) {
+        reportBusy(modalOwner, expanded)
+        onDispose { reportBusy(modalOwner, false) }
+    }
+    val allItemsDescription = stringResource(Res.string.calendar_all_items, day.rows.size)
+    if (compactOverflowCount != null) {
+        // Dense Week overflow keeps its existing measured height and a full-day button label.
+        Box(modifier.clickable(role = Role.Button) { expanded = true }
+            .semantics { contentDescription = allItemsDescription }, contentAlignment = Alignment.CenterStart) {
+            Text(stringResource(Res.string.calendar_overflow, compactOverflowCount),
+                style = OpenTasksTheme.typography.calendarEventOverflow,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+    } else androidx.compose.material3.TextButton(onClick = { expanded = true }, modifier = modifier.fillMaxWidth()) {
+        Text(allItemsDescription, maxLines = 1)
+    }
+    if (expanded) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { expanded = false },
+        title = { Text(day.formattedDate) },
+        text = {
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.height(OpenTasksTheme.dimens.minPagerHeight)) {
+                items(day.rows.size, key = { day.rows[it].task.id }) { index ->
+                    val row = day.rows[index]
+                    CalendarTaskRow(row = row, categoryName = names[row.task.categoryId] ?: defaultList, onToggleComplete = { onToggleComplete(row.task) }, onClick = { expanded = false; onTaskClick(row.task) })
+                }
+                if (day.rows.isEmpty()) item { EmptyDayPlaceholder() }
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { expanded = false }) { Text(stringResource(opentasks.composeapp.generated.resources.Res.string.close)) } },
+    )
+}
+
+@Composable
+internal fun ReimaginedCalendarAgenda(
+    days: List<Long>, calendarDaysByDay: Map<Long, com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection>,
+    onTaskClick: (com.udnahc.opentasks.data.model.Task) -> Unit, onToggleComplete: (com.udnahc.opentasks.data.model.Task) -> Unit,
+    onDaySelected: (Long) -> Unit,
+    displayMode: ListDisplayMode = ListDisplayMode.CARD,
+) {
+    val d = OpenTasksTheme.dimens
+    val names = LocalCalendarCategoryNames.current
+    val defaultList = stringResource(opentasks.composeapp.generated.resources.Res.string.inbox)
+    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(d.paddingLarge)) {
+        days.forEach { millis ->
+            val day = calendarDaysByDay[com.udnahc.opentasks.data.extensions.dayKey(millis)]
+            item(key = "day:$millis") {
+                androidx.compose.material3.TextButton(onClick = { onDaySelected(millis) }) {
+                    Text(day?.formattedDate ?: stringResource(opentasks.composeapp.generated.resources.Res.string.loading), style = MaterialTheme.typography.titleSmall)
+                }
+            }
+            items(day?.rows?.size ?: 0, key = { index -> "$millis:${day?.rows?.get(index)?.task?.id}" }) { index ->
+                day?.rows?.get(index)?.let { row ->
+                    if (displayMode == ListDisplayMode.TIMELINE) TimelineTaskRow(row, index == 0, index == day.rows.lastIndex, { onToggleComplete(row.task) }, { onTaskClick(row.task) })
+                    else CardTaskRow(row, isToday = day.isToday, categoryName = names[row.task.categoryId] ?: defaultList, onToggleComplete = { onToggleComplete(row.task) }, onClick = { onTaskClick(row.task) })
+                }
+            }
+            if (day?.rows.isNullOrEmpty()) item(key = "empty:$millis") { EmptyDayPlaceholder() }
+        }
+    }
 }

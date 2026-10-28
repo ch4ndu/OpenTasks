@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
+import com.udnahc.opentasks.data.model.Task
+import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.data.repository.CommittedMutation
 import com.udnahc.opentasks.domain.action.note.AddNoteAction
@@ -21,6 +23,7 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
@@ -35,6 +38,7 @@ data class NoteListItem(
     val note: Note,
     val previewText: String,
     val updatedAtText: String,
+    val linkedTaskCount: Int = 0,
 )
 
 sealed interface NoteMutationOperation {
@@ -61,6 +65,7 @@ sealed interface NoteMutationState {
     data class Success(
         val operation: NoteMutationOperation,
         val hasPostCommitWarning: Boolean,
+        val committedNote: Note? = null,
     ) : NoteMutationState
     data class Error(val operation: NoteMutationOperation) : NoteMutationState
 }
@@ -72,6 +77,7 @@ class NoteViewModel(
     private val updateNoteAction: UpdateNoteAction,
     private val deleteNoteAction: DeleteNoteAction,
     private val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
+    observeAllTasks: ObserveAllTasksUseCase? = null,
     private val dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
 ) : ViewModel() {
 
@@ -79,16 +85,41 @@ class NoteViewModel(
     private val _mutationState = MutableStateFlow<NoteMutationState>(NoteMutationState.Idle)
     val mutationState: StateFlow<NoteMutationState> = _mutationState
 
+    val searchQuery = MutableStateFlow("")
+
     val noteListItems: StateFlow<List<NoteListItem>> = observeAllNotes()
         .map { notes -> notes.map { it.toListItem(dateTimeFormatter) } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val allTasks: StateFlow<List<Task>> = (observeAllTasks?.invoke() ?: flowOf(emptyList()))
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val taskCountsByNote = allTasks
+        .map { tasks -> tasks.mapNotNull { it.sourceNoteId }.groupingBy { it }.eachCount() }
+        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val libraryItems = combine(noteListItems, taskCountsByNote, searchQuery) { items, counts, query ->
+        val needle = query.trim()
+        val matching = if (needle.isEmpty()) items else items.filter {
+            it.note.title.contains(needle, ignoreCase = true) || it.previewText.contains(needle, ignoreCase = true)
+        }
+        matching.map { it.copy(linkedTaskCount = counts[it.note.id] ?: 0) }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val selectedNote: StateFlow<Note?> = _selectedNoteId
         .flatMapLatest { id -> if (id != null) observeNoteById(id) else flowOf(null) }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val linkedTasks = combine(_selectedNoteId, allTasks) { id, tasks ->
+        if (id == null) emptyList() else tasks.filter { it.sourceNoteId == id }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val linkedTaskPreview = linkedTasks.map { it.take(2) }
+        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun selectNote(noteId: String?) {
         _selectedNoteId.value = noteId
@@ -164,6 +195,7 @@ class NoteViewModel(
                     NoteMutationState.Success(
                         operation = operation,
                         hasPostCommitWarning = committed.postCommitWarning != null,
+                        committedNote = committed.value,
                     ),
                 )
             } catch (error: CancellationException) {

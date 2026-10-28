@@ -1,5 +1,9 @@
 package com.udnahc.opentasks.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,20 +20,21 @@ import com.udnahc.opentasks.domain.action.task.*
 import com.udnahc.opentasks.domain.usecase.task.ReviewStep
 import com.udnahc.opentasks.viewmodel.*
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
+import com.udnahc.opentasks.ui.theme.isReimagined
 import opentasks.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
 private fun WorkflowLayout(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).navigationBarsPadding()) {
-        OpenTasksTopBar(title = title, navigationIcon = { OpenTasksBackButton(onClick = onBack) })
+        if (isReimagined) ReimaginedScreenHeader(title, onBack) else OpenTasksTopBar(title = title, navigationIcon = { OpenTasksBackButton(onClick = onBack) })
         content()
     }
 }
 
 @Composable
 private fun WorkflowMessage(text: String) {
-    Text(text, modifier = Modifier.padding(OpenTasksTheme.dimens.paddingLarge), style = MaterialTheme.typography.bodyMedium)
+    Text(text, modifier = Modifier.padding(OpenTasksTheme.dimens.paddingLarge), style = MaterialTheme.typography.bodyMedium, color = if (isReimagined) MaterialTheme.colorScheme.onSurfaceVariant else LocalContentColor.current)
 }
 
 @Composable
@@ -38,7 +43,7 @@ internal fun WorkflowTaskItem(row: WorkflowTaskRow, onClick: () -> Unit, trailin
         headlineContent = { Text(row.task.title) },
         supportingContent = { Text(row.detail) },
         trailingContent = trailing,
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.then(if (isReimagined) Modifier.padding(horizontal = OpenTasksTheme.dimens.paddingLarge, vertical = OpenTasksTheme.dimens.paddingSmall).clip(RoundedCornerShape(OpenTasksTheme.dimens.cornerXLarge)) else Modifier).clickable(onClick = onClick),
     )
 }
 
@@ -55,6 +60,14 @@ fun WeeklyReviewScreen(viewModel: WeeklyReviewViewModel, onBack: () -> Unit, onT
 @Composable
 private fun WeeklyReviewContent(state: WeeklyReviewState, pending: Set<String>, onBack: () -> Unit, onTaskClick: (Task) -> Unit, onStep: (ReviewStep) -> Unit, onComplete: (Task) -> Unit, onShortlist: (Task) -> Unit) {
     WorkflowLayout(stringResource(Res.string.weekly_review), onBack) {
+        if (isReimagined) {
+            LinearProgressIndicator(progress = { (state.step.ordinal + 1).toFloat() / ReviewStep.entries.size }, modifier = Modifier.fillMaxWidth().padding(OpenTasksTheme.dimens.paddingLarge))
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = OpenTasksTheme.dimens.paddingLarge), horizontalArrangement = Arrangement.spacedBy(OpenTasksTheme.dimens.paddingSmall)) {
+                ReviewStep.entries.forEach { step ->
+                    FilterChip(selected = state.step == step, onClick = { onStep(step) }, label = { Text(stringResource(when (step) { ReviewStep.INBOX -> Res.string.review_inbox; ReviewStep.OVERDUE -> Res.string.review_overdue; ReviewStep.IMPORTANT -> Res.string.review_important; ReviewStep.SHORTLIST -> Res.string.review_shortlist })) })
+                }
+            }
+        }
         WorkflowMessage(stringResource(Res.string.review_step, state.step.ordinal + 1, ReviewStep.entries.size))
         Text(stringResource(when (state.step) {
             ReviewStep.INBOX -> Res.string.review_inbox
@@ -115,7 +128,8 @@ private fun LogbookContent(state: LogbookState, onBack: () -> Unit, onTaskClick:
                     }
                     TextButton(onClick = { showLists = true }) { Text(state.categoryName.ifBlank { stringResource(Res.string.logbook_all_lists) }) }
                 }
-                WorkflowMessage(stringResource(Res.string.logbook_count, state.rows.size))
+                if (isReimagined) Text(stringResource(Res.string.logbook_count, state.rows.size), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(OpenTasksTheme.dimens.paddingXLarge))
+                else WorkflowMessage(stringResource(Res.string.logbook_count, state.rows.size))
             }
             if (state.rows.isEmpty()) item { WorkflowMessage(stringResource(Res.string.workflow_empty)) }
             items(state.rows, key = { it.entry.id }) { row ->
@@ -206,7 +220,10 @@ private fun NoteTasksContent(state: NoteTasksState, onBack: () -> Unit, onTaskCl
                     val note = state.note
                     if (note == null) WorkflowMessage(stringResource(Res.string.note_unavailable))
                     else {
-                        WorkflowMessage(note.title)
+                        if (isReimagined) ReimaginedPanel(Modifier.fillMaxWidth().padding(OpenTasksTheme.dimens.paddingLarge)) {
+                            ReimaginedSectionLabel(stringResource(Res.string.source_note))
+                            Text(note.title, style = MaterialTheme.typography.titleLarge)
+                        } else WorkflowMessage(note.title)
                         FlowRow(Modifier.padding(horizontal = OpenTasksTheme.dimens.paddingMedium)) {
                             TextButton(onClick = { onOpenNote(note) }) { Text(stringResource(Res.string.note_edit_source)) }
                             TextButton(onClick = { onCreate(note) }) { Text(stringResource(Res.string.note_create_task)) }

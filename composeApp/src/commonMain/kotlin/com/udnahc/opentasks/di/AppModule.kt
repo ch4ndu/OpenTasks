@@ -167,6 +167,8 @@ import com.udnahc.opentasks.domain.usecase.task.LocalizedTaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskReminderEligibilityUseCase
 import com.udnahc.opentasks.viewmodel.AppViewModel
+import com.udnahc.opentasks.domain.usecase.settings.ObserveUiExperienceUseCase
+import com.udnahc.opentasks.domain.action.settings.SaveUiExperienceAction
 import com.udnahc.opentasks.viewmodel.AppearanceViewModel
 import com.udnahc.opentasks.viewmodel.AuthViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
@@ -301,6 +303,8 @@ val sharedModule = module {
     single { ObserveShortlistUseCase(get(), get()) }
     single { ObserveTaskSortOptionUseCase(get()) }
     single { ObserveTaskListViewModeUseCase(get()) }
+    single { ObserveUiExperienceUseCase(get()) }
+    single { SaveUiExperienceAction(get()) }
     single { ObserveThemePreferenceUseCase(get()) }
     single { ObserveTextSizePreferenceUseCase(get()) }
     single { ObserveCalendarViewPreferenceUseCase(get()) }
@@ -541,7 +545,7 @@ val sharedModule = module {
     }
     viewModel {
         NoteViewModel(
-            get(), get(), get(), get(), get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+            get(), get(), get(), get(), get(), observeAllTasks = get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
             dateTimeFormatter = get(),
         )
     }
@@ -558,6 +562,7 @@ val sharedModule = module {
     }
     viewModel {
         CountdownViewModel(
+            dateTimeFormatter = get(),
             observeAllCountdowns = get(),
             localDaySignal = get(),
         )
@@ -574,15 +579,18 @@ val sharedModule = module {
     }
     viewModel {
         AppearanceViewModel(
+            observeUiExperience = get(),
             observeThemePreference = get(),
             observeTextSizePreference = get(),
         )
     }
     viewModel {
         SettingsViewModel(
+            observeUiExperience = get(),
             observeThemePreference = get(),
             observeTextSizePreference = get(),
             triggerSyncAction = get(),
+            saveUiExperienceAction = get(),
             saveThemePreferenceAction = get(),
             saveTextSizePreferenceAction = get(),
             clearLocalDataAction = get(),

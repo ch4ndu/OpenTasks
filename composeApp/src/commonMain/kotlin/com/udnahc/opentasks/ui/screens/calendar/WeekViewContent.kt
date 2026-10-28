@@ -41,6 +41,7 @@ import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
 import com.udnahc.opentasks.domain.usecase.task.EMPTY_CALENDAR_DAY_PROJECTION
 import com.udnahc.opentasks.domain.usecase.task.calendarTaskPrefix
+import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
@@ -71,6 +72,8 @@ internal fun WeekViewContent(
     onWeekSelected: (sundayMillis: Long) -> Unit,
     selectedDayMillis: Long,
     onDaySelected: (Long) -> Unit,
+    taskDayKeys: Set<Long> = calendarDaysByDay.keys,
+    onToggleComplete: (Task) -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val todayWeekSunMillis = remember(todayMillis) { startOfWeekLocalMillis(todayMillis) }
@@ -110,6 +113,7 @@ internal fun WeekViewContent(
                         cellWidth = cellWidth,
                         cellHeight = cellHeight,
                         onTaskClick = onTaskClick,
+                        onToggleComplete = onToggleComplete,
                         selectedDayMillis = selectedDayMillis,
                         onDaySelected = onDaySelected,
                     )
@@ -134,7 +138,7 @@ internal fun WeekViewContent(
                         todayYear = todayYear,
                         todayMonth = todayMonth,
                         todayDay = todayDay,
-                        taskDayKeys = calendarDaysByDay.keys,
+                        taskDayKeys = taskDayKeys,
                         onDayClick = { dayMillis ->
                             val sundayMillis = startOfWeekLocalMillis(dayMillis)
                             onWeekSelected(sundayMillis)
@@ -156,6 +160,7 @@ private fun WeekViewDayPagerContent(
     cellWidth: Dp,
     cellHeight: Dp,
     onTaskClick: (Task) -> Unit,
+    onToggleComplete: (Task) -> Unit,
     selectedDayMillis: Long,
     onDaySelected: (Long) -> Unit,
 ) {
@@ -175,6 +180,7 @@ private fun WeekViewDayPagerContent(
                             dayProjection = calendarDaysByDay[dayKey(dayMillis)]
                                 ?: EMPTY_CALENDAR_DAY_PROJECTION,
                             onTaskClick = onTaskClick,
+                            onToggleComplete = onToggleComplete,
                             isSelected = dayMillis == selectedDayMillis,
                             onDaySelected = onDaySelected,
                             modifier = Modifier.width(cellWidth).fillMaxHeight(),
@@ -197,6 +203,7 @@ internal fun WeekViewDayCell(
     isSelected: Boolean,
     onDaySelected: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    onToggleComplete: (Task) -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val isToday = dayMillis == todayMillis
@@ -207,8 +214,8 @@ internal fun WeekViewDayCell(
         )
     }
     val textColor = when {
-        isSelected -> Color.White
-        isToday -> PrimaryBlue
+        isSelected -> if (isReimagined) MaterialTheme.colorScheme.onPrimary else Color.White
+        isToday -> (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
         else -> MaterialTheme.colorScheme.onBackground
     }
 
@@ -224,7 +231,7 @@ internal fun WeekViewDayCell(
                 .fillMaxSize()
                 .then(
                     if (isSelected) Modifier.background(
-                        PrimaryBlue.copy(alpha = 0.25f),
+                        (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue).copy(alpha = 0.25f),
                         RoundedCornerShape(
                             topStart = dimens.cornerLarge,
                             topEnd = dimens.cornerLarge,
@@ -241,7 +248,7 @@ internal fun WeekViewDayCell(
             Text(
                 text = calendarWeekdayShort(dayIndex),
                 style = MaterialTheme.typography.labelSmall,
-                color = if (isSelected) PrimaryBlue
+                color = if (isSelected) (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(dimens.spacerSmall))
@@ -250,7 +257,7 @@ internal fun WeekViewDayCell(
                     .size(dimens.calendarWeekDayCircle)
                     .then(
                         when {
-                            isSelected -> Modifier.background(PrimaryBlue, CircleShape)
+                            isSelected -> Modifier.background((if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue), CircleShape)
                             isToday -> Modifier.background(
                                 MaterialTheme.colorScheme.surfaceVariant,
                                 CircleShape
@@ -297,7 +304,11 @@ internal fun WeekViewDayCell(
                         )
                     }
                     if (prefix.overflowCount > 0) {
-                        Text(
+                        if (isReimagined) CalendarDayItemsButton(
+                            day = dayProjection, onTaskClick = onTaskClick, onToggleComplete = onToggleComplete,
+                            compactOverflowCount = prefix.overflowCount,
+                            modifier = Modifier.fillMaxWidth().height(overflowHeight).padding(start = 2.dp),
+                        ) else Text(
                                 text = stringResource(Res.string.calendar_overflow, prefix.overflowCount),
                             style = OpenTasksTheme.typography.calendarEventOverflow,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -340,7 +351,7 @@ internal fun WeekViewMiniCalendar(
                 text = "${calendarMonthNameShort(month)} $year",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = if (year == todayYear && month == todayMonth) PrimaryBlue
+                color = if (year == todayYear && month == todayMonth) (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
                 else MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.padding(bottom = dimens.spacerTiny),
             )

@@ -258,6 +258,91 @@ class CalendarTransformsTest {
         assertEquals(0, formatter.hourFormatCalls)
     }
 
+    @Test
+    fun visibleRangeBoundsContinuationAndExcludesMidnightEndWithoutChangingClassic() {
+        val may5 = startOfDayLocalMillis(2026, 5, 5)
+        val may6 = startOfDayLocalMillis(2026, 5, 6)
+        val firstKey = dayKey(may5)
+        val secondKey = dayKey(may6)
+        val imported = testTask(id = "imported", deadline = dayStart, endDeadline = may6, isAllDay = true)
+        val overnight = testTask(id = "overnight", deadline = dayStart + 22 * MILLIS_PER_HOUR, endDeadline = may5 + 10 * MILLIS_PER_HOUR)
+        val midnightEnd = testTask(id = "midnight-end", deadline = dayStart + 23 * MILLIS_PER_HOUR, endDeadline = may5)
+        val ancient = startOfDayLocalMillis(1990, 1, 1)
+        val longSpan = testTask(id = "long-span", deadline = ancient, endDeadline = startOfDayLocalMillis(2090, 1, 1), isAllDay = true)
+        val inputs = mapOf(dayKey(dayStart) to listOf(imported, overnight, midnightEnd), dayKey(ancient) to listOf(longSpan))
+        val window = CalendarVisibleRange(LocalDate(2026, 5, 5), LocalDate(2026, 5, 7))
+        val expanded = expandCalendarVisibleInputs(inputs, window)
+        assertEquals(setOf(firstKey, secondKey), expanded.keys)
+        assertEquals(setOf("imported", "overnight", "long-span"), expanded.getValue(firstKey).map { it.id }.toSet())
+        assertEquals(listOf("long-span"), expanded.getValue(secondKey).map { it.id })
+        assertTrue(expanded.getValue(firstKey).single { it.id == "overnight" } === overnight)
+        val formatter = CountingCalendarFormatter()
+        val cache = CalendarProjectionCache(formatter)
+        val week = cache.render(
+            today = LocalDate(2026, 5, 5), dayInputs = inputs, formattingContextKey = formatter.formattingContextKey,
+            viewPreference = CalendarViewPreference.WEEK, listDisplayModePreference = CalendarListDisplayModePreference.TIMELINE,
+            listSelectedDayKey = null, monthSelectedDayKey = null, visibleRange = window,
+        )
+        val continuation = week.calendarDaysByDay.getValue(firstKey).timedRows.single()
+        assertTrue(continuation.task === overnight)
+        assertEquals(0, continuation.layoutStartMinutes)
+        assertEquals(600, continuation.endMinutes)
+        assertEquals("12:00 AM", continuation.timelineTimeText)
+        assertEquals("May 5", continuation.cardDateText)
+        assertTrue(week.timelineHourLabels.isEmpty())
+        assertEquals(0, formatter.hourFormatCalls)
+        val day = cache.render(
+            today = LocalDate(2026, 5, 5), dayInputs = inputs, formattingContextKey = formatter.formattingContextKey,
+            viewPreference = CalendarViewPreference.DAY, listDisplayModePreference = CalendarListDisplayModePreference.TIMELINE,
+            listSelectedDayKey = null, monthSelectedDayKey = null, visibleRange = window,
+        )
+        assertTrue(week.calendarDaysByDay.getValue(firstKey) === day.calendarDaysByDay.getValue(firstKey))
+        assertEquals(24, day.timelineHourLabels.size)
+        assertEquals(24, formatter.hourFormatCalls)
+        formatter.clearRecordedWork()
+        val year = cache.render(
+            today = LocalDate(2026, 5, 5), dayInputs = inputs, formattingContextKey = formatter.formattingContextKey,
+            viewPreference = CalendarViewPreference.YEAR, listDisplayModePreference = CalendarListDisplayModePreference.TIMELINE,
+            listSelectedDayKey = null, monthSelectedDayKey = null, visibleRange = window,
+        )
+        assertEquals(setOf(firstKey, secondKey), year.taskDayKeys)
+        assertTrue(year.calendarDaysByDay.isEmpty())
+        assertTrue(year.timelineHourLabels.isEmpty())
+        assertEquals(0, formatter.nonHourFormatCalls)
+        val classic = cache.renderMonth(LocalDate(2026, 5, 5), inputs)
+        assertEquals(inputs.keys, classic.taskDayKeys)
+        assertTrue(classic.calendarDaysByDay.getValue(firstKey).rows.isEmpty())
+        assertEquals("10:00 PM", classic.calendarDaysByDay.getValue(dayKey(dayStart)).timedRows.first().timelineTimeText)
+    }
+
+    @Test
+    fun overlapLanesReuseFirstFreeLaneWithinConnectedGroupsWithStableTies() {
+        val first = testTask(id = "first", deadline = dayStart + 9 * MILLIS_PER_HOUR, endDeadline = dayStart + 11 * MILLIS_PER_HOUR)
+        val second = testTask(id = "second", deadline = dayStart + 10 * MILLIS_PER_HOUR, endDeadline = dayStart + 12 * MILLIS_PER_HOUR)
+        val touching = testTask(id = "touching", deadline = dayStart + 11 * MILLIS_PER_HOUR, endDeadline = dayStart + 13 * MILLIS_PER_HOUR)
+        val separate = testTask(id = "separate", deadline = dayStart + 13 * MILLIS_PER_HOUR, endDeadline = dayStart + 14 * MILLIS_PER_HOUR)
+        val tieA = testTask(id = "tie-a", deadline = dayStart + 16 * MILLIS_PER_HOUR, endDeadline = dayStart + 17 * MILLIS_PER_HOUR)
+        val tieB = tieA.copy(id = "tie-b")
+        val inputs = listOf(tieB, touching, second, separate, first, tieA)
+        val projected = projectCalendarDay(inputs, dayKey(dayStart), dayKey(dayStart)).timedRows
+        val byId = projected.associateBy { it.task.id }
+
+        assertEquals(0, byId.getValue("first").laneIndex)
+        assertEquals(1, byId.getValue("second").laneIndex)
+        assertEquals(0, byId.getValue("touching").laneIndex)
+        listOf("first", "second", "touching").forEach { id -> assertEquals(2, byId.getValue(id).laneCount) }
+        assertEquals(0, byId.getValue("separate").laneIndex)
+        assertEquals(1, byId.getValue("separate").laneCount)
+        assertEquals(0, byId.getValue("tie-a").laneIndex)
+        assertEquals(1, byId.getValue("tie-b").laneIndex)
+        assertEquals(2, byId.getValue("tie-a").laneCount)
+        assertEquals(2, byId.getValue("tie-b").laneCount)
+        assertTrue(projected.all { row -> inputs.any { it === row.task } })
+        val reversed = projectCalendarDay(inputs.reversed(), dayKey(dayStart), dayKey(dayStart)).timedRows
+        assertEquals(projected.map { Triple(it.task.id, it.laneIndex, it.laneCount) },
+            reversed.map { Triple(it.task.id, it.laneIndex, it.laneCount) })
+    }
+
     private fun CalendarProjectionCache.renderMonth(
         today: LocalDate,
         dayInputs: Map<Long, List<com.udnahc.opentasks.data.model.Task>>,

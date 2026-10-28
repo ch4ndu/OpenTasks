@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.ui.screens
 
+import com.udnahc.opentasks.ui.theme.isReimagined
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -224,6 +225,20 @@ private fun ShortlistHeader(
     onChooseTasksClick: () -> Unit,
 ) {
     val dimens = OpenTasksTheme.dimens
+    if (isReimagined) {
+        Column {
+            ReimaginedScreenHeader(stringResource(Res.string.shortlist), onAllViewsClick)
+            Column(Modifier.padding(horizontal = dimens.paddingXLarge)) {
+                ReimaginedSectionLabel(stringResource(Res.string.shortlist_remaining, remaining))
+                Text(stringResource(Res.string.shortlist_subtitle), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(dimens.paddingMedium)) {
+                    OutlinedButton(onClick = onChooseTasksClick) { Text(stringResource(Res.string.shortlist_choose_tasks)) }
+                    if (onBulkTasks != null) TextButton(onClick = onBulkTasks) { Text(stringResource(Res.string.bulk_tasks)) }
+                }
+            }
+        }
+        return
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -256,7 +271,7 @@ private fun ShortlistHeader(
                 Icon(
                     painter = painterResource(Res.drawable.ic_add),
                     contentDescription = null,
-                    tint = PrimaryBlue,
+                    tint = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
                     modifier = Modifier.size(dimens.iconDefault),
                 )
                 Spacer(Modifier.width(dimens.spacerSmall))
@@ -360,11 +375,11 @@ private fun DueOutsideCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(text = stringResource(Res.string.shortlist_view_today), color = PrimaryBlue)
+            Text(text = stringResource(Res.string.shortlist_view_today), color = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue)
             Icon(
                 painter = painterResource(Res.drawable.ic_chevron_right),
                 contentDescription = null,
-                tint = PrimaryBlue,
+                tint = if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue,
                 modifier = Modifier.size(dimens.iconDefault),
             )
         }

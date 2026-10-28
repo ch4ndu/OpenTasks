@@ -4,6 +4,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 
@@ -59,6 +60,9 @@ data class OpenTasksExtendedTypography(
     val calendarEventOverflow: TextStyle,
     val quadrantBadge: TextStyle,
     val quadrantBadgeSmall: TextStyle,
+    val matrixTaskTitle: TextStyle = TextStyle.Default,
+    val matrixTaskMeta: TextStyle = TextStyle.Default,
+    val appBarTitle: TextStyle = Typography().titleLarge,
 )
 
 fun openTasksExtendedTypography(
@@ -67,6 +71,9 @@ fun openTasksExtendedTypography(
 ): OpenTasksExtendedTypography {
     val scale = preset.scale * userScale
     return OpenTasksExtendedTypography(
+        appBarTitle = Typography().titleLarge.scaledBy(userScale),
+        matrixTaskTitle = TextStyle(fontSize = 12.sp * userScale, lineHeight = 16.sp * userScale),
+        matrixTaskMeta = TextStyle(fontSize = 11.sp * userScale, lineHeight = 14.sp * userScale),
         calendarDayNumber = TextStyle(
             fontSize = 13.sp * scale,
         ),
@@ -107,3 +114,32 @@ private fun TextStyle.scaledBy(scale: Float): TextStyle =
         fontSize = fontSize * scale,
         lineHeight = if (lineHeight.isSpecified) lineHeight * scale else lineHeight,
     )
+
+internal fun Typography.withSansSerif(): Typography = copy(
+    displayLarge = displayLarge.copy(fontFamily = FontFamily.SansSerif),
+    displayMedium = displayMedium.copy(fontFamily = FontFamily.SansSerif),
+    displaySmall = displaySmall.copy(fontFamily = FontFamily.SansSerif),
+    headlineLarge = headlineLarge.copy(fontFamily = FontFamily.SansSerif),
+    headlineMedium = headlineMedium.copy(fontFamily = FontFamily.SansSerif),
+    headlineSmall = headlineSmall.copy(fontFamily = FontFamily.SansSerif),
+    titleLarge = titleLarge.copy(fontFamily = FontFamily.SansSerif),
+    titleMedium = titleMedium.copy(fontFamily = FontFamily.SansSerif),
+    titleSmall = titleSmall.copy(fontFamily = FontFamily.SansSerif),
+    bodyLarge = bodyLarge.copy(fontFamily = FontFamily.SansSerif),
+    bodyMedium = bodyMedium.copy(fontFamily = FontFamily.SansSerif),
+    bodySmall = bodySmall.copy(fontFamily = FontFamily.SansSerif),
+    labelLarge = labelLarge.copy(fontFamily = FontFamily.SansSerif),
+    labelMedium = labelMedium.copy(fontFamily = FontFamily.SansSerif),
+    labelSmall = labelSmall.copy(fontFamily = FontFamily.SansSerif),
+)
+
+internal fun OpenTasksExtendedTypography.withSansSerif(): OpenTasksExtendedTypography = copy(
+    appBarTitle = appBarTitle.copy(fontFamily = FontFamily.SansSerif),
+    calendarDayNumber = calendarDayNumber.copy(fontFamily = FontFamily.SansSerif),
+    calendarEventTitle = calendarEventTitle.copy(fontFamily = FontFamily.SansSerif),
+    calendarEventOverflow = calendarEventOverflow.copy(fontFamily = FontFamily.SansSerif),
+    quadrantBadge = quadrantBadge.copy(fontFamily = FontFamily.SansSerif),
+    quadrantBadgeSmall = quadrantBadgeSmall.copy(fontFamily = FontFamily.SansSerif),
+    matrixTaskTitle = matrixTaskTitle.copy(fontFamily = FontFamily.SansSerif),
+    matrixTaskMeta = matrixTaskMeta.copy(fontFamily = FontFamily.SansSerif),
+)

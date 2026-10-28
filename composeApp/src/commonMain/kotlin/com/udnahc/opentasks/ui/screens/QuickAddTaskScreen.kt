@@ -1,5 +1,10 @@
 package com.udnahc.opentasks.ui.screens
 
+import com.udnahc.opentasks.ui.theme.isReimagined
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,12 +36,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
+import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.domain.usecase.task.QuickTaskToken
 import com.udnahc.opentasks.domain.usecase.task.QuickTaskTokenKind
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.util.formatLocalizedDateWithWeekday
 import com.udnahc.opentasks.viewmodel.QuickAddTaskUiState
+import opentasks.composeapp.generated.resources.reimagined_open_full_editor
+import opentasks.composeapp.generated.resources.*
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.add
 import opentasks.composeapp.generated.resources.ic_close
@@ -56,6 +64,9 @@ fun QuickAddTaskScreen(
     onBack: () -> Unit,
     onAdd: () -> Unit,
     onErrorShown: () -> Unit,
+    onOpenFullEditor: (() -> Unit)? = null,
+    creationListName: String = "",
+    creationPriority: TaskPriority = TaskPriority.NONE,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     val saveFailureMessage = stringResource(Res.string.task_save_failed)
@@ -72,6 +83,9 @@ fun QuickAddTaskScreen(
         onBack = onBack,
         onAdd = onAdd,
         requestFocus = true,
+        onOpenFullEditor = onOpenFullEditor,
+        creationListName = creationListName,
+        creationPriority = creationPriority,
     )
 }
 
@@ -94,6 +108,9 @@ internal fun QuickAddTaskContent(
     onBack: () -> Unit,
     onAdd: () -> Unit,
     requestFocus: Boolean = false,
+    onOpenFullEditor: (() -> Unit)? = null,
+    creationListName: String = "",
+    creationPriority: TaskPriority = TaskPriority.NONE,
 ) {
     val focusRequester = remember { FocusRequester() }
     if (requestFocus) {
@@ -102,9 +119,13 @@ internal fun QuickAddTaskContent(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { SnackbarHost(snackbarHostState, modifier = if (isReimagined) Modifier.imePadding() else Modifier) },
         topBar = {
-            OpenTasksTopBar(
+            if (isReimagined) ReimaginedScreenHeader(stringResource(Res.string.quick_add), onBack) {
+                androidx.compose.material3.FilledTonalButton(onClick = onAdd, enabled = state.canSave, modifier = Modifier.heightIn(min = OpenTasksTheme.dimens.minimumInteractiveTargetSize)) {
+                    if (state.isSaving) CircularProgressIndicator(Modifier.size(OpenTasksTheme.dimens.iconSmall)) else Text(stringResource(Res.string.add))
+                }
+            } else OpenTasksTopBar(
                 title = stringResource(Res.string.quick_add),
                 navigationIcon = { OpenTasksBackButton(onClick = onBack) },
                 actions = {
@@ -128,6 +149,7 @@ internal fun QuickAddTaskContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .then(if (isReimagined) Modifier.imePadding() else Modifier)
                 .padding(horizontal = OpenTasksTheme.dimens.paddingXLarge),
             contentAlignment = Alignment.TopCenter,
         ) {
@@ -136,12 +158,14 @@ internal fun QuickAddTaskContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = OpenTasksTheme.dimens.authPanelMaxWidth)
+                    .then(if (isReimagined) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                     .padding(top = OpenTasksTheme.dimens.paddingXXLarge),
             ) {
                 OutlinedTextField(
                     value = state.input,
                     onValueChange = onInputChanged,
-                    singleLine = true,
+                    singleLine = !isReimagined,
+                    textStyle = if (isReimagined) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.bodyLarge,
                     enabled = !state.isSaving && !state.isSaved,
                     placeholder = { Text(stringResource(Res.string.title_hint)) },
                     supportingText = if (state.input.isEmpty()) {
@@ -163,6 +187,7 @@ internal fun QuickAddTaskContent(
                         val label = quickTaskTokenLabel(token)
                         InputChip(
                             selected = true,
+                            enabled = !isReimagined || !state.isSaving && !state.isSaved,
                             onClick = { onDismissToken(token.signature) },
                             label = { Text(label) },
                             trailingIcon = {
@@ -176,6 +201,17 @@ internal fun QuickAddTaskContent(
                                 )
                             },
                         )
+                    }
+                }
+                if (isReimagined && creationListName.isNotEmpty()) ReimaginedPanel(Modifier.fillMaxWidth()) {
+                    ReimaginedSectionLabel(stringResource(Res.string.calendar_view_list))
+                    Text(creationListName, style = MaterialTheme.typography.bodyLarge)
+                    ReimaginedSectionLabel(stringResource(Res.string.priority))
+                    Text(stringResource(when (creationPriority) { TaskPriority.HIGH -> Res.string.high_priority; TaskPriority.MEDIUM -> Res.string.medium_priority; TaskPriority.LOW -> Res.string.low_priority; TaskPriority.NONE -> Res.string.no_priority }), style = MaterialTheme.typography.bodyLarge)
+                }
+                if (isReimagined && onOpenFullEditor != null) {
+                    androidx.compose.material3.OutlinedButton(onClick = onOpenFullEditor, enabled = !state.isSaving && !state.isSaved) {
+                        Text(stringResource(opentasks.composeapp.generated.resources.Res.string.reimagined_open_full_editor))
                     }
                 }
             }

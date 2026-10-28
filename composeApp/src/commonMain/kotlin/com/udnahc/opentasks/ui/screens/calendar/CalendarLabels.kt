@@ -1,5 +1,9 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
+import com.udnahc.opentasks.data.extensions.extractDay
+import com.udnahc.opentasks.data.extensions.extractMonth
+import com.udnahc.opentasks.data.extensions.extractYear
+import opentasks.composeapp.generated.resources.calendar_period_day
 import androidx.compose.runtime.Composable
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.apr
@@ -84,3 +88,12 @@ internal fun calendarWeekdayShort(dayIndex: Int): String = when (dayIndex) {
 @Composable
 internal fun calendarWeekdayNarrow(dayIndex: Int): String =
     calendarWeekdayShort(dayIndex).take(1)
+
+
+@Composable
+internal fun calendarPeriodDay(millis: Long): String = stringResource(
+    Res.string.calendar_period_day,
+    calendarMonthNameShort(extractMonth(millis)),
+    extractDay(millis),
+    extractYear(millis),
+)

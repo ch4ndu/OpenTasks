@@ -3,6 +3,10 @@ package com.udnahc.opentasks.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import com.udnahc.opentasks.ui.theme.isReimagined
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -148,6 +152,7 @@ internal fun AccountSessionScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .then(if (isReimagined) Modifier.statusBarsPadding().navigationBarsPadding().imePadding() else Modifier)
             .verticalScroll(rememberScrollState()),
         contentAlignment = Alignment.Center,
     ) {
@@ -259,7 +264,7 @@ private fun AccountSessionForm(
         Text(
             text = title,
             style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
+            fontWeight = if (isReimagined) FontWeight.Medium else FontWeight.Bold,
         )
         Text(
             text = description,
@@ -381,6 +386,8 @@ private fun AccountSessionForm(
 
 @Composable
 internal fun accountTextFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = if (isReimagined) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
+    unfocusedContainerColor = if (isReimagined) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
     focusedTextColor = MaterialTheme.colorScheme.onSurface,
     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
     disabledTextColor = MaterialTheme.colorScheme.onSurface,

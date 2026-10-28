@@ -1,5 +1,6 @@
 package com.udnahc.opentasks.ui.screens.calendar
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,6 +41,7 @@ import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
 import com.udnahc.opentasks.domain.usecase.task.EMPTY_CALENDAR_DAY_PROJECTION
+import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import opentasks.composeapp.generated.resources.Res
@@ -64,6 +66,7 @@ internal fun ThreeDayViewContent(
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
     timelineHourLabels: List<String>,
+    onDaySelected: (Long) -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val timeColumnWidth = dimens.calendarTimeColumnWidth
@@ -86,6 +89,7 @@ internal fun ThreeDayViewContent(
             Row(modifier = Modifier.fillMaxSize()) {
                 // ── Time labels column (fixed left) ───
                 Column(modifier = Modifier.width(timeColumnWidth)) {
+                    if (isReimagined) Spacer(Modifier.height(dimens.minimumInteractiveTargetSize))
                     // Spacer for day headers area
                     Spacer(Modifier.height(dayHeaderHeight))
                     // Spacer for all-day events area
@@ -143,6 +147,7 @@ internal fun ThreeDayViewContent(
                         scrollState = scrollState,
                         onTaskClick = onTaskClick,
                         onToggleComplete = onToggleComplete,
+                        onOpenDay = onDaySelected,
                     )
                 }
             }
@@ -153,8 +158,9 @@ internal fun ThreeDayViewContent(
 // ── Single day column ───────────────────────────────────────────────────────
 
 @Composable
-private fun ThreeDayColumn(
+internal fun ThreeDayColumn(
     dayMillis: Long,
+    modifier: Modifier = Modifier,
     todayMillis: Long,
     dayTasks: CalendarDayProjection,
     hourHeight: Dp,
@@ -162,6 +168,7 @@ private fun ThreeDayColumn(
     scrollState: androidx.compose.foundation.ScrollState,
     onTaskClick: (Task) -> Unit,
     onToggleComplete: (Task) -> Unit,
+    onOpenDay: (Long) -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val isToday = dayMillis == todayMillis
@@ -174,19 +181,21 @@ private fun ThreeDayColumn(
     val allDayPreview = dayTasks.allDayPreview
     val timedRows = dayTasks.timedRows
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize()) {
+        if (isReimagined) CalendarDayItemsButton(dayTasks, onTaskClick, onToggleComplete)
         // ── Day header ───
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(dayHeaderHeight),
+                .height(dayHeaderHeight)
+                .then(if (isReimagined) Modifier.clickable { onOpenDay(dayMillis) } else Modifier),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = calendarWeekdayShort(dayOfWeekIdx),
                 style = MaterialTheme.typography.labelSmall,
-                color = if (isToday) PrimaryBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (isToday) (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue) else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(dimens.spacerSmall))
             Box(
@@ -205,7 +214,7 @@ private fun ThreeDayColumn(
                     text = dayOfMonth.toString(),
                     style = OpenTasksTheme.typography.calendarDayNumber,
                     fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isToday) PrimaryBlue else MaterialTheme.colorScheme.onBackground,
+                    color = if (isToday) (if (isReimagined) MaterialTheme.colorScheme.primary else PrimaryBlue) else MaterialTheme.colorScheme.onBackground,
                 )
             }
         }
@@ -249,7 +258,7 @@ private fun ThreeDayColumn(
         )
 
         // ── Scrollable timeline ───
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
@@ -274,13 +283,13 @@ private fun ThreeDayColumn(
 
             // Positioned timed events
             timedRows.forEach { row ->
-                val yOffset = hourHeight * row.startMinutes / 60f
+                val yOffset = hourHeight * (if (isReimagined) row.layoutStartMinutes else row.startMinutes) / 60f
                 TimelineEventBar(
                     row = row,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(dimens.threeDayEventMinHeight)
-                        .offset(y = yOffset)
+                        .fillMaxWidth(if (isReimagined) 1f / row.laneCount else 1f)
+                        .height(if (isReimagined) maxOf(dimens.threeDayEventMinHeight, hourHeight * (row.endMinutes - row.layoutStartMinutes) / 60f) else dimens.threeDayEventMinHeight)
+                        .offset(x = if (isReimagined) maxWidth * row.laneIndex / row.laneCount else 0.dp, y = yOffset)
                         .padding(horizontal = 1.dp),
                     onClick = { onTaskClick(row.task) },
                     onToggleComplete = { onToggleComplete(row.task) },

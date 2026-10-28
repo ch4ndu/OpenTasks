@@ -1,5 +1,10 @@
 package com.udnahc.opentasks.domain.usecase.task
 
+import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
+import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.minus
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.dayKeyFromDate
 import com.udnahc.opentasks.data.extensions.dayKeyToMillis
@@ -12,6 +17,48 @@ import com.udnahc.opentasks.data.model.isCountdownItem
 import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
 import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
 import kotlinx.datetime.LocalDate
+
+/** A UI-selected civil window; task spans never determine the size of expansion. */
+data class CalendarVisibleRange(val first: LocalDate, val endExclusive: LocalDate)
+
+private fun CalendarVisibleRange.firstKey(): Long = dayKeyFromDate(first.year, first.monthNumber, first.dayOfMonth)
+private fun CalendarVisibleRange.endKey(): Long = dayKeyFromDate(endExclusive.year, endExclusive.monthNumber, endExclusive.dayOfMonth)
+
+/** Clips a task's half-open interval to the bounded window before enumerating any civil days. */
+private fun calendarTaskDayRange(task: Task, window: CalendarVisibleRange): LongRange? {
+    val start = task.deadline ?: return null
+    val firstDate = localMillisToLocalDate(start)
+    val end = task.endDeadline?.takeIf { it > start }
+    val lastDate = if (end == null) firstDate else {
+        val endDate = localMillisToLocalDate(end)
+        val midnight = startOfDayLocalMillis(endDate.year, endDate.monthNumber, endDate.dayOfMonth)
+        if (end == midnight) endDate.minus(1, DateTimeUnit.DAY) else endDate
+    }
+    val firstKey = maxOf(dayKey(start), window.firstKey())
+    val lastKey = minOf(dayKeyFromDate(lastDate.year, lastDate.monthNumber, lastDate.dayOfMonth), window.endKey() - 1)
+    return (firstKey..lastKey).takeIf { firstKey <= lastKey }
+}
+
+internal fun expandCalendarVisibleInputs(
+    dayInputs: Map<Long, List<Task>>,
+    window: CalendarVisibleRange,
+): Map<Long, List<Task>> {
+    val expanded = linkedMapOf<Long, MutableList<Task>>()
+    dayInputs.values.forEach { tasks -> tasks.forEach { task ->
+        calendarTaskDayRange(task, window)?.forEach { day -> expanded.getOrPut(day) { mutableListOf() }.add(task) }
+    } }
+    return expanded
+}
+
+internal fun calendarVisibleTaskDayKeys(dayInputs: Map<Long, List<Task>>, window: CalendarVisibleRange): Set<Long> {
+    val keys = mutableSetOf<Long>()
+    val windowSize = (window.endKey() - window.firstKey()).coerceAtLeast(0)
+    for (tasks in dayInputs.values) for (task in tasks) {
+        if (keys.size.toLong() == windowSize) return keys
+        calendarTaskDayRange(task, window)?.forEach { day -> keys.add(day) }
+    }
+    return keys
+}
 
 data class CalendarDayTasks(
     val allDayTasks: List<Task> = emptyList(),
@@ -27,6 +74,10 @@ data class CalendarTaskRowProjection(
     val timelineTimeText: String?,
     val cardDateText: String,
     val cardTimeText: String,
+    val layoutStartMinutes: Int = startMinutes,
+    val endMinutes: Int = startMinutes + 30,
+    val laneIndex: Int = 0,
+    val laneCount: Int = 1,
 )
 
 data class CalendarTaskPrefix(
@@ -61,10 +112,13 @@ data class CalendarRenderState(
 internal class CalendarProjectionCache(
     private val dateTimeFormatter: DateTimeTextFormatter,
 ) {
-    private var contextKey: String? = null
+    private var contextKey: Pair<String, Boolean>? = null
     private val sourceInputsByDay = mutableMapOf<Long, List<Task>>()
     private val projectionsByDay = mutableMapOf<Long, CalendarDayProjection>()
     private var timelineHourLabels: List<String>? = null
+    private var expandedSource: Map<Long, List<Task>>? = null
+    private var expandedWindow: CalendarVisibleRange? = null
+    private var expandedInputs: Map<Long, List<Task>> = emptyMap()
 
     fun render(
         today: LocalDate,
@@ -74,12 +128,16 @@ internal class CalendarProjectionCache(
         listDisplayModePreference: CalendarListDisplayModePreference,
         listSelectedDayKey: Long?,
         monthSelectedDayKey: Long?,
+        agendaDayKeys: List<Long> = emptyList(),
+        visibleRange: CalendarVisibleRange? = null,
     ): CalendarRenderState {
-        if (contextKey != formattingContextKey) {
-            contextKey = formattingContextKey
+        val projectionContext = formattingContextKey to (visibleRange != null)
+        if (contextKey != projectionContext) {
+            val formattingChanged = contextKey?.first != formattingContextKey
+            contextKey = projectionContext
             sourceInputsByDay.clear()
             projectionsByDay.clear()
-            timelineHourLabels = null
+            if (formattingChanged) timelineHourLabels = null
         }
 
         val todayDayKey = dayKeyFromDate(today.year, today.monthNumber, today.dayOfMonth)
@@ -88,10 +146,12 @@ internal class CalendarProjectionCache(
             CalendarViewPreference.MONTH -> monthSelectedDayKey ?: todayDayKey
             else -> null
         }
-        val taskDayKeys = dayInputs.keys.toSet()
+        val taskDayKeys = if (visibleRange != null && viewPreference == CalendarViewPreference.YEAR) {
+            calendarVisibleTaskDayKeys(dayInputs, visibleRange)
+        } else dayInputs.keys.toSet()
 
         if (viewPreference == CalendarViewPreference.YEAR) {
-            removeChangedAndMissingEntries(dayInputs)
+            if (visibleRange == null) removeChangedAndMissingEntries(dayInputs) else removeChangedAndMissingTasks(dayInputs)
             return CalendarRenderState(
                 viewPreference = viewPreference,
                 listDisplayModePreference = listDisplayModePreference,
@@ -100,7 +160,16 @@ internal class CalendarProjectionCache(
             )
         }
 
-        val requiredInputs = LinkedHashMap(dayInputs)
+        val visibleInputs = if (visibleRange == null) dayInputs else {
+            if (expandedSource !== dayInputs || expandedWindow != visibleRange) {
+                expandedInputs = expandCalendarVisibleInputs(dayInputs, visibleRange)
+                expandedSource = dayInputs
+                expandedWindow = visibleRange
+            }
+            expandedInputs
+        }
+        val requiredInputs = LinkedHashMap(visibleInputs)
+        agendaDayKeys.forEach { day -> if (day !in requiredInputs) requiredInputs[day] = emptyList() }
         if (selectedDayKey != null && selectedDayKey !in requiredInputs) {
             requiredInputs[selectedDayKey] = emptyList()
         }
@@ -115,6 +184,7 @@ internal class CalendarProjectionCache(
                     targetDayKey = day,
                     todayDayKey = todayDayKey,
                     dateTimeFormatter = dateTimeFormatter,
+                    clipToDay = visibleRange != null,
                 )
             }
         }
@@ -137,12 +207,22 @@ internal class CalendarProjectionCache(
             viewPreference = viewPreference,
             listDisplayModePreference = listDisplayModePreference,
             today = today,
-            taskDayKeys = taskDayKeys,
+            taskDayKeys = visibleInputs.keys.toSet(),
             calendarDaysByDay = nextProjections,
             selectedDayProjection = selectedDayKey?.let(nextProjections::get)
                 ?: EMPTY_CALENDAR_DAY_PROJECTION,
             timelineHourLabels = labels,
         )
+    }
+
+    private fun removeChangedAndMissingTasks(dayInputs: Map<Long, List<Task>>) {
+        val currentTasks = dayInputs.values.flatten().associateBy { it.id }
+        sourceInputsByDay.keys.toList().forEach { day ->
+            if (sourceInputsByDay[day].orEmpty().any { currentTasks[it.id] != it }) {
+                sourceInputsByDay.remove(day)
+                projectionsByDay.remove(day)
+            }
+        }
     }
 
     private fun removeChangedAndMissingEntries(dayInputs: Map<Long, List<Task>>) {
@@ -183,21 +263,25 @@ fun projectCalendarDay(
     targetDayKey: Long,
     todayDayKey: Long,
     dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
+    clipToDay: Boolean = false,
 ): CalendarDayProjection {
     val rows = sortCalendarTasksForDay(tasks).map {
-        it.toCalendarTaskRowProjection(dateTimeFormatter)
+        it.toCalendarTaskRowProjection(dateTimeFormatter, targetDayKey, clipToDay)
     }
-    val (allDayRows, timedRows) = rows.partition { it.isAllDay }
+    val (allDayRows, unpositionedRows) = rows.partition { it.isAllDay }
+    val positionedById = assignCalendarOverlapLanes(unpositionedRows).associateBy { it.task.id }
+    val timedRows = unpositionedRows.map { positionedById[it.task.id] ?: it }
+    val positionedRows = rows.map { positionedById[it.task.id] ?: it }
     return CalendarDayProjection(
         dayKey = targetDayKey,
         formattedDate = dateTimeFormatter.formatDateLabel(dayKeyToMillis(targetDayKey)),
         monthDateText = dateTimeFormatter.formatShortDate(dayKeyToMillis(targetDayKey)).uppercase(),
         isToday = targetDayKey == todayDayKey,
-        rows = rows,
+        rows = positionedRows,
         allDayRows = allDayRows,
         timedRows = timedRows,
         allDayPreview = calendarTaskPrefix(allDayRows, maxVisible = 3),
-        monthPreview = calendarTaskPrefix(rows, maxVisible = 5),
+        monthPreview = calendarTaskPrefix(positionedRows, maxVisible = 5),
     )
 }
 
@@ -239,17 +323,25 @@ fun calendarTaskPrefix(
 
 private fun Task.toCalendarTaskRowProjection(
     dateTimeFormatter: DateTimeTextFormatter,
+    targetDayKey: Long,
+    clipToDay: Boolean,
 ): CalendarTaskRowProjection {
     val deadline = deadline
     val isAllDay = isCalendarAllDay()
-    val startMinutes = deadline?.let { extractHour(it) * 60 + extractMinute(it) } ?: 0
+    val dayStart = dayKeyToMillis(targetDayKey)
+    val segmentStart = if (clipToDay) deadline?.coerceAtLeast(dayStart) else deadline
+    val layoutStartMinutes = segmentStart?.let { ((it - dayStart) / MILLIS_PER_MINUTE).toInt().coerceIn(0, 1439) } ?: 0
+    val endMinutes = endDeadline?.let { ((it - dayStart) / MILLIS_PER_MINUTE).toInt().coerceIn(layoutStartMinutes + 1, 1440) }
+        ?: (layoutStartMinutes + 30).coerceAtMost(1440)
     return CalendarTaskRowProjection(
         task = this,
         isAllDay = isAllDay,
-        startMinutes = startMinutes,
-        timelineTimeText = deadline?.takeUnless { isAllDay }?.let(dateTimeFormatter::formatTime),
-        cardDateText = deadline?.let(dateTimeFormatter::formatShortDate).orEmpty(),
-        cardTimeText = deadline?.let(dateTimeFormatter::formatTime).orEmpty(),
+        startMinutes = deadline?.let { extractHour(it) * 60 + extractMinute(it) } ?: 0,
+        layoutStartMinutes = layoutStartMinutes,
+        endMinutes = endMinutes,
+        timelineTimeText = segmentStart?.takeUnless { isAllDay }?.let(dateTimeFormatter::formatTime),
+        cardDateText = segmentStart?.let(dateTimeFormatter::formatShortDate).orEmpty(),
+        cardTimeText = segmentStart?.takeUnless { clipToDay && isAllDay }?.let(dateTimeFormatter::formatTime).orEmpty(),
     )
 }
 
@@ -269,3 +361,28 @@ fun sortCalendarTasksForDay(tasks: List<Task>): List<Task> = tasks.sortedWith(ca
 
 private fun Task.isCalendarAllDay(): Boolean =
     isAllDay || (deadline != null && extractHour(deadline) == 0 && extractMinute(deadline) == 0)
+
+
+/** Touching intervals do not overlap; connected interval groups share their maximum lane count. */
+internal fun assignCalendarOverlapLanes(rows: List<CalendarTaskRowProjection>): List<CalendarTaskRowProjection> {
+    val ordered = rows.sortedWith(compareBy({ it.layoutStartMinutes }, { it.endMinutes }, { it.task.id }))
+    val result = mutableListOf<CalendarTaskRowProjection>()
+    var group = mutableListOf<CalendarTaskRowProjection>()
+    val laneEnds = mutableListOf<Int>()
+    var groupEnd = -1
+    fun flush() {
+        val count = laneEnds.size.coerceAtLeast(1)
+        result.addAll(group.map { it.copy(laneCount = count) })
+        group = mutableListOf()
+        laneEnds.clear()
+    }
+    ordered.forEach { row ->
+        if (group.isNotEmpty() && row.layoutStartMinutes >= groupEnd) flush()
+        var lane = laneEnds.indexOfFirst { it <= row.layoutStartMinutes }
+        if (lane < 0) { lane = laneEnds.size; laneEnds.add(row.endMinutes) } else laneEnds[lane] = row.endMinutes
+        group.add(row.copy(laneIndex = lane))
+        groupEnd = if (group.size == 1) row.endMinutes else maxOf(groupEnd, row.endMinutes)
+    }
+    flush()
+    return result
+}

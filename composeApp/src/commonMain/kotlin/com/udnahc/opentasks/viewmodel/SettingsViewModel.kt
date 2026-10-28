@@ -1,5 +1,8 @@
 package com.udnahc.opentasks.viewmodel
 
+import com.udnahc.opentasks.data.model.UiExperience
+import com.udnahc.opentasks.domain.usecase.settings.ObserveUiExperienceUseCase
+import com.udnahc.opentasks.domain.action.settings.SaveUiExperienceAction
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.ExternalLaunchResult
@@ -57,9 +60,11 @@ data class SettingsLaunchFailureEvent(
 )
 
 class SettingsViewModel(
+    observeUiExperience: ObserveUiExperienceUseCase,
     observeThemePreference: ObserveThemePreferenceUseCase,
     observeTextSizePreference: ObserveTextSizePreferenceUseCase,
     private val triggerSyncAction: TriggerSyncAction,
+    private val saveUiExperienceAction: SaveUiExperienceAction,
     private val saveThemePreferenceAction: SaveThemePreferenceAction,
     private val saveTextSizePreferenceAction: SaveTextSizePreferenceAction,
     private val clearLocalDataAction: ClearLocalDataAction,
@@ -68,6 +73,9 @@ class SettingsViewModel(
     private val generateCsvExport: GenerateCsvExportUseCase,
     private val generateIcsExport: GenerateIcsExportUseCase,
 ) : ViewModel() {
+
+    val uiExperience = observeUiExperience()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UiExperience.CLASSIC)
 
     val themePreference: StateFlow<ThemeMode> = observeThemePreference()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
@@ -116,6 +124,10 @@ class SettingsViewModel(
                 log.e { "Sync failed" }
             }
         }
+    }
+
+    fun saveUiExperience(experience: UiExperience) {
+        viewModelScope.launch(Dispatchers.IO) { saveUiExperienceAction(experience) }
     }
 
     fun saveThemePreference(mode: ThemeMode) {

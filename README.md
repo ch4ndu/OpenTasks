@@ -6,6 +6,8 @@ A cross-platform task management app built with **Kotlin Multiplatform** and **C
 
 Version 1.2.0 adds backend-free Local-only startup, authoritative PocketBase connection, bounded Quick Add, hardened import/share and process boundaries, bounded recurrence projection, and release-safe diagnostics and dependencies.
 
+Reimagined Calendar keeps a stable Day hour gutter and offers full-day access from Week overflow and the Month agenda. Notes library search closes with system Back.
+
 ## Note
 This project is built collaboratively with AI assistance (Claude Code). The code is reviewed, iterated on, and guided by me at every step — not auto-generated and dumped. Architecture decisions, feature design, and quality standards are human-driven; AI accelerates the implementation.
 
@@ -61,6 +63,10 @@ This project is built collaboratively with AI assistance (Claude Code). The code
 See [docs/README.md](docs/README.md) for feature behavior and technical design notes.
 
 ## Features
+
+### Interface choice
+- **Classic or Reimagined** — Choose the interface in Settings → Appearance. Classic is the default; the choice is saved on this installation. Both interfaces use the same tasks, notes, countdowns, accounts, and sync.
+- **Reimagined layouts** — Adaptive navigation, consistent Material topbars without repeated root-tab titles, a Notes writing workspace, an all-list Matrix including completed tasks, original Week and three-day Calendar layouts with a date picker and overlap lanes, and responsive Countdown screens. Existing theme and text-size preferences apply to both interfaces.
 
 ### Task Management
 - **Eisenhower Matrix** — Visualize tasks across four priority quadrants (Urgent & Important, Not Urgent & Important, Urgent & Unimportant, Not Urgent & Unimportant)
