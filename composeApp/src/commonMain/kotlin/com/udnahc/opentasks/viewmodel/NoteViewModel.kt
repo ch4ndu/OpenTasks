@@ -46,6 +46,7 @@ sealed interface NoteMutationOperation {
 
     data class Create(
         override val requestToken: Long,
+        val recoveryNoteId: String? = null,
     ) : NoteMutationOperation
 
     data class Update(
@@ -68,6 +69,15 @@ sealed interface NoteMutationState {
         val committedNote: Note? = null,
     ) : NoteMutationState
     data class Error(val operation: NoteMutationOperation) : NoteMutationState
+}
+
+internal fun NoteMutationOperation.matchesEditor(requestToken: Long, noteId: String?): Boolean {
+    if (this.requestToken != requestToken) return false
+    return when (this) {
+        is NoteMutationOperation.Create -> recoveryNoteId == noteId
+        is NoteMutationOperation.Update -> this.noteId == noteId
+        is NoteMutationOperation.Delete -> note.id == noteId
+    }
 }
 
 class NoteViewModel(
@@ -136,8 +146,9 @@ class NoteViewModel(
         requestToken: Long,
         title: String,
         content: String,
+        recoveryNoteId: String? = null,
     ) {
-        launchMutation(NoteMutationOperation.Create(requestToken)) {
+        launchMutation(NoteMutationOperation.Create(requestToken, recoveryNoteId)) {
             addNoteAction(title, content)
         }
     }

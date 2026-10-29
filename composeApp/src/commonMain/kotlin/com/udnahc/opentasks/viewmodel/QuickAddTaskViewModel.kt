@@ -71,6 +71,7 @@ class QuickAddTaskViewModel(
     }
 
     fun dismissToken(signature: String) {
+        if (_uiState.value.isSaving || _uiState.value.isSaved) return
         val token = _uiState.value.activeTokens.firstOrNull { it.signature == signature } ?: return
         suppressedTokenSignatures += token.signature
         _uiState.value = stateFor(_uiState.value.input)

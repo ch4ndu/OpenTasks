@@ -282,7 +282,7 @@ private class IosDocumentExportDelegate(
         controller: UIDocumentPickerViewController,
         didPickDocumentsAtURLs: List<*>,
     ) {
-        finish(FileExportResult.Completed)
+        finish(FileExportResult.Completed())
     }
 
     override fun documentPickerWasCancelled(controller: UIDocumentPickerViewController) {

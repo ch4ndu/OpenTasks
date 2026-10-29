@@ -407,7 +407,7 @@ private fun DayViewTimeline(
                     row = row,
                     modifier = Modifier
                         .fillMaxWidth(if (isReimagined) 1f / row.laneCount else 1f)
-                        .height(if (isReimagined) maxOf(dimens.threeDayEventMinHeight, hourHeight * (row.endMinutes - row.layoutStartMinutes) / 60f) else dimens.threeDayEventMinHeight)
+                        .height(if (isReimagined) hourHeight * (row.displayEndMinutes - row.layoutStartMinutes) / 60f else dimens.threeDayEventMinHeight)
                         .offset(x = if (isReimagined) maxWidth * row.laneIndex / row.laneCount else 0.dp, y = yOffset)
                         .padding(horizontal = 1.dp),
                     onClick = { onTaskClick(row.task) },

@@ -1,19 +1,30 @@
 package com.udnahc.opentasks.ui.util
 
+import android.content.ContentResolver
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -21,64 +32,103 @@ import kotlinx.coroutines.withContext
 actual fun rememberFileExportLauncher(
     onResult: (FileExportResult) -> Unit,
 ): (FileExportRequest) -> Unit {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val resolver = LocalContext.current.applicationContext.contentResolver
     val currentOnResult = rememberUpdatedState(onResult)
-    var pendingCsv by remember { mutableStateOf<FileExportRequest?>(null) }
-    var pendingIcs by remember { mutableStateOf<FileExportRequest?>(null) }
+    val state = rememberAndroidPickerState(::AndroidFileExportState, AndroidFileExportState::abandon) { it.abandoned }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(state, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            snapshotFlow { state.result }.filterNotNull().collect { result ->
+                if (state.consume(result)) currentOnResult.value(result)
+            }
+        }
+    }
+    val csvLauncher = key(state) {
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+            state.receive(resolver, uri, calendar = false)
+        }
+    }
+    val icsLauncher = key(state) {
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/calendar")) { uri ->
+            state.receive(resolver, uri, calendar = true)
+        }
+    }
+    return remember(state, csvLauncher, icsLauncher) {
+        { request ->
+            if (state.begin(request)) {
+                try {
+                    if (request.mimeType == "text/calendar") icsLauncher.launch(request.fileName)
+                    else csvLauncher.launch(request.fileName)
+                } catch (_: Exception) {
+                    state.launchFailed()
+                }
+            }
+        }
+    }
+}
 
-    fun writePending(request: FileExportRequest?, uri: android.net.Uri?) {
+/** Configuration retention only: export contents intentionally never enter saved instance state. */
+private class AndroidFileExportState : ViewModel() {
+    private var pending: FileExportRequest? = null
+    private var writeJob: Job? = null
+    var abandoned = false
+        private set
+    var result by mutableStateOf<FileExportResult?>(null)
+        private set
+
+    fun begin(request: FileExportRequest): Boolean {
+        if (abandoned || pending != null || writeJob != null || result != null) return false
+        pending = request
+        return true
+    }
+
+    fun launchFailed() {
+        if (pending == null || abandoned) return
+        pending = null
+        result = FileExportResult.Error()
+    }
+
+    fun receive(resolver: ContentResolver, uri: Uri?, calendar: Boolean) {
+        val request = pending ?: return
+        if ((request.mimeType == "text/calendar") != calendar || abandoned) return
+        pending = null // Claim this request once before starting any asynchronous work.
         if (uri == null) {
-            currentOnResult.value(FileExportResult.Cancelled)
+            result = FileExportResult.Cancelled
             return
         }
-        if (request == null) {
-            currentOnResult.value(FileExportResult.Error())
-            return
-        }
-        scope.launch {
-            try {
+        writeJob = viewModelScope.launch {
+            val completed = try {
                 withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri, "w")?.bufferedWriter()?.use { writer ->
+                    resolver.openOutputStream(uri, "w")?.bufferedWriter()?.use { writer ->
                         writer.write(request.content)
                         writer.flush()
                     } ?: error("Unable to open the selected destination")
                 }
-                currentCoroutineContext().ensureActive()
-                currentOnResult.value(FileExportResult.Completed)
+                FileExportResult.Completed(request.itemCount)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                currentCoroutineContext().ensureActive()
-                currentOnResult.value(FileExportResult.Error())
+                FileExportResult.Error()
             }
+            currentCoroutineContext().ensureActive()
+            writeJob = null
+            if (!abandoned) result = completed
         }
     }
 
-    val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
-        val request = pendingCsv
-        pendingCsv = null
-        writePending(request, uri)
-    }
-    val icsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/calendar")) { uri ->
-        val request = pendingIcs
-        pendingIcs = null
-        writePending(request, uri)
+    fun consume(expected: FileExportResult): Boolean {
+        if (abandoned || result !== expected) return false
+        result = null
+        return true
     }
 
-    return remember(csvLauncher, icsLauncher) {
-        { request ->
-            when (request.mimeType) {
-                "text/calendar" -> {
-                    pendingIcs = request
-                    icsLauncher.launch(request.fileName)
-                }
-
-                else -> {
-                    pendingCsv = request
-                    csvLauncher.launch(request.fileName)
-                }
-            }
-        }
+    fun abandon() {
+        abandoned = true
+        pending = null
+        result = null
+        writeJob?.cancel()
+        writeJob = null
     }
+
+    override fun onCleared() = abandon()
 }

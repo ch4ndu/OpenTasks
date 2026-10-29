@@ -180,12 +180,13 @@ internal fun NoIconLabelValueNavigationRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     valueColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    enabled: Boolean = true,
 ) {
     val dimens = OpenTasksTheme.dimens
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .minimumInteractiveTargetSize()
             .padding(horizontal = dimens.paddingXLarge, vertical = dimens.paddingLarge),
         verticalAlignment = Alignment.CenterVertically,

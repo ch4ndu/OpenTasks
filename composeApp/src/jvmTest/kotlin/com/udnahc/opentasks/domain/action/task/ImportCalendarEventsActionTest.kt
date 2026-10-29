@@ -1,5 +1,7 @@
 package com.udnahc.opentasks.domain.action.task
 
+import com.udnahc.opentasks.data.calendar.IcsParser
+import com.udnahc.opentasks.data.extensions.computeDeadlineUtcMillis
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.domain.action.tag.AddTagAction
@@ -12,8 +14,54 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.assertNull
 
 class ImportCalendarEventsActionTest {
+    @Test
+    fun allDayImportNormalizesTaskEndWithoutChangingNoUidReimportIdentity() = runTest {
+        val event = IcsParser.parse(
+            """
+            BEGIN:VCALENDAR
+            BEGIN:VEVENT
+            SUMMARY:No UID all-day span
+            DTSTART;VALUE=DATE:20260504
+            DTEND;VALUE=DATE:20260507
+            END:VEVENT
+            END:VCALENDAR
+            """.trimIndent(),
+        ).single()
+        assertNull(event.rawUid)
+        val historicalInclusiveEnd = computeDeadlineUtcMillis(2026, 5, 6, 0, 0)
+        val exclusiveEnd = computeDeadlineUtcMillis(2026, 5, 7, 0, 0)
+        val priorIdentity = ImportedIdentityBatch().nextCalendar(event.copy(endTimeUtcMillis = historicalInclusiveEnd)).canonicalId
+        assertEquals(historicalInclusiveEnd, event.endTimeUtcMillis)
+
+        fun actionFor(repository: FakeTaskRepository): ImportCalendarEventsAction {
+            val tags = FakeTagRepository()
+            return ImportCalendarEventsAction(
+                taskRepository = repository,
+                categoryRepository = FakeCategoryRepository(),
+                tagRepository = tags,
+                addTagAction = AddTagAction(tags),
+                scheduleTaskRemindersAction = ScheduleTaskRemindersAction(NotificationScheduler(), repository),
+            )
+        }
+
+        val newRepository = FakeTaskRepository()
+        val importNew = actionFor(newRepository)
+        assertEquals(1, importNew(listOf(event)))
+        val imported = newRepository.inserted.single()
+        assertEquals(utcToLocal(exclusiveEnd - 1L), imported.endDeadline)
+        assertEquals(priorIdentity, imported.sourceExternalId)
+        assertEquals(0, importNew(listOf(event)))
+
+        val historicalTask = imported.copy(id = "historical", endDeadline = utcToLocal(historicalInclusiveEnd))
+        val existingRepository = FakeTaskRepository(listOf(historicalTask))
+        assertEquals(0, actionFor(existingRepository)(listOf(event)))
+        assertTrue(existingRepository.inserted.isEmpty())
+        assertEquals(historicalTask, existingRepository.tasks.single())
+    }
+
     @Test
     fun importsTimedEventWithEndDeadlineAndMetadata() = runTest {
         val taskRepository = FakeTaskRepository()

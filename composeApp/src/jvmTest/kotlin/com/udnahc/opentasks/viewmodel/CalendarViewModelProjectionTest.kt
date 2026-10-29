@@ -7,6 +7,7 @@ import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.notification.NotificationScheduler
+import com.udnahc.opentasks.data.repository.TaskRepository
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarListDisplayModePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
@@ -26,6 +27,12 @@ import com.udnahc.opentasks.testutil.FakeTaskRepository
 import com.udnahc.opentasks.testutil.testCountdown
 import com.udnahc.opentasks.testutil.testTask
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -37,6 +44,45 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CalendarViewModelProjectionTest : MainDispatcherRule() {
+    @Test
+    fun failedCalendarReadRetainsRowsAndExplicitRetryRestartsObservation() = runTest(dispatcher) {
+        val dayStart = startOfDayLocalMillis(2026, 5, 4)
+        val key = dayKey(dayStart)
+        val task = testTask(id = "retained", deadline = dayStart)
+        val failure = CompletableDeferred<Unit>()
+        var subscriptions = 0
+        val repository = object : TaskRepository by FakeTaskRepository() {
+            override fun getAllTasks() = flow {
+                subscriptions += 1
+                emit(listOf(task))
+                if (subscriptions == 1) {
+                    failure.await()
+                    error("Injected read failure")
+                }
+            }
+        }
+        val viewModel = calendarViewModel(
+            taskRepository = repository,
+            settingsRepository = FakeAppSettingsRepository(),
+            localDaySignal = LocalDaySignal(currentDate = { LocalDate(2026, 5, 4) }),
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.calendarRenderState.collect() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.categoryNames.collect() }
+
+        viewModel.loadState.test {
+            while (awaitItem() != CalendarLoadState.READY) Unit
+            viewModel.calendarRenderState.first { it.calendarDaysByDay[key]?.rows?.isNotEmpty() == true }
+            assertEquals("retained", viewModel.calendarRenderState.value.calendarDaysByDay.getValue(key).rows.single().task.id)
+            failure.complete(Unit)
+            while (awaitItem() != CalendarLoadState.ERROR) Unit
+            assertEquals("retained", viewModel.calendarRenderState.value.calendarDaysByDay.getValue(key).rows.single().task.id)
+            viewModel.retryLoad()
+            while (awaitItem() != CalendarLoadState.READY) Unit
+            assertEquals(2, subscriptions)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     @Test
     fun firstModeSwitchRenderIsCoherentAndYearDoesNoFormatting() = runTest(dispatcher) {
         val dayStart = startOfDayLocalMillis(2026, 5, 4)
@@ -157,7 +203,7 @@ class CalendarViewModelProjectionTest : MainDispatcherRule() {
     }
 
     private fun calendarViewModel(
-        taskRepository: FakeTaskRepository = FakeTaskRepository(),
+        taskRepository: TaskRepository = FakeTaskRepository(),
         countdownRepository: FakeCountdownRepository = FakeCountdownRepository(),
         settingsRepository: FakeAppSettingsRepository,
         localDaySignal: LocalDaySignal,

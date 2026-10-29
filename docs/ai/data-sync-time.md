@@ -41,6 +41,7 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - `RescheduleAllRemindersAction` uses UTC task access for deadlines.
 - `WidgetDataProvider` and `SyncService` may read DAOs directly.
 - Import Actions convert external UTC inputs to local at the system boundary.
+- New all-day calendar/ICS imports normalize known-source endpoints to the final included millisecond when constructing the Task, after calculating the existing import identity. ICS/Android CalendarEvents retain their inclusive civil end and iOS/macOS retain their exclusive end for identity compatibility. Timed events, unknown legacy sources, and existing tasks keep their endpoints; legacy all-day records have no reliable inclusive/exclusive discriminator and must not be bulk-reinterpreted.
 - User-visible calendar/task/widget formatting goes through the domain `LocalizedDateTimeFormatter`. Stored pseudo-local millis are always formatted in UTC so the formatter cannot apply the device offset a second time; platform actuals supply locale and time-cycle preferences.
 - Calendar and CSV imports persist a canonical external identity from the first 16 bytes of a platform SHA-256 digest. Within one batch, a canonical match does not consume the legacy alias; otherwise at most one row may consume a matching legacy alias so formerly colliding rows can import under their canonical identities.
 
@@ -135,7 +136,7 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - Hard-delete locally only for never-synced tombstones with no `pbId`. Before deleting a tag tombstone, retain it when any related `task_tags` row has a remote identity, so the foreign-key cascade cannot discard that durable relation.
 - After a successful non-empty full fetch, physically missing server rows are treated as damage/manual deletion: compute the complete absent synced-active candidate set, then reread and conditionally mark it unsynced for recreation in one Room writer transaction. Remote I/O must remain outside that transaction.
 - If a remote collection fetch returns fewer than ten percent of synced active local rows (including zero), treat sync as degraded and skip missing-row recovery; fail that collection's pull so neither it nor dependent collections push during the pass.
-- Remote active `task_tags` rows whose task or tag parent is missing are skipped and reported as degraded sync; remote tombstones with a missing parent are safely skipped so valid links can continue to merge and push.
+- Remote active `task_tags` rows whose task or tag parent is missing are skipped and reported as degraded sync; remote tombstones with a missing parent are safely skipped so valid links can continue to merge and push. A stale active remote link may reconcile only when its exact local counterpart is a strictly newer tombstone; both adapter validation and the DAO writer transaction must preserve that winning deletion so it can push. Equal/newer active orphans still fail closed.
 - A collection push must be skipped when that collection's pull failed; dependent pushes must also be skipped when parent pulls fail.
 - Push bookkeeping must mark rows synced only if `updatedAt` and `isDeleted` still match the pushed state.
 - Task-tag assignments sync through `task_tags` with derived `localId = "$taskId:$tagId"` and local primary key `(taskId, tagId)`.

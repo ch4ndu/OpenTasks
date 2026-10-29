@@ -122,8 +122,8 @@ fun CountdownScreen(
 ) {
     val hasStoredCountdowns by viewModel.hasStoredCountdowns.collectAsState()
     val selectedFilter by viewModel.selectedFilter.collectAsState()
+    val loadState by viewModel.loadState.collectAsState()
     if (isReimagined) {
-        val loadState by viewModel.loadState.collectAsState()
         val items by viewModel.reimaginedCountdownItems.collectAsState()
         ReimaginedCountdownContent(items, hasStoredCountdowns, selectedFilter, viewModel::selectFilter, onCountdownClick, onCreateCountdown, onSettingsClick, loadState, viewModel::retryLoad)
         return
@@ -137,6 +137,8 @@ fun CountdownScreen(
         onFilterSelected = viewModel::selectFilter,
         onCountdownClick = onCountdownClick,
         onSettingsClick = onSettingsClick,
+        loadState = loadState,
+        onRetry = viewModel::retryLoad,
     )
 }
 
@@ -150,6 +152,8 @@ internal fun CountdownContent(
     onFilterSelected: (CountdownType?) -> Unit,
     onCountdownClick: (Countdown) -> Unit,
     onSettingsClick: () -> Unit = {},
+    loadState: com.udnahc.opentasks.viewmodel.CountdownLoadState = com.udnahc.opentasks.viewmodel.CountdownLoadState.READY,
+    onRetry: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val density = LocalDensity.current
@@ -162,7 +166,16 @@ internal fun CountdownContent(
     val topBarHeight = dimens.topBarHeight + statusBarHeight
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        if (countdowns.isEmpty()) {
+        if (loadState != com.udnahc.opentasks.viewmodel.CountdownLoadState.READY) {
+            com.udnahc.opentasks.ui.screens.ReimaginedReadStatus(
+                loading = loadState == com.udnahc.opentasks.viewmodel.CountdownLoadState.LOADING,
+                onRetry = onRetry,
+                modifier = Modifier.padding(
+                    top = topBarHeight + dimens.paddingMedium + dimens.touchTargetLarge + dimens.paddingMedium,
+                    bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge,
+                ),
+            )
+        } else if (countdowns.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,

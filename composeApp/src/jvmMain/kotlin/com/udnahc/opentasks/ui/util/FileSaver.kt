@@ -44,7 +44,7 @@ actual fun rememberFileExportLauncher(
                                     File(directory, selectedFile).writeText(request.content)
                                 }
                                 currentCoroutineContext().ensureActive()
-                                currentOnResult.value(FileExportResult.Completed)
+                                currentOnResult.value(FileExportResult.Completed(request.itemCount))
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (_: Exception) {

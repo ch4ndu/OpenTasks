@@ -2,6 +2,7 @@ package com.udnahc.opentasks.domain.usecase.task
 
 import app.cash.turbine.test
 import com.udnahc.opentasks.data.extensions.MILLIS_PER_HOUR
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_MINUTE
 import com.udnahc.opentasks.data.extensions.dayKey
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.model.COUNTDOWN_ID_PREFIX
@@ -341,6 +342,51 @@ class CalendarTransformsTest {
         val reversed = projectCalendarDay(inputs.reversed(), dayKey(dayStart), dayKey(dayStart)).timedRows
         assertEquals(projected.map { Triple(it.task.id, it.laneIndex, it.laneCount) },
             reversed.map { Triple(it.task.id, it.laneIndex, it.laneCount) })
+    }
+
+    @Test
+    fun shortEventsUseSeparateDisplayLanesWithoutChangingTheirRealEndpoints() {
+        val first = testTask(id = "first", deadline = dayStart + 600 * MILLIS_PER_MINUTE, endDeadline = dayStart + 601 * MILLIS_PER_MINUTE)
+        val second = testTask(id = "second", deadline = dayStart + 602 * MILLIS_PER_MINUTE, endDeadline = dayStart + 603 * MILLIS_PER_MINUTE)
+        val touching = testTask(id = "touching", deadline = dayStart + 617 * MILLIS_PER_MINUTE, endDeadline = dayStart + 632 * MILLIS_PER_MINUTE)
+
+        val rows = projectCalendarDay(listOf(first, second, touching), dayKey(dayStart), dayKey(dayStart)).timedRows
+
+        assertEquals(listOf(601, 603, 632), rows.map { it.endMinutes })
+        assertEquals(listOf(615, 617, 632), rows.map { it.displayEndMinutes })
+        assertEquals(listOf(0, 1, 0), rows.map { it.laneIndex })
+        assertEquals(listOf(2, 2, 1), rows.map { it.laneCount })
+        assertTrue(rows[0].task === first)
+        assertTrue(rows[1].task === second)
+        assertEquals("10:00 AM", rows[0].timelineTimeText)
+        assertEquals("10:02 AM", rows[1].timelineTimeText)
+    }
+
+    @Test
+    fun syncAcknowledgementReusesFormattingAndLanesButRefreshesCallbackTasks() {
+        val task = testTask(id = "sync", deadline = dayStart + 10 * MILLIS_PER_HOUR)
+        val unchanged = testTask(id = "unchanged", deadline = dayStart + 11 * MILLIS_PER_HOUR)
+        val key = dayKey(dayStart)
+        val formatter = CountingCalendarFormatter()
+        val cache = CalendarProjectionCache(formatter)
+        val initial = cache.renderMonth(LocalDate(2026, 5, 4), mapOf(key to listOf(task, unchanged)))
+        val originalRow = initial.calendarDaysByDay.getValue(key).rows.first()
+        formatter.clearRecordedWork()
+        val acknowledged = task.copy(pbId = "remote-id", isSynced = true)
+
+        val refreshed = cache.renderMonth(LocalDate(2026, 5, 4), mapOf(key to listOf(acknowledged, unchanged)))
+        val day = refreshed.calendarDaysByDay.getValue(key)
+
+        assertEquals(0, formatter.nonHourFormatCalls)
+        assertEquals(0, formatter.hourFormatCalls)
+        assertTrue(day.rows.first().task === acknowledged)
+        assertEquals(originalRow.copy(task = acknowledged), day.rows.first())
+        assertTrue(day.timedRows.first() === day.rows.first())
+        assertTrue(day.monthPreview.rows.first() === day.rows.first())
+        assertTrue(day.rows.last() === initial.calendarDaysByDay.getValue(key).rows.last())
+
+        cache.renderMonth(LocalDate(2026, 5, 4), mapOf(key to listOf(acknowledged.copy(deadline = dayStart + 12 * MILLIS_PER_HOUR), unchanged)))
+        assertTrue(formatter.nonHourFormatCalls > 0)
     }
 
     private fun CalendarProjectionCache.renderMonth(

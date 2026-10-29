@@ -12,6 +12,8 @@ That flow remains available in Classic. Reimagined adds an on-demand library sea
 
 Ordinary writing keeps app navigation available; focus mode hides it. Leaving through a tab or Settings uses the same dirty-draft and mutation guard as closing the editor. A note opened from a task retains that source task's editor entry and draft.
 
+If an open note disappears during sync, both Classic and Reimagined keep the draft available and offer Save as new or Discard. Save as new creates a new note ID and leaves the original deletion intact. Back requires an explicit discard decision while the note is missing, and the missing editor can remount its saved draft after host recreation. Repository writes recheck that the original note is still active under the mutation gate, so a queued stale save cannot resurrect a deleted row.
+
 ## Linked tasks
 
 Existing notes expose Save and open linked tasks. This saves the current draft before navigation and keeps save failures visible in the editor. The linked-tasks view supports opening tasks, creating a task with the note title, and returning to the note. Tasks store a synced `sourceNoteId`; the note does not contain a second copy of the relationship. Deleting a note leaves its tasks intact. See [Tasks](tasks.md#tasks-linked-to-notes) for the full behavior.

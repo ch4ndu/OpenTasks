@@ -75,3 +75,12 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 - Weekly review, logbook, bulk selection, and note-task destinations own separate entry ViewModels. Projections and date filtering run off the UI thread; task/history lists remain lazy with stable IDs.
 - The note-to-linked-tasks action saves the open draft and navigates only on the matching successful note operation. A plain Save or Delete clears a pending linked-task navigation request. Source-note navigation from a task retains that task editor entry and its draft.
 - All workflow destinations count as busy for shared intake, preventing a system share from replacing an active review or batch-selection flow.
+
+## Audit repair contracts
+
+- Quick Add token dismissal must respect saving/saved state in the ViewModel and both UI experiences. Countdown form fields, pickers, and Back use the same busy guard in Classic and Reimagined.
+- A remote note disappearance must retain an open draft until an explicit decision. Saving a missing note creates a fresh note identity; a stale update cannot resurrect a deleted row.
+- Completing a recurring occurrence after editing its schedule advances from the accepted edited deadline. The original expected occurrence remains the stale-write guard and completion-history identity.
+- Display text projections compare content/deadline inputs before expensive formatting. Do not suppress sync bookkeeping globally in repositories; current entities remain available to mutation callbacks.
+- Calendar overlap lanes use the same minimum display duration as timeline bars, while retaining actual event endpoints for labels and editing. Metadata-only updates may reuse formatted projections but must refresh their Task references.
+- Classic and Reimagined Calendar, Matrix, and Countdown surfaces expose local read failures and invoke the ViewModel's local retry; a network refresh is not a substitute for that retry.

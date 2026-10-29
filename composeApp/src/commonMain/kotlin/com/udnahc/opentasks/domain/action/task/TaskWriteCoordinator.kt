@@ -202,7 +202,7 @@ class TaskWriteCoordinator(
         ) {
             completeSeries(form)
         } else {
-            completeOccurrence(form, intent.expectedOccurrence)
+            completeOccurrence(form, form.deadline ?: intent.expectedOccurrence)
         }
     }
 

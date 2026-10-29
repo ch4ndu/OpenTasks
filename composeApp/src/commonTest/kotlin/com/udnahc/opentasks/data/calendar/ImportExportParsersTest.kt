@@ -1,6 +1,8 @@
 package com.udnahc.opentasks.data.calendar
 
 import com.udnahc.opentasks.data.extensions.localMillisToLocalDate
+import com.udnahc.opentasks.data.extensions.computeNextDeadlineLocal
+import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.RecurrenceType
@@ -13,6 +15,29 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ImportExportParsersTest {
+    @Test
+    fun csvWeekdayRuleRoundTripStillAdvancesFridayToMonday() {
+        val friday = startOfDayLocalMillis(2026, 5, 8)
+        val task = testTask(id = "weekday", deadline = friday, recurrenceType = RecurrenceType.EVERY_WEEKDAY)
+        val csv = CsvGenerator.generate(listOf(task), emptyList())
+
+        val parsed = CsvParser.parse(csv).single()
+
+        assertEquals(RecurrenceType.EVERY_WEEKDAY, parsed.recurrenceType)
+        assertEquals(
+            startOfDayLocalMillis(2026, 5, 11),
+            computeNextDeadlineLocal(friday, parsed.recurrenceType.name),
+        )
+        assertEquals(
+            RecurrenceType.DAILY,
+            CsvParser.parse(csv.replace("BYDAY=MO,TU,WE,TH,FR", "BYDAY=MO,WE,FR")).single().recurrenceType,
+        )
+        assertEquals(
+            RecurrenceType.DAILY,
+            CsvParser.parse(csv.replace("BYDAY=MO,TU,WE,TH,FR", "BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1")).single().recurrenceType,
+        )
+    }
+
     @Test
     fun csvParserHandlesQuotedMultilineFieldsPriorityReminderAndRecurrence() {
         val csv = """

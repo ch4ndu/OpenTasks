@@ -1,6 +1,8 @@
 package com.udnahc.opentasks.domain.usecase.task
 
 import com.udnahc.opentasks.data.model.Task
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
 import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
 
@@ -35,3 +37,7 @@ private fun Task.formatMatrixDueText(formatter: DateTimeTextFormatter): String {
     val deadline = deadline ?: return ""
     return formatter.formatShortDate(deadline)
 }
+
+/** Both due-label formats depend on deadline only. Keep this filter local to text projections. */
+fun Flow<List<Task>>.distinctDueTextInputs(): Flow<List<Task>> =
+    distinctUntilChangedBy { tasks -> tasks.associate { it.id to it.deadline } }

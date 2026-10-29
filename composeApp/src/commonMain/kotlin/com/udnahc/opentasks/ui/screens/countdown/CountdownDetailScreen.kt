@@ -94,7 +94,7 @@ internal fun CountdownDetailContent(
     }
     val dimens = OpenTasksTheme.dimens
     var showMenu by remember { mutableStateOf(false) }
-    ModalBusyEffect(showMenu, onModalBusyChanged)
+    ModalBusyEffect(showMenu || isBusy, onModalBusyChanged)
 
     Box(
         modifier = Modifier
@@ -107,13 +107,13 @@ internal fun CountdownDetailContent(
                 title = "",
                 containerStyle = OpenTasksTopBarContainerStyle.Translucent,
                 navigationIcon = {
-                    OpenTasksBackButton(onClick = onBack)
+                    OpenTasksBackButton(onClick = { if (!isBusy) onBack() })
                 },
                 actions = {
                     Box {
-                        OpenTasksOverflowButton(onClick = { showMenu = true })
+                        OpenTasksOverflowButton(onClick = { if (!isBusy) showMenu = true })
                         DropdownMenu(
-                            expanded = showMenu,
+                            expanded = showMenu && !isBusy,
                             onDismissRequest = { showMenu = false },
                         ) {
                             DropdownMenuItem(

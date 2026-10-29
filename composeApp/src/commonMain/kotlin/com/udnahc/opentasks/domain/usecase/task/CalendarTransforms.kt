@@ -76,6 +76,9 @@ data class CalendarTaskRowProjection(
     val cardTimeText: String,
     val layoutStartMinutes: Int = startMinutes,
     val endMinutes: Int = startMinutes + 30,
+    // All responsive timeline tokens give a 15-minute minimum bar height.
+    // Keep display occupancy separate from the event's actual clipped end.
+    val displayEndMinutes: Int = maxOf(endMinutes, layoutStartMinutes + 15),
     val laneIndex: Int = 0,
     val laneCount: Int = 1,
 )
@@ -175,9 +178,11 @@ internal class CalendarProjectionCache(
         }
         val nextProjections = requiredInputs.mapValues { (day, tasks) ->
             val previous = projectionsByDay[day]
-            if (previous != null && sourceInputsByDay[day] == tasks) {
+            val previousTasks = sourceInputsByDay[day]
+            if (previous != null && previousTasks != null && previousTasks.sameCalendarDisplayInputs(tasks)) {
+                val current = if (previousTasks == tasks) previous else previous.withCurrentTasks(tasks)
                 val isToday = day == todayDayKey
-                if (previous.isToday == isToday) previous else previous.copy(isToday = isToday)
+                if (current.isToday == isToday) current else current.copy(isToday = isToday)
             } else {
                 projectCalendarDay(
                     tasks = tasks,
@@ -233,6 +238,31 @@ internal class CalendarProjectionCache(
             }
         }
     }
+}
+
+/** Sync acknowledgements must refresh callback entities without repeating display work. */
+private fun List<Task>.sameCalendarDisplayInputs(current: List<Task>): Boolean =
+    size == current.size && indices.all { index ->
+        val old = this[index]
+        val next = current[index]
+        old == next || old.copy(pbId = next.pbId, isSynced = next.isSynced) == next
+    }
+
+private fun CalendarDayProjection.withCurrentTasks(tasks: List<Task>): CalendarDayProjection {
+    val tasksById = tasks.associateBy { it.id }
+    val currentRows = rows.map { row ->
+        val task = tasksById[row.task.id]
+        if (task == null || row.task == task) row else row.copy(task = task)
+    }
+    val rowsById = currentRows.associateBy { it.task.id }
+    fun List<CalendarTaskRowProjection>.current() = map { rowsById[it.task.id] ?: it }
+    return copy(
+        rows = currentRows,
+        allDayRows = allDayRows.current(),
+        timedRows = timedRows.current(),
+        allDayPreview = allDayPreview.copy(rows = allDayPreview.rows.current()),
+        monthPreview = monthPreview.copy(rows = monthPreview.rows.current()),
+    )
 }
 
 fun calendarTimelineHourLabels(
@@ -363,9 +393,9 @@ private fun Task.isCalendarAllDay(): Boolean =
     isAllDay || (deadline != null && extractHour(deadline) == 0 && extractMinute(deadline) == 0)
 
 
-/** Touching intervals do not overlap; connected interval groups share their maximum lane count. */
+/** Touching display intervals do not overlap; connected groups share their maximum lane count. */
 internal fun assignCalendarOverlapLanes(rows: List<CalendarTaskRowProjection>): List<CalendarTaskRowProjection> {
-    val ordered = rows.sortedWith(compareBy({ it.layoutStartMinutes }, { it.endMinutes }, { it.task.id }))
+    val ordered = rows.sortedWith(compareBy({ it.layoutStartMinutes }, { it.displayEndMinutes }, { it.task.id }))
     val result = mutableListOf<CalendarTaskRowProjection>()
     var group = mutableListOf<CalendarTaskRowProjection>()
     val laneEnds = mutableListOf<Int>()
@@ -379,9 +409,9 @@ internal fun assignCalendarOverlapLanes(rows: List<CalendarTaskRowProjection>): 
     ordered.forEach { row ->
         if (group.isNotEmpty() && row.layoutStartMinutes >= groupEnd) flush()
         var lane = laneEnds.indexOfFirst { it <= row.layoutStartMinutes }
-        if (lane < 0) { lane = laneEnds.size; laneEnds.add(row.endMinutes) } else laneEnds[lane] = row.endMinutes
+        if (lane < 0) { lane = laneEnds.size; laneEnds.add(row.displayEndMinutes) } else laneEnds[lane] = row.displayEndMinutes
         group.add(row.copy(laneIndex = lane))
-        groupEnd = if (group.size == 1) row.endMinutes else maxOf(groupEnd, row.endMinutes)
+        groupEnd = if (group.size == 1) row.displayEndMinutes else maxOf(groupEnd, row.displayEndMinutes)
     }
     flush()
     return result

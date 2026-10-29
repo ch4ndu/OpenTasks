@@ -22,11 +22,14 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -110,6 +113,39 @@ class QuickAddTaskViewModelTest {
         assertEquals(1, fixture.taskRepository.inserted.size)
         assertTrue(fixture.viewModel.uiState.value.isSaved)
         assertFalse(fixture.viewModel.uiState.value.canSave)
+    }
+
+    @Test
+    fun tokenDismissalCannotResetPendingOrCompletedSave() = runTest(dispatcher) {
+        val fixture = fixture()
+        val release = CompletableDeferred<Unit>()
+        val gateHolder = launch { fixture.gate.withExclusive { release.await() } }
+        runCurrent()
+        fixture.viewModel.onInputChanged("Plan tomorrow")
+        val token = fixture.viewModel.uiState.value.activeTokens.single()
+
+        fixture.viewModel.save()
+        runCurrent()
+        val pending = fixture.viewModel.uiState.value
+        assertTrue(pending.isSaving)
+        assertTrue(fixture.taskRepository.inserted.isEmpty())
+
+        fixture.viewModel.dismissToken(token.signature)
+        fixture.viewModel.save()
+        runCurrent()
+        assertEquals(pending, fixture.viewModel.uiState.value)
+
+        release.complete(Unit)
+        gateHolder.join()
+        advanceUntilIdle()
+        val saved = fixture.viewModel.uiState.value
+        fixture.viewModel.dismissToken(token.signature)
+        fixture.viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(saved, fixture.viewModel.uiState.value)
+        assertEquals("Plan", fixture.taskRepository.inserted.single().title)
+        assertTrue(saved.isSaved)
     }
 
     @Test
@@ -216,6 +252,7 @@ class QuickAddTaskViewModelTest {
             referenceTimeProvider = { LocalDateTime(2028, 2, 27, 14, 30) },
         )
         return Fixture(
+            gate = gate,
             binding = binding,
             accountRepository = accountRepository,
             stateStore = stateStore,
@@ -225,6 +262,7 @@ class QuickAddTaskViewModelTest {
     }
 
     private data class Fixture(
+        val gate: MutexAccountMutationGate,
         val binding: CacheBinding,
         val accountRepository: FakeAccountRepository,
         val stateStore: WidgetFakeAccountStateStore,

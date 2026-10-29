@@ -4,12 +4,20 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.ExternalInputFailure
 import com.udnahc.opentasks.ExternalInputPolicy
 import java.io.ByteArrayOutputStream
@@ -19,8 +27,10 @@ import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -28,38 +38,92 @@ import kotlinx.coroutines.withContext
 actual fun rememberFileImportLauncher(
     onResult: (FileImportResult) -> Unit,
 ): (ImportFileType) -> Unit {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var requestedType by remember { mutableStateOf<ImportFileType?>(null) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val expectedType = requestedType
+    val resolver = LocalContext.current.applicationContext.contentResolver
+    val currentOnResult = rememberUpdatedState(onResult)
+    val state = rememberAndroidPickerState(::AndroidFileImportState, AndroidFileImportState::abandon) { it.abandoned }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(state, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            snapshotFlow { state.result }.filterNotNull().collect { result ->
+                if (state.consume(result)) currentOnResult.value(result)
+            }
+        }
+    }
+    val launcher = key(state) {
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            state.receive(resolver, uri)
+        }
+    }
+    return remember(state, launcher) {
+        { type ->
+            if (state.begin(type)) {
+                try {
+                    launcher.launch(type.mimeTypes.toTypedArray())
+                } catch (_: Exception) {
+                    state.launchFailed()
+                }
+            }
+        }
+    }
+}
+
+private class AndroidFileImportState : ViewModel() {
+    private var requestedType: ImportFileType? = null
+    private var readJob: Job? = null
+    var abandoned = false
+        private set
+    var result by mutableStateOf<FileImportResult?>(null)
+        private set
+
+    fun begin(type: ImportFileType): Boolean {
+        if (abandoned || requestedType != null || readJob != null || result != null) return false
+        requestedType = type
+        return true
+    }
+
+    fun launchFailed() {
+        if (requestedType == null || abandoned) return
+        requestedType = null
+        result = FileImportResult.Error(ExternalInputFailure.UNREADABLE)
+    }
+
+    fun receive(resolver: android.content.ContentResolver, uri: android.net.Uri?) {
+        val type = requestedType ?: return
+        if (abandoned) return
         requestedType = null
         if (uri == null) {
-            onResult(FileImportResult.Cancelled)
-            return@rememberLauncherForActivityResult
+            result = FileImportResult.Cancelled
+            return
         }
-        scope.launch {
-            val result = try {
-                withContext(Dispatchers.IO) {
-                    val type = expectedType
-                        ?: return@withContext FileImportResult.Error(ExternalInputFailure.UNREADABLE)
-                    readImportedFile(context.contentResolver, uri, type)
-                }
+        readJob = viewModelScope.launch {
+            val selected = try {
+                withContext(Dispatchers.IO) { readImportedFile(resolver, uri, type) }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 FileImportResult.Error(ExternalInputFailure.UNREADABLE)
             }
             currentCoroutineContext().ensureActive()
-            onResult(result)
+            readJob = null
+            if (!abandoned) result = selected
         }
     }
-    return remember(launcher) {
-        { type ->
-            requestedType = type
-            launcher.launch(type.mimeTypes.toTypedArray())
-        }
+
+    fun consume(expected: FileImportResult): Boolean {
+        if (abandoned || result !== expected) return false
+        result = null
+        return true
     }
+
+    fun abandon() {
+        abandoned = true
+        requestedType = null
+        result = null
+        readJob?.cancel()
+        readJob = null
+    }
+
+    override fun onCleared() = abandon()
 }
 
 private suspend fun readImportedFile(

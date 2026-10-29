@@ -2,6 +2,7 @@ package com.udnahc.opentasks.domain.action.task
 
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
+import com.udnahc.opentasks.data.calendar.calendarTaskEndUtcMillis
 import com.udnahc.opentasks.data.extensions.localNow
 import com.udnahc.opentasks.data.extensions.utcToLocal
 import com.udnahc.opentasks.data.model.CalendarEvent
@@ -86,7 +87,7 @@ class ImportCalendarEventsAction(
                     title = event.title,
                     content = content,
                     deadline = utcToLocal(event.startTimeUtcMillis),
-                    endDeadline = event.endTimeUtcMillis?.let { utcToLocal(it) },
+                    endDeadline = calendarTaskEndUtcMillis(event)?.let { utcToLocal(it) },
                     isAllDay = event.isAllDay,
                     sourceExternalId = identity.canonicalId,
                     categoryId = category.id,

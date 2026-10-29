@@ -14,6 +14,8 @@ On macOS, passive permission refreshes must not execute AppleScript because addr
 
 Platform calendar providers return at most 10,000 eligible events in deterministic order. A 10,001st event is a typed, localized overflow rather than a truncated import. Android converts all-day UTC civil dates to local civil starts and makes the exclusive end date inclusive. macOS keeps passive permission checks side-effect-free and uses a bounded, structurally validated JXA JSON response only after the explicit Import action.
 
+New all-day calendar and ICS imports store the final included millisecond as the task's end. A three-day event therefore occupies all three days in Calendar and exports with the following date as its exclusive ICS end. This normalization happens after duplicate detection, so existing import identities remain stable. Existing imported tasks are preserved: older records can contain either inclusive or exclusive midnight ends without a reliable source marker, so their display/export ambiguity cannot safely be corrected automatically.
+
 ## ICS Import and Export
 
 ICS import parses calendar data and creates tasks through the same calendar import action path. ICS export generates calendar text from tasks and saves it with the platform file saver.
@@ -23,6 +25,10 @@ ICS import parses calendar data and creates tasks through the same calendar impo
 CSV import supports TickTick-style task CSV files. Header matching is locale-independent, and parsed rows become tasks through `ImportCsvTasksAction` with canonical SHA-256 identities and the same one-use legacy-alias compatibility rule.
 
 CSV export writes task data using `GenerateCsvExportAction` and the platform file saver.
+
+The supported weekday recurrence (`FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR`) round-trips as weekdays only, preserving the Friday-to-Monday transition.
+
+On Android, a pending document selection/export or camera capture survives configuration recreation with its original request identity. Payloads remain in retained memory rather than the saved-state Bundle, and results are handed to the current started screen once. Leaving the owning screen/account retires the request. This guarantee does not cover process death.
 
 ## System Share Intake
 

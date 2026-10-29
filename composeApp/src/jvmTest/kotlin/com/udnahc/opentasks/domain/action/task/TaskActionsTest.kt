@@ -768,6 +768,27 @@ class TaskActionsTest {
     }
 
     @Test
+    fun completingRescheduledOccurrenceAdvancesEditedDateButKeepsOriginalHistoryIdentity() = runTest {
+        val original = startOfDayLocalMillis(2026, 10, 29)
+        val edited = startOfDayLocalMillis(2026, 11, 10) + 9 * MILLIS_PER_HOUR
+        val task = testTask(id = "rescheduled", deadline = original, recurrenceType = RecurrenceType.DAILY)
+        val repository = FakeTaskRepository(listOf(task))
+        val coordinator = TaskWriteCoordinator(repository)
+        val form = TaskFormData(
+            title = task.title, content = task.content, deadline = edited,
+            endDeadline = edited + MILLIS_PER_HOUR,
+            recurrence = RecurrenceType.DAILY, status = TaskStatus.DONE,
+        )
+        val intent = TaskWriteIntent.ApplyFormAndComplete(form, original, FormCompletionScope.OCCURRENCE)
+        val result = coordinator.write(task.id, intent).value as TaskWriteResult.Updated
+        assertEquals(edited + MILLIS_PER_DAY, result.task.deadline)
+        assertEquals(edited + MILLIS_PER_DAY + MILLIS_PER_HOUR, result.task.endDeadline)
+        assertEquals(original, completionForWrite(task, result.task, intent, edited)?.occurrenceAt)
+        assertEquals(TaskStatus.TODO, result.task.status)
+        assertEquals(TaskWriteResult.StaleOccurrence, coordinator.write(task.id, intent).value)
+    }
+
+    @Test
     fun recurringFormCompletionAppliesTheFullFormBeforeOccurrenceOrSeriesCompletion() = runTest {
         val deadline = startOfDayLocalMillis(2026, 1, 31)
         val task = testTask(

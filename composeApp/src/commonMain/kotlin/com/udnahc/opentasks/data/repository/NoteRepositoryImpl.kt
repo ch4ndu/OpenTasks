@@ -68,6 +68,7 @@ class NoteRepositoryImpl(
                 updatedAt = maxOf(localNow(), note.updatedAt),
             )
             withContext(ioDispatcher) {
+                checkNotNull(noteDao.getNoteById(note.id)) { "Cannot update a missing note" }
                 noteDao.update(committed.withUtcTimestamps())
             }
             withSyncWarning(committed)
@@ -86,6 +87,7 @@ class NoteRepositoryImpl(
                 updatedAt = maxOf(localNow(), note.updatedAt),
             )
             withContext(ioDispatcher) {
+                checkNotNull(noteDao.getNoteById(note.id)) { "Cannot delete a missing note" }
                 noteDao.update(committed.withUtcTimestamps())
             }
             withSyncWarning(committed)

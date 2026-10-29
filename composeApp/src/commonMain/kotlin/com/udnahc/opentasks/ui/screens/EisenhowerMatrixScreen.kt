@@ -114,6 +114,7 @@ fun EisenhowerMatrixScreen(
             isRefreshing = isRefreshing, syncEnabled = syncEnabled, onRefresh = onRefresh,
         )
     } else {
+    val loadState by viewModel.loadState.collectAsState()
     val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
     val priorityProjections by viewModel.priorityProjections.collectAsState()
     val taskDueTextById by viewModel.taskDueTextById.collectAsState()
@@ -128,6 +129,8 @@ fun EisenhowerMatrixScreen(
         isRefreshing = isRefreshing,
         syncEnabled = syncEnabled,
         onRefresh = onRefresh,
+        loadState = loadState,
+        onRetry = viewModel::retryLoad,
     )
 
     }
@@ -159,6 +162,8 @@ internal fun EisenhowerMatrixContent(
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
+    loadState: com.udnahc.opentasks.viewmodel.MatrixLoadState = com.udnahc.opentasks.viewmodel.MatrixLoadState.READY,
+    onRetry: () -> Unit = {},
 ) {
     SyncPullToRefresh(
         isRefreshing = isRefreshing,
@@ -169,6 +174,13 @@ internal fun EisenhowerMatrixContent(
         Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
             MatrixHeader(onSettingsClick = onSettingsClick)
 
+            if (loadState != com.udnahc.opentasks.viewmodel.MatrixLoadState.READY) {
+                ReimaginedReadStatus(
+                    loading = loadState == com.udnahc.opentasks.viewmodel.MatrixLoadState.LOADING,
+                    onRetry = onRetry,
+                    modifier = Modifier.navigationBarsPadding().padding(bottom = OpenTasksTheme.dimens.fabAreaBottom),
+                )
+            } else {
             // 2x2 Grid
             val highTasks = priorityProjections[TaskPriority.HIGH] ?: MatrixViewModel.PriorityProjection()
             val lowTasks = priorityProjections[TaskPriority.LOW] ?: MatrixViewModel.PriorityProjection()
@@ -186,6 +198,7 @@ internal fun EisenhowerMatrixContent(
                 onToggleComplete = onToggleComplete,
                 onQuadrantClick = onQuadrantClick,
             )
+            }
         }
     }
 }

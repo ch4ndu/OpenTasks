@@ -50,7 +50,8 @@ object IcsGenerator {
 
         if (task.isAllDay) {
             // All-day events use VALUE=DATE format (YYYYMMDD).
-            // Per RFC 5545, DTEND is exclusive — add one day so the event is visible.
+            // New imports end on the final included millisecond; emit the following civil day.
+            // Keep the legacy date-based export policy: old midnight ends have no reliable discriminator.
             sb.appendLine("DTSTART;VALUE=DATE:${formatDateOnly(startUtcMillis)}")
             sb.appendLine("DTEND;VALUE=DATE:${formatDateOnlyPlusOneDay(endUtcMillis)}")
         } else {

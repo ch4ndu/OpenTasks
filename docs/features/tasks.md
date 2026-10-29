@@ -104,6 +104,8 @@ The Tasks-tab Add task action creates in the open list's category; the overview 
 
 The full editor retains the complete entry draft across recreation. Editing only text preserves the task's exact valid start/end values, including seconds and milliseconds, overnight ranges, multi-day spans, and imported all-day exclusive end dates. Moving the start date shifts the end date by the same civil-day distance while retaining its wall-clock time; explicit time changes keep the established civil-day span, while a newly created duration starts as same-day. Clearing the date clears the end date, and Save shows a localized validation error without persisting when the end precedes the start. Retained multi-day ranges remain visible in the date summary and duration tab.
 
+When a recurring task is rescheduled and completed in the same save, completing this occurrence records the original occurrence and schedules the next repeat after the edited date/time. The original occurrence is still checked for stale writes.
+
 Ordinary Save preserves TODO and IN_PROGRESS. Marking the task complete uses DONE and keeps the existing recurring-completion prompt. Turning completion off restores the entry's original non-DONE status, or TODO when the editor opened a DONE task.
 
 Task detail fields live in the create/edit task flow. Location, URL, organizer, event status, and attendees are stored on the task so imported calendar metadata and manually entered details survive local persistence and sync.

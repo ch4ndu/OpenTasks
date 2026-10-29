@@ -895,11 +895,15 @@ private fun CalendarContent(
             }
         }
 
-        if (reimagined && loadState != com.udnahc.opentasks.viewmodel.CalendarLoadState.READY) {
+        if (loadState != com.udnahc.opentasks.viewmodel.CalendarLoadState.READY) {
             androidx.compose.material3.Surface(Modifier.fillMaxSize().pointerInput(Unit) {
                 awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
             }, color = MaterialTheme.colorScheme.background) {
-                com.udnahc.opentasks.ui.screens.ReimaginedReadStatus(loadState == com.udnahc.opentasks.viewmodel.CalendarLoadState.LOADING, onRetryLoad)
+                com.udnahc.opentasks.ui.screens.ReimaginedReadStatus(
+                    loadState == com.udnahc.opentasks.viewmodel.CalendarLoadState.LOADING,
+                    onRetryLoad,
+                    if (reimagined) Modifier else Modifier.padding(top = topBarHeight, bottom = navBarHeight + dimens.fabAreaBottom),
+                )
             }
         }
     }

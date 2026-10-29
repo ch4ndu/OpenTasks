@@ -98,10 +98,15 @@ interface TagDao {
 
     @Transaction
     suspend fun mergeRemoteTaskTagIfNewer(remote: TaskTag): RemoteMergeResult {
+        val local = findTaskTagByIdAnyState(remote.taskId, remote.tagId)
         if (!hasActiveTask(remote.taskId) || !hasActiveTag(remote.tagId)) {
+            // Retain a winning graph-deletion tombstone so the same pass can upload it.
+            // Never insert or resurrect an active relation whose parent is deleted/missing.
+            if (!remote.isDeleted && local?.isDeleted == true && local.updatedAt > remote.updatedAt) {
+                return RemoteMergeResult.KeptLocal
+            }
             return RemoteMergeResult.MissingParent
         }
-        val local = findTaskTagByIdAnyState(remote.taskId, remote.tagId)
         if (local != null && local.updatedAt >= remote.updatedAt) return RemoteMergeResult.KeptLocal
         upsertTaskTag(remote)
         return RemoteMergeResult.Applied

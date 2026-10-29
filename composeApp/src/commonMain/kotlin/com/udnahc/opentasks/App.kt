@@ -166,6 +166,8 @@ import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import com.udnahc.opentasks.viewmodel.NoteMutationOperation
 import com.udnahc.opentasks.viewmodel.NoteMutationState
 import com.udnahc.opentasks.viewmodel.NoteViewModel
+import com.udnahc.opentasks.viewmodel.matchesEditor
+import com.udnahc.opentasks.ui.screens.noteForOpenEditor
 import com.udnahc.opentasks.viewmodel.QuickAddTaskSaveEvent
 import com.udnahc.opentasks.viewmodel.QuickAddTaskViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormSaveEvent
@@ -737,9 +739,10 @@ private fun MainScreen(
     var pendingNoteTasksId by rememberSaveable(binding.boundaryEpoch) { mutableStateOf<String?>(null) }
     var pendingCreatedNoteTasks by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
     var noteSheetRequestToken by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(0L) }
+    var editNoteMissing by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
     var showImportCalendar by remember { mutableStateOf(false) }
-    var showImportIcs by remember { mutableStateOf(false) }
-    var showImportCsv by remember { mutableStateOf(false) }
+    var showImportIcs by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
+    var showImportCsv by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
     var pendingTaskCreation by remember { mutableStateOf<Screen.CreateTask?>(null) }
     var sharedTaskReviewId by rememberSaveable(binding.boundaryEpoch) { mutableStateOf<Long?>(null) }
     var childModalBusyRoute by remember(binding.boundaryEpoch) { mutableStateOf<NavKey?>(null) }
@@ -795,12 +798,8 @@ private fun MainScreen(
     }
 
     fun NoteMutationOperation.matchesOpenNoteSheet(): Boolean {
-        if (requestToken != noteSheetRequestToken) return false
-        return when (this) {
-            is NoteMutationOperation.Create -> showCreateNote && editNoteId == null
-            is NoteMutationOperation.Update -> !showCreateNote && noteId == editNoteId
-            is NoteMutationOperation.Delete -> !showCreateNote && note.id == editNoteId
-        }
+        if (!showCreateNote && editNoteId == null) return false
+        return matchesEditor(noteSheetRequestToken, editNoteId)
     }
 
     fun closeOpenNoteSheet() {
@@ -808,6 +807,7 @@ private fun MainScreen(
         pendingNoteTasksId = null
         showCreateNote = false
         editNoteId = null
+        editNoteMissing = false
         noteSheetRequestToken += 1L
     }
 
@@ -872,6 +872,7 @@ private fun MainScreen(
                     if (operation is NoteMutationOperation.Create) {
                         showCreateNote = false
                         editNoteId = terminalState.committedNote?.id
+                        editNoteMissing = false
                     }
                     noteSavedRevision += 1L
                 } else {
@@ -1653,11 +1654,11 @@ private fun MainScreen(
                     val viewModel: CountdownFormViewModel = koinViewModel()
                     val isSaving by viewModel.isSaving.collectAsState()
                     val countdownBackOwner = remember { Any() }
-                    DisposableEffect(reimagined, isSaving, countdownBackOwner) {
-                        if (reimagined && isSaving) taskFormBackHandlerRegistry.register(countdownBackOwner) {}
+                    DisposableEffect(isSaving, countdownBackOwner) {
+                        if (isSaving) taskFormBackHandlerRegistry.register(countdownBackOwner) {}
                         onDispose { taskFormBackHandlerRegistry.register(countdownBackOwner, null) }
                     }
-                    PlatformBackHandler(enabled = reimagined && isSaving, onBack = {})
+                    PlatformBackHandler(enabled = isSaving, onBack = {})
                     LaunchedEffect(viewModel) {
                         viewModel.mutationEvent.collect { event ->
                             val mutationEvent = event ?: return@collect
@@ -1683,7 +1684,7 @@ private fun MainScreen(
                         initialType = initialType,
                         currentDate = currentDate,
                         onSave = { countdown -> viewModel.addCountdown(countdown) },
-                        onBack = { if (!reimagined || !isSaving) popBackStackWithWorkspaceReturn() },
+                        onBack = { if (!isSaving) popBackStackWithWorkspaceReturn() },
                         isSaving = isSaving,
                     )
                 }
@@ -1711,24 +1712,24 @@ private fun MainScreen(
                     }
                     val isDeletingCountdown by viewModel.isSaving.collectAsState()
                     val countdownBackOwner = remember { Any() }
-                    DisposableEffect(reimagined, isDeletingCountdown, countdownBackOwner) {
-                        if (reimagined && isDeletingCountdown) taskFormBackHandlerRegistry.register(countdownBackOwner) {}
+                    DisposableEffect(isDeletingCountdown, countdownBackOwner) {
+                        if (isDeletingCountdown) taskFormBackHandlerRegistry.register(countdownBackOwner) {}
                         onDispose { taskFormBackHandlerRegistry.register(countdownBackOwner, null) }
                     }
-                    PlatformBackHandler(enabled = reimagined && isDeletingCountdown, onBack = {})
+                    PlatformBackHandler(enabled = isDeletingCountdown, onBack = {})
                     val destinationState by viewModel.destinationState.collectAsState()
                     when (val state = destinationState) {
                         CountdownDestinationState.Loading -> DestinationLoadingScreen()
                         CountdownDestinationState.Missing -> MissingDestinationScreen(
                             message = countdownNotFound,
-                            onBack = { if (!reimagined || !isDeletingCountdown) popBackStackWithWorkspaceReturn() },
+                            onBack = { if (!isDeletingCountdown) popBackStackWithWorkspaceReturn() },
                         )
                         is CountdownDestinationState.Ready -> CountdownDetailScreen(
                             isBusy = isDeletingCountdown,
                             countdown = state.occurrence,
-                            onBack = { if (!reimagined || !isDeletingCountdown) popBackStackWithWorkspaceReturn() },
+                            onBack = { if (!isDeletingCountdown) popBackStackWithWorkspaceReturn() },
                             onEdit = {
-                                navController.navigate(Screen.EditCountdown(screen.countdownId))
+                                if (!isDeletingCountdown) navController.navigate(Screen.EditCountdown(screen.countdownId))
                             },
                             onDelete = { viewModel.deleteCountdown(state.countdown) },
                             onModalBusyChanged = { isBusy ->
@@ -1743,11 +1744,11 @@ private fun MainScreen(
                     LaunchedEffect(screen.countdownId) { viewModel.setCountdownId(screen.countdownId) }
                     val isSaving by viewModel.isSaving.collectAsState()
                     val countdownBackOwner = remember { Any() }
-                    DisposableEffect(reimagined, isSaving, countdownBackOwner) {
-                        if (reimagined && isSaving) taskFormBackHandlerRegistry.register(countdownBackOwner) {}
+                    DisposableEffect(isSaving, countdownBackOwner) {
+                        if (isSaving) taskFormBackHandlerRegistry.register(countdownBackOwner) {}
                         onDispose { taskFormBackHandlerRegistry.register(countdownBackOwner, null) }
                     }
-                    PlatformBackHandler(enabled = reimagined && isSaving, onBack = {})
+                    PlatformBackHandler(enabled = isSaving, onBack = {})
                     LaunchedEffect(viewModel) {
                         viewModel.mutationEvent.collect { event ->
                             val mutationEvent = event ?: return@collect
@@ -1771,14 +1772,14 @@ private fun MainScreen(
                         CountdownDestinationState.Loading -> DestinationLoadingScreen()
                         CountdownDestinationState.Missing -> MissingDestinationScreen(
                             message = countdownNotFound,
-                            onBack = { if (!reimagined || !isSaving) popBackStackWithWorkspaceReturn() },
+                            onBack = { if (!isSaving) popBackStackWithWorkspaceReturn() },
                         )
                         is CountdownDestinationState.Ready -> CreateCountdownScreen(
                             editCountdown = state.countdown,
                             initialType = state.countdown.countdownType,
                             currentDate = currentDate,
                             onSave = viewModel::updateCountdown,
-                            onBack = { if (!reimagined || !isSaving) popBackStackWithWorkspaceReturn() },
+                            onBack = { if (!isSaving) popBackStackWithWorkspaceReturn() },
                             isSaving = isSaving,
                         )
                     }
@@ -1881,7 +1882,8 @@ private fun MainScreen(
         noteViewModel.selectNote(editNoteIdVal)
     }
     if (editNoteIdVal != null) {
-        val editNote by noteViewModel.selectedNote.collectAsState()
+        val selectedEditNote by noteViewModel.selectedNote.collectAsState()
+        val editNote = selectedEditNote?.takeIf { it.id == editNoteIdVal }
         var hasObservedEditNote by remember(editNoteIdVal) { mutableStateOf(false) }
         var retainedEditNote by remember(editNoteIdVal) { mutableStateOf<com.udnahc.opentasks.data.model.Note?>(null) }
         val ownedDeleteSnapshot = when (val state = noteMutationState) {
@@ -1896,10 +1898,16 @@ private fun MainScreen(
         val matchingMutationOperation = when (val state = noteMutationState) {
             is NoteMutationState.Busy -> state.operation
             is NoteMutationState.Success -> state.operation
-            is NoteMutationState.Error -> state.operation
-            NoteMutationState.Idle -> null
+            is NoteMutationState.Error,
+            NoteMutationState.Idle,
+            -> null
         }?.takeIf { operation -> operation.matchesOpenNoteSheet() }
-        val noteForSheet = editNote ?: ownedDeleteSnapshot ?: retainedEditNote
+        val noteForSheet = noteForOpenEditor(
+            noteId = editNoteIdVal,
+            observed = editNote,
+            retained = ownedDeleteSnapshot ?: retainedEditNote,
+            isMissing = editNoteMissing,
+        )
         LaunchedEffect(
             editNoteIdVal,
             editNote,
@@ -1909,12 +1917,14 @@ private fun MainScreen(
             if (editNote != null) {
                 hasObservedEditNote = true
                 retainedEditNote = editNote
+                retainedWorkspaceNote = editNote
+                editNoteMissing = false
             } else if (
                 hasObservedEditNote &&
                 ownedDeleteSnapshot == null &&
                 matchingMutationOperation == null
             ) {
-                retireOpenNoteSheet()
+                editNoteMissing = true
             }
         }
         if (!reimagined) noteForSheet?.let { note ->
@@ -1922,31 +1932,44 @@ private fun MainScreen(
             CreateNoteBottomSheet(
                 sheetState = editNoteSheetState,
                 editNote = note,
+                isMissing = editNoteMissing,
+                onSaveAsNew = { title, content ->
+                    pendingNoteTasksId = null
+                    noteViewModel.addNote(noteSheetRequestToken, title, content, recoveryNoteId = note.id)
+                },
                 onSaveAndOpenTasks = { title, content ->
-                    pendingNoteTasksId = note.id
-                    noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
+                    if (!editNoteMissing) {
+                        pendingNoteTasksId = note.id
+                        noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
+                    }
                 },
                 requestToken = noteSheetRequestToken,
                 mutationState = noteMutationState,
                 onDismiss = ::retireOpenNoteSheet,
                 onSave = { title, content ->
                     pendingNoteTasksId = null
-                    noteViewModel.updateNote(
-                        noteSheetRequestToken,
-                        note.copy(title = title, content = content),
-                    )
+                    if (!editNoteMissing) {
+                        noteViewModel.updateNote(
+                            noteSheetRequestToken,
+                            note.copy(title = title, content = content),
+                        )
+                    }
                 },
                 onDelete = {
                     pendingNoteTasksId = null
-                    noteViewModel.deleteNote(noteSheetRequestToken, note)
+                    if (!editNoteMissing) noteViewModel.deleteNote(noteSheetRequestToken, note)
                 },
             )
         }
     }
 
     val selectedWorkspaceNote = if (reimagined && editNoteId != null) noteViewModel.selectedNote.collectAsState().value else null
-    val workspaceNote = selectedWorkspaceNote?.takeIf { it.id == editNoteId }
-        ?: retainedWorkspaceNote?.takeIf { it.id == editNoteId }
+    val workspaceNote = noteForOpenEditor(
+        noteId = editNoteId,
+        observed = selectedWorkspaceNote,
+        retained = retainedWorkspaceNote,
+        isMissing = editNoteMissing,
+    )
     val workspaceActive = reimagined && (showCreateNote || editNoteId != null)
     val workspaceLibrary = if (workspaceActive) noteViewModel.libraryItems.collectAsState().value else emptyList()
     val linkedTasks = if (workspaceActive) noteViewModel.linkedTasks.collectAsState().value else emptyList()
@@ -1959,18 +1982,25 @@ private fun MainScreen(
         initialCapture = noteCapture,
         savedRevision = noteSavedRevision,
         isBusy = noteMutationState is NoteMutationState.Busy,
+        isMissing = editNoteMissing,
         errorMessage = noteEditorError,
         library = workspaceLibrary,
         linkedTasks = linkedPreview,
         linkedTaskCount = linkedTasks.size,
         onSelectNote = { openEditNoteSheet(it.id) },
         onClose = ::retireOpenNoteSheet,
+        onSaveAsNew = { title, content ->
+            noteEditorError = null
+            pendingCreatedNoteTasks = false
+            pendingNoteTasksId = null
+            noteViewModel.addNote(noteSheetRequestToken, title, content, recoveryNoteId = editNoteId)
+        },
         onSave = { title, content ->
             noteEditorError = null
             pendingCreatedNoteTasks = false
             pendingNoteTasksId = null
             if (showCreateNote) noteViewModel.addNote(noteSheetRequestToken, title, content)
-            else workspaceNote?.let { noteViewModel.updateNote(noteSheetRequestToken, it.copy(title = title, content = content)) }
+            else if (!editNoteMissing) workspaceNote?.let { noteViewModel.updateNote(noteSheetRequestToken, it.copy(title = title, content = content)) }
         },
         onSaveAndOpenTasks = { title, content ->
             noteEditorError = null
@@ -1978,13 +2008,13 @@ private fun MainScreen(
                 pendingCreatedNoteTasks = true
                 pendingNoteTasksId = null
                 noteViewModel.addNote(noteSheetRequestToken, title, content)
-            } else workspaceNote?.let { note ->
+            } else if (!editNoteMissing) workspaceNote?.let { note ->
                 pendingCreatedNoteTasks = false
                 pendingNoteTasksId = note.id
                 noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
             }
         },
-        onDelete = workspaceNote?.let { note ->
+        onDelete = workspaceNote?.takeUnless { editNoteMissing }?.let { note ->
             { pendingCreatedNoteTasks = false; pendingNoteTasksId = null; noteViewModel.deleteNote(noteSheetRequestToken, note) }
         },
         onLinkedTaskComplete = matrixViewModel::toggleComplete,

@@ -331,7 +331,7 @@ internal fun CreateCountdownContent(
                 title = stringResource(if (editCountdown != null) Res.string.edit else if (reimagined) Res.string.countdown_new else Res.string.add),
                 containerStyle = OpenTasksTopBarContainerStyle.Transparent,
                 navigationIcon = {
-                    OpenTasksCloseButton(onClick = { if (!reimagined || !isSaving) onBack() })
+                    OpenTasksCloseButton(onClick = { if (!isSaving) onBack() })
                 },
             )
 
@@ -376,7 +376,7 @@ internal fun CreateCountdownContent(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; showNameError = false },
-                    enabled = !reimagined || !isSaving,
+                    enabled = !isSaving,
                     isError = reimagined && showNameError,
                     supportingText = if (reimagined && showNameError) ({ Text(stringResource(Res.string.countdown_name_required)) }) else null,
                     label = { Text(stringResource(Res.string.name_label)) },
@@ -409,42 +409,48 @@ internal fun CreateCountdownContent(
                     NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.date),
                         value = "${monthNameShort(selectedMonth)} $selectedDay, $selectedYear",
-                        onClick = { if (!reimagined || !isSaving) showDatePicker = true },
+                        onClick = { if (!isSaving) showDatePicker = true },
+                        enabled = !isSaving,
                     )
 
                     // Reminder row
                     NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.reminder),
                         value = selectedReminders.displayText(),
-                        onClick = { if (!reimagined || !isSaving) showReminderPicker = true },
+                        onClick = { if (!isSaving) showReminderPicker = true },
+                        enabled = !isSaving,
                     )
 
                     // Repeat row
                     NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.repeat),
                         value = stringResource(recurrenceLabelRes(selectedRecurrence)),
-                        onClick = { if (!reimagined || !isSaving) showRepeatPicker = true },
+                        onClick = { if (!isSaving) showRepeatPicker = true },
+                        enabled = !isSaving,
                     )
 
                     // Type row (modern type chips use the same selectedType state).
                     if (!reimagined) NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.countdown_type),
                         value = stringResource(countdownTypeLabelRes(selectedType)),
-                        onClick = { if (!reimagined || !isSaving) showTypePicker = true },
+                        onClick = { if (!isSaving) showTypePicker = true },
+                        enabled = !isSaving,
                     )
 
                     // Counting Mode row
                     NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.countdown_counting_mode),
                         value = stringResource(countingModeLabelRes(selectedCountingMode)),
-                        onClick = { if (!reimagined || !isSaving) showCountingModePicker = true },
+                        onClick = { if (!isSaving) showCountingModePicker = true },
+                        enabled = !isSaving,
                     )
 
                     // Smart List row
                     NoIconLabelValueNavigationRow(
                         label = stringResource(Res.string.countdown_smart_list),
                         value = stringResource(smartListLabelRes(selectedSmartList)),
-                        onClick = { if (!reimagined || !isSaving) showSmartListPicker = true },
+                        onClick = { if (!isSaving) showSmartListPicker = true },
+                        enabled = !isSaving,
                     )
                 }
             }
@@ -474,7 +480,7 @@ internal fun CreateCountdownContent(
 
     // ---- Dialogs ----
 
-    if (showDatePicker) {
+    if (showDatePicker && !isSaving) {
         CalendarDatePickerDialog(
             currentDate = currentDate,
             selectedDay = selectedDay,
@@ -493,7 +499,7 @@ internal fun CreateCountdownContent(
         )
     }
 
-    if (showReminderPicker) {
+    if (showReminderPicker && !isSaving) {
         MultiSelectReminderDialog(
             selected = selectedReminders,
             options = CountdownReminderOption.entries,
@@ -507,7 +513,7 @@ internal fun CreateCountdownContent(
         )
     }
 
-    if (showRepeatPicker) {
+    if (showRepeatPicker && !isSaving) {
         CountdownRepeatPickerDialog(
             selected = selectedRecurrence,
             onSelected = { selectedRecurrence = it },
@@ -515,7 +521,7 @@ internal fun CreateCountdownContent(
         )
     }
 
-    if (showTypePicker) {
+    if (showTypePicker && !isSaving) {
         CountdownTypePickerDialog(
             selected = selectedType,
             onSelected = { type ->
@@ -531,7 +537,7 @@ internal fun CreateCountdownContent(
         )
     }
 
-    if (showCountingModePicker) {
+    if (showCountingModePicker && !isSaving) {
         CountingModePickerDialog(
             selected = selectedCountingMode,
             onSelected = { selectedCountingMode = it },
@@ -539,7 +545,7 @@ internal fun CreateCountdownContent(
         )
     }
 
-    if (showSmartListPicker) {
+    if (showSmartListPicker && !isSaving) {
         SmartListPickerDialog(
             selected = selectedSmartList,
             onSelected = { selectedSmartList = it },

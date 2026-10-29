@@ -26,7 +26,8 @@ import com.udnahc.opentasks.domain.usecase.attachment.ObserveTaskImageSummariesU
 import com.udnahc.opentasks.domain.usecase.task.ObserveTasksByPriorityUseCase
 import com.udnahc.opentasks.domain.usecase.task.PlainTaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
-import com.udnahc.opentasks.domain.usecase.task.taskPreviewTextById
+import com.udnahc.opentasks.domain.usecase.task.taskPreviewTexts
+import com.udnahc.opentasks.domain.usecase.task.distinctDueTextInputs
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -183,7 +184,7 @@ class MatrixViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val taskContentPreviews: StateFlow<Map<String, String>> = tasksForSelectedPriority
-        .map(::taskPreviewTextById)
+        .taskPreviewTexts()
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
@@ -199,7 +200,7 @@ class MatrixViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val selectedPriorityTaskDueTextById: StateFlow<Map<String, String>> = combine(
-        tasksForSelectedPriority,
+        tasksForSelectedPriority.distinctDueTextInputs(),
         localDaySignal.dates,
     ) { tasks, _ ->
         tasks.associate { task -> task.id to taskDueTextProvider.matrixDueText(task) }

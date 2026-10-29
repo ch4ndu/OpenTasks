@@ -187,7 +187,7 @@ internal fun QuickAddTaskContent(
                         val label = quickTaskTokenLabel(token)
                         InputChip(
                             selected = true,
-                            enabled = !isReimagined || !state.isSaving && !state.isSaved,
+                            enabled = !state.isSaving && !state.isSaved,
                             onClick = { onDismissToken(token.signature) },
                             label = { Text(label) },
                             trailingIcon = {

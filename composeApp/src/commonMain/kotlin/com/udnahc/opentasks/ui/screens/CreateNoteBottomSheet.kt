@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,8 +37,9 @@ import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
-import com.udnahc.opentasks.viewmodel.NoteMutationOperation
+import com.udnahc.opentasks.ui.util.PlatformBackHandler
 import com.udnahc.opentasks.viewmodel.NoteMutationState
+import com.udnahc.opentasks.viewmodel.matchesEditor
 import opentasks.composeapp.generated.resources.note_save_open_tasks
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.back
@@ -46,10 +48,14 @@ import opentasks.composeapp.generated.resources.delete
 import opentasks.composeapp.generated.resources.delete_note
 import opentasks.composeapp.generated.resources.delete_note_message
 import opentasks.composeapp.generated.resources.delete_note_title
+import opentasks.composeapp.generated.resources.discard
 import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.ic_delete
 import opentasks.composeapp.generated.resources.note
 import opentasks.composeapp.generated.resources.note_title_hint
+import opentasks.composeapp.generated.resources.note_discard_title
+import opentasks.composeapp.generated.resources.note_discard_message
+import opentasks.composeapp.generated.resources.keep_editing
 import opentasks.composeapp.generated.resources.save
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -62,25 +68,57 @@ fun CreateNoteBottomSheet(
     editNote: Note? = null,
     requestToken: Long = 0L,
     mutationState: NoteMutationState = NoteMutationState.Idle,
+    isMissing: Boolean = false,
+    onSaveAsNew: ((String, String) -> Unit)? = null,
     onSave: (title: String, content: String) -> Unit,
     onDelete: (() -> Unit)? = null,
     onSaveAndOpenTasks: ((String, String) -> Unit)? = null,
 ) {
     val isBusy = mutationState.isOwnedBy(requestToken, editNote?.id)
+    var confirmMissingDiscard by rememberSaveable(requestToken) { mutableStateOf(false) }
+    fun requestDismiss() {
+        if (isBusy) return
+        if (isMissing) confirmMissingDiscard = true else onDismiss()
+    }
     ModalBottomSheet(
         sheetState = sheetState,
-        onDismissRequest = { if (!isBusy) onDismiss() },
+        onDismissRequest = ::requestDismiss,
         dragHandle = null,
-        sheetGesturesEnabled = !isBusy,
+        sheetGesturesEnabled = !isBusy && !isMissing,
+        properties = ModalBottomSheetProperties(
+            shouldDismissOnBackPress = !isBusy && !isMissing,
+            shouldDismissOnClickOutside = !isBusy && !isMissing,
+        ),
         containerColor = MaterialTheme.colorScheme.background,
     ) {
+        PlatformBackHandler(enabled = isMissing || isBusy, onBack = ::requestDismiss)
         CreateNoteBottomSheetContent(
             editNote = editNote,
-            onDismiss = onDismiss,
+            onDismiss = ::requestDismiss,
             onSave = onSave,
             onDelete = onDelete,
             onSaveAndOpenTasks = onSaveAndOpenTasks,
             isBusy = isBusy,
+            isMissing = isMissing,
+            onSaveAsNew = onSaveAsNew,
+            onDiscardMissingDraft = onDismiss,
+        )
+    }
+    if (confirmMissingDiscard && isMissing) {
+        AlertDialog(
+            onDismissRequest = { confirmMissingDiscard = false },
+            title = { Text(stringResource(Res.string.note_discard_title)) },
+            text = { Text(stringResource(Res.string.note_discard_message)) },
+            confirmButton = {
+                TextButton(onClick = onDismiss, enabled = !isBusy) {
+                    Text(stringResource(Res.string.discard))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmMissingDiscard = false }) {
+                    Text(stringResource(Res.string.keep_editing))
+                }
+            },
         )
     }
 }
@@ -93,6 +131,9 @@ internal fun CreateNoteBottomSheetContent(
     onDelete: (() -> Unit)? = null,
     onSaveAndOpenTasks: ((String, String) -> Unit)? = null,
     isBusy: Boolean = false,
+    isMissing: Boolean = false,
+    onSaveAsNew: ((String, String) -> Unit)? = null,
+    onDiscardMissingDraft: () -> Unit = onDismiss,
 ) {
     val stateKey = editNote?.id ?: CREATE_NOTE_STATE_KEY
     var title by rememberSaveable(stateKey) { mutableStateOf(editNote?.title ?: "") }
@@ -104,7 +145,7 @@ internal fun CreateNoteBottomSheetContent(
     }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    if (showDeleteConfirm && onDelete != null) {
+    if (showDeleteConfirm && onDelete != null && !isMissing) {
         AlertDialog(
             onDismissRequest = { if (!isBusy) showDeleteConfirm = false },
             title = { Text(stringResource(Res.string.delete_note_title)) },
@@ -143,17 +184,25 @@ internal fun CreateNoteBottomSheetContent(
                     onDismiss()
                 }
             },
-            onDelete = if (editNote != null) {
+            onDelete = if (onDelete != null && !isMissing) {
                 { showDeleteConfirm = true }
             } else {
                 null
             },
             isBusy = isBusy,
+            canSave = !isMissing,
         )
 
         val dimens = OpenTasksTheme.dimens
 
-        if (onSaveAndOpenTasks != null) {
+        if (isMissing && onSaveAsNew != null) {
+            MissingNoteDraftNotice(
+                isBusy = isBusy,
+                onSaveAsNew = { onSaveAsNew(title, richTextState.toHtml()) },
+                onDiscard = onDiscardMissingDraft,
+            )
+        }
+        if (onSaveAndOpenTasks != null && !isMissing) {
             TextButton(onClick = { onSaveAndOpenTasks(title, richTextState.toHtml()) }, enabled = !isBusy) {
                 Text(stringResource(Res.string.note_save_open_tasks))
             }
@@ -222,6 +271,7 @@ internal fun CreateNoteTopBar(
     onSave: () -> Unit,
     onDelete: (() -> Unit)?,
     isBusy: Boolean = false,
+    canSave: Boolean = true,
 ) {
     val dimens = OpenTasksTheme.dimens
     Row(
@@ -252,7 +302,7 @@ internal fun CreateNoteTopBar(
 
         TextButton(
             onClick = onSave,
-            enabled = !isBusy,
+            enabled = !isBusy && canSave,
             modifier = Modifier.minimumInteractiveTargetSize(),
         ) {
             Text(
@@ -286,12 +336,7 @@ private fun NoteMutationState.isOwnedBy(
         is NoteMutationState.Error -> operation
         NoteMutationState.Idle -> return false
     }
-    if (operation.requestToken != requestToken) return false
-    return when (operation) {
-        is NoteMutationOperation.Create -> editNoteId == null
-        is NoteMutationOperation.Update -> operation.noteId == editNoteId
-        is NoteMutationOperation.Delete -> operation.note.id == editNoteId
-    }
+    return operation.matchesEditor(requestToken, editNoteId)
 }
 
 private const val CREATE_NOTE_STATE_KEY = "create-note"

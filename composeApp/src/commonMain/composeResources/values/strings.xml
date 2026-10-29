@@ -652,4 +652,6 @@
     <string name="reimagined_full_editor_help">Dates, reminders, description, subtasks and attachments</string>
     <string name="reimagined_workflows">Workflows</string>
     <string name="reimagined_open_full_editor">Open full editor</string>
+    <string name="note_missing_draft_message">This note was deleted. Your draft is still here. Save it as a new note or discard it.</string>
+    <string name="note_save_as_new">Save as new</string>
 </resources>

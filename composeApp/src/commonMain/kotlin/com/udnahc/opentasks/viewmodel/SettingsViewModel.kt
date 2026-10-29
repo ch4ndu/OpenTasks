@@ -182,7 +182,7 @@ class SettingsViewModel(
                 val (content, count) = generateCsvExport()
                 pendingExportCount = count
                 withContext(Dispatchers.Main) {
-                    onReady(FileExportRequest("opentasks_export.csv", content, "text/csv"))
+                    onReady(FileExportRequest("opentasks_export.csv", content, "text/csv", count))
                     handedOff = true
                 }
             } catch (e: CancellationException) {
@@ -205,7 +205,7 @@ class SettingsViewModel(
                 val (content, count) = generateIcsExport()
                 pendingExportCount = count
                 withContext(Dispatchers.Main) {
-                    onReady(FileExportRequest("opentasks_export.ics", content, "text/calendar"))
+                    onReady(FileExportRequest("opentasks_export.ics", content, "text/calendar", count))
                     handedOff = true
                 }
             } catch (e: CancellationException) {
@@ -272,7 +272,7 @@ class SettingsViewModel(
 }
 
 internal fun FileExportResult.toUiResult(count: Int): ExportResult = when (this) {
-    FileExportResult.Completed -> ExportResult.Success(count)
+    is FileExportResult.Completed -> ExportResult.Success(itemCount ?: count)
     FileExportResult.Cancelled -> ExportResult.Idle
     is FileExportResult.Error -> ExportResult.Error
 }

@@ -8,7 +8,12 @@ class ExportResultTest {
     @Test
     fun cancellationIsNeutralWhileCompletionAndFailureAreReported() {
         assertEquals(ExportResult.Idle, FileExportResult.Cancelled.toUiResult(count = 3))
-        assertEquals(ExportResult.Success(3), FileExportResult.Completed.toUiResult(count = 3))
+        assertEquals(ExportResult.Success(3), FileExportResult.Completed().toUiResult(count = 3))
         assertEquals(ExportResult.Error, FileExportResult.Error().toUiResult(count = 3))
+    }
+
+    @Test
+    fun retainedExportCountSurvivesSettingsViewModelRecreation() {
+        assertEquals(ExportResult.Success(17), FileExportResult.Completed(itemCount = 17).toUiResult(count = 0))
     }
 }

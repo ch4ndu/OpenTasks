@@ -96,12 +96,14 @@ internal fun ReimaginedNotesWorkspace(
     initialCapture: String,
     savedRevision: Long,
     isBusy: Boolean,
+    isMissing: Boolean,
     errorMessage: String?,
     library: List<NoteListItem>,
     linkedTasks: List<Task>,
     linkedTaskCount: Int,
     onSelectNote: (Note) -> Unit,
     onClose: () -> Unit,
+    onSaveAsNew: (String, String) -> Unit,
     onSave: (String, String) -> Unit,
     onSaveAndOpenTasks: ((String, String) -> Unit)?,
     onDelete: (() -> Unit)?,
@@ -158,7 +160,7 @@ internal fun ReimaginedNotesWorkspace(
     }
     fun requestLeave(action: () -> Unit) {
         if (isBusy) return
-        if (title != baselineTitle || rich.toHtml() != baselineHtml) pendingSwitch = action else action()
+        if (isMissing || title != baselineTitle || rich.toHtml() != baselineHtml) pendingSwitch = action else action()
     }
     PlatformBackHandler(enabled = true, onBack = { requestLeave(onClose) })
     val currentBack by rememberUpdatedState<() -> Unit> { requestLeave(onClose) }
@@ -192,14 +194,19 @@ internal fun ReimaginedNotesWorkspace(
                     windowInsets = TopAppBarDefaults.windowInsets.only(WindowInsetsSides.Horizontal),
                     actions = {
                         IconButton(onClick = { focus = !focus }) { Icon(painterResource(Res.drawable.ic_unfold), stringResource(if (focus) Res.string.note_focus_exit else Res.string.note_focus), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                        TextButton(onClick = {
+                        if (!isMissing) TextButton(onClick = {
                             pendingTitle = title; pendingHtml = rich.toHtml(); onSave(title, pendingHtml)
                         }, enabled = !isBusy) { Text(stringResource(Res.string.save)) }
-                        if (onDelete != null) IconButton(onClick = { confirmDelete = true }, enabled = !isBusy) { Icon(painterResource(Res.drawable.ic_delete), stringResource(Res.string.delete_note), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        if (onDelete != null && !isMissing) IconButton(onClick = { confirmDelete = true }, enabled = !isBusy) { Icon(painterResource(Res.drawable.ic_delete), stringResource(Res.string.delete_note), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                     },
                 )
                 if (errorMessage != null) Text(errorMessage, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(d.paddingMedium))
-                Text(stringResource(if (changedSinceSave || note == null && savedRevision == 0L) Res.string.note_draft else Res.string.note_saved), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = d.paddingLarge))
+                if (isMissing) MissingNoteDraftNotice(
+                    isBusy = isBusy,
+                    onSaveAsNew = { pendingTitle = title; pendingHtml = rich.toHtml(); onSaveAsNew(title, pendingHtml) },
+                    onDiscard = onClose,
+                )
+                Text(stringResource(if (isMissing || changedSinceSave || note == null && savedRevision == 0L) Res.string.note_draft else Res.string.note_saved), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = d.paddingLarge))
                 if (isBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 BasicTextField(
                     title, { title = it; changedSinceSave = true }, readOnly = isBusy,
@@ -216,7 +223,7 @@ internal fun ReimaginedNotesWorkspace(
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(d.paddingXLarge),
                 )
                 FormattingToolbar(richTextState = rich, enabled = !isBusy, modifier = Modifier.fillMaxWidth())
-                if (!focus && onSaveAndOpenTasks != null) {
+                if (!focus && onSaveAndOpenTasks != null && !isMissing) {
                     HorizontalDivider()
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(Res.string.note_linked_count, linkedTaskCount), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
@@ -243,7 +250,7 @@ internal fun ReimaginedNotesWorkspace(
         confirmButton = { TextButton(onClick = { val next = pendingSwitch; pendingSwitch = null; next?.invoke() }) { Text(stringResource(Res.string.discard)) } },
         dismissButton = { TextButton(onClick = { pendingSwitch = null }) { Text(stringResource(Res.string.keep_editing)) } },
     )
-    if (confirmDelete && onDelete != null) AlertDialog(
+    if (confirmDelete && onDelete != null && !isMissing) AlertDialog(
         onDismissRequest = { confirmDelete = false }, title = { Text(stringResource(Res.string.delete_note_title)) }, text = { Text(stringResource(Res.string.delete_note_message)) },
         confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }, enabled = !isBusy) { Text(stringResource(Res.string.delete)) } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(Res.string.cancel)) } },

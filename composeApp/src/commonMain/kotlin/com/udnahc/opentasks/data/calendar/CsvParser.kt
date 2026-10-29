@@ -11,7 +11,6 @@ private val ISO_OFFSET_REGEX = Regex("([+-])(\\d{2})(\\d{2})$")
 private val DURATION_HOUR_REGEX = Regex("(\\d+)H")
 private val DURATION_MIN_REGEX = Regex("(\\d+)M")
 private val DURATION_SEC_REGEX = Regex("(\\d+)S")
-private val RRULE_FREQ_REGEX = Regex("FREQ=(\\w+)")
 
 /**
  * Parsed row from a TickTick CSV export.
@@ -224,10 +223,19 @@ object CsvParser {
         return minutes
     }
 
-    /** Extract FREQ from RRULE and map to RecurrenceType. */
+    /** Preserve the weekday rule emitted by our exporter without interpreting other BYDAY rules. */
     private fun parseRecurrence(value: String): RecurrenceType {
         if (value.isBlank()) return RecurrenceType.NONE
-        val freq = RRULE_FREQ_REGEX.find(value)?.groupValues?.get(1)?.uppercase()
+        val parts = value.trim().uppercase().removePrefix("RRULE:").split(';')
+            .mapNotNull { part ->
+                val key = part.substringBefore('=', "").trim()
+                key.takeIf { it.isNotEmpty() }?.let { it to part.substringAfter('=').trim() }
+            }.toMap()
+        val freq = parts["FREQ"]
+        if (freq == "DAILY" && parts.keys == setOf("FREQ", "BYDAY") &&
+            parts["BYDAY"]?.split(',')?.toSet() == setOf("MO", "TU", "WE", "TH", "FR")) {
+            return RecurrenceType.EVERY_WEEKDAY
+        }
         return when (freq) {
             "DAILY" -> RecurrenceType.DAILY
             "WEEKLY" -> RecurrenceType.WEEKLY

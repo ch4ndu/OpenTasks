@@ -129,9 +129,16 @@ class TaskTagSyncAdapter(
     override suspend fun skipRemoteRecordSilently(record: TaskTagRecord): Boolean =
         record.isDeleted && !hasActiveParents(record)
 
-    override suspend fun validateRemoteRecord(record: TaskTagRecord): String? =
-        if (hasActiveParents(record)) null
-        else "Skipping active orphan task_tags ${record.localId}: missing local task or tag parent"
+    override suspend fun validateRemoteRecord(record: TaskTagRecord): String? {
+        if (hasActiveParents(record)) return null
+        val local = dao.findTaskTagByIdAnyState(record.taskId, record.tagId)
+        // Graph deletion tombstones the parent before this collection pulls its stale active link.
+        // The DAO rechecks the winning deletion inside the writer transaction before keeping it.
+        if (!record.isDeleted && local?.isDeleted == true && local.updatedAt > record.updatedAtUtc) {
+            return null
+        }
+        return "Skipping active orphan task_tags ${record.localId}: missing local task or tag parent"
+    }
 
     override fun clearRemoteValidation() {
         existingTaskIds = null

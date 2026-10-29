@@ -25,7 +25,8 @@ import com.udnahc.opentasks.domain.usecase.task.ObserveTasksForFilterUseCase
 import com.udnahc.opentasks.domain.usecase.task.PlainTaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.TaskDueTextProvider
 import com.udnahc.opentasks.domain.usecase.task.sortedFor
-import com.udnahc.opentasks.domain.usecase.task.taskPreviewTextById
+import com.udnahc.opentasks.domain.usecase.task.taskPreviewTexts
+import com.udnahc.opentasks.domain.usecase.task.distinctDueTextInputs
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -124,16 +125,18 @@ class TaskListViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val taskContentPreviews: StateFlow<Map<String, String>> = tasksForSelectedCategory
-        .map(::taskPreviewTextById)
+        .taskPreviewTexts()
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val taskDueTextById: StateFlow<Map<String, String>> = tasksForSelectedCategory
+        .distinctDueTextInputs()
         .map { tasks -> tasks.associate { task -> task.id to taskDueTextProvider.listDueText(task) } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val boardTaskDueTextById: StateFlow<Map<String, String>> = tasksForSelectedCategory
+        .distinctDueTextInputs()
         .map { tasks -> tasks.associate { task -> task.id to taskDueTextProvider.matrixDueText(task) } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())

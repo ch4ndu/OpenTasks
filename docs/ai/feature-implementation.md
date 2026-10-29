@@ -48,6 +48,7 @@ For a new persisted entity or schema change:
 - Cancellation is a neutral result. Report success only after the selected source was read or the destination write/export callback completed.
 - Keep blocking file reads and writes off Android, UIKit, and AWT UI threads. iOS security-scoped access and temporary export files must be released or removed on every terminal path.
 - Allow only one export preparation/picker flow at a time so result metadata and platform delegates cannot be overwritten.
+- Android document/image picker request owners survive configuration recreation using a saveable identity token and retained native state. Keep large payloads out of saved-state Bundles, consume terminal results only through the current started call site, and retire requests on nonconfiguration abandonment. Process-death recovery is outside this contract.
 
 ## Delegated Workflow Authority and Evidence
 
