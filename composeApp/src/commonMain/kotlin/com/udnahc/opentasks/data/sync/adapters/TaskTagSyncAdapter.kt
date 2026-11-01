@@ -127,11 +127,14 @@ class TaskTagSyncAdapter(
     }
 
     override suspend fun skipRemoteRecordSilently(record: TaskTagRecord): Boolean =
-        record.isDeleted && !hasActiveParents(record)
+        record.isDeleted && !hasActiveParents(record) &&
+            dao.findTaskTagByIdAnyState(record.taskId, record.tagId) == null
 
     override suspend fun validateRemoteRecord(record: TaskTagRecord): String? {
         if (hasActiveParents(record)) return null
         val local = dao.findTaskTagByIdAnyState(record.taskId, record.tagId)
+        // An existing relation keeps its physical parents through foreign keys, even after deletion.
+        if (record.isDeleted && local != null) return null
         // Graph deletion tombstones the parent before this collection pulls its stale active link.
         // The DAO rechecks the winning deletion inside the writer transaction before keeping it.
         if (!record.isDeleted && local?.isDeleted == true && local.updatedAt > record.updatedAtUtc) {

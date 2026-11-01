@@ -15,7 +15,18 @@ sealed interface FileExportResult {
     data class Error(val detail: String? = null) : FileExportResult
 }
 
+/** Native operation ownership, including an awaiting terminal result, survives its caller where supported. */
+interface FileExportLauncher {
+    /** Compose-observable ownership from native acceptance through terminal-result delivery. */
+    val isBusy: Boolean
+
+    /** False means no request was accepted and no terminal result will be delivered for this request. */
+    fun launch(request: FileExportRequest): Boolean
+}
+
 @Composable
 expect fun rememberFileExportLauncher(
     onResult: (FileExportResult) -> Unit,
-): (FileExportRequest) -> Unit
+    /** Called after native retirement on nonconfiguration disposal, even before native admission. */
+    onAbandoned: () -> Unit,
+): FileExportLauncher

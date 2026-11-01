@@ -14,7 +14,7 @@ On macOS, passive permission refreshes must not execute AppleScript because addr
 
 Platform calendar providers return at most 10,000 eligible events in deterministic order. A 10,001st event is a typed, localized overflow rather than a truncated import. Android converts all-day UTC civil dates to local civil starts and makes the exclusive end date inclusive. macOS keeps passive permission checks side-effect-free and uses a bounded, structurally validated JXA JSON response only after the explicit Import action.
 
-New all-day calendar and ICS imports store the final included millisecond as the task's end. A three-day event therefore occupies all three days in Calendar and exports with the following date as its exclusive ICS end. This normalization happens after duplicate detection, so existing import identities remain stable. Existing imported tasks are preserved: older records can contain either inclusive or exclusive midnight ends without a reliable source marker, so their display/export ambiguity cannot safely be corrected automatically.
+New all-day calendar and ICS imports store the final included millisecond as the task's end. A three-day event therefore occupies all three days in Reimagined Calendar and exports with the following date as its exclusive ICS end. Classic Calendar retains its start-day grouping. This normalization happens after duplicate detection, so existing import identities remain stable. Existing imported tasks are preserved: older records can contain either inclusive or exclusive midnight ends without a reliable source marker, so their display/export ambiguity cannot safely be corrected automatically.
 
 ## ICS Import and Export
 
@@ -26,9 +26,11 @@ CSV import supports TickTick-style task CSV files. Header matching is locale-ind
 
 CSV export writes task data using `GenerateCsvExportAction` and the platform file saver.
 
-The supported weekday recurrence (`FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR`) round-trips as weekdays only, preserving the Friday-to-Monday transition.
+The supported weekday recurrence (`FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR`) round-trips as weekdays only, preserving the Friday-to-Monday transition. Import identities retain the historical recurrence interpretation, separately from corrected task behavior, so previously imported rows and repeated-row ordinals still deduplicate. This also preserves identity for lowercase or spaced recurrence keys newly recognized by the parser. Reimport does not rewrite an existing task's recurrence.
 
 On Android, a pending document selection/export or camera capture survives configuration recreation with its original request identity. Payloads remain in retained memory rather than the saved-state Bundle, and results are handed to the current started screen once. Leaving the owning screen/account retires the request. This guarantee does not cover process death.
+
+Active export preparation and native export work keep incoming shared items queued for review. Leaving Settings retires the export request and clears its pending progress, so returning to the same Settings entry permits another export. Retirement does not report export success.
 
 ## System Share Intake
 

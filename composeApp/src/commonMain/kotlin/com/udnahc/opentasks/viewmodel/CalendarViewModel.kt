@@ -70,6 +70,25 @@ private data class CalendarRenderRequest(
 
 enum class CalendarLoadState { LOADING, READY, ERROR }
 
+internal fun calendarUsesCategoryNames(view: CalendarViewPreference, reimagined: Boolean): Boolean =
+    view == CalendarViewPreference.LIST || view == CalendarViewPreference.MONTH ||
+        (reimagined && view != CalendarViewPreference.YEAR)
+
+internal fun calendarLoadStateForView(
+    content: CalendarLoadState,
+    categories: CalendarLoadState,
+    view: CalendarViewPreference,
+    reimagined: Boolean,
+): CalendarLoadState = if (calendarUsesCategoryNames(view, reimagined)) {
+    combineCalendarLoadStates(content, categories)
+} else content
+
+private fun combineCalendarLoadStates(first: CalendarLoadState, second: CalendarLoadState): CalendarLoadState = when {
+    first == CalendarLoadState.ERROR || second == CalendarLoadState.ERROR -> CalendarLoadState.ERROR
+    first == CalendarLoadState.LOADING || second == CalendarLoadState.LOADING -> CalendarLoadState.LOADING
+    else -> CalendarLoadState.READY
+}
+
 class CalendarViewModel(
     observeTasksByDay: ObserveTasksByDayUseCase,
     observeAllCountdowns: ObserveAllCountdownsUseCase,
@@ -90,6 +109,7 @@ class CalendarViewModel(
     private val _sourceLoadState = MutableStateFlow(CalendarLoadState.LOADING)
     private val _renderLoadState = MutableStateFlow(CalendarLoadState.LOADING)
     private val _categoryLoadState = MutableStateFlow(CalendarLoadState.LOADING)
+    val categoryLoadState: StateFlow<CalendarLoadState> = _categoryLoadState
 
     fun retryLoad() { _sourceLoadState.value = CalendarLoadState.LOADING; _renderLoadState.value = CalendarLoadState.LOADING; _categoryLoadState.value = CalendarLoadState.LOADING; readGeneration.value += 1L }
 
@@ -138,7 +158,8 @@ class CalendarViewModel(
         observeTasksByDay(),
         observeAllCountdowns(),
         localDaySignal.dates,
-    ) { taskInputs, countdowns, today ->
+        localDaySignal.formattingContexts { dateTimeFormatter.formattingContextKey },
+    ) { taskInputs, countdowns, today, formattingContext ->
         val merged = taskInputs.mapValuesTo(mutableMapOf()) { (_, tasks) -> tasks }
         projectCountdownCalendarTasks(countdowns, today).forEach { countdownTask ->
             val deadline = countdownTask.deadline ?: return@forEach
@@ -148,7 +169,7 @@ class CalendarViewModel(
         CalendarSourceSnapshot(
             today = today,
             dayInputs = merged,
-            formattingContextKey = dateTimeFormatter.formattingContextKey,
+            formattingContextKey = formattingContext,
         )
     }
         .onEach { _sourceLoadState.value = CalendarLoadState.READY }
@@ -273,16 +294,11 @@ class CalendarViewModel(
             ),
         )
 
+    // Category reads are optional: the screen combines their status only in modes that collect them.
     val loadState: StateFlow<CalendarLoadState> = combine(
-        _sourceLoadState, _renderLoadState, _categoryLoadState, calendarRenderState,
-    ) { source, render, categories, snapshot ->
-        val categoryState = if (snapshot.viewPreference == CalendarViewPreference.YEAR) CalendarLoadState.READY else categories
-        when {
-            source == CalendarLoadState.ERROR || render == CalendarLoadState.ERROR || categoryState == CalendarLoadState.ERROR -> CalendarLoadState.ERROR
-            source == CalendarLoadState.LOADING || render == CalendarLoadState.LOADING || categoryState == CalendarLoadState.LOADING -> CalendarLoadState.LOADING
-            else -> CalendarLoadState.READY
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CalendarLoadState.LOADING)
+        _sourceLoadState, _renderLoadState,
+        ::combineCalendarLoadStates,
+    ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CalendarLoadState.LOADING)
 
     val calendarDaysByDay: StateFlow<Map<Long, CalendarDayProjection>> = calendarRenderState
         .map { renderState -> renderState.calendarDaysByDay }

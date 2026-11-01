@@ -2,8 +2,11 @@ package com.udnahc.opentasks.ui.util
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CancellationException
@@ -34,39 +37,46 @@ import platform.darwin.NSObject
 @Composable
 actual fun rememberFileExportLauncher(
     onResult: (FileExportResult) -> Unit,
-): (FileExportRequest) -> Unit {
+    onAbandoned: () -> Unit,
+): FileExportLauncher {
     val currentOnResult = rememberUpdatedState(onResult)
+    val currentOnAbandoned = rememberUpdatedState(onAbandoned)
     val launcher = remember {
         IosFileExportLauncher { result -> currentOnResult.value(result) }
     }
     DisposableEffect(launcher) {
-        onDispose { launcher.dispose() }
+        onDispose {
+            launcher.dispose()
+            currentOnAbandoned.value()
+        }
     }
-    return remember(launcher) { { request -> launcher.launch(request) } }
+    return launcher
 }
 
 private class IosFileExportLauncher(
     private val onResult: (FileExportResult) -> Unit,
-) {
+) : FileExportLauncher {
     private val preparationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private var state: ExportState = ExportState.Idle
+    private var state by mutableStateOf<ExportState>(ExportState.Idle)
+    override val isBusy: Boolean get() = state !is ExportState.Idle
 
     @OptIn(ExperimentalForeignApi::class)
-    fun launch(request: FileExportRequest) {
-        if (state !is ExportState.Idle) return
+    override fun launch(request: FileExportRequest): Boolean {
+        if (isBusy) return false
         val lease = try {
             ExportLease(
                 directory = "${NSTemporaryDirectory()}opentasks-exports/${NSUUID().UUIDString}/",
             )
         } catch (_: Exception) {
             onResult(FileExportResult.Error())
-            return
+            return true
         }
         val job = preparationScope.launch(start = CoroutineStart.LAZY) {
             prepareAndPresent(request, lease)
         }
         state = ExportState.Preparing(lease, job)
         job.start()
+        return true
     }
 
     fun dispose() {

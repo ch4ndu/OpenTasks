@@ -52,6 +52,7 @@ import com.udnahc.opentasks.ui.theme.DateOrange
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
+import com.udnahc.opentasks.viewmodel.MatrixLoadState
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import opentasks.composeapp.generated.resources.*
 import opentasks.composeapp.generated.resources.Res
@@ -96,6 +97,7 @@ fun QuadrantDetailScreen(
     val topBarHeight = dimens.topBarHeight + statusBarHeight
 
     if (isReimagined) {
+        val loadState by viewModel.loadState.collectAsState()
         val groups by viewModel.tasksByPriority.collectAsState()
         val dueText by viewModel.selectedPriorityTaskDueTextById.collectAsState()
         val images by viewModel.taskImageSummaries.collectAsState()
@@ -106,7 +108,13 @@ fun QuadrantDetailScreen(
                 navigationIcon = { OpenTasksBackButton(onBack) },
                 actions = { ReimaginedAddButton(onClick = { onCreateTask(priority) }) },
             )
-            LazyColumn(Modifier.weight(1f).navigationBarsPadding(), contentPadding = PaddingValues(dimens.paddingXLarge)) {
+            if (loadState != MatrixLoadState.READY) {
+                ReimaginedReadStatus(
+                    loading = loadState == MatrixLoadState.LOADING,
+                    onRetry = viewModel::retryLoad,
+                    modifier = Modifier.weight(1f).navigationBarsPadding(),
+                )
+            } else LazyColumn(Modifier.weight(1f).navigationBarsPadding(), contentPadding = PaddingValues(dimens.paddingXLarge)) {
                 items(tasks, key = { it.id }) { task ->
                     QuadrantTaskRow(task = task, imageSummary = images[task.id], dueText = dueText[task.id].orEmpty(), color = priorityColor(priority), onToggleComplete = { viewModel.toggleComplete(task) }, onClick = { onTaskClick(task) })
                     Spacer(Modifier.padding(bottom = dimens.paddingLarge))
@@ -118,6 +126,7 @@ fun QuadrantDetailScreen(
         val viewMode by viewModel.viewMode.collectAsState()
         when (viewMode) {
             TaskListViewMode.LIST -> {
+                val listLoadState by viewModel.classicQuadrantListLoadState.collectAsState()
                 val categorizedTasks by viewModel.categorizedTasks.collectAsState()
                 val categoryNames by viewModel.categoryNames.collectAsState()
                 val taskContentPreviews by viewModel.taskContentPreviews.collectAsState()
@@ -137,10 +146,13 @@ fun QuadrantDetailScreen(
                     onAddTask = { onCreateTask(priority) },
                     viewMode = viewMode,
                     onViewModeToggle = { viewModel.setViewMode(TaskListViewMode.BOARD) },
+                    loadState = listLoadState,
+                    onRetry = viewModel::retryLoad,
                 )
             }
 
             TaskListViewMode.BOARD -> {
+                val loadState by viewModel.loadState.collectAsState()
                 val tasksByStatus by viewModel.tasksByStatus.collectAsState()
                 val taskDueTextById by viewModel.selectedPriorityTaskDueTextById.collectAsState()
                 Box(
@@ -148,7 +160,13 @@ fun QuadrantDetailScreen(
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background),
                 ) {
-                    KanbanBoardContent(
+                    if (loadState != MatrixLoadState.READY) {
+                        ReimaginedReadStatus(
+                            loading = loadState == MatrixLoadState.LOADING,
+                            onRetry = viewModel::retryLoad,
+                            modifier = Modifier.padding(top = topBarHeight, bottom = dimens.fabAreaBottom),
+                        )
+                    } else KanbanBoardContent(
                         tasksByStatus = tasksByStatus,
                         taskDueTextById = taskDueTextById,
                         onTaskClick = onTaskClick,
@@ -231,6 +249,8 @@ internal fun QuadrantDetailContent(
     onAddTask: () -> Unit = {},
     viewMode: TaskListViewMode = TaskListViewMode.LIST,
     onViewModeToggle: () -> Unit = {},
+    loadState: MatrixLoadState = MatrixLoadState.READY,
+    onRetry: () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
 
@@ -276,7 +296,13 @@ internal fun QuadrantDetailContent(
             )
         },
     ) { innerPadding ->
-        LazyColumn(
+        if (loadState != MatrixLoadState.READY) {
+            ReimaginedReadStatus(
+                loading = loadState == MatrixLoadState.LOADING,
+                onRetry = onRetry,
+                modifier = Modifier.padding(innerPadding).padding(bottom = dimens.fabAreaBottom),
+            )
+        } else LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)

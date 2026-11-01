@@ -640,8 +640,9 @@ class SharedViewModelTest : MainDispatcherRule() {
         }
 
         viewModel.selectNote("one")
-        viewModel.selectedNote.test {
-            assertEquals("one", awaitMatching { it?.id == "one" }?.id)
+        viewModel.selectedNoteState.test {
+            val ready = awaitMatching { it is NoteSelectionState.Ready } as NoteSelectionState.Ready
+            assertEquals("one", ready.note.id)
             cancelAndIgnoreRemainingEvents()
         }
 

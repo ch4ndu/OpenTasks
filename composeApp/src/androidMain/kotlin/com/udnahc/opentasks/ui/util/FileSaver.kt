@@ -31,10 +31,19 @@ import kotlinx.coroutines.withContext
 @Composable
 actual fun rememberFileExportLauncher(
     onResult: (FileExportResult) -> Unit,
-): (FileExportRequest) -> Unit {
+    onAbandoned: () -> Unit,
+): FileExportLauncher {
     val resolver = LocalContext.current.applicationContext.contentResolver
     val currentOnResult = rememberUpdatedState(onResult)
-    val state = rememberAndroidPickerState(::AndroidFileExportState, AndroidFileExportState::abandon) { it.abandoned }
+    val currentOnAbandoned = rememberUpdatedState(onAbandoned)
+    val state = rememberAndroidPickerState(
+        create = ::AndroidFileExportState,
+        abandon = {
+            it.abandon()
+            currentOnAbandoned.value()
+        },
+        isAbandoned = { it.abandoned },
+    )
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(state, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -54,14 +63,18 @@ actual fun rememberFileExportLauncher(
         }
     }
     return remember(state, csvLauncher, icsLauncher) {
-        { request ->
-            if (state.begin(request)) {
+        object : FileExportLauncher {
+            override val isBusy: Boolean get() = state.isBusy
+
+            override fun launch(request: FileExportRequest): Boolean {
+                if (!state.begin(request)) return false
                 try {
                     if (request.mimeType == "text/calendar") icsLauncher.launch(request.fileName)
                     else csvLauncher.launch(request.fileName)
                 } catch (_: Exception) {
                     state.launchFailed()
                 }
+                return true
             }
         }
     }
@@ -73,11 +86,14 @@ private class AndroidFileExportState : ViewModel() {
     private var writeJob: Job? = null
     var abandoned = false
         private set
+    var isBusy by mutableStateOf(false)
+        private set
     var result by mutableStateOf<FileExportResult?>(null)
         private set
 
     fun begin(request: FileExportRequest): Boolean {
-        if (abandoned || pending != null || writeJob != null || result != null) return false
+        if (abandoned || isBusy) return false
+        isBusy = true
         pending = request
         return true
     }
@@ -119,6 +135,7 @@ private class AndroidFileExportState : ViewModel() {
     fun consume(expected: FileExportResult): Boolean {
         if (abandoned || result !== expected) return false
         result = null
+        isBusy = false
         return true
     }
 
@@ -126,6 +143,7 @@ private class AndroidFileExportState : ViewModel() {
         abandoned = true
         pending = null
         result = null
+        isBusy = false
         writeJob?.cancel()
         writeJob = null
     }

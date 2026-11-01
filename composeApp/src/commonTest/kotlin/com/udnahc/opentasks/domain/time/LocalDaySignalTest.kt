@@ -13,6 +13,29 @@ import kotlin.time.Duration.Companion.seconds
 @OptIn(ExperimentalCoroutinesApi::class)
 class LocalDaySignalTest {
     @Test
+    fun formattingContextRefreshesWithoutADateOrTaskChange() = runTest {
+        var context = "en-US|12-hour"
+        val signal = LocalDaySignal(currentDate = { LocalDate(2026, 5, 4) }, checkInterval = 1.seconds)
+
+        signal.formattingContexts { context }.test {
+            assertEquals("en-US|12-hour", awaitItem())
+            signal.refresh()
+            runCurrent()
+            expectNoEvents()
+
+            context = "en-US|24-hour"
+            signal.refresh()
+            assertEquals(context, awaitItem())
+
+            context = "fr-FR|24-hour"
+            advanceTimeBy(1.seconds)
+            runCurrent()
+            assertEquals(context, awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun emitsChangedDateOnPeriodicCheck() = runTest {
         var currentDate = LocalDate(2026, 5, 4)
         val signal = LocalDaySignal(

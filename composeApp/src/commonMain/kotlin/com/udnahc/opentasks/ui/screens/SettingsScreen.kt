@@ -205,9 +205,10 @@ fun SettingsScreen(
     val requestCalendar = rememberCalendarPermissionLauncher { granted ->
         viewModel.onCalendarPermissionResult(granted)
     }
-    val exportFile = rememberFileExportLauncher { result ->
-        viewModel.onExportResult(result)
-    }
+    val exportFile = rememberFileExportLauncher(
+        onResult = viewModel::onExportResult,
+        onAbandoned = viewModel::abandonExport,
+    )
 
     LifecycleResumeEffect(Unit) {
         viewModel.recheckPermissions()
@@ -227,7 +228,7 @@ fun SettingsScreen(
         calendarGranted = calendarGranted,
         settingsLaunchFailure = settingsLaunchFailure,
         exportResult = exportResult,
-        exportInProgress = exportInProgress,
+        exportInProgress = exportInProgress || exportFile.isBusy,
         clearLocalDataStatus = clearLocalDataStatus,
         currentAccount = currentAccount,
         isLocalOnly = isLocalOnly,
@@ -329,7 +330,8 @@ internal fun SettingsContent(
     var showClearLocalDataConfirm by remember { mutableStateOf(false) }
     var showConnectToPocketBase by remember { mutableStateOf(false) }
     ModalBusyEffect(
-        showSwitchAccount ||
+        exportInProgress ||
+            showSwitchAccount ||
             showThemeDialog ||
             showTextSizeDialog ||
             showLogoutConfirm ||

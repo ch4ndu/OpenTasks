@@ -7,6 +7,7 @@ import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
 import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
 
 interface TaskDueTextProvider {
+    val formattingContextKey: String get() = "plain"
     suspend fun listDueText(task: Task): String
     suspend fun matrixDueText(task: Task): String
 }
@@ -23,6 +24,8 @@ object PlainTaskDueTextProvider : TaskDueTextProvider {
 class LocalizedTaskDueTextProvider(
     private val dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
 ) : TaskDueTextProvider {
+    override val formattingContextKey: String get() = dateTimeFormatter.formattingContextKey
+
     override suspend fun listDueText(task: Task): String = task.formatListDueText(dateTimeFormatter)
 
     override suspend fun matrixDueText(task: Task): String = task.formatMatrixDueText(dateTimeFormatter)
@@ -38,6 +41,6 @@ private fun Task.formatMatrixDueText(formatter: DateTimeTextFormatter): String {
     return formatter.formatShortDate(deadline)
 }
 
-/** Both due-label formats depend on deadline only. Keep this filter local to text projections. */
+/** Filter entity inputs only; callers also observe the formatter's context independently. */
 fun Flow<List<Task>>.distinctDueTextInputs(): Flow<List<Task>> =
     distinctUntilChangedBy { tasks -> tasks.associate { it.id to it.deadline } }

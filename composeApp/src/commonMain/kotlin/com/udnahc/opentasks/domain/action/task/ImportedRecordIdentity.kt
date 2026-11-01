@@ -87,7 +87,7 @@ internal class ImportedIdentityBatch {
         writeBoolean(task.isCompleted)
         writeNullableLong(task.completedAt)
         writeString(task.durationReminders)
-        writeString(task.recurrenceType.name)
+        writeString(task.identityRecurrenceType.name)
         writeLong(task.createdAt)
     }.toByteArray()
 }

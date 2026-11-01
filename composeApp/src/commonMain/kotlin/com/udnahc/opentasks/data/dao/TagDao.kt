@@ -105,7 +105,9 @@ interface TagDao {
             if (!remote.isDeleted && local?.isDeleted == true && local.updatedAt > remote.updatedAt) {
                 return RemoteMergeResult.KeptLocal
             }
-            return RemoteMergeResult.MissingParent
+            // A remote deletion can reconcile an existing relation under soft-deleted parents.
+            // Requiring the local row avoids inserting a tombstone with absent physical parents.
+            if (!remote.isDeleted || local == null) return RemoteMergeResult.MissingParent
         }
         if (local != null && local.updatedAt >= remote.updatedAt) return RemoteMergeResult.KeptLocal
         upsertTaskTag(remote)

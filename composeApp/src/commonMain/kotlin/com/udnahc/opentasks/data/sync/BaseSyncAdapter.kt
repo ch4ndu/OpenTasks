@@ -1168,8 +1168,13 @@ abstract class BaseSyncAdapter<Entity, Record : BaseModel> {
                 "Authoritative seed rejected a newer remote $collectionName row",
             )
         }
-        mergeRemoteIfNewer(toEntity(record))
-        return PushResolution.RemoteWon
+        // A parent rejection or newer local write must remain pending instead of reporting a remote win.
+        return when (mergeRemoteIfNewer(toEntity(record))) {
+            RemoteMergeResult.Applied -> PushResolution.RemoteWon
+            RemoteMergeResult.KeptLocal,
+            RemoteMergeResult.MissingParent,
+            -> PushResolution.Failed
+        }
     }
 
     private suspend fun retryAfterEqualConflict(

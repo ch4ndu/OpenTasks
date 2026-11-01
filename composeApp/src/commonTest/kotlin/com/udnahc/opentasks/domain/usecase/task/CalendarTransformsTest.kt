@@ -363,6 +363,24 @@ class CalendarTransformsTest {
     }
 
     @Test
+    fun endOfDayBarsFitTheSharedTrailingTimelineExtentWithoutChangingEndpoints() {
+        val endOfDayMinutes = 24 * 60
+        val starts = listOf(endOfDayMinutes - 10, endOfDayMinutes - 1)
+        val tasks = starts.mapIndexed { index, start ->
+            testTask(id = "late-$index", deadline = dayStart + start * MILLIS_PER_MINUTE,
+                endDeadline = dayStart + endOfDayMinutes * MILLIS_PER_MINUTE)
+        }
+        val rows = projectCalendarDay(tasks, dayKey(dayStart), dayKey(dayStart), clipToDay = true).timedRows
+
+        assertEquals(starts, rows.map { it.layoutStartMinutes })
+        assertEquals(listOf(endOfDayMinutes, endOfDayMinutes), rows.map { it.endMinutes })
+        assertEquals(listOf(endOfDayMinutes + 5, endOfDayMinutes + 14), rows.map { it.displayEndMinutes })
+        assertTrue(rows.all { it.displayEndMinutes <= endOfDayMinutes + CALENDAR_MIN_EVENT_DISPLAY_MINUTES })
+        assertEquals(listOf(0, 1), rows.map { it.laneIndex })
+        assertEquals(tasks, rows.map { it.task })
+    }
+
+    @Test
     fun syncAcknowledgementReusesFormattingAndLanesButRefreshesCallbackTasks() {
         val task = testTask(id = "sync", deadline = dayStart + 10 * MILLIS_PER_HOUR)
         val unchanged = testTask(id = "unchanged", deadline = dayStart + 11 * MILLIS_PER_HOUR)

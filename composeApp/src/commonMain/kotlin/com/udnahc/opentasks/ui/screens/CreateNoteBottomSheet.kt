@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -22,9 +23,11 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,14 +51,11 @@ import opentasks.composeapp.generated.resources.delete
 import opentasks.composeapp.generated.resources.delete_note
 import opentasks.composeapp.generated.resources.delete_note_message
 import opentasks.composeapp.generated.resources.delete_note_title
-import opentasks.composeapp.generated.resources.discard
 import opentasks.composeapp.generated.resources.ic_arrow_back
 import opentasks.composeapp.generated.resources.ic_delete
 import opentasks.composeapp.generated.resources.note
 import opentasks.composeapp.generated.resources.note_title_hint
-import opentasks.composeapp.generated.resources.note_discard_title
-import opentasks.composeapp.generated.resources.note_discard_message
-import opentasks.composeapp.generated.resources.keep_editing
+import opentasks.composeapp.generated.resources.loading
 import opentasks.composeapp.generated.resources.save
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -68,6 +68,7 @@ fun CreateNoteBottomSheet(
     editNote: Note? = null,
     requestToken: Long = 0L,
     mutationState: NoteMutationState = NoteMutationState.Idle,
+    errorMessage: String? = null,
     isMissing: Boolean = false,
     onSaveAsNew: ((String, String) -> Unit)? = null,
     onSave: (title: String, content: String) -> Unit,
@@ -99,26 +100,74 @@ fun CreateNoteBottomSheet(
             onDelete = onDelete,
             onSaveAndOpenTasks = onSaveAndOpenTasks,
             isBusy = isBusy,
+            errorMessage = errorMessage,
             isMissing = isMissing,
             onSaveAsNew = onSaveAsNew,
             onDiscardMissingDraft = onDismiss,
         )
     }
     if (confirmMissingDiscard && isMissing) {
-        AlertDialog(
-            onDismissRequest = { confirmMissingDiscard = false },
-            title = { Text(stringResource(Res.string.note_discard_title)) },
-            text = { Text(stringResource(Res.string.note_discard_message)) },
-            confirmButton = {
-                TextButton(onClick = onDismiss, enabled = !isBusy) {
-                    Text(stringResource(Res.string.discard))
+        NoteDraftDiscardDialog(
+            isBusy = isBusy,
+            onDismiss = { confirmMissingDiscard = false },
+            onDiscard = onDismiss,
+        )
+    }
+}
+
+/** Owns input until a lookup can remount the saved draft without seeding an empty editor. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun LoadingNoteBottomSheet(
+    sheetState: SheetState,
+    requestToken: Long,
+    isBusy: Boolean,
+    onDismiss: () -> Unit,
+    onBackHandler: (Any, (() -> Unit)?) -> Unit,
+) {
+    var confirmDiscard by rememberSaveable(requestToken) { mutableStateOf(false) }
+    fun requestDismiss() {
+        if (!isBusy) confirmDiscard = true
+    }
+    val backOwner = remember { Any() }
+    val currentBack by rememberUpdatedState<() -> Unit> { requestDismiss() }
+    DisposableEffect(backOwner) {
+        onBackHandler(backOwner) { currentBack() }
+        onDispose { onBackHandler(backOwner, null) }
+    }
+    ModalBottomSheet(
+        sheetState = sheetState,
+        onDismissRequest = ::requestDismiss,
+        dragHandle = null,
+        sheetGesturesEnabled = false,
+        properties = ModalBottomSheetProperties(
+            shouldDismissOnBackPress = false,
+            shouldDismissOnClickOutside = false,
+        ),
+        containerColor = MaterialTheme.colorScheme.background,
+    ) {
+        PlatformBackHandler(enabled = true, onBack = ::requestDismiss)
+        Column(Modifier.fillMaxSize()) {
+            CreateNoteTopBar(
+                onBack = ::requestDismiss,
+                onSave = {},
+                onDelete = null,
+                isBusy = isBusy,
+                canSave = false,
+            )
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Text(stringResource(Res.string.loading), modifier = Modifier.padding(OpenTasksTheme.dimens.paddingLarge))
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmMissingDiscard = false }) {
-                    Text(stringResource(Res.string.keep_editing))
-                }
-            },
+            }
+        }
+    }
+    if (confirmDiscard) {
+        NoteDraftDiscardDialog(
+            isBusy = isBusy,
+            onDismiss = { confirmDiscard = false },
+            onDiscard = onDismiss,
         )
     }
 }
@@ -131,6 +180,7 @@ internal fun CreateNoteBottomSheetContent(
     onDelete: (() -> Unit)? = null,
     onSaveAndOpenTasks: ((String, String) -> Unit)? = null,
     isBusy: Boolean = false,
+    errorMessage: String? = null,
     isMissing: Boolean = false,
     onSaveAsNew: ((String, String) -> Unit)? = null,
     onDiscardMissingDraft: () -> Unit = onDismiss,
@@ -195,6 +245,13 @@ internal fun CreateNoteBottomSheetContent(
 
         val dimens = OpenTasksTheme.dimens
 
+        if (errorMessage != null) {
+            Text(
+                errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.fillMaxWidth().padding(dimens.paddingLarge),
+            )
+        }
         if (isMissing && onSaveAsNew != null) {
             MissingNoteDraftNotice(
                 isBusy = isBusy,

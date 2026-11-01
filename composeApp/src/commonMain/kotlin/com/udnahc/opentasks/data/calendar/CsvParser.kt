@@ -11,6 +11,7 @@ private val ISO_OFFSET_REGEX = Regex("([+-])(\\d{2})(\\d{2})$")
 private val DURATION_HOUR_REGEX = Regex("(\\d+)H")
 private val DURATION_MIN_REGEX = Regex("(\\d+)M")
 private val DURATION_SEC_REGEX = Regex("(\\d+)S")
+private val HISTORICAL_RRULE_FREQ_REGEX = Regex("FREQ=(\\w+)")
 
 /**
  * Parsed row from a TickTick CSV export.
@@ -28,6 +29,8 @@ data class CsvTask(
     val durationReminders: String,
     val recurrenceType: RecurrenceType,
     val createdAt: Long,
+    // Import identity retains the parser's historical FREQ interpretation; task behavior may be richer.
+    val identityRecurrenceType: RecurrenceType = recurrenceType,
 )
 
 /**
@@ -84,6 +87,7 @@ object CsvParser {
         val createdStr = fields.getOrNull(col["CREATED TIME"] ?: -1)?.trim() ?: ""
         val completedStr = fields.getOrNull(col["COMPLETED TIME"] ?: -1)?.trim() ?: ""
 
+        val recurrenceType = parseRecurrence(repeatStr)
         return CsvTask(
             title = title,
             content = content,
@@ -95,8 +99,9 @@ object CsvParser {
             isCompleted = statusStr == "1" || statusStr == "2",
             completedAt = parseIso8601(completedStr),
             durationReminders = parseReminders(reminderStr),
-            recurrenceType = parseRecurrence(repeatStr),
+            recurrenceType = recurrenceType,
             createdAt = parseIso8601(createdStr) ?: Instant.DISTANT_PAST.toEpochMilliseconds(),
+            identityRecurrenceType = parseHistoricalRecurrence(repeatStr),
         )
     }
 
@@ -221,6 +226,18 @@ object CsvParser {
         if (secMatch != null && hourMatch == null && minMatch == null) minutes = 0 // PT0S = 0 min
 
         return minutes
+    }
+
+    /** Keep the original case-sensitive FREQ match for canonical identity bytes and duplicate ordinals. */
+    private fun parseHistoricalRecurrence(value: String): RecurrenceType {
+        val freq = HISTORICAL_RRULE_FREQ_REGEX.find(value)?.groupValues?.get(1)?.uppercase()
+        return when (freq) {
+            "DAILY" -> RecurrenceType.DAILY
+            "WEEKLY" -> RecurrenceType.WEEKLY
+            "MONTHLY" -> RecurrenceType.MONTHLY
+            "YEARLY" -> RecurrenceType.YEARLY
+            else -> RecurrenceType.NONE
+        }
     }
 
     /** Preserve the weekday rule emitted by our exporter without interpreting other BYDAY rules. */

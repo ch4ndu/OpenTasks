@@ -12,7 +12,9 @@ That flow remains available in Classic. Reimagined adds an on-demand library sea
 
 Ordinary writing keeps app navigation available; focus mode hides it. Leaving through a tab or Settings uses the same dirty-draft and mutation guard as closing the editor. A note opened from a task retains that source task's editor entry and draft.
 
-If an open note disappears during sync, both Classic and Reimagined keep the draft available and offer Save as new or Discard. Save as new creates a new note ID and leaves the original deletion intact. Back requires an explicit discard decision while the note is missing, and the missing editor can remount its saved draft after host recreation. Repository writes recheck that the original note is still active under the mutation gate, so a queued stale save cannot resurrect a deleted row.
+After a failed save, recreating the host preserves both the unsaved draft and the last successful save baseline, so leaving still requires a discard decision. Hidden workspace panels stop observing their data, and the covered Notes library resumes observation when the editor closes while retaining its search and scroll state.
+
+If an open note disappears during sync, both Classic and Reimagined keep the draft available and offer Save as new or Discard. Save as new creates a new note ID and leaves the original deletion intact. Back requires an explicit discard decision while the note is missing, and the missing editor can remount its saved draft after host recreation, including when its first completed lookup is already absent. Initial loading is distinct from that absent result; leaving during that lookup also requires explicit discard, without replacing the saved draft with an empty editor. A discarded restored draft cannot populate another note or a new editor request. Both editors keep mutation failures visible inside the editor until retry or another explicit action. Repository writes recheck that the original note is still active under the mutation gate, so a queued stale save cannot resurrect a deleted row.
 
 ## Linked tasks
 

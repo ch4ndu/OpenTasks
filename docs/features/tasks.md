@@ -4,6 +4,8 @@
 
 The Reimagined Matrix always includes tasks from all lists, including completed tasks. Its overview shows up to seven tasks per quadrant with access to the complete quadrant list; it has no list filter, completed toggle, or Board mode. Classic retains its existing six-row preview and completed-task inclusion. Both use the same task records, priority meanings, completion choices, and creation chooser. Creating a task from a quadrant preserves its priority and uses Inbox as the default list. Task-list and Shortlist Board modes remain available independently. Reimagined Tasks also exposes the existing Shortlist chooser and completion actions directly in the overview.
 
+If a full quadrant view cannot read its task data, it shows a local retry action while keeping Back available. Classic list mode also reports failures reading list names; Classic Board and Reimagined quadrant views do not wait for those names.
+
 Tasks are the main work item in OpenTasks. A task can have a title, rich-text description, subtasks, category, section, tags, priority, status, due date range, recurrence, reminders, calendar metadata, and image attachments.
 
 Tasks appear in multiple views:

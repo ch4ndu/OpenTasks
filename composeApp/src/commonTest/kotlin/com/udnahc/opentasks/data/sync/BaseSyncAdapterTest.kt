@@ -64,6 +64,23 @@ class BaseSyncAdapterTest {
     }
 
     @Test
+    fun pushFailsWhenNewerRemoteCannotBeAppliedInsteadOfReportingSuccess() = runBlocking {
+        for (mergeResult in listOf(RemoteMergeResult.MissingParent, RemoteMergeResult.KeptLocal)) {
+            val local = FakeEntity(id = "one", pbId = "pb-one", value = "local", updatedAt = 10)
+            val adapter = object : FakeAdapter(
+                local = mutableListOf(local),
+                remote = mutableListOf(FakeRecord(localId = "one", value = "remote", updatedAt = 20).withId("pb-one")),
+            ) {
+                override suspend fun mergeRemoteIfNewer(entity: FakeEntity) = mergeResult
+            }
+
+            assertFailsWith<SyncAdapterException> { adapter.pushAll(client) }
+            assertEquals(local, adapter.local.single())
+            assertFalse(adapter.local.single().synced)
+        }
+    }
+
+    @Test
     fun equalTimestampDivergentLocalPayloadFailsClosed() = runBlocking {
         val adapter = FakeAdapter(
             local = mutableListOf(FakeEntity(id = "one", pbId = "pb-one", value = "local", synced = false, updatedAt = 20)),

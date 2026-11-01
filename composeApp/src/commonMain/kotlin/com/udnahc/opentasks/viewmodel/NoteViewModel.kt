@@ -14,6 +14,7 @@ import com.udnahc.opentasks.domain.action.note.DeleteNoteAction
 import com.udnahc.opentasks.domain.action.note.UpdateNoteAction
 import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
 import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
+import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.note.ObserveAllNotesUseCase
 import com.udnahc.opentasks.domain.usecase.note.ObserveNoteByIdUseCase
 import kotlinx.coroutines.CancellationException
@@ -24,10 +25,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.lighthousegames.logging.logging
@@ -40,6 +44,19 @@ data class NoteListItem(
     val updatedAtText: String,
     val linkedTaskCount: Int = 0,
 )
+
+sealed interface NoteSelectionState {
+    val noteId: String?
+
+    data object Unselected : NoteSelectionState {
+        override val noteId: String? = null
+    }
+    data class Loading(override val noteId: String) : NoteSelectionState
+    data class Missing(override val noteId: String) : NoteSelectionState
+    data class Ready(val note: Note) : NoteSelectionState {
+        override val noteId: String = note.id
+    }
+}
 
 sealed interface NoteMutationOperation {
     val requestToken: Long
@@ -89,6 +106,7 @@ class NoteViewModel(
     private val accountBoundaryExecutor: AccountBoundaryExecutor? = null,
     observeAllTasks: ObserveAllTasksUseCase? = null,
     private val dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
+    localDaySignal: LocalDaySignal = LocalDaySignal(),
 ) : ViewModel() {
 
     private val _selectedNoteId = MutableStateFlow<String?>(null)
@@ -97,8 +115,13 @@ class NoteViewModel(
 
     val searchQuery = MutableStateFlow("")
 
-    val noteListItems: StateFlow<List<NoteListItem>> = observeAllNotes()
-        .map { notes -> notes.map { it.toListItem(dateTimeFormatter) } }
+    val noteListItems: StateFlow<List<NoteListItem>> = flow {
+        val projections = NoteListProjectionCache(dateTimeFormatter)
+        emitAll(combine(
+            observeAllNotes(),
+            localDaySignal.formattingContexts { dateTimeFormatter.formattingContextKey },
+        ) { notes, context -> projections.project(notes, context) })
+    }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -119,10 +142,17 @@ class NoteViewModel(
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val selectedNote: StateFlow<Note?> = _selectedNoteId
-        .flatMapLatest { id -> if (id != null) observeNoteById(id) else flowOf(null) }
+    val selectedNoteState: StateFlow<NoteSelectionState> = _selectedNoteId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(NoteSelectionState.Unselected)
+            else observeNoteById(id)
+                .map<Note?, NoteSelectionState> { note ->
+                    if (note == null) NoteSelectionState.Missing(id) else NoteSelectionState.Ready(note)
+                }
+                .onStart { emit(NoteSelectionState.Loading(id)) }
+        }
         .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), NoteSelectionState.Unselected)
 
     val linkedTasks = combine(_selectedNoteId, allTasks) { id, tasks ->
         if (id == null) emptyList() else tasks.filter { it.sourceNoteId == id }
@@ -223,12 +253,43 @@ class NoteViewModel(
     }
 }
 
-private fun Note.toListItem(dateTimeFormatter: DateTimeTextFormatter): NoteListItem =
-    NoteListItem(
-        note = this,
-        previewText = noteContentPreview(content),
-        updatedAtText = formatNoteDate(updatedAt, dateTimeFormatter),
-    )
+/** Confined to one collection; only the current list's display inputs are retained. */
+internal class NoteListProjectionCache(
+    private val dateTimeFormatter: DateTimeTextFormatter,
+    private val previewContent: (String) -> String = ::noteContentPreview,
+) {
+    private var itemsById = emptyMap<String, NoteListItem>()
+    private var previousContext: String? = null
+
+    fun project(notes: List<Note>, formattingContext: String): List<NoteListItem> {
+        val items = notes.map { note ->
+            val previous = itemsById[note.id]
+            val preview = if (previous != null && previous.note.content == note.content) {
+                previous.previewText
+            } else {
+                previewContent(note.content)
+            }
+            val date = if (previous != null && previous.note.updatedAt == note.updatedAt &&
+                previousContext == formattingContext
+            ) {
+                previous.updatedAtText
+            } else {
+                formatNoteDate(note.updatedAt, dateTimeFormatter)
+            }
+            if (previous != null && previous.note === note &&
+                previous.previewText == preview && previous.updatedAtText == date
+            ) {
+                previous
+            } else {
+                // Keep the latest entity for callbacks even when its display inputs are unchanged.
+                NoteListItem(note = note, previewText = preview, updatedAtText = date)
+            }
+        }
+        itemsById = items.associateBy { it.note.id }
+        previousContext = formattingContext
+        return items
+    }
+}
 
 /** Converts saved rich-text HTML into a compact Markdown-style preview. */
 private fun noteContentPreview(content: String): String =

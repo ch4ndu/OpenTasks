@@ -3,11 +3,16 @@ package com.udnahc.opentasks.viewmodel
 import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.udnahc.opentasks.data.extensions.dayKey
+import com.udnahc.opentasks.data.extensions.MILLIS_PER_HOUR
 import com.udnahc.opentasks.data.extensions.startOfDayLocalMillis
+import com.udnahc.opentasks.data.model.Category
 import com.udnahc.opentasks.data.model.CalendarViewPreference
 import com.udnahc.opentasks.data.model.RecurrenceType
 import com.udnahc.opentasks.data.notification.NotificationScheduler
 import com.udnahc.opentasks.data.repository.TaskRepository
+import com.udnahc.opentasks.data.repository.CategoryRepository
+import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
+import com.udnahc.opentasks.domain.time.EnglishDateTimeFormatter
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarListDisplayModePreferenceAction
 import com.udnahc.opentasks.domain.action.settings.SaveCalendarViewPreferenceAction
 import com.udnahc.opentasks.domain.action.task.ScheduleTaskRemindersAction
@@ -30,6 +35,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -37,6 +43,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -44,6 +51,132 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CalendarViewModelProjectionTest : MainDispatcherRule() {
+    @Test
+    fun classicTimelineRetryRecoversWithoutStartingUnusedCategoryReads() = runTest(dispatcher) {
+        for (mode in listOf(CalendarViewPreference.DAY, CalendarViewPreference.THREE_DAY, CalendarViewPreference.WEEK)) {
+            val failure = CompletableDeferred<Unit>()
+            val taskSubscriptions = AtomicInteger()
+            val categorySubscriptions = AtomicInteger()
+            val repository = object : TaskRepository by FakeTaskRepository() {
+                override fun getAllTasks() = flow {
+                    val subscription = taskSubscriptions.incrementAndGet()
+                    emit(listOf(testTask(id = "task", deadline = startOfDayLocalMillis(2026, 5, 4))))
+                    if (subscription == 1) {
+                        failure.await()
+                        error("Injected read failure")
+                    }
+                }
+            }
+            val categories = object : CategoryRepository by FakeCategoryRepository() {
+                override fun getAllCategories() = flow<List<Category>> {
+                    categorySubscriptions.incrementAndGet()
+                    error("This mode must not observe categories")
+                }
+            }
+            val viewModel = calendarViewModel(
+                taskRepository = repository,
+                categoryRepository = categories,
+                settingsRepository = FakeAppSettingsRepository(mapOf("calendar_view_preference" to mode.name)),
+                localDaySignal = LocalDaySignal(currentDate = { LocalDate(2026, 5, 4) }),
+            )
+            val renders = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.calendarRenderState.collect() }
+            viewModel.loadState.test {
+                while (awaitItem() != CalendarLoadState.READY) Unit
+                advanceTimeBy(6_000)
+                runCurrent()
+                failure.complete(Unit)
+                while (awaitItem() != CalendarLoadState.ERROR) Unit
+                val readsBeforeRetry = taskSubscriptions.get()
+                viewModel.retryLoad()
+                while (awaitItem() != CalendarLoadState.READY) Unit
+                assertEquals(CalendarLoadState.READY, calendarLoadStateForView(
+                    viewModel.loadState.value, viewModel.categoryLoadState.value, mode, reimagined = false,
+                ))
+                assertEquals(CalendarLoadState.LOADING, viewModel.categoryLoadState.value)
+                assertEquals(0, categorySubscriptions.get())
+                // Retry must restart the read. WhileSubscribed may also restart it while
+                // real Default-dispatcher cancellation overlaps virtual sharing timeouts.
+                assertTrue(taskSubscriptions.get() > readsBeforeRetry, "Retry did not restart $mode task observation")
+                cancelAndIgnoreRemainingEvents()
+            }
+            renders.cancel()
+        }
+    }
+
+    @Test
+    fun categoryLoadingAndErrorsGateOnlyViewsThatRenderCategoryNames() {
+        for (reimagined in listOf(false, true)) {
+            for (mode in CalendarViewPreference.entries) {
+                val requiresCategories = if (reimagined) mode != CalendarViewPreference.YEAR else
+                    mode in listOf(CalendarViewPreference.LIST, CalendarViewPreference.MONTH)
+                for (categories in listOf(CalendarLoadState.LOADING, CalendarLoadState.ERROR)) {
+                    assertEquals(if (requiresCategories) categories else CalendarLoadState.READY,
+                        calendarLoadStateForView(CalendarLoadState.READY, categories, mode, reimagined))
+                }
+                assertEquals(CalendarLoadState.ERROR,
+                    calendarLoadStateForView(CalendarLoadState.ERROR, CalendarLoadState.READY, mode, reimagined))
+            }
+        }
+    }
+
+    @Test
+    fun categoryFailureStillBlocksMonthAndRetryRestartsItsRequiredRead() = runTest(dispatcher) {
+        var subscriptions = 0
+        val categories = object : CategoryRepository by FakeCategoryRepository() {
+            override fun getAllCategories() = flow<List<Category>> {
+                subscriptions += 1
+                if (subscriptions == 1) error("Injected category read failure")
+                emit(emptyList())
+            }
+        }
+        val viewModel = calendarViewModel(
+            categoryRepository = categories,
+            settingsRepository = FakeAppSettingsRepository(),
+            localDaySignal = LocalDaySignal(currentDate = { LocalDate(2026, 5, 4) }),
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.categoryNames.collect() }
+        combine(viewModel.loadState, viewModel.categoryLoadState, viewModel.calendarRenderState) { content, categoryState, render ->
+            calendarLoadStateForView(content, categoryState, render.viewPreference, reimagined = false)
+        }.test {
+            while (awaitItem() != CalendarLoadState.ERROR) Unit
+            viewModel.retryLoad()
+            while (awaitItem() != CalendarLoadState.READY) Unit
+            assertEquals(2, subscriptions)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun sameDayRefreshReformatsRowsAndHourLabelsWithoutTaskChanges() = runTest(dispatcher) {
+        var context = "first"
+        val day = LocalDate(2026, 5, 4)
+        val dayStart = startOfDayLocalMillis(2026, 5, 4)
+        val signal = LocalDaySignal(currentDate = { day })
+        val formatter = object : DateTimeTextFormatter by EnglishDateTimeFormatter {
+            override val formattingContextKey: String get() = context
+            override fun formatHour(hour: Int) = "$context-hour-$hour"
+            override fun formatTime(localMillis: Long) = "$context-time"
+        }
+        val viewModel = calendarViewModel(
+            taskRepository = FakeTaskRepository(listOf(testTask(id = "task", deadline = dayStart + 9 * MILLIS_PER_HOUR))),
+            settingsRepository = FakeAppSettingsRepository(mapOf("calendar_view_preference" to CalendarViewPreference.DAY.name)),
+            localDaySignal = signal,
+            formatter = formatter,
+        )
+        viewModel.calendarRenderState.test {
+            awaitMatching { it.timelineHourLabels.firstOrNull() == "first-hour-0" }
+            context = "changed"
+            signal.refresh()
+            val refreshed = awaitMatching { it.timelineHourLabels.firstOrNull() == "changed-hour-0" }
+            assertEquals(day, refreshed.today)
+            assertEquals("changed-time", refreshed.calendarDaysByDay.getValue(dayKey(dayStart)).rows.single().cardTimeText)
+            signal.refresh()
+            runCurrent()
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     @Test
     fun failedCalendarReadRetainsRowsAndExplicitRetryRestartsObservation() = runTest(dispatcher) {
         val dayStart = startOfDayLocalMillis(2026, 5, 4)
@@ -204,14 +337,15 @@ class CalendarViewModelProjectionTest : MainDispatcherRule() {
 
     private fun calendarViewModel(
         taskRepository: TaskRepository = FakeTaskRepository(),
+        categoryRepository: CategoryRepository = FakeCategoryRepository(),
         countdownRepository: FakeCountdownRepository = FakeCountdownRepository(),
         settingsRepository: FakeAppSettingsRepository,
         localDaySignal: LocalDaySignal,
-        formatter: CountingCalendarFormatter = CountingCalendarFormatter(),
+        formatter: DateTimeTextFormatter = CountingCalendarFormatter(),
     ): CalendarViewModel = CalendarViewModel(
         observeTasksByDay = ObserveTasksByDayUseCase(taskRepository),
         observeAllCountdowns = ObserveAllCountdownsUseCase(countdownRepository),
-        observeAllCategories = ObserveAllCategoriesUseCase(FakeCategoryRepository()),
+        observeAllCategories = ObserveAllCategoriesUseCase(categoryRepository),
         toggleTaskCompleteAction = ToggleTaskCompleteAction(
             taskRepository,
             ScheduleTaskRemindersAction(NotificationScheduler(), taskRepository),

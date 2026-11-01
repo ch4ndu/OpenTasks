@@ -116,6 +116,7 @@ import com.udnahc.opentasks.ui.screens.ImportCalendarDialog
 import com.udnahc.opentasks.ui.screens.ImportCsvDialog
 import com.udnahc.opentasks.ui.screens.ImportIcsDialog
 import com.udnahc.opentasks.ui.screens.NotesScreen
+import com.udnahc.opentasks.ui.screens.NoteEditorRequestScope
 import com.udnahc.opentasks.ui.screens.MissingDestinationScreen
 import com.udnahc.opentasks.ui.screens.QuadrantDetailScreen
 import com.udnahc.opentasks.ui.screens.QuickAddTaskScreen
@@ -165,9 +166,11 @@ import com.udnahc.opentasks.viewmodel.ImportIcsViewModel
 import com.udnahc.opentasks.viewmodel.MatrixViewModel
 import com.udnahc.opentasks.viewmodel.NoteMutationOperation
 import com.udnahc.opentasks.viewmodel.NoteMutationState
+import com.udnahc.opentasks.viewmodel.NoteSelectionState
 import com.udnahc.opentasks.viewmodel.NoteViewModel
 import com.udnahc.opentasks.viewmodel.matchesEditor
 import com.udnahc.opentasks.ui.screens.noteForOpenEditor
+import com.udnahc.opentasks.ui.screens.LoadingNoteBottomSheet
 import com.udnahc.opentasks.viewmodel.QuickAddTaskSaveEvent
 import com.udnahc.opentasks.viewmodel.QuickAddTaskViewModel
 import com.udnahc.opentasks.viewmodel.TaskFormSaveEvent
@@ -730,7 +733,7 @@ private fun MainScreen(
         }
         return navController.popBackStack()
     }
-    var noteEditorError by remember { mutableStateOf<String?>(null) }
+    var noteEditorError by rememberSaveable(binding.boundaryEpoch) { mutableStateOf<String?>(null) }
     var noteCapture by rememberSaveable { mutableStateOf("") }
     var noteSavedRevision by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(0L) }
     var retainedWorkspaceNote by remember { mutableStateOf<com.udnahc.opentasks.data.model.Note?>(null) }
@@ -740,6 +743,7 @@ private fun MainScreen(
     var pendingCreatedNoteTasks by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
     var noteSheetRequestToken by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(0L) }
     var editNoteMissing by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
+    val workspaceActive = reimagined && (showCreateNote || editNoteId != null)
     var showImportCalendar by remember { mutableStateOf(false) }
     var showImportIcs by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
     var showImportCsv by rememberSaveable(binding.boundaryEpoch) { mutableStateOf(false) }
@@ -882,7 +886,7 @@ private fun MainScreen(
                     navController.navigate(Screen.NoteTasks(linkedNoteId))
                 }
                 if (hasWarning) {
-                    snackbarHostState.showSnackbar(noteMutationSavedWarning)
+                    snackbarScope.launch { snackbarHostState.showSnackbar(noteMutationSavedWarning) }
                 }
             }
             is NoteMutationState.Error -> {
@@ -892,7 +896,7 @@ private fun MainScreen(
                     noteSaveFailed
                 }
                 noteEditorError = message
-                snackbarHostState.showSnackbar(message)
+                snackbarScope.launch { snackbarHostState.showSnackbar(message) }
             }
             NoteMutationState.Idle,
             is NoteMutationState.Busy,
@@ -1262,6 +1266,7 @@ private fun MainScreen(
                 entry<Screen.Notes> {
                     NotesScreen(
                         viewModel = noteViewModel,
+                        isObscured = workspaceActive,
                         onNoteClick = { note -> openEditNoteSheet(note.id) },
                         onCreateNote = { capture -> openCreateNoteSheet(capture) },
                         onSettingsClick = onSettingsClick,
@@ -1864,16 +1869,20 @@ private fun MainScreen(
 
     // Create note bottom sheet
     if (showCreateNote && !reimagined) {
-        val createNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        CreateNoteBottomSheet(
-            sheetState = createNoteSheetState,
-            requestToken = noteSheetRequestToken,
-            mutationState = noteMutationState,
-            onDismiss = ::retireOpenNoteSheet,
-            onSave = { title, content ->
-                noteViewModel.addNote(noteSheetRequestToken, title, content)
-            },
-        )
+        NoteEditorRequestScope(noteSheetRequestToken) {
+            val createNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            CreateNoteBottomSheet(
+                sheetState = createNoteSheetState,
+                requestToken = noteSheetRequestToken,
+                mutationState = noteMutationState,
+                errorMessage = noteEditorError,
+                onDismiss = ::retireOpenNoteSheet,
+                onSave = { title, content ->
+                    noteEditorError = null
+                    noteViewModel.addNote(noteSheetRequestToken, title, content)
+                },
+            )
+        }
     }
 
     // Edit note bottom sheet
@@ -1881,10 +1890,12 @@ private fun MainScreen(
     LaunchedEffect(editNoteIdVal) {
         noteViewModel.selectNote(editNoteIdVal)
     }
+    val selectedEditNoteState = if (editNoteIdVal != null) {
+        noteViewModel.selectedNoteState.collectAsState().value
+    } else NoteSelectionState.Unselected
     if (editNoteIdVal != null) {
-        val selectedEditNote by noteViewModel.selectedNote.collectAsState()
-        val editNote = selectedEditNote?.takeIf { it.id == editNoteIdVal }
-        var hasObservedEditNote by remember(editNoteIdVal) { mutableStateOf(false) }
+        val editNote = (selectedEditNoteState as? NoteSelectionState.Ready)?.note
+            ?.takeIf { it.id == editNoteIdVal }
         var retainedEditNote by remember(editNoteIdVal) { mutableStateOf<com.udnahc.opentasks.data.model.Note?>(null) }
         val ownedDeleteSnapshot = when (val state = noteMutationState) {
             is NoteMutationState.Busy -> state.operation as? NoteMutationOperation.Delete
@@ -1910,135 +1921,150 @@ private fun MainScreen(
         )
         LaunchedEffect(
             editNoteIdVal,
-            editNote,
+            selectedEditNoteState,
             ownedDeleteSnapshot,
             matchingMutationOperation,
         ) {
             if (editNote != null) {
-                hasObservedEditNote = true
                 retainedEditNote = editNote
                 retainedWorkspaceNote = editNote
                 editNoteMissing = false
             } else if (
-                hasObservedEditNote &&
+                selectedEditNoteState == NoteSelectionState.Missing(editNoteIdVal) &&
                 ownedDeleteSnapshot == null &&
                 matchingMutationOperation == null
             ) {
                 editNoteMissing = true
             }
         }
+        if (!reimagined && noteForSheet == null) {
+            NoteEditorRequestScope(noteSheetRequestToken) {
+                LoadingNoteBottomSheet(
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    requestToken = noteSheetRequestToken,
+                    isBusy = noteMutationState is NoteMutationState.Busy,
+                    onDismiss = ::retireOpenNoteSheet,
+                    onBackHandler = noteWorkspaceBackHandlerRegistry::register,
+                )
+            }
+        }
         if (!reimagined) noteForSheet?.let { note ->
-            val editNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            CreateNoteBottomSheet(
-                sheetState = editNoteSheetState,
-                editNote = note,
-                isMissing = editNoteMissing,
-                onSaveAsNew = { title, content ->
-                    pendingNoteTasksId = null
-                    noteViewModel.addNote(noteSheetRequestToken, title, content, recoveryNoteId = note.id)
-                },
-                onSaveAndOpenTasks = { title, content ->
-                    if (!editNoteMissing) {
-                        pendingNoteTasksId = note.id
-                        noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
-                    }
-                },
-                requestToken = noteSheetRequestToken,
-                mutationState = noteMutationState,
-                onDismiss = ::retireOpenNoteSheet,
-                onSave = { title, content ->
-                    pendingNoteTasksId = null
-                    if (!editNoteMissing) {
-                        noteViewModel.updateNote(
-                            noteSheetRequestToken,
-                            note.copy(title = title, content = content),
-                        )
-                    }
-                },
-                onDelete = {
-                    pendingNoteTasksId = null
-                    if (!editNoteMissing) noteViewModel.deleteNote(noteSheetRequestToken, note)
-                },
-            )
+            NoteEditorRequestScope(noteSheetRequestToken) {
+                val editNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                CreateNoteBottomSheet(
+                    sheetState = editNoteSheetState,
+                    editNote = note,
+                    isMissing = editNoteMissing,
+                    onSaveAsNew = { title, content ->
+                        noteEditorError = null
+                        pendingNoteTasksId = null
+                        noteViewModel.addNote(noteSheetRequestToken, title, content, recoveryNoteId = note.id)
+                    },
+                    onSaveAndOpenTasks = { title, content ->
+                        if (!editNoteMissing) {
+                            noteEditorError = null
+                            pendingNoteTasksId = note.id
+                            noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
+                        }
+                    },
+                    requestToken = noteSheetRequestToken,
+                    mutationState = noteMutationState,
+                    errorMessage = noteEditorError,
+                    onDismiss = ::retireOpenNoteSheet,
+                    onSave = { title, content ->
+                        pendingNoteTasksId = null
+                        if (!editNoteMissing) {
+                            noteEditorError = null
+                            noteViewModel.updateNote(
+                                noteSheetRequestToken,
+                                note.copy(title = title, content = content),
+                            )
+                        }
+                    },
+                    onDelete = {
+                        noteEditorError = null
+                        pendingNoteTasksId = null
+                        if (!editNoteMissing) noteViewModel.deleteNote(noteSheetRequestToken, note)
+                    },
+                )
+            }
         }
     }
 
-    val selectedWorkspaceNote = if (reimagined && editNoteId != null) noteViewModel.selectedNote.collectAsState().value else null
+    val selectedWorkspaceNote = (selectedEditNoteState as? NoteSelectionState.Ready)?.note
     val workspaceNote = noteForOpenEditor(
         noteId = editNoteId,
         observed = selectedWorkspaceNote,
         retained = retainedWorkspaceNote,
         isMissing = editNoteMissing,
     )
-    val workspaceActive = reimagined && (showCreateNote || editNoteId != null)
-    val workspaceLibrary = if (workspaceActive) noteViewModel.libraryItems.collectAsState().value else emptyList()
-    val linkedTasks = if (workspaceActive) noteViewModel.linkedTasks.collectAsState().value else emptyList()
-    val linkedPreview = if (workspaceActive) noteViewModel.linkedTaskPreview.collectAsState().value else emptyList()
-    ReimaginedNotesWorkspace(
-        active = workspaceActive,
-        loading = editNoteId != null && workspaceNote == null,
-        requestToken = noteSheetRequestToken,
-        note = workspaceNote,
-        initialCapture = noteCapture,
-        savedRevision = noteSavedRevision,
-        isBusy = noteMutationState is NoteMutationState.Busy,
-        isMissing = editNoteMissing,
-        errorMessage = noteEditorError,
-        library = workspaceLibrary,
-        linkedTasks = linkedPreview,
-        linkedTaskCount = linkedTasks.size,
-        onSelectNote = { openEditNoteSheet(it.id) },
-        onClose = ::retireOpenNoteSheet,
-        onSaveAsNew = { title, content ->
-            noteEditorError = null
-            pendingCreatedNoteTasks = false
-            pendingNoteTasksId = null
-            noteViewModel.addNote(noteSheetRequestToken, title, content, recoveryNoteId = editNoteId)
-        },
-        onSave = { title, content ->
-            noteEditorError = null
-            pendingCreatedNoteTasks = false
-            pendingNoteTasksId = null
-            if (showCreateNote) noteViewModel.addNote(noteSheetRequestToken, title, content)
-            else if (!editNoteMissing) workspaceNote?.let { noteViewModel.updateNote(noteSheetRequestToken, it.copy(title = title, content = content)) }
-        },
-        onSaveAndOpenTasks = { title, content ->
-            noteEditorError = null
-            if (showCreateNote) {
-                pendingCreatedNoteTasks = true
-                pendingNoteTasksId = null
-                noteViewModel.addNote(noteSheetRequestToken, title, content)
-            } else if (!editNoteMissing) workspaceNote?.let { note ->
+    NoteEditorRequestScope(noteSheetRequestToken) {
+        ReimaginedNotesWorkspace(
+            active = workspaceActive,
+            loading = editNoteId != null && workspaceNote == null,
+            requestToken = noteSheetRequestToken,
+            note = workspaceNote,
+            initialCapture = noteCapture,
+            savedRevision = noteSavedRevision,
+            isBusy = noteMutationState is NoteMutationState.Busy,
+            isMissing = editNoteMissing,
+            errorMessage = noteEditorError,
+            library = noteViewModel.libraryItems,
+            linkedTasks = noteViewModel.linkedTasks,
+            linkedTaskPreview = noteViewModel.linkedTaskPreview,
+            onSelectNote = { openEditNoteSheet(it.id) },
+            onClose = ::retireOpenNoteSheet,
+            onSaveAsNew = { title, content ->
+                noteEditorError = null
                 pendingCreatedNoteTasks = false
-                pendingNoteTasksId = note.id
-                noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
-            }
-        },
-        onDelete = workspaceNote?.takeUnless { editNoteMissing }?.let { note ->
-            { pendingCreatedNoteTasks = false; pendingNoteTasksId = null; noteViewModel.deleteNote(noteSheetRequestToken, note) }
-        },
-        onLinkedTaskComplete = matrixViewModel::toggleComplete,
-        onBackHandler = noteWorkspaceBackHandlerRegistry::register,
-        navigation = { guardedLeave ->
-            val onWorkspaceTab: (Int) -> Unit = { index ->
-                guardedLeave {
-                    if (!showBottomNav) retainWorkspaceSource()
-                    selectWorkspaceTab(index)
+                pendingNoteTasksId = null
+                noteViewModel.addNote(noteSheetRequestToken, title, content, recoveryNoteId = editNoteId)
+            },
+            onSave = { title, content ->
+                noteEditorError = null
+                pendingCreatedNoteTasks = false
+                pendingNoteTasksId = null
+                if (showCreateNote) noteViewModel.addNote(noteSheetRequestToken, title, content)
+                else if (!editNoteMissing) workspaceNote?.let { noteViewModel.updateNote(noteSheetRequestToken, it.copy(title = title, content = content)) }
+            },
+            onSaveAndOpenTasks = { title, content ->
+                noteEditorError = null
+                if (showCreateNote) {
+                    pendingCreatedNoteTasks = true
+                    pendingNoteTasksId = null
+                    noteViewModel.addNote(noteSheetRequestToken, title, content)
+                } else if (!editNoteMissing) workspaceNote?.let { note ->
+                    pendingCreatedNoteTasks = false
+                    pendingNoteTasksId = note.id
+                    noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
                 }
-            }
-            val onWorkspaceSettings = {
-                guardedLeave {
-                    if (!showBottomNav) retainWorkspaceSource()
-                    onSettingsClick()
+            },
+            onDelete = workspaceNote?.takeUnless { editNoteMissing }?.let { note ->
+                { pendingCreatedNoteTasks = false; pendingNoteTasksId = null; noteViewModel.deleteNote(noteSheetRequestToken, note) }
+            },
+            onLinkedTaskComplete = matrixViewModel::toggleComplete,
+            onBackHandler = noteWorkspaceBackHandlerRegistry::register,
+            navigation = { guardedLeave ->
+                val onWorkspaceTab: (Int) -> Unit = { index ->
+                    guardedLeave {
+                        if (!showBottomNav) retainWorkspaceSource()
+                        selectWorkspaceTab(index)
+                    }
                 }
-            }
-            if (OpenTasksTheme.windowSizeCategory == WindowSizeCategory.COMPACT) {
-                BottomNavBar(tabs, 3, calendarTodayDay, onWorkspaceTab)
-            } else {
-                ReimaginedNavigation(3, onWorkspaceTab, onWorkspaceSettings)
-            }
-        },
-    )
+                val onWorkspaceSettings = {
+                    guardedLeave {
+                        if (!showBottomNav) retainWorkspaceSource()
+                        onSettingsClick()
+                    }
+                }
+                if (OpenTasksTheme.windowSizeCategory == WindowSizeCategory.COMPACT) {
+                    BottomNavBar(tabs, 3, calendarTodayDay, onWorkspaceTab)
+                } else {
+                    ReimaginedNavigation(3, onWorkspaceTab, onWorkspaceSettings)
+                }
+            },
+        )
+    }
     if (workspaceActive) {
         com.udnahc.opentasks.ui.screens.TaskMutationFailureEffect(
             eventFlow = matrixViewModel.taskMutationFailureEvent,

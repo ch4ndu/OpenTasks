@@ -129,15 +129,17 @@ class TaskListViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val taskDueTextById: StateFlow<Map<String, String>> = tasksForSelectedCategory
-        .distinctDueTextInputs()
-        .map { tasks -> tasks.associate { task -> task.id to taskDueTextProvider.listDueText(task) } }
+    private val formattingContexts = localDaySignal.formattingContexts { taskDueTextProvider.formattingContextKey }
+
+    val taskDueTextById: StateFlow<Map<String, String>> = combine(
+        tasksForSelectedCategory.distinctDueTextInputs(), formattingContexts,
+    ) { tasks, _ -> tasks.associate { task -> task.id to taskDueTextProvider.listDueText(task) } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val boardTaskDueTextById: StateFlow<Map<String, String>> = tasksForSelectedCategory
-        .distinctDueTextInputs()
-        .map { tasks -> tasks.associate { task -> task.id to taskDueTextProvider.matrixDueText(task) } }
+    val boardTaskDueTextById: StateFlow<Map<String, String>> = combine(
+        tasksForSelectedCategory.distinctDueTextInputs(), formattingContexts,
+    ) { tasks, _ -> tasks.associate { task -> task.id to taskDueTextProvider.matrixDueText(task) } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 

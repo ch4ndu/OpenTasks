@@ -234,17 +234,80 @@ class TaskTagDeletionSyncTest {
         assertEquals(local, database.tagDao().findTaskTagByIdAnyState(local.taskId, local.tagId))
     }
 
+    @Test
+    fun newerRemoteDeletionReconcilesExistingLinkUnderDeletedParentWithoutPushing() = runTest {
+        database.taskDao().insert(testTask(isDeleted = true, isSynced = true, updatedAt = 300L))
+        database.tagDao().insertTag(testTag(isSynced = true))
+        val local = testTaskTag(pbId = "remote-link", isDeleted = true, isSynced = false, updatedAt = 200L)
+        val remote = local.copy(isSynced = true, updatedAt = 300L)
+        database.tagDao().insertTaskTag(local)
+        val adapter = TaskTagSyncAdapter(database.tagDao(), database.taskDao())
+
+        withPullPass(remote) { pass ->
+            adapter.pullAll(pass)
+            adapter.pushAll(pass)
+            assertEquals(remote, database.tagDao().findTaskTagByIdAnyState(local.taskId, local.tagId))
+            assertTrue(database.tagDao().getUnsyncedTaskTags().isEmpty())
+            adapter.pullAll(pass)
+            adapter.pushAll(pass)
+            assertTrue(database.tagDao().getUnsyncedTaskTags().isEmpty())
+        }
+    }
+
+    @Test
+    fun equalAndOlderRemoteDeletionsPreserveLocalUntilPushAcknowledges() = runTest {
+        database.taskDao().insert(testTask(isDeleted = true, isSynced = true))
+        database.tagDao().insertTag(testTag(isSynced = true, isDeleted = true))
+        val local = testTaskTag(pbId = "remote-link", isDeleted = true, isSynced = false, updatedAt = 200L)
+        val adapter = TaskTagSyncAdapter(database.tagDao(), database.taskDao())
+
+        for (remoteTimestamp in listOf(200L, 100L)) {
+            database.tagDao().upsertTaskTag(local)
+            val writes = mutableListOf<JsonObject>()
+            withPullPass(local.copy(isSynced = true, updatedAt = remoteTimestamp), onWrite = { writes += it }) { pass ->
+                adapter.pullAll(pass)
+                assertEquals(local, database.tagDao().findTaskTagByIdAnyState(local.taskId, local.tagId))
+                adapter.pushAll(pass)
+                assertEquals(local.copy(isSynced = true), database.tagDao().findTaskTagByIdAnyState(local.taskId, local.tagId))
+                assertTrue(database.tagDao().getUnsyncedTaskTags().isEmpty())
+                assertEquals(if (remoteTimestamp == local.updatedAt) 0 else 1, writes.size)
+                val writeCount = writes.size
+                adapter.pullAll(pass)
+                adapter.pushAll(pass)
+                assertEquals(writeCount, writes.size)
+            }
+        }
+    }
+
+    @Test
+    fun remoteOrphanDeletionWithoutLocalLinkRemainsSafelySkipped() = runTest {
+        val remote = testTaskTag(pbId = "remote-link", isDeleted = true, isSynced = true, updatedAt = 300L)
+        withPullPass(remote) { pass ->
+            TaskTagSyncAdapter(database.tagDao(), database.taskDao()).pullAll(pass)
+        }
+        assertEquals(RemoteMergeResult.MissingParent, database.tagDao().mergeRemoteTaskTagIfNewer(remote))
+        assertNull(database.tagDao().findTaskTagByIdAnyState(remote.taskId, remote.tagId))
+    }
+
     private suspend fun withPullPass(
         remote: TaskTag,
         beforeWriter: suspend () -> Unit = {},
+        onWrite: ((JsonObject) -> Unit)? = null,
         block: suspend (SyncPassContext) -> Unit,
     ) {
+        var currentRemote = remoteJson(syncRecordJson.encodeToString(remote.toTaskTagRecord()), "remote-link")
         val http = HttpClient(MockEngine { request ->
-            assertEquals(HttpMethod.Get, request.method)
-            respond(
-                pageJson(remoteJson(syncRecordJson.encodeToString(remote.toTaskTagRecord()), "remote-link")),
-                headers = jsonHeaders,
-            )
+            val content = when (request.method) {
+                HttpMethod.Get -> if (request.url.encodedPath.endsWith("/records")) pageJson(currentRemote) else currentRemote.toString()
+                HttpMethod.Patch -> {
+                    val recordWrite = checkNotNull(onWrite) { "Unexpected task-tag push" }
+                    currentRemote = remoteJson((request.body as TextContent).text, "remote-link")
+                    recordWrite(currentRemote)
+                    currentRemote.toString()
+                }
+                else -> error("Unexpected task-tag request ${request.method}")
+            }
+            respond(content, headers = jsonHeaders)
         })
         val provider = PocketBaseClientProvider()
         val client = provider.activate(binding, "test-token")

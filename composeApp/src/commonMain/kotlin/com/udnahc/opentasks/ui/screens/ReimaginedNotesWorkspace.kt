@@ -13,13 +13,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.StateFlow
 import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
@@ -98,9 +98,9 @@ internal fun ReimaginedNotesWorkspace(
     isBusy: Boolean,
     isMissing: Boolean,
     errorMessage: String?,
-    library: List<NoteListItem>,
-    linkedTasks: List<Task>,
-    linkedTaskCount: Int,
+    library: StateFlow<List<NoteListItem>>,
+    linkedTasks: StateFlow<List<Task>>,
+    linkedTaskPreview: StateFlow<List<Task>>,
     onSelectNote: (Note) -> Unit,
     onClose: () -> Unit,
     onSaveAsNew: (String, String) -> Unit,
@@ -114,15 +114,16 @@ internal fun ReimaginedNotesWorkspace(
     if (!active) return
     val backOwner = remember { Any() }
     if (loading) {
-        val loadingBack by rememberUpdatedState<() -> Unit> { if (!isBusy) onClose() }
+        // The saved draft cannot be inspected until its lookup completes; exiting still needs consent.
+        var confirmLoadingDiscard by rememberSaveable(requestToken) { mutableStateOf(false) }
+        val loadingBack by rememberUpdatedState<() -> Unit> { if (!isBusy) confirmLoadingDiscard = true }
         PlatformBackHandler(enabled = true, onBack = { loadingBack() })
         DisposableEffect(backOwner) {
             onBackHandler(backOwner) { loadingBack() }
             onDispose { onBackHandler(backOwner, null) }
         }
-        Surface(Modifier.fillMaxSize().pointerInput(Unit) {
-            awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
-        }, color = MaterialTheme.colorScheme.surface) {
+        // Surface blocks the screen behind it without consuming its children's gestures.
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxSize().navigationBarsPadding()) {
                 OpenTasksTopBar(titleContent = {}, navigationIcon = { OpenTasksBackButton(onClick = { loadingBack() }) })
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -132,6 +133,13 @@ internal fun ReimaginedNotesWorkspace(
                     }
                 }
             }
+        }
+        if (confirmLoadingDiscard) {
+            NoteDraftDiscardDialog(
+                isBusy = isBusy,
+                onDismiss = { confirmLoadingDiscard = false },
+                onDiscard = onClose,
+            )
         }
         return
     }
@@ -155,8 +163,8 @@ internal fun ReimaginedNotesWorkspace(
     var focus by rememberSaveable(requestToken) { mutableStateOf(false) }
     var pendingSwitch by remember(requestToken) { mutableStateOf<(() -> Unit)?>(null) }
     var confirmDelete by remember(requestToken) { mutableStateOf(false) }
-    LaunchedEffect(savedRevision) {
-        if (savedRevision > 0) { baselineTitle = pendingTitle; baselineHtml = pendingHtml; changedSinceSave = false }
+    NoteSaveRevisionEffect(requestToken, savedRevision) {
+        baselineTitle = pendingTitle; baselineHtml = pendingHtml; changedSinceSave = false
     }
     fun requestLeave(action: () -> Unit) {
         if (isBusy) return
@@ -170,19 +178,17 @@ internal fun ReimaginedNotesWorkspace(
     }
     val d = OpenTasksTheme.dimens
     val wide = OpenTasksTheme.windowSizeCategory != WindowSizeCategory.COMPACT
-    Surface(Modifier.fillMaxSize().pointerInput(Unit) {
-        awaitPointerEventScope {
-            while (true) awaitPointerEvent().changes.forEach { it.consume() }
-        }
-    }, color = MaterialTheme.colorScheme.surface) {
+    // Surface blocks the screen behind it without consuming its children's gestures.
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Box(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxSize()
             .padding(start = if (wide && !focus) d.reimaginedRailWidth else 0.dp, bottom = if (!wide && !focus) d.fabAreaBottom else 0.dp)
             .statusBarsPadding().navigationBarsPadding().imePadding()) {
             if (OpenTasksTheme.windowSizeCategory == WindowSizeCategory.EXPANDED && !focus) {
+                val libraryItems by library.collectAsState()
                 LazyColumn(Modifier.width(d.libraryColumnWidth).fillMaxHeight().background(MaterialTheme.colorScheme.background), contentPadding = PaddingValues(d.paddingMedium)) {
                     item { Text(stringResource(Res.string.notes), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(d.paddingLarge)) }
-                    items(library, key = { it.note.id }) { item ->
+                    items(libraryItems, key = { it.note.id }) { item ->
                         NoteCard(item) { if (item.note.id != note?.id) requestLeave { onSelectNote(item.note) } }
                     }
                 }
@@ -224,12 +230,14 @@ internal fun ReimaginedNotesWorkspace(
                 )
                 FormattingToolbar(richTextState = rich, enabled = !isBusy, modifier = Modifier.fillMaxWidth())
                 if (!focus && onSaveAndOpenTasks != null && !isMissing) {
+                    val linkedTaskCount = linkedTasks.collectAsState().value.size
+                    val linkedPreview by linkedTaskPreview.collectAsState()
                     HorizontalDivider()
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(Res.string.note_linked_count, linkedTaskCount), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                         TextButton(onClick = { pendingTitle = title; pendingHtml = rich.toHtml(); onSaveAndOpenTasks(title, pendingHtml) }, enabled = !isBusy) { Text(stringResource(Res.string.note_save_open_tasks)) }
                     }
-                    linkedTasks.forEach { task ->
+                    linkedPreview.forEach { task ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = task.status == TaskStatus.DONE, onCheckedChange = { onLinkedTaskComplete(task) }, enabled = !isBusy)
                             Text(task.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
@@ -243,12 +251,10 @@ internal fun ReimaginedNotesWorkspace(
         }
         }
     }
-    if (pendingSwitch != null) AlertDialog(
-        onDismissRequest = { pendingSwitch = null },
-        title = { Text(stringResource(Res.string.note_discard_title)) },
-        text = { Text(stringResource(Res.string.note_discard_message)) },
-        confirmButton = { TextButton(onClick = { val next = pendingSwitch; pendingSwitch = null; next?.invoke() }) { Text(stringResource(Res.string.discard)) } },
-        dismissButton = { TextButton(onClick = { pendingSwitch = null }) { Text(stringResource(Res.string.keep_editing)) } },
+    if (pendingSwitch != null) NoteDraftDiscardDialog(
+        isBusy = isBusy,
+        onDismiss = { pendingSwitch = null },
+        onDiscard = { val next = pendingSwitch; pendingSwitch = null; next?.invoke() },
     )
     if (confirmDelete && onDelete != null && !isMissing) AlertDialog(
         onDismissRequest = { confirmDelete = false }, title = { Text(stringResource(Res.string.delete_note_title)) }, text = { Text(stringResource(Res.string.delete_note_message)) },

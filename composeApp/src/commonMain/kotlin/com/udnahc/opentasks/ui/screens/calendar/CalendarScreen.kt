@@ -59,7 +59,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -87,6 +86,9 @@ import com.udnahc.opentasks.ui.screens.SyncPullToRefresh
 import com.udnahc.opentasks.ui.screens.TaskMutationFailureEffect
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
+import com.udnahc.opentasks.viewmodel.CalendarLoadState
+import com.udnahc.opentasks.viewmodel.calendarLoadStateForView
+import com.udnahc.opentasks.viewmodel.calendarUsesCategoryNames
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import opentasks.composeapp.generated.resources.Res
@@ -237,8 +239,12 @@ fun CalendarScreen(
     onTaskMutationFailure: () -> Unit = {},
     onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
-    val loadState by viewModel.loadState.collectAsState()
+    val contentLoadState by viewModel.loadState.collectAsState()
     val calendarRenderState by viewModel.calendarRenderState.collectAsState()
+    val categoryLoadState = if (calendarUsesCategoryNames(calendarRenderState.viewPreference, isReimagined)) {
+        viewModel.categoryLoadState.collectAsState().value
+    } else CalendarLoadState.READY
+    val loadState = calendarLoadStateForView(contentLoadState, categoryLoadState, calendarRenderState.viewPreference, isReimagined)
     val taskPendingSeriesChoice by viewModel.taskPendingSeriesChoice.collectAsState()
     var isContentModalBusy by remember { mutableStateOf(false) }
     ModalBusyEffect(taskPendingSeriesChoice != null || isContentModalBusy, onModalBusyChanged)
@@ -320,7 +326,7 @@ private fun CalendarContent(
     onModalBusyChanged: (Boolean) -> Unit = {},
 ) {
     val reimagined = isReimagined
-    val categoryNames = if (calendarRenderState.viewPreference == CalendarViewPreference.LIST || calendarRenderState.viewPreference == CalendarViewPreference.MONTH || reimagined && calendarRenderState.viewPreference != CalendarViewPreference.YEAR) categoryNamesFlow.collectAsState().value else emptyMap()
+    val categoryNames = if (calendarUsesCategoryNames(calendarRenderState.viewPreference, reimagined)) categoryNamesFlow.collectAsState().value else emptyMap()
     val currentView = calendarRenderState.viewPreference.toCalendarViewType()
     val listDisplayMode = calendarRenderState.listDisplayModePreference.toListDisplayMode()
     val pagerAnchor = remember(calendarRenderState.today) {
@@ -896,9 +902,8 @@ private fun CalendarContent(
         }
 
         if (loadState != com.udnahc.opentasks.viewmodel.CalendarLoadState.READY) {
-            androidx.compose.material3.Surface(Modifier.fillMaxSize().pointerInput(Unit) {
-                awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
-            }, color = MaterialTheme.colorScheme.background) {
+            // Surface blocks the calendar behind it without consuming the Retry button's gestures.
+            androidx.compose.material3.Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 com.udnahc.opentasks.ui.screens.ReimaginedReadStatus(
                     loadState == com.udnahc.opentasks.viewmodel.CalendarLoadState.LOADING,
                     onRetryLoad,

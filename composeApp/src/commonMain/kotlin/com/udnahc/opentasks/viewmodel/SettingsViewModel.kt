@@ -22,11 +22,15 @@ import com.udnahc.opentasks.domain.usecase.settings.ObserveTextSizePreferenceUse
 import com.udnahc.opentasks.domain.usecase.settings.ObserveThemePreferenceUseCase
 import com.udnahc.opentasks.domain.usecase.task.GenerateCsvExportUseCase
 import com.udnahc.opentasks.domain.usecase.task.GenerateIcsExportUseCase
+import com.udnahc.opentasks.ui.util.FileExportLauncher
 import com.udnahc.opentasks.ui.util.FileExportRequest
 import com.udnahc.opentasks.ui.util.FileExportResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -72,6 +76,7 @@ class SettingsViewModel(
     private val checkCalendarPermission: CheckCalendarPermissionUseCase,
     private val generateCsvExport: GenerateCsvExportUseCase,
     private val generateIcsExport: GenerateIcsExportUseCase,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     val uiExperience = observeUiExperience()
@@ -108,6 +113,8 @@ class SettingsViewModel(
     private val _exportInProgress = MutableStateFlow(false)
     val exportInProgress: StateFlow<Boolean> = _exportInProgress.asStateFlow()
     private var pendingExportCount = 0
+    private var exportPreparationJob: Job? = null
+    private var exportGeneration = 0L
 
     private val _clearLocalDataStatus = MutableStateFlow(ClearLocalDataStatus.IDLE)
     val clearLocalDataStatus: StateFlow<ClearLocalDataStatus> =
@@ -174,50 +181,56 @@ class SettingsViewModel(
         _calendarGranted.value = granted
     }
 
-    fun prepareCsvExport(onReady: (FileExportRequest) -> Unit) {
-        if (!_exportInProgress.compareAndSet(expect = false, update = true)) return
-        viewModelScope.launch(Dispatchers.IO) {
-            var handedOff = false
-            try {
-                val (content, count) = generateCsvExport()
-                pendingExportCount = count
-                withContext(Dispatchers.Main) {
-                    onReady(FileExportRequest("opentasks_export.csv", content, "text/csv", count))
-                    handedOff = true
-                }
-            } catch (e: CancellationException) {
-                if (!handedOff) resetExportPreparation()
-                throw e
-            } catch (_: Exception) {
-                if (handedOff) return@launch
-                log.e { "CSV export failed" }
-                _exportResult.value = ExportResult.Error
-                resetExportPreparation()
-            }
-        }
+    fun prepareCsvExport(launcher: FileExportLauncher) {
+        prepareExport(launcher, "opentasks_export.csv", "text/csv", generateCsvExport::invoke)
     }
 
-    fun prepareIcsExport(onReady: (FileExportRequest) -> Unit) {
-        if (!_exportInProgress.compareAndSet(expect = false, update = true)) return
-        viewModelScope.launch(Dispatchers.IO) {
+    fun prepareIcsExport(launcher: FileExportLauncher) {
+        prepareExport(launcher, "opentasks_export.ics", "text/calendar", generateIcsExport::invoke)
+    }
+
+    private fun prepareExport(
+        launcher: FileExportLauncher,
+        fileName: String,
+        mimeType: String,
+        generate: suspend () -> Pair<String, Int>,
+    ) {
+        if (launcher.isBusy || !_exportInProgress.compareAndSet(expect = false, update = true)) return
+        val generation = ++exportGeneration
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             var handedOff = false
             try {
-                val (content, count) = generateIcsExport()
+                val (content, count) = withContext(ioDispatcher) { generate() }
+                if (generation != exportGeneration) return@launch
                 pendingExportCount = count
-                withContext(Dispatchers.Main) {
-                    onReady(FileExportRequest("opentasks_export.ics", content, "text/calendar", count))
-                    handedOff = true
+                handedOff = launcher.launch(FileExportRequest(fileName, content, mimeType, count))
+                if (!handedOff) {
+                    _exportResult.value = ExportResult.Error
+                    resetExportPreparation()
                 }
             } catch (e: CancellationException) {
-                if (!handedOff) resetExportPreparation()
+                if (!handedOff && generation == exportGeneration) resetExportPreparation()
                 throw e
             } catch (_: Exception) {
-                if (handedOff) return@launch
-                log.e { "ICS export failed" }
+                if (handedOff || generation != exportGeneration) return@launch
+                log.e { "Export preparation failed" }
                 _exportResult.value = ExportResult.Error
                 resetExportPreparation()
+            } finally {
+                if (generation == exportGeneration) exportPreparationJob = null
             }
         }
+        exportPreparationJob = job
+        job.start()
+    }
+
+    /** Native launchers call this only for nonconfiguration caller abandonment. */
+    fun abandonExport() {
+        exportGeneration += 1
+        val preparation = exportPreparationJob
+        exportPreparationJob = null
+        resetExportPreparation()
+        preparation?.cancel()
     }
 
     fun onExportResult(result: FileExportResult) {

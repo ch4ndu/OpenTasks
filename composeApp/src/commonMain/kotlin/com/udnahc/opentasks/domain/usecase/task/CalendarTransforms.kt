@@ -67,6 +67,8 @@ data class CalendarDayTasks(
     val timedTaskTimeText: Map<String, String> = emptyMap(),
 )
 
+internal const val CALENDAR_MIN_EVENT_DISPLAY_MINUTES = 15
+
 data class CalendarTaskRowProjection(
     val task: Task,
     val isAllDay: Boolean,
@@ -78,7 +80,7 @@ data class CalendarTaskRowProjection(
     val endMinutes: Int = startMinutes + 30,
     // All responsive timeline tokens give a 15-minute minimum bar height.
     // Keep display occupancy separate from the event's actual clipped end.
-    val displayEndMinutes: Int = maxOf(endMinutes, layoutStartMinutes + 15),
+    val displayEndMinutes: Int = maxOf(endMinutes, layoutStartMinutes + CALENDAR_MIN_EVENT_DISPLAY_MINUTES),
     val laneIndex: Int = 0,
     val laneCount: Int = 1,
 )

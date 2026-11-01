@@ -21,18 +21,28 @@ internal inline fun <reified T : ViewModel> rememberAndroidPickerState(
 ): T {
     val activity = LocalActivity.current as? ComponentActivity
         ?: error("An Android picker requires a ComponentActivity")
+    val registry = viewModel<PickerStateRegistry>(viewModelStoreOwner = activity) { PickerStateRegistry() }
     // The saveable call site belongs to the account/dialog or task navigation entry. A different
     // owner receives a different token and cannot claim the previous owner's activity result.
     var token by rememberSaveable { mutableStateOf(UUID.randomUUID().toString()) }
-    var state = viewModel<T>(viewModelStoreOwner = activity, key = token) { create() }
+    var owner = registry.owner(token)
+    var state = viewModel<T>(viewModelStoreOwner = owner) { create() }
     if (isAbandoned(state)) {
         // A navigation entry may return after abandoning a picker. Retire its old result key too.
+        registry.retire(token, owner)
         token = UUID.randomUUID().toString()
-        state = viewModel<T>(viewModelStoreOwner = activity, key = token) { create() }
+        owner = registry.owner(token)
+        state = viewModel<T>(viewModelStoreOwner = owner) { create() }
     }
-    DisposableEffect(activity, state) {
+    val ownerToken = token
+    DisposableEffect(activity, registry, owner, state) {
         onDispose {
-            if (!activity.isChangingConfigurations) abandon(state)
+            if (!activity.isChangingConfigurations) {
+                // Clear the child's ViewModel scope as well as removing its retained store.
+                // The callback may notify the screen only after native work has been retired.
+                registry.retire(ownerToken, owner)
+                abandon(state)
+            }
         }
     }
     return state

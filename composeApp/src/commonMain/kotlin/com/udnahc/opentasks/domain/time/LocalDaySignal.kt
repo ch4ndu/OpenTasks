@@ -20,7 +20,7 @@ class LocalDaySignal(
 ) {
     private val refreshes = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
-    val dates: Flow<LocalDate> = merge(
+    private val checks: Flow<Unit> = merge(
         flow {
             emit(Unit)
             while (currentCoroutineContext().isActive) {
@@ -30,7 +30,14 @@ class LocalDaySignal(
         },
         refreshes,
     )
+
+    val dates: Flow<LocalDate> = checks
         .map { currentDate() }
+        .distinctUntilChanged()
+
+    /** Recheck locale/hour-format on resume even when the civil date has not changed. */
+    fun formattingContexts(currentContext: () -> String): Flow<String> = checks
+        .map { currentContext() }
         .distinctUntilChanged()
 
     /** Initial composition snapshot from the same clock source as [dates]. */

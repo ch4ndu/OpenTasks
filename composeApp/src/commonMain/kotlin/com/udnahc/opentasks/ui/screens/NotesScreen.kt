@@ -49,10 +49,12 @@ fun NotesScreen(
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
+    isObscured: Boolean = false,
 ) {
     if (isReimagined) {
-        val notes by viewModel.libraryItems.collectAsState()
-        val query by viewModel.searchQuery.collectAsState()
+        // Keep the library's local UI state mounted without observing data behind the workspace.
+        val notes = if (isObscured) viewModel.libraryItems.value else viewModel.libraryItems.collectAsState().value
+        val query = if (isObscured) viewModel.searchQuery.value else viewModel.searchQuery.collectAsState().value
         ReimaginedNotesLibrary(notes, query, { viewModel.searchQuery.value = it }, onNoteClick, onCreateNote, onSettingsClick,
             isRefreshing = isRefreshing, syncEnabled = syncEnabled, onRefresh = onRefresh)
         return

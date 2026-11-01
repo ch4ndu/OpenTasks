@@ -52,6 +52,7 @@ import com.udnahc.opentasks.data.extensions.extractMonth
 import com.udnahc.opentasks.data.extensions.extractYear
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.CalendarDayProjection
+import com.udnahc.opentasks.domain.usecase.task.CALENDAR_MIN_EVENT_DISPLAY_MINUTES
 import com.udnahc.opentasks.domain.usecase.task.EMPTY_CALENDAR_DAY_PROJECTION
 import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
@@ -205,6 +206,7 @@ internal fun DayViewContent(
                                 )
                             }
                         }
+                        if (isReimagined) Spacer(Modifier.height(hourHeight * CALENDAR_MIN_EVENT_DISPLAY_MINUTES / 60f))
                     }
                 }
 
@@ -398,6 +400,8 @@ private fun DayViewTimeline(
                         )
                     }
                 }
+                // Offset bars do not increase measured size. Reserve their final minimum-height footprint.
+                if (isReimagined) Spacer(Modifier.height(hourHeight * CALENDAR_MIN_EVENT_DISPLAY_MINUTES / 60f))
             }
 
             // Positioned timed events

@@ -547,6 +547,7 @@ val sharedModule = module {
         NoteViewModel(
             get(), get(), get(), get(), get(), observeAllTasks = get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
             dateTimeFormatter = get(),
+            localDaySignal = get(),
         )
     }
     viewModel {

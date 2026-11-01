@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -14,6 +15,9 @@ import com.udnahc.opentasks.data.model.Note
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.discard
+import opentasks.composeapp.generated.resources.keep_editing
+import opentasks.composeapp.generated.resources.note_discard_message
+import opentasks.composeapp.generated.resources.note_discard_title
 import opentasks.composeapp.generated.resources.note_missing_draft_message
 import opentasks.composeapp.generated.resources.note_save_as_new
 import org.jetbrains.compose.resources.stringResource
@@ -29,6 +33,29 @@ internal fun noteForOpenEditor(
     return observed?.takeIf { it.id == noteId }
         ?: retained?.takeIf { it.id == noteId }
         ?: if (isMissing) Note(id = noteId) else null
+}
+
+@Composable
+internal fun NoteDraftDiscardDialog(
+    isBusy: Boolean,
+    onDismiss: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(Res.string.note_discard_title)) },
+        text = { Text(stringResource(Res.string.note_discard_message)) },
+        confirmButton = {
+            TextButton(onClick = onDiscard, enabled = !isBusy) {
+                Text(stringResource(Res.string.discard))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(Res.string.keep_editing))
+            }
+        },
+    )
 }
 
 @Composable
