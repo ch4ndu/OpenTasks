@@ -33,6 +33,8 @@ import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.viewmodel.NoteListItem
 import com.udnahc.opentasks.viewmodel.NoteViewModel
+import opentasks.composeapp.generated.resources.note_pinned
+import opentasks.composeapp.generated.resources.note_archived
 import opentasks.composeapp.generated.resources.Res
 import opentasks.composeapp.generated.resources.empty_notes
 import opentasks.composeapp.generated.resources.notes
@@ -56,11 +58,13 @@ fun NotesScreen(
         val notes = if (isObscured) viewModel.libraryItems.value else viewModel.libraryItems.collectAsState().value
         val query = if (isObscured) viewModel.searchQuery.value else viewModel.searchQuery.collectAsState().value
         ReimaginedNotesLibrary(notes, query, { viewModel.searchQuery.value = it }, onNoteClick, onCreateNote, onSettingsClick,
-            isRefreshing = isRefreshing, syncEnabled = syncEnabled, onRefresh = onRefresh)
+            isRefreshing = isRefreshing, syncEnabled = syncEnabled, onRefresh = onRefresh,
+            controls = { if (!isObscured) NoteLibraryControls(viewModel) })
         return
     }
-    val notes by viewModel.noteListItems.collectAsState()
+    val notes by viewModel.libraryItems.collectAsState()
     NotesContent(
+        controls = { NoteLibraryControls(viewModel, showSearch = true) },
         notes = notes,
         onNoteClick = onNoteClick,
         onSettingsClick = onSettingsClick,
@@ -79,6 +83,7 @@ internal fun NotesContent(
     isRefreshing: Boolean = false,
     syncEnabled: Boolean = true,
     onRefresh: () -> Unit = {},
+    controls: @Composable () -> Unit = {},
 ) {
     val dimens = OpenTasksTheme.dimens
     val density = LocalDensity.current
@@ -91,6 +96,8 @@ internal fun NotesContent(
     val topBarHeight = dimens.topBarHeight + statusBarHeight
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Column(Modifier.fillMaxSize().padding(top = topBarHeight)) {
+        controls()
         SyncPullToRefresh(
             isRefreshing = isRefreshing,
             enabled = syncEnabled,
@@ -112,7 +119,7 @@ internal fun NotesContent(
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
-                        top = topBarHeight + dimens.paddingMedium,
+                        top = dimens.paddingMedium,
                         bottom = navBarHeight + dimens.fabAreaBottom + dimens.paddingXLarge,
                     ),
                 ) {
@@ -123,6 +130,7 @@ internal fun NotesContent(
             }
         }
 
+        }
         // Translucent Top bar overlay
         OpenTasksTopBar(
             title = stringResource(Res.string.notes),
@@ -152,6 +160,9 @@ internal fun NoteCard(
         ),
     ) {
         Column(modifier = Modifier.padding(dimens.paddingLarge)) {
+            if (noteData.isPinned) Text(stringResource(Res.string.note_pinned), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            if (noteData.isArchived) Text(stringResource(Res.string.note_archived), style = MaterialTheme.typography.labelSmall)
+            if (note.tagNames.isNotBlank()) Text(note.tagNames, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (noteData.title.isNotBlank() || isReimagined) {
                 Text(
                     text = if (noteData.title.isBlank()) stringResource(Res.string.note_untitled) else noteData.title,

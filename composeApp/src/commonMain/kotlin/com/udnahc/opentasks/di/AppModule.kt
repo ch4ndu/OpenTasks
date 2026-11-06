@@ -26,6 +26,7 @@ import com.udnahc.opentasks.viewmodel.LogbookViewModel
 import com.udnahc.opentasks.viewmodel.BulkTasksViewModel
 import com.udnahc.opentasks.viewmodel.NoteTasksViewModel
 import com.udnahc.opentasks.domain.time.LocalizedDateTimeFormatter
+import com.udnahc.opentasks.data.database.MIGRATION_16_17
 import com.udnahc.opentasks.data.database.MIGRATION_15_16
 import com.udnahc.opentasks.data.repository.CompletionRepository
 import com.udnahc.opentasks.data.repository.CompletionRepositoryImpl
@@ -214,6 +215,7 @@ val sharedModule = module {
                 MIGRATION_13_14,
                 MIGRATION_14_15,
                 MIGRATION_15_16,
+                MIGRATION_16_17,
             )
             .setDriver(BundledSQLiteDriver())
             .addCallback(object : RoomDatabase.Callback() {
@@ -344,6 +346,8 @@ val sharedModule = module {
     single { UpdateNoteAction(get()) }
     single { DeleteNoteAction(get()) }
     single { AddTagAction(get()) }
+    single { com.udnahc.opentasks.domain.usecase.tag.ObserveAllTagsUseCase(get()) }
+    single { com.udnahc.opentasks.domain.action.note.GetOrCreateNoteTagAction(get(), get()) }
     single { TagTaskAction(get()) }
     single {
         ImportCalendarEventsAction(
@@ -545,7 +549,7 @@ val sharedModule = module {
     }
     viewModel {
         NoteViewModel(
-            get(), get(), get(), get(), get(), observeAllTasks = get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
+            get(), get(), get(), get(), get(), observeAllTags = get(), getOrCreateTag = get(), observeAllTasks = get(), accountBoundaryExecutor = get<AccountBoundaryExecutor>(),
             dateTimeFormatter = get(),
             localDaySignal = get(),
         )

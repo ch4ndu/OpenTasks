@@ -21,6 +21,9 @@ import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.StateFlow
 import com.udnahc.opentasks.data.model.Note
+import com.udnahc.opentasks.data.model.NoteOrganization
+import com.udnahc.opentasks.data.model.organization
+import com.udnahc.opentasks.viewmodel.NoteViewModel
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.data.model.TaskStatus
 import com.udnahc.opentasks.ui.util.PlatformBackHandler
@@ -37,6 +40,7 @@ internal fun ReimaginedNotesLibrary(
     notes: List<NoteListItem>, query: String, onQuery: (String) -> Unit,
     onNote: (Note) -> Unit, onCreate: (String) -> Unit, onSettings: () -> Unit,
     isRefreshing: Boolean = false, syncEnabled: Boolean = true, onRefresh: () -> Unit = {},
+    controls: @Composable () -> Unit = {},
 ) {
     val d = OpenTasksTheme.dimens
     var searchOpen by rememberSaveable { mutableStateOf(false) }
@@ -58,6 +62,7 @@ internal fun ReimaginedNotesLibrary(
                 }
             },
         )
+        controls()
         SyncPullToRefresh(isRefreshing = isRefreshing, enabled = syncEnabled, onRefresh = onRefresh, modifier = Modifier.fillMaxWidth().weight(1f)) {
             Column(Modifier.fillMaxSize()) {
                 if (!searchOpen) {
@@ -103,13 +108,14 @@ internal fun ReimaginedNotesWorkspace(
     linkedTaskPreview: StateFlow<List<Task>>,
     onSelectNote: (Note) -> Unit,
     onClose: () -> Unit,
-    onSaveAsNew: (String, String) -> Unit,
-    onSave: (String, String) -> Unit,
-    onSaveAndOpenTasks: ((String, String) -> Unit)?,
+    onSaveAsNew: (String, String, NoteOrganization) -> Unit,
+    onSave: (String, String, NoteOrganization) -> Unit,
+    onSaveAndOpenTasks: ((String, String, NoteOrganization) -> Unit)?,
     onDelete: (() -> Unit)?,
     onLinkedTaskComplete: (Task) -> Unit,
     onBackHandler: (Any, (() -> Unit)?) -> Unit,
     navigation: @Composable (onLeave: (() -> Unit) -> Unit) -> Unit,
+    organizationModel: NoteViewModel? = null,
 ) {
     if (!active) return
     val backOwner = remember { Any() }
@@ -150,6 +156,9 @@ internal fun ReimaginedNotesWorkspace(
             if (html.isNotBlank()) setHtml(html) else if (initialCapture.isNotBlank()) setText(initialCapture)
         }
     }
+    var organization by rememberSaveable(requestToken, stateSaver = NoteOrganizationSaver) { mutableStateOf(note?.organization() ?: NoteOrganization()) }
+    var baselineOrganization by rememberSaveable(requestToken, stateSaver = NoteOrganizationSaver) { mutableStateOf(organization) }
+    var pendingOrganization by rememberSaveable(requestToken, stateSaver = NoteOrganizationSaver) { mutableStateOf(organization) }
     var baselineTitle by rememberSaveable(requestToken) { mutableStateOf(note?.title.orEmpty()) }
     var baselineHtml by rememberSaveable(requestToken) {
         mutableStateOf(RichTextState().apply { note?.content?.takeIf { it.isNotBlank() }?.let { setHtml(it) } }.toHtml())
@@ -164,11 +173,11 @@ internal fun ReimaginedNotesWorkspace(
     var pendingSwitch by remember(requestToken) { mutableStateOf<(() -> Unit)?>(null) }
     var confirmDelete by remember(requestToken) { mutableStateOf(false) }
     NoteSaveRevisionEffect(requestToken, savedRevision) {
-        baselineTitle = pendingTitle; baselineHtml = pendingHtml; changedSinceSave = false
+        baselineTitle = pendingTitle; baselineHtml = pendingHtml; baselineOrganization = pendingOrganization; changedSinceSave = false
     }
     fun requestLeave(action: () -> Unit) {
         if (isBusy) return
-        if (isMissing || title != baselineTitle || rich.toHtml() != baselineHtml) pendingSwitch = action else action()
+        if (isMissing || title != baselineTitle || rich.toHtml() != baselineHtml || organization != baselineOrganization) pendingSwitch = action else action()
     }
     PlatformBackHandler(enabled = true, onBack = { requestLeave(onClose) })
     val currentBack by rememberUpdatedState<() -> Unit> { requestLeave(onClose) }
@@ -201,7 +210,7 @@ internal fun ReimaginedNotesWorkspace(
                     actions = {
                         IconButton(onClick = { focus = !focus }) { Icon(painterResource(Res.drawable.ic_unfold), stringResource(if (focus) Res.string.note_focus_exit else Res.string.note_focus), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                         if (!isMissing) TextButton(onClick = {
-                            pendingTitle = title; pendingHtml = rich.toHtml(); onSave(title, pendingHtml)
+                            pendingTitle = title; pendingHtml = rich.toHtml(); pendingOrganization = organization; onSave(title, pendingHtml, organization)
                         }, enabled = !isBusy) { Text(stringResource(Res.string.save)) }
                         if (onDelete != null && !isMissing) IconButton(onClick = { confirmDelete = true }, enabled = !isBusy) { Icon(painterResource(Res.drawable.ic_delete), stringResource(Res.string.delete_note), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                     },
@@ -209,7 +218,7 @@ internal fun ReimaginedNotesWorkspace(
                 if (errorMessage != null) Text(errorMessage, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(d.paddingMedium))
                 if (isMissing) MissingNoteDraftNotice(
                     isBusy = isBusy,
-                    onSaveAsNew = { pendingTitle = title; pendingHtml = rich.toHtml(); onSaveAsNew(title, pendingHtml) },
+                    onSaveAsNew = { pendingTitle = title; pendingHtml = rich.toHtml(); pendingOrganization = organization; onSaveAsNew(title, pendingHtml, organization) },
                     onDiscard = onClose,
                 )
                 Text(stringResource(if (isMissing || changedSinceSave || note == null && savedRevision == 0L) Res.string.note_draft else Res.string.note_saved), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = d.paddingLarge))
@@ -220,6 +229,11 @@ internal fun ReimaginedNotesWorkspace(
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     modifier = Modifier.fillMaxWidth().padding(d.paddingLarge),
                     decorationBox = { inner -> if (title.isEmpty()) Text(stringResource(Res.string.note_title_hint), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant); inner() },
+                )
+                if (!focus && organizationModel != null) NoteOrganizationControls(
+                    model = organizationModel, noteId = note?.id, value = organization,
+                    onChange = { organization = it; changedSinceSave = true }, enabled = !isBusy,
+                    onOpenNote = { target -> requestLeave { onSelectNote(target) } },
                 )
                 HorizontalDivider()
                 BasicRichTextEditor(
@@ -235,7 +249,7 @@ internal fun ReimaginedNotesWorkspace(
                     HorizontalDivider()
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(Res.string.note_linked_count, linkedTaskCount), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { pendingTitle = title; pendingHtml = rich.toHtml(); onSaveAndOpenTasks(title, pendingHtml) }, enabled = !isBusy) { Text(stringResource(Res.string.note_save_open_tasks)) }
+                        TextButton(onClick = { pendingTitle = title; pendingHtml = rich.toHtml(); pendingOrganization = organization; onSaveAndOpenTasks(title, pendingHtml, organization) }, enabled = !isBusy) { Text(stringResource(Res.string.note_save_open_tasks)) }
                     }
                     linkedPreview.forEach { task ->
                         Row(verticalAlignment = Alignment.CenterVertically) {

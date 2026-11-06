@@ -275,3 +275,13 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
         """.trimIndent())
     }
 }
+
+/** Note organization travels with the note; old notes remain active and untagged. */
+val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE notes ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("ALTER TABLE notes ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL("ALTER TABLE notes ADD COLUMN tagIds TEXT NOT NULL DEFAULT '[]'")
+        connection.execSQL("ALTER TABLE notes ADD COLUMN linkedNoteIds TEXT NOT NULL DEFAULT '[]'")
+    }
+}

@@ -5,6 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.udnahc.opentasks.data.auth.AccountBoundaryExecutor
 import com.udnahc.opentasks.data.auth.AccountBoundaryRejectedException
 import com.udnahc.opentasks.data.auth.withForegroundActionBoundary
+import com.udnahc.opentasks.data.model.NoteOrganization
+import com.udnahc.opentasks.domain.usecase.tag.ObserveAllTagsUseCase
+import com.udnahc.opentasks.domain.action.note.GetOrCreateNoteTagAction
+import kotlinx.coroutines.withContext
 import com.udnahc.opentasks.data.model.Task
 import com.udnahc.opentasks.domain.usecase.task.ObserveAllTasksUseCase
 import com.udnahc.opentasks.data.model.Note
@@ -43,6 +47,8 @@ data class NoteListItem(
     val previewText: String,
     val updatedAtText: String,
     val linkedTaskCount: Int = 0,
+    val searchText: String = "",
+    val tagNames: String = "",
 )
 
 sealed interface NoteSelectionState {
@@ -107,6 +113,8 @@ class NoteViewModel(
     observeAllTasks: ObserveAllTasksUseCase? = null,
     private val dateTimeFormatter: DateTimeTextFormatter = EnglishDateTimeFormatter,
     localDaySignal: LocalDaySignal = LocalDaySignal(),
+    observeAllTags: ObserveAllTagsUseCase? = null,
+    private val getOrCreateTag: GetOrCreateNoteTagAction? = null,
 ) : ViewModel() {
 
     private val _selectedNoteId = MutableStateFlow<String?>(null)
@@ -129,17 +137,44 @@ class NoteViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val taskCountsByNote = allTasks
-        .map { tasks -> tasks.mapNotNull { it.sourceNoteId }.groupingBy { it }.eachCount() }
-        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+    val tags = (observeAllTags?.invoke() ?: flowOf(emptyList()))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val libraryFilter = MutableStateFlow(NoteLibraryFilter())
+    val selectedTagName = combine(tags, libraryFilter) { tags, filter ->
+        tags.firstOrNull { it.id == filter.tagId }?.name
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    private val editorContext = MutableStateFlow(NoteEditorContext())
 
-    val libraryItems = combine(noteListItems, taskCountsByNote, searchQuery) { items, counts, query ->
-        val needle = query.trim()
-        val matching = if (needle.isEmpty()) items else items.filter {
-            it.note.title.contains(needle, ignoreCase = true) || it.previewText.contains(needle, ignoreCase = true)
-        }
-        matching.map { it.copy(linkedTaskCount = counts[it.note.id] ?: 0) }
+    private val librarySource = combine(noteListItems, allTasks, tags) { items, tasks, tags ->
+        noteLibrarySource(items, tasks, tags)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), NoteLibrarySource())
+
+    val libraryItems = combine(librarySource, searchQuery, libraryFilter, localDaySignal.dates) { source, query, filter, today ->
+        filterNoteLibrary(source, query, filter, today)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val editorRelations = combine(noteListItems, editorContext) { notes, context ->
+        projectNoteRelations(notes, context)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), NoteRelations())
+
+    fun setEditorContext(noteId: String?, organization: NoteOrganization) {
+        editorContext.value = NoteEditorContext(noteId, organization)
+    }
+
+    suspend fun createTag(name: String): String? {
+        val action = getOrCreateTag ?: return null
+        val boundary = accountBoundaryExecutor?.captureForegroundBoundary()
+        if (accountBoundaryExecutor != null && boundary == null) return null
+        return try {
+            withContext(Dispatchers.IO) {
+                accountBoundaryExecutor.withForegroundActionBoundary(boundary) { action(name) }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val selectedNoteState: StateFlow<NoteSelectionState> = _selectedNoteId
@@ -177,9 +212,10 @@ class NoteViewModel(
         title: String,
         content: String,
         recoveryNoteId: String? = null,
+        organization: NoteOrganization = NoteOrganization(),
     ) {
         launchMutation(NoteMutationOperation.Create(requestToken, recoveryNoteId)) {
-            addNoteAction(title, content)
+            addNoteAction(title, content, organization)
         }
     }
 
@@ -269,6 +305,9 @@ internal class NoteListProjectionCache(
             } else {
                 previewContent(note.content)
             }
+            val searchText = if (previous != null && previous.note.content == note.content) {
+                previous.searchText
+            } else noteSearchText(note.content)
             val date = if (previous != null && previous.note.updatedAt == note.updatedAt &&
                 previousContext == formattingContext
             ) {
@@ -282,7 +321,7 @@ internal class NoteListProjectionCache(
                 previous
             } else {
                 // Keep the latest entity for callbacks even when its display inputs are unchanged.
-                NoteListItem(note = note, previewText = preview, updatedAtText = date)
+                NoteListItem(note = note, previewText = preview, updatedAtText = date, searchText = searchText)
             }
         }
         itemsById = items.associateBy { it.note.id }

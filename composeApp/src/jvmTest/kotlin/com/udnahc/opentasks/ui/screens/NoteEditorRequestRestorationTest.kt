@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.udnahc.opentasks.data.model.NoteOrganization
 import com.mohamedrejeb.richeditor.model.RichTextState
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.Test
@@ -37,6 +38,7 @@ class NoteEditorRequestRestorationTest {
 
                     assertEquals(if (nextNoteId == null) "" else "B title", next.title.value)
                     assertEquals(normalizedHtml(if (nextNoteId == null) "" else "<p>B body</p>"), next.rich.toHtml())
+                    assertEquals(NoteOrganization(), next.organization.value)
                     assertEquals(next.title.value, next.baselineTitle.value)
                     assertEquals(next.rich.toHtml(), next.baselineHtml.value)
                 }
@@ -94,6 +96,7 @@ class NoteEditorRequestRestorationTest {
             title = "A persisted title",
             html = "<p>A persisted body</p>",
         ))
+        draft.organization.value = NoteOrganization(true, true, listOf("tag"), listOf("linked"))
         draft.title.value = "A unsaved title"
         draft.rich.setHtml("<p><em>A unsaved body</em></p>")
         SavedDraft(composition.save(), draft.snapshot())
@@ -106,11 +109,12 @@ class NoteEditorRequestRestorationTest {
         val rich: RichTextState,
         val baselineTitle: MutableState<String>,
         val baselineHtml: MutableState<String>,
+        val organization: MutableState<NoteOrganization>,
     ) {
-        fun snapshot() = DraftSnapshot(title.value, rich.toHtml(), baselineTitle.value, baselineHtml.value)
+        fun snapshot() = DraftSnapshot(title.value, rich.toHtml(), baselineTitle.value, baselineHtml.value, organization.value)
     }
 
-    private data class DraftSnapshot(val title: String, val html: String, val baselineTitle: String, val baselineHtml: String)
+    private data class DraftSnapshot(val title: String, val html: String, val baselineTitle: String, val baselineHtml: String, val organization: NoteOrganization)
     private data class SavedDraft(val values: Map<String, List<Any?>>, val draft: DraftSnapshot)
 
     /** Exercises real composition/registry restoration without creating a native window or UI nodes. */
@@ -144,7 +148,8 @@ class NoteEditorRequestRestorationTest {
                             }
                             val baselineTitle = rememberSaveable(stateInput) { mutableStateOf(title) }
                             val baselineHtml = rememberSaveable(stateInput) { mutableStateOf(normalizedHtml(html)) }
-                            SideEffect { draft = Draft(currentTitle, rich, baselineTitle, baselineHtml) }
+                            val organization = rememberSaveable(stateInput, stateSaver = NoteOrganizationSaver) { mutableStateOf(NoteOrganization()) }
+                            SideEffect { draft = Draft(currentTitle, rich, baselineTitle, baselineHtml, organization) }
                         }
                     }
                 }

@@ -63,13 +63,18 @@ class NoteRepositoryImpl(
     override suspend fun updateCommitted(note: Note): CommittedMutation<Note> =
         mutationGate.withExclusive {
             log.v { "Updating note" }
-            val committed = note.copy(
-                isSynced = false,
-                updatedAt = maxOf(localNow(), note.updatedAt),
-            )
-            withContext(ioDispatcher) {
-                checkNotNull(noteDao.getNoteById(note.id)) { "Cannot update a missing note" }
-                noteDao.update(committed.withUtcTimestamps())
+            val committed = withContext(ioDispatcher) {
+                val stored = checkNotNull(noteDao.getNoteById(note.id)) { "Cannot update a missing note" }
+                val updated = stored.copy(
+                    title = note.title, content = note.content,
+                    isPinned = note.isPinned, isArchived = note.isArchived,
+                    tagIds = note.tagIds.distinct(),
+                    linkedNoteIds = note.linkedNoteIds.distinct().filter { it != note.id },
+                    isSynced = false,
+                    updatedAt = maxOf(localToUtc(localNow()), localToUtc(note.updatedAt), stored.updatedAt + 1),
+                )
+                noteDao.update(updated)
+                updated.withLocalTimestamps()
             }
             withSyncWarning(committed)
         }
@@ -81,14 +86,14 @@ class NoteRepositoryImpl(
     override suspend fun deleteCommitted(note: Note): CommittedMutation<Note> =
         mutationGate.withExclusive {
             log.v { "Soft-deleting note" }
-            val committed = note.copy(
-                isDeleted = true,
-                isSynced = false,
-                updatedAt = maxOf(localNow(), note.updatedAt),
-            )
-            withContext(ioDispatcher) {
-                checkNotNull(noteDao.getNoteById(note.id)) { "Cannot delete a missing note" }
-                noteDao.update(committed.withUtcTimestamps())
+            val committed = withContext(ioDispatcher) {
+                val stored = checkNotNull(noteDao.getNoteById(note.id)) { "Cannot delete a missing note" }
+                val deleted = stored.copy(
+                    isDeleted = true, isSynced = false,
+                    updatedAt = maxOf(localToUtc(localNow()), localToUtc(note.updatedAt), stored.updatedAt + 1),
+                )
+                noteDao.update(deleted)
+                deleted.withLocalTimestamps()
             }
             withSyncWarning(committed)
         }

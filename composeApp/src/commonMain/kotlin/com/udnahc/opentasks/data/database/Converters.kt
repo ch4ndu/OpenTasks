@@ -11,6 +11,12 @@ import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
 
 class Converters {
+    @TypeConverter
+    fun fromStringList(value: List<String>): String = kotlinx.serialization.json.Json.encodeToString(value)
+
+    @TypeConverter
+    fun toStringList(value: String): List<String> = kotlinx.serialization.json.Json.decodeFromString(value)
+
 
     @TypeConverter
     fun fromRecurrenceType(value: RecurrenceType): String = value.name

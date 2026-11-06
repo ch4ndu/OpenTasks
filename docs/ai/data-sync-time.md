@@ -153,3 +153,8 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - `tasks.sourceNoteId` is a create-time association to a live note. Validate the note inside the task creation transaction; ordinary editor overlays and narrow bulk mutations retain the persisted link. Missing/deleted notes must not delete linked tasks.
 - Bulk writes hold one foreground boundary and reread each task through the coordinator. Preserve unrelated fields, report partial failures, and do not automatically retry an uncertain/cancelled batch.
 - Room migration 16 and PocketBase migration 014 introduce these fields and history. Follow `docs/runbooks/task-workflows-upgrade.md` for coordinated client/server rollout; old clients do not understand the new complete inventory.
+
+## Note organization
+
+- Room 17 / PocketBase 015 add note pin/archive flags and JSON ID arrays for tags and outgoing note links. These references are part of the whole-note last-write-wins payload, with no new collections or independent relation synchronization. Backlinks are derived from active saved notes. Resolve IDs only against the active cache; missing targets are retained as unavailable links and deleted tags are ignored in display/filter membership.
+- Note update/delete reread persisted truth under the shared mutation gate, preserve raw UTC creation time and PocketBase identity, and advance raw UTC update time strictly. Editor saves overlay content and organization; deleting uses current stored organization. Apply migration 015 before upgrading synced clients; see `docs/runbooks/notes-organization-upgrade.md`.

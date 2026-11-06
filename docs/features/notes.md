@@ -35,6 +35,20 @@ PocketBase sync uses `NoteSyncAdapter` and `NoteRecord`. Notes are synced as tex
 
 ## Current Limitations
 
-Notes do not currently support attachments, reminders, tags, categories, or calendar dates.
+Notes do not currently support attachments, reminders, categories, or calendar dates.
 
 In the Reimagined library, system Back closes active search and clears its query before navigating away. Linked-task counts and the editor list share one task observation stream.
+
+## Library organization and search
+
+Both Classic and Reimagined search the complete readable title/body, independently of the abbreviated card preview. Body matches show a nearby excerpt. The library defaults to active notes, with pinned notes first and newest edits next. Filters include Pinned, Archive, Edited in last 7 days (today and six preceding local calendar days), Untagged, and With unfinished tasks. A selected tag combines with the view and search. Archived notes appear only in Archive; open a note, clear Archived in Organize, then Save to restore it. Archiving never changes linked tasks.
+
+Organize edits pin/archive state and tags as part of the note draft. Done closes the organization dialog; the note's Save commits those changes. Tags reuse the shared tag catalog. Add tag creates or reuses a catalog entry immediately and selects it in the draft; discarding the note draft leaves that catalog entry available. Deleted tags no longer label or classify notes, even if their old IDs remain in a note's saved references.
+
+Note links opens a picker with Linked notes, Referenced by, and Link another note. Links are structured stable-ID references attached to a note, rather than inline HTML anchors. Links survive target title changes and archive state. Deleted/missing targets show Note unavailable and can be unlinked. Backlinks are derived from saved links on non-deleted notes, including archived notes. New links and unlinks save with the draft. Opening another note uses the unsaved-draft guard; users can keep editing and save first, or explicitly discard. Tags and links survive draft restoration and Save as new recovery.
+
+## Storage upgrade
+
+Room migration 16 → 17 adds `isPinned`, `isArchived`, `tagIds`, and `linkedNoteIds`. Tag and note IDs are structured JSON arrays stored with each note, so organization follows the existing whole-note last-write-wins sync contract. There are no new sync collections. Backlinks are derived, never separately persisted. Missing targets are tolerated because note references may arrive in either order during sync.
+
+PocketBase migration 015 must be applied before updated synced clients run; mixed old/new clients are unsupported by strict payload validation. See [Notes organization upgrade](../runbooks/notes-organization-upgrade.md).

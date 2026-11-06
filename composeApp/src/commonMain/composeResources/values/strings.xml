@@ -654,4 +654,27 @@
     <string name="reimagined_open_full_editor">Open full editor</string>
     <string name="note_missing_draft_message">This note was deleted. Your draft is still here. Save it as a new note or discard it.</string>
     <string name="note_save_as_new">Save as new</string>
+    <string name="note_organize">Organize</string>
+    <string name="note_links">Note links</string>
+    <string name="note_pinned">Pinned</string>
+    <string name="note_archived">Archived</string>
+    <string name="note_organization_save_hint">These changes are saved when you save the note.</string>
+    <string name="note_tags">Tags</string>
+    <string name="note_new_tag">New tag</string>
+    <string name="note_add_tag">Add tag</string>
+    <string name="note_tag_save_error">Could not add the tag. Try again.</string>
+    <string name="note_linked_notes">Linked notes</string>
+    <string name="note_no_links">No linked notes yet.</string>
+    <string name="note_link_unavailable">Note unavailable</string>
+    <string name="note_unlink">Unlink</string>
+    <string name="note_backlinks">Referenced by</string>
+    <string name="note_no_backlinks">No notes link here yet.</string>
+    <string name="note_insert_link">Link another note</string>
+    <string name="note_all_tags">All tags</string>
+    <string name="note_tag_filter">Tag selected</string>
+    <string name="note_view_active">Active notes</string>
+    <string name="note_view_archive">Archive</string>
+    <string name="note_view_recent">Edited in last 7 days</string>
+    <string name="note_view_untagged">Untagged</string>
+    <string name="note_view_unfinished">With unfinished tasks</string>
 </resources>

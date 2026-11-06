@@ -64,7 +64,7 @@ class SyncRecordPayloadTest {
         assertComplete(
             noteRecordPayloadSchema,
             syncRecordJson.encodeToString(testNote().toNoteRecord()),
-            setOf("localId", "title", "content", "isDeleted", "localCreatedAt", "localUpdatedAt"),
+            setOf("localId", "title", "content", "isPinned", "isArchived", "tagIds", "linkedNoteIds", "isDeleted", "localCreatedAt", "localUpdatedAt"),
         )
         assertComplete(
             countdownRecordPayloadSchema,

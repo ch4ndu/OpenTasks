@@ -37,6 +37,9 @@ import androidx.compose.ui.text.font.FontWeight
 import com.mohamedrejeb.richeditor.model.RichTextState
 import com.mohamedrejeb.richeditor.ui.BasicRichTextEditor
 import com.udnahc.opentasks.data.model.Note
+import com.udnahc.opentasks.data.model.NoteOrganization
+import com.udnahc.opentasks.data.model.organization
+import com.udnahc.opentasks.viewmodel.NoteViewModel
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.minimumInteractiveTargetSize
@@ -70,10 +73,12 @@ fun CreateNoteBottomSheet(
     mutationState: NoteMutationState = NoteMutationState.Idle,
     errorMessage: String? = null,
     isMissing: Boolean = false,
-    onSaveAsNew: ((String, String) -> Unit)? = null,
-    onSave: (title: String, content: String) -> Unit,
+    onSaveAsNew: ((String, String, NoteOrganization) -> Unit)? = null,
+    onSave: (title: String, content: String, organization: NoteOrganization) -> Unit,
     onDelete: (() -> Unit)? = null,
-    onSaveAndOpenTasks: ((String, String) -> Unit)? = null,
+    onSaveAndOpenTasks: ((String, String, NoteOrganization) -> Unit)? = null,
+    organizationModel: NoteViewModel? = null,
+    onOpenNote: (Note) -> Unit = {},
 ) {
     val isBusy = mutationState.isOwnedBy(requestToken, editNote?.id)
     var confirmMissingDiscard by rememberSaveable(requestToken) { mutableStateOf(false) }
@@ -95,6 +100,8 @@ fun CreateNoteBottomSheet(
         PlatformBackHandler(enabled = isMissing || isBusy, onBack = ::requestDismiss)
         CreateNoteBottomSheetContent(
             editNote = editNote,
+            organizationModel = organizationModel,
+            onOpenNote = onOpenNote,
             onDismiss = ::requestDismiss,
             onSave = onSave,
             onDelete = onDelete,
@@ -176,14 +183,16 @@ internal fun LoadingNoteBottomSheet(
 internal fun CreateNoteBottomSheetContent(
     editNote: Note? = null,
     onDismiss: () -> Unit,
-    onSave: (title: String, content: String) -> Unit,
+    onSave: (title: String, content: String, organization: NoteOrganization) -> Unit,
     onDelete: (() -> Unit)? = null,
-    onSaveAndOpenTasks: ((String, String) -> Unit)? = null,
+    onSaveAndOpenTasks: ((String, String, NoteOrganization) -> Unit)? = null,
     isBusy: Boolean = false,
     errorMessage: String? = null,
     isMissing: Boolean = false,
-    onSaveAsNew: ((String, String) -> Unit)? = null,
+    onSaveAsNew: ((String, String, NoteOrganization) -> Unit)? = null,
     onDiscardMissingDraft: () -> Unit = onDismiss,
+    organizationModel: NoteViewModel? = null,
+    onOpenNote: (Note) -> Unit = {},
 ) {
     val stateKey = editNote?.id ?: CREATE_NOTE_STATE_KEY
     var title by rememberSaveable(stateKey) { mutableStateOf(editNote?.title ?: "") }
@@ -193,6 +202,15 @@ internal fun CreateNoteBottomSheetContent(
             if (initialContent.isNotBlank()) setHtml(initialContent)
         }
     }
+    var organization by rememberSaveable(stateKey, stateSaver = NoteOrganizationSaver) { mutableStateOf(editNote?.organization() ?: NoteOrganization()) }
+    val initialOrganization = rememberSaveable(stateKey, saver = NoteOrganizationSaver) { editNote?.organization() ?: NoteOrganization() }
+    val initialTitle = rememberSaveable(stateKey) { editNote?.title.orEmpty() }
+    val initialHtml = rememberSaveable(stateKey) { richTextState.toHtml() }
+    var pendingOpen by remember { mutableStateOf<Note?>(null) }
+    if (pendingOpen != null) NoteDraftDiscardDialog(
+        isBusy = isBusy, onDismiss = { pendingOpen = null },
+        onDiscard = { pendingOpen?.let(onOpenNote); pendingOpen = null },
+    )
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     if (showDeleteConfirm && onDelete != null && !isMissing) {
@@ -229,7 +247,7 @@ internal fun CreateNoteBottomSheetContent(
             onSave = {
                 val content = richTextState.toHtml()
                 if (title.isNotBlank() || content.isNotBlank()) {
-                    onSave(title, content)
+                    onSave(title, content, organization)
                 } else {
                     onDismiss()
                 }
@@ -255,15 +273,23 @@ internal fun CreateNoteBottomSheetContent(
         if (isMissing && onSaveAsNew != null) {
             MissingNoteDraftNotice(
                 isBusy = isBusy,
-                onSaveAsNew = { onSaveAsNew(title, richTextState.toHtml()) },
+                onSaveAsNew = { onSaveAsNew(title, richTextState.toHtml(), organization) },
                 onDiscard = onDiscardMissingDraft,
             )
         }
         if (onSaveAndOpenTasks != null && !isMissing) {
-            TextButton(onClick = { onSaveAndOpenTasks(title, richTextState.toHtml()) }, enabled = !isBusy) {
+            TextButton(onClick = { onSaveAndOpenTasks(title, richTextState.toHtml(), organization) }, enabled = !isBusy) {
                 Text(stringResource(Res.string.note_save_open_tasks))
             }
         }
+        if (organizationModel != null) NoteOrganizationControls(
+            model = organizationModel, noteId = editNote?.id, value = organization,
+            onChange = { organization = it }, enabled = !isBusy,
+            onOpenNote = { target ->
+                if (isMissing || title != initialTitle || richTextState.toHtml() != initialHtml || organization != initialOrganization) pendingOpen = target
+                else onOpenNote(target)
+            },
+        )
         // Title field
         BasicTextField(
             value = title,

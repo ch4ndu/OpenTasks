@@ -35,6 +35,7 @@ internal enum class SyncRecordFieldKind {
     Number,
     Boolean,
     JsonString,
+    NoteIds,
 }
 
 internal data class SyncRecordField(
@@ -162,6 +163,9 @@ class SyncRecordPayloadSchema internal constructor(
         name: String,
         value: JsonElement,
     ): JsonPrimitive {
+        if (kind == SyncRecordFieldKind.NoteIds) {
+            return JsonPrimitive(normalizeNoteIds(value))
+        }
         if (value is JsonNull) {
             if (!nullableAsEmpty) {
                 throw SyncRecordPayloadException("$collectionName.$name cannot be null")
@@ -176,6 +180,7 @@ class SyncRecordPayloadSchema internal constructor(
         return when (kind) {
             SyncRecordFieldKind.String,
             SyncRecordFieldKind.JsonString,
+            SyncRecordFieldKind.NoteIds,
             -> {
                 if (!primitive.isString) {
                     throw SyncRecordPayloadException("$collectionName.$name must be a JSON string")
@@ -330,6 +335,10 @@ internal val noteRecordPayloadSchema = SyncRecordPayloadSchema(
         "localId" to stringField(requireNonBlank = true),
         "title" to stringField(),
         "content" to stringField(),
+        "isPinned" to booleanField(),
+        "isArchived" to booleanField(),
+        "tagIds" to SyncRecordField(SyncRecordFieldKind.NoteIds),
+        "linkedNoteIds" to SyncRecordField(SyncRecordFieldKind.NoteIds),
         "isDeleted" to booleanField(),
         "localCreatedAt" to numberField(),
         "localUpdatedAt" to numberField(),

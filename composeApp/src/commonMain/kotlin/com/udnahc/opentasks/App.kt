@@ -108,6 +108,7 @@ import com.udnahc.opentasks.ui.screens.AccountSessionRoute
 import com.udnahc.opentasks.ui.screens.AccountSessionScreen
 import com.udnahc.opentasks.ui.screens.AccountSessionStatusScreen
 import com.udnahc.opentasks.ui.screens.AccountTransitionScreen
+import com.udnahc.opentasks.data.model.withOrganization
 import com.udnahc.opentasks.ui.screens.CreateNoteBottomSheet
 import com.udnahc.opentasks.ui.screens.CreateTaskScreen
 import com.udnahc.opentasks.ui.screens.DestinationLoadingScreen
@@ -1872,14 +1873,16 @@ private fun MainScreen(
         NoteEditorRequestScope(noteSheetRequestToken) {
             val createNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             CreateNoteBottomSheet(
+                organizationModel = noteViewModel,
+                onOpenNote = { openEditNoteSheet(it.id) },
                 sheetState = createNoteSheetState,
                 requestToken = noteSheetRequestToken,
                 mutationState = noteMutationState,
                 errorMessage = noteEditorError,
                 onDismiss = ::retireOpenNoteSheet,
-                onSave = { title, content ->
+                onSave = { title, content, organization ->
                     noteEditorError = null
-                    noteViewModel.addNote(noteSheetRequestToken, title, content)
+                    noteViewModel.addNote(noteSheetRequestToken, title, content, organization = organization)
                 },
             )
         }
@@ -1952,32 +1955,34 @@ private fun MainScreen(
             NoteEditorRequestScope(noteSheetRequestToken) {
                 val editNoteSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
                 CreateNoteBottomSheet(
+                    organizationModel = noteViewModel,
+                    onOpenNote = { openEditNoteSheet(it.id) },
                     sheetState = editNoteSheetState,
                     editNote = note,
                     isMissing = editNoteMissing,
-                    onSaveAsNew = { title, content ->
+                    onSaveAsNew = { title, content, organization ->
                         noteEditorError = null
                         pendingNoteTasksId = null
-                        noteViewModel.addNote(noteSheetRequestToken, title, content, recoveryNoteId = note.id)
+                        noteViewModel.addNote(noteSheetRequestToken, title, content, recoveryNoteId = note.id, organization = organization)
                     },
-                    onSaveAndOpenTasks = { title, content ->
+                    onSaveAndOpenTasks = { title, content, organization ->
                         if (!editNoteMissing) {
                             noteEditorError = null
                             pendingNoteTasksId = note.id
-                            noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
+                            noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content).withOrganization(organization))
                         }
                     },
                     requestToken = noteSheetRequestToken,
                     mutationState = noteMutationState,
                     errorMessage = noteEditorError,
                     onDismiss = ::retireOpenNoteSheet,
-                    onSave = { title, content ->
+                    onSave = { title, content, organization ->
                         pendingNoteTasksId = null
                         if (!editNoteMissing) {
                             noteEditorError = null
                             noteViewModel.updateNote(
                                 noteSheetRequestToken,
-                                note.copy(title = title, content = content),
+                                note.copy(title = title, content = content).withOrganization(organization),
                             )
                         }
                     },
@@ -2000,6 +2005,7 @@ private fun MainScreen(
     )
     NoteEditorRequestScope(noteSheetRequestToken) {
         ReimaginedNotesWorkspace(
+            organizationModel = noteViewModel,
             active = workspaceActive,
             loading = editNoteId != null && workspaceNote == null,
             requestToken = noteSheetRequestToken,
@@ -2014,29 +2020,29 @@ private fun MainScreen(
             linkedTaskPreview = noteViewModel.linkedTaskPreview,
             onSelectNote = { openEditNoteSheet(it.id) },
             onClose = ::retireOpenNoteSheet,
-            onSaveAsNew = { title, content ->
+            onSaveAsNew = { title, content, organization ->
                 noteEditorError = null
                 pendingCreatedNoteTasks = false
                 pendingNoteTasksId = null
-                noteViewModel.addNote(noteSheetRequestToken, title, content, recoveryNoteId = editNoteId)
+                noteViewModel.addNote(noteSheetRequestToken, title, content, recoveryNoteId = editNoteId, organization = organization)
             },
-            onSave = { title, content ->
+            onSave = { title, content, organization ->
                 noteEditorError = null
                 pendingCreatedNoteTasks = false
                 pendingNoteTasksId = null
-                if (showCreateNote) noteViewModel.addNote(noteSheetRequestToken, title, content)
-                else if (!editNoteMissing) workspaceNote?.let { noteViewModel.updateNote(noteSheetRequestToken, it.copy(title = title, content = content)) }
+                if (showCreateNote) noteViewModel.addNote(noteSheetRequestToken, title, content, organization = organization)
+                else if (!editNoteMissing) workspaceNote?.let { noteViewModel.updateNote(noteSheetRequestToken, it.copy(title = title, content = content).withOrganization(organization)) }
             },
-            onSaveAndOpenTasks = { title, content ->
+            onSaveAndOpenTasks = { title, content, organization ->
                 noteEditorError = null
                 if (showCreateNote) {
                     pendingCreatedNoteTasks = true
                     pendingNoteTasksId = null
-                    noteViewModel.addNote(noteSheetRequestToken, title, content)
+                    noteViewModel.addNote(noteSheetRequestToken, title, content, organization = organization)
                 } else if (!editNoteMissing) workspaceNote?.let { note ->
                     pendingCreatedNoteTasks = false
                     pendingNoteTasksId = note.id
-                    noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content))
+                    noteViewModel.updateNote(noteSheetRequestToken, note.copy(title = title, content = content).withOrganization(organization))
                 }
             },
             onDelete = workspaceNote?.takeUnless { editNoteMissing }?.let { note ->

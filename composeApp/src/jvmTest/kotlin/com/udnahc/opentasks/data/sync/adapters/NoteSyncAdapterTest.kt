@@ -263,7 +263,7 @@ class NoteSyncAdapterTest {
         updatedAt: Long,
         localId: String = "note",
     ): String =
-        """{"id":"remote-note","account":"account-a","localId":"$localId","title":"Original","content":"","isDeleted":$isDeleted,"localCreatedAt":100,"localUpdatedAt":$updatedAt}"""
+        """{"id":"remote-note","account":"account-a","localId":"$localId","title":"Original","content":"","isPinned":false,"isArchived":false,"tagIds":"","linkedNoteIds":"","isDeleted":$isDeleted,"localCreatedAt":100,"localUpdatedAt":$updatedAt}"""
 
     private companion object {
         val jsonHeaders = headersOf(

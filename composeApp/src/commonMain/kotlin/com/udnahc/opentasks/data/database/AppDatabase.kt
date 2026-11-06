@@ -26,7 +26,7 @@ import com.udnahc.opentasks.data.model.TaskTag
 
 @Database(
     entities = [TaskCompletion::class, Task::class, Category::class, Note::class, Tag::class, TaskTag::class, AppSettings::class, Countdown::class, Attachment::class, AttachmentFileCleanup::class],
-    version = 16
+    version = 17
 )
 @TypeConverters(Converters::class)
 @ConstructedBy(AppDatabaseConstructor::class)
