@@ -3,6 +3,8 @@ package com.udnahc.opentasks.viewmodel
 import app.cash.turbine.test
 import com.udnahc.opentasks.data.attachment.AttachmentFilePolicy
 import com.udnahc.opentasks.data.attachment.PickedImage
+import com.udnahc.opentasks.data.model.Countdown
+import com.udnahc.opentasks.data.repository.CountdownRepository
 import com.udnahc.opentasks.data.model.TaskFormData
 import com.udnahc.opentasks.data.model.TaskPriority
 import com.udnahc.opentasks.data.model.TaskStatus
@@ -36,8 +38,14 @@ import com.udnahc.opentasks.testutil.FakeTaskRepository
 import com.udnahc.opentasks.testutil.testCategory
 import com.udnahc.opentasks.testutil.testCountdown
 import com.udnahc.opentasks.testutil.testTask
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
@@ -589,6 +597,122 @@ class FormViewModelTest : MainDispatcherRule() {
         assertEquals(1, repository.updated.size)
         assertEquals("countdown", repository.deleted.single().id)
         assertTrue(repository.deleted.single().isDeleted)
+    }
+
+    @Test
+    fun countdownReadRetryRetainsReadyUntilSuccessfulMissingAndCancelsOldId() = runTest(dispatcher) {
+        val countdown = testCountdown(id = "countdown", title = "Loaded")
+        val reads = MutableSharedFlow<Result<Countdown?>>()
+        val nextReads = MutableSharedFlow<Result<Countdown?>>()
+        val cancelledIds = mutableListOf<String>()
+        val backing = FakeCountdownRepository(listOf(countdown))
+        val repository = object : CountdownRepository by backing {
+            override fun observeCountdownById(id: String): Flow<Countdown?> = flow {
+                try {
+                    emitAll((if (id == countdown.id) reads else nextReads).map { it.getOrThrow() })
+                } finally {
+                    cancelledIds.add(id)
+                }
+            }
+        }
+        val scheduler = ScheduleCountdownRemindersAction(NotificationScheduler(), repository)
+        val viewModel = CountdownFormViewModel(
+            addCountdownAction = AddCountdownAction(repository, scheduler),
+            updateCountdownAction = UpdateCountdownAction(repository, scheduler),
+            deleteCountdownAction = DeleteCountdownAction(repository, scheduler),
+            observeCountdownByIdUseCase = ObserveCountdownByIdUseCase(repository),
+            localDaySignal = LocalDaySignal(),
+            ioDispatcher = dispatcher,
+        )
+        viewModel.setCountdownId(countdown.id)
+        viewModel.destinationState.test {
+            assertEquals(CountdownDestinationState.Loading, awaitItem())
+            runCurrent()
+            assertEquals(CountdownLoadState.LOADING, viewModel.loadState.value)
+            reads.emit(Result.success(countdown))
+            val ready = awaitMatching { it is CountdownDestinationState.Ready }
+            assertEquals(countdown, (ready as CountdownDestinationState.Ready).countdown)
+            assertEquals(CountdownLoadState.READY, viewModel.loadState.value)
+
+            reads.emit(Result.failure(IllegalStateException("read failed")))
+            runCurrent()
+            assertEquals(CountdownLoadState.ERROR, viewModel.loadState.value)
+            assertEquals(ready, viewModel.destinationState.value)
+            assertFalse(viewModel.isSaving.value)
+            assertEquals(null, viewModel.mutationEvent.value)
+
+            viewModel.retryLoad()
+            runCurrent()
+            assertEquals(CountdownLoadState.LOADING, viewModel.loadState.value)
+            assertEquals(ready, viewModel.destinationState.value)
+            reads.emit(Result.success(countdown.copy(title = "Reloaded")))
+            assertEquals("Reloaded", (awaitMatching {
+                it is CountdownDestinationState.Ready && it.countdown.title == "Reloaded"
+            } as CountdownDestinationState.Ready).countdown.title)
+            assertEquals(CountdownLoadState.READY, viewModel.loadState.value)
+
+            reads.emit(Result.success(null))
+            assertEquals(CountdownDestinationState.Missing, awaitMatching { it == CountdownDestinationState.Missing })
+            assertEquals(CountdownLoadState.READY, viewModel.loadState.value)
+            reads.emit(Result.failure(IllegalStateException("read failed after missing")))
+            runCurrent()
+            assertEquals(CountdownDestinationState.Missing, viewModel.destinationState.value)
+            assertEquals(CountdownLoadState.ERROR, viewModel.loadState.value)
+
+            viewModel.retryLoad()
+            runCurrent()
+            assertEquals(CountdownLoadState.LOADING, viewModel.loadState.value)
+            reads.emit(Result.success(countdown))
+            assertEquals(countdown, (awaitMatching {
+                it is CountdownDestinationState.Ready
+            } as CountdownDestinationState.Ready).countdown)
+            assertEquals(CountdownLoadState.READY, viewModel.loadState.value)
+
+            cancelledIds.clear()
+            viewModel.setCountdownId("next")
+            assertEquals(CountdownDestinationState.Loading, awaitMatching { it == CountdownDestinationState.Loading })
+            assertTrue(countdown.id in cancelledIds)
+            runCurrent()
+            nextReads.emit(Result.success(null))
+            assertEquals(CountdownDestinationState.Missing, awaitMatching { it == CountdownDestinationState.Missing })
+            assertEquals(CountdownLoadState.READY, viewModel.loadState.value)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun countdownInitialReadErrorStaysUnresolvedAndCancellationIsNotReadFailure() = runTest(dispatcher) {
+        val reads = MutableSharedFlow<Result<Countdown?>>()
+        val backing = FakeCountdownRepository()
+        val repository = object : CountdownRepository by backing {
+            override fun observeCountdownById(id: String): Flow<Countdown?> = reads.map { it.getOrThrow() }
+        }
+        val scheduler = ScheduleCountdownRemindersAction(NotificationScheduler(), repository)
+        val viewModel = CountdownFormViewModel(
+            addCountdownAction = AddCountdownAction(repository, scheduler),
+            updateCountdownAction = UpdateCountdownAction(repository, scheduler),
+            deleteCountdownAction = DeleteCountdownAction(repository, scheduler),
+            observeCountdownByIdUseCase = ObserveCountdownByIdUseCase(repository),
+            localDaySignal = LocalDaySignal(),
+            ioDispatcher = dispatcher,
+        )
+        viewModel.setCountdownId("unresolved")
+        viewModel.destinationState.test {
+            assertEquals(CountdownDestinationState.Loading, awaitItem())
+            runCurrent()
+            reads.emit(Result.failure(IllegalStateException("initial read failed")))
+            runCurrent()
+            assertEquals(CountdownLoadState.ERROR, viewModel.loadState.value)
+            assertEquals(CountdownDestinationState.Loading, viewModel.destinationState.value)
+            viewModel.retryLoad()
+            runCurrent()
+            reads.emit(Result.failure(CancellationException("read cancelled")))
+            runCurrent()
+            assertEquals(CountdownLoadState.LOADING, viewModel.loadState.value)
+            assertEquals(CountdownDestinationState.Loading, viewModel.destinationState.value)
+            assertEquals(null, viewModel.mutationEvent.value)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test

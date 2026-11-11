@@ -39,6 +39,8 @@ import androidx.compose.ui.text.style.TextAlign
 import com.udnahc.opentasks.domain.usecase.countdown.CountdownOccurrence
 import com.udnahc.opentasks.data.model.CountdownType
 import com.udnahc.opentasks.data.model.CountingMode
+import com.udnahc.opentasks.viewmodel.CountdownLoadState
+import com.udnahc.opentasks.ui.screens.ReimaginedReadStatus
 import com.udnahc.opentasks.ui.screens.OpenTasksBackButton
 import com.udnahc.opentasks.ui.screens.ModalBusyEffect
 import com.udnahc.opentasks.ui.screens.OpenTasksOverflowButton
@@ -67,6 +69,9 @@ fun CountdownDetailScreen(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onModalBusyChanged: (Boolean) -> Unit = {},
+    readStatus: CountdownLoadState = CountdownLoadState.READY,
+    onRetryRead: () -> Unit = {},
+    canMutate: Boolean = true,
 ) {
     CountdownDetailContent(
         countdown = countdown,
@@ -75,6 +80,9 @@ fun CountdownDetailScreen(
         onEdit = onEdit,
         onDelete = onDelete,
         onModalBusyChanged = onModalBusyChanged,
+        readStatus = readStatus,
+        onRetryRead = onRetryRead,
+        canMutate = canMutate,
     )
 }
 
@@ -87,11 +95,15 @@ internal fun CountdownDetailContent(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onModalBusyChanged: (Boolean) -> Unit = {},
+    readStatus: CountdownLoadState = CountdownLoadState.READY,
+    onRetryRead: () -> Unit = {},
+    canMutate: Boolean = true,
 ) {
     if (isReimagined && countdown != null) {
-        ReimaginedCountdownDetail(countdown, isBusy, onBack, onEdit, onDelete, onModalBusyChanged)
+        ReimaginedCountdownDetail(countdown, isBusy, onBack, onEdit, onDelete, onModalBusyChanged, readStatus, onRetryRead, canMutate)
         return
     }
+    val mutationsEnabled = !isBusy && canMutate && readStatus == CountdownLoadState.READY
     val dimens = OpenTasksTheme.dimens
     var showMenu by remember { mutableStateOf(false) }
     ModalBusyEffect(showMenu || isBusy, onModalBusyChanged)
@@ -111,16 +123,16 @@ internal fun CountdownDetailContent(
                 },
                 actions = {
                     Box {
-                        OpenTasksOverflowButton(onClick = { if (!isBusy) showMenu = true })
+                        OpenTasksOverflowButton(onClick = { if (mutationsEnabled) showMenu = true })
                         DropdownMenu(
-                            expanded = showMenu && !isBusy,
+                            expanded = showMenu && mutationsEnabled,
                             onDismissRequest = { showMenu = false },
                         ) {
                             DropdownMenuItem(
                                 text = { Text(stringResource(Res.string.edit)) },
                                 onClick = {
                                     showMenu = false
-                                    onEdit()
+                                    if (mutationsEnabled) onEdit()
                                 },
                             )
                             DropdownMenuItem(
@@ -132,7 +144,7 @@ internal fun CountdownDetailContent(
                                 },
                                 onClick = {
                                     showMenu = false
-                                    onDelete()
+                                    if (mutationsEnabled) onDelete()
                                 },
                             )
                         }
@@ -140,6 +152,13 @@ internal fun CountdownDetailContent(
                 },
             )
 
+            if (readStatus != CountdownLoadState.READY) {
+                ReimaginedReadStatus(
+                    loading = readStatus == CountdownLoadState.LOADING,
+                    onRetry = onRetryRead,
+                    modifier = Modifier.heightIn(max = dimens.minimumInteractiveTargetSize * 3),
+                )
+            }
             if (countdown != null) {
                 val source = countdown.countdown
                 val daysLeft = countdown.daysUntil
@@ -214,7 +233,7 @@ internal fun CountdownDetailContent(
                         )
                     }
                 }
-            } else {
+            } else if (readStatus == CountdownLoadState.READY) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
@@ -249,8 +268,9 @@ internal val previewCountdown = CountdownOccurrence(
 
 
 @Composable
-private fun ReimaginedCountdownDetail(item: CountdownOccurrence, isBusy: Boolean, onBack: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit, onModalBusyChanged: (Boolean) -> Unit) {
+private fun ReimaginedCountdownDetail(item: CountdownOccurrence, isBusy: Boolean, onBack: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit, onModalBusyChanged: (Boolean) -> Unit, readStatus: CountdownLoadState, onRetryRead: () -> Unit, canMutate: Boolean) {
     val d = OpenTasksTheme.dimens
+    val mutationsEnabled = !isBusy && canMutate && readStatus == CountdownLoadState.READY
     val source = item.countdown
     var confirmDelete by remember { mutableStateOf(false) }
     ModalBusyEffect(confirmDelete || isBusy, onModalBusyChanged)
@@ -277,23 +297,30 @@ private fun ReimaginedCountdownDetail(item: CountdownOccurrence, isBusy: Boolean
     }
     val fields: @Composable () -> Unit = {
         Column(Modifier.fillMaxWidth().padding(d.paddingXLarge), verticalArrangement = Arrangement.spacedBy(d.spacerLarge)) {
-            CountdownDetailField(stringResource(Res.string.date), originalDateLabel, onEdit, !isBusy)
-            CountdownDetailField(stringResource(Res.string.countdown_type), stringResource(countdownTypeLabelRes(source.countdownType)), onEdit, !isBusy)
-            CountdownDetailField(stringResource(Res.string.countdown_counting_mode), stringResource(countingModeLabelRes(source.countingMode)), onEdit, !isBusy)
-            CountdownDetailField(stringResource(Res.string.repeat), stringResource(recurrenceLabelRes(source.recurrenceType)), onEdit, !isBusy)
+            CountdownDetailField(stringResource(Res.string.date), originalDateLabel, onEdit, mutationsEnabled)
+            CountdownDetailField(stringResource(Res.string.countdown_type), stringResource(countdownTypeLabelRes(source.countdownType)), onEdit, mutationsEnabled)
+            CountdownDetailField(stringResource(Res.string.countdown_counting_mode), stringResource(countingModeLabelRes(source.countingMode)), onEdit, mutationsEnabled)
+            CountdownDetailField(stringResource(Res.string.repeat), stringResource(recurrenceLabelRes(source.recurrenceType)), onEdit, mutationsEnabled)
             Text(stringResource(Res.string.reminder), style = MaterialTheme.typography.labelLarge)
             if (reminders.isEmpty()) Text(stringResource(Res.string.none), style = MaterialTheme.typography.bodyLarge)
             reminders.forEach { reminder -> Text(stringResource(reminder.labelRes), style = MaterialTheme.typography.bodyLarge) }
-            CountdownDetailField(stringResource(Res.string.countdown_smart_list), stringResource(smartListLabelRes(source.smartListVisibility)), onEdit, !isBusy)
+            CountdownDetailField(stringResource(Res.string.countdown_smart_list), stringResource(smartListLabelRes(source.smartListVisibility)), onEdit, mutationsEnabled)
             Row {
-                Button(onClick = onEdit, enabled = !isBusy) { Text(stringResource(Res.string.edit)) }
+                Button(onClick = { if (mutationsEnabled) onEdit() }, enabled = mutationsEnabled) { Text(stringResource(Res.string.edit)) }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { confirmDelete = true }, enabled = !isBusy) { Text(stringResource(Res.string.delete), color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = { confirmDelete = true }, enabled = mutationsEnabled) { Text(stringResource(Res.string.delete), color = MaterialTheme.colorScheme.error) }
             }
         }
     }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         OpenTasksTopBar(title = stringResource(Res.string.countdown_title), navigationIcon = { OpenTasksBackButton(onClick = { if (!isBusy) onBack() }) })
+        if (readStatus != CountdownLoadState.READY) {
+            ReimaginedReadStatus(
+                loading = readStatus == CountdownLoadState.LOADING,
+                onRetry = onRetryRead,
+                modifier = Modifier.heightIn(max = d.minimumInteractiveTargetSize * 3),
+            )
+        }
         if (isBusy) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
         if (OpenTasksTheme.windowSizeCategory == WindowSizeCategory.COMPACT) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).navigationBarsPadding()) { hero(); HorizontalDivider(); fields() }
@@ -308,7 +335,7 @@ private fun ReimaginedCountdownDetail(item: CountdownOccurrence, isBusy: Boolean
         onDismissRequest = { if (!isBusy) confirmDelete = false },
         title = { Text(stringResource(Res.string.countdown_delete_title)) },
         text = { Text(stringResource(Res.string.countdown_delete_message)) },
-        confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }, enabled = !isBusy) { Text(stringResource(Res.string.delete)) } },
+        confirmButton = { TextButton(onClick = { if (mutationsEnabled) { confirmDelete = false; onDelete() } }, enabled = mutationsEnabled) { Text(stringResource(Res.string.delete)) } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }, enabled = !isBusy) { Text(stringResource(Res.string.cancel)) } },
     )
 }

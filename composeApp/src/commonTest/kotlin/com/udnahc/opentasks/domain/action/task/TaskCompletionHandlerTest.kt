@@ -102,6 +102,31 @@ class TaskCompletionHandlerTest {
         assertEquals(null, handler.taskPendingSeriesChoice.value)
     }
 
+    @Test
+    fun explicitChoiceCannotReplacePendingChoiceDuringConfirmation() = runTest {
+        var pendingAction: (suspend () -> Unit)? = null
+        var rejections = 0
+        val repository = FakeTaskRepository(listOf(testTask(id = "first", deadline = 1_000L)))
+        val handler = TaskCompletionHandler(
+            ToggleTaskCompleteAction(repository, ScheduleTaskRemindersAction(NoOpReminderScheduler, repository)),
+            this,
+            launchMutationDelegate = { _, _, action -> pendingAction = action },
+            onMutationRejected = { rejections += 1 },
+        )
+        handler.requestSeriesChoice("first", 1_000L)
+        handler.requestSeriesChoice("second", 2_000L)
+        assertEquals(TaskCompletionChoice("first", 1_000L), handler.taskPendingSeriesChoice.value)
+        handler.completeOccurrence()
+        handler.requestSeriesChoice("third", 3_000L)
+        handler.dismissSeriesChoice()
+        assertEquals(TaskCompletionChoice("first", 1_000L), handler.taskPendingSeriesChoice.value)
+        assertEquals(2, rejections)
+        checkNotNull(pendingAction).invoke()
+        assertEquals(null, handler.taskPendingSeriesChoice.value)
+        handler.requestSeriesChoice("second", 2_000L)
+        assertEquals(TaskCompletionChoice("second", 2_000L), handler.taskPendingSeriesChoice.value)
+    }
+
     private fun handler(
         repository: FakeTaskRepository,
         launcher: TaskMutationLauncher,

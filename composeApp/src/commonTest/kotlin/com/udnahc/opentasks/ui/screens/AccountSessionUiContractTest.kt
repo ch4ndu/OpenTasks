@@ -135,9 +135,9 @@ class AccountSessionUiContractTest {
     }
 
     @Test
-    fun accountSessionUsesCompactPanelOnlyForCompactWindows() {
+    fun accountSessionUsesSplitWelcomeOnlyForExpandedWindows() {
         assertEquals(AccountSessionLayout.COMPACT, accountSessionLayoutFor(WindowSizeCategory.COMPACT))
-        assertEquals(AccountSessionLayout.LARGER, accountSessionLayoutFor(WindowSizeCategory.MEDIUM))
+        assertEquals(AccountSessionLayout.COMPACT, accountSessionLayoutFor(WindowSizeCategory.MEDIUM))
         assertEquals(AccountSessionLayout.LARGER, accountSessionLayoutFor(WindowSizeCategory.EXPANDED))
     }
 

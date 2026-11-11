@@ -31,7 +31,7 @@ internal enum class AccountSessionLayout {
 }
 
 internal fun accountSessionLayoutFor(sizeCategory: WindowSizeCategory): AccountSessionLayout =
-    if (sizeCategory == WindowSizeCategory.COMPACT) {
+    if (sizeCategory != WindowSizeCategory.EXPANDED) {
         AccountSessionLayout.COMPACT
     } else {
         AccountSessionLayout.LARGER

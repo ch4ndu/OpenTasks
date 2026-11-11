@@ -58,6 +58,7 @@ Apply these rules when a context agent or implementation worker assists the mana
 - Treat a context agent as advisory and read-only. Current repository files, user messages, and fresh command results outrank retained context or handoff notes.
 - Keep the manager responsible for user communication, scope, integration, finding disposition, and completion. Do not let a worker or context agent declare overall completion.
 - Keep plan review, code review, and final verification independent from implementation and context-agent conclusions; provide authoritative paths and evidence, not inherited verdicts.
+- TRIP Explorer agent selections live in `.agents/trip-explorer/config.json` under `roles` and `profiles`. Model or reasoning changes require matching live preflight evidence before workflow execution; historical receipts must not be relabeled to validate a new selection.
 - Preserve every finding with its evidence and manager disposition, including resolved findings. Require explicit user approval before implementation and separate authorization for Git publication or release actions.
 - Report request/behavior verification separately from build/test verification and identify deliberately unrun checks or residual uncertainty.
 

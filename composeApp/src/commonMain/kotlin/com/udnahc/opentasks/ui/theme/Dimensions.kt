@@ -105,6 +105,9 @@ data class OpenTasksDimensions(
     val kanbanColumnMinWidth: Dp,       // 200.dp (min phone column width)
     val kanbanAutoScrollAmount: Dp,     // 150.dp (edge-drag auto-scroll step)
     val authPanelMaxWidth: Dp,          // 520.dp (adaptive account/session panel)
+    val authWelcomeMaxWidth: Dp = 1040.dp,
+    val authIllustrationCompactHeight: Dp = 112.dp,
+    val authIllustrationExpandedHeight: Dp = 260.dp,
     val countdownCardMinWidth: Dp = 280.dp,
     val calendarPickerWidth: Dp = 288.dp,
     val reimaginedRailWidth: Dp = 144.dp,

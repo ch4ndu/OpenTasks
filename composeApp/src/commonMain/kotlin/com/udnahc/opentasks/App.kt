@@ -157,6 +157,7 @@ import com.udnahc.opentasks.viewmodel.AppViewModel
 import com.udnahc.opentasks.viewmodel.AppearanceViewModel
 import com.udnahc.opentasks.viewmodel.AuthViewModel
 import com.udnahc.opentasks.viewmodel.CalendarViewModel
+import com.udnahc.opentasks.viewmodel.CountdownLoadState
 import com.udnahc.opentasks.viewmodel.CountdownFormViewModel
 import com.udnahc.opentasks.viewmodel.CountdownDestinationState
 import com.udnahc.opentasks.viewmodel.CountdownMutationEvent
@@ -1225,7 +1226,15 @@ private fun MainScreen(
                 }
                 entry<Screen.BulkTasks> { screen ->
                     val model: BulkTasksViewModel = koinViewModel(key = "bulk:${screen.filter}", parameters = { parametersOf(screen.filter) })
-                    BulkTasksScreen(model, { popBackStackWithWorkspaceReturn() })
+                    val isBusy by model.busy.collectAsState()
+                    val bulkBackOwner = remember { Any() }
+                    val onBack = { if (!model.busy.value) popBackStackWithWorkspaceReturn() }
+                    DisposableEffect(model, bulkBackOwner) {
+                        taskFormBackHandlerRegistry.register(bulkBackOwner, onBack)
+                        onDispose { taskFormBackHandlerRegistry.register(bulkBackOwner, null) }
+                    }
+                    PlatformBackHandler(enabled = isBusy, onBack = {})
+                    BulkTasksScreen(model, onBack)
                 }
                 entry<Screen.NoteTasks> { screen ->
                     val model: NoteTasksViewModel = koinViewModel(key = "noteTasks:${screen.noteId}", parameters = { parametersOf(screen.noteId) })
@@ -1724,20 +1733,37 @@ private fun MainScreen(
                     }
                     PlatformBackHandler(enabled = isDeletingCountdown, onBack = {})
                     val destinationState by viewModel.destinationState.collectAsState()
+                    val readStatus by viewModel.loadState.collectAsState()
                     when (val state = destinationState) {
-                        CountdownDestinationState.Loading -> DestinationLoadingScreen()
-                        CountdownDestinationState.Missing -> MissingDestinationScreen(
-                            message = countdownNotFound,
-                            onBack = { if (!isDeletingCountdown) popBackStackWithWorkspaceReturn() },
-                        )
+                        CountdownDestinationState.Loading,
+                        CountdownDestinationState.Missing -> if (state == CountdownDestinationState.Missing && readStatus == CountdownLoadState.READY) {
+                            MissingDestinationScreen(
+                                message = countdownNotFound,
+                                onBack = { if (!isDeletingCountdown) popBackStackWithWorkspaceReturn() },
+                            )
+                        } else {
+                            CountdownDetailScreen(
+                                countdown = null,
+                                isBusy = isDeletingCountdown,
+                                onBack = { if (!isDeletingCountdown) popBackStackWithWorkspaceReturn() },
+                                onEdit = {},
+                                onDelete = {},
+                                readStatus = if (readStatus == CountdownLoadState.ERROR) CountdownLoadState.ERROR else CountdownLoadState.LOADING,
+                                onRetryRead = viewModel::retryLoad,
+                                canMutate = false,
+                            )
+                        }
                         is CountdownDestinationState.Ready -> CountdownDetailScreen(
                             isBusy = isDeletingCountdown,
+                            readStatus = readStatus,
+                            onRetryRead = viewModel::retryLoad,
+                            canMutate = readStatus == CountdownLoadState.READY,
                             countdown = state.occurrence,
                             onBack = { if (!isDeletingCountdown) popBackStackWithWorkspaceReturn() },
                             onEdit = {
-                                if (!isDeletingCountdown) navController.navigate(Screen.EditCountdown(screen.countdownId))
+                                if (!viewModel.isSaving.value && viewModel.loadState.value == CountdownLoadState.READY) navController.navigate(Screen.EditCountdown(screen.countdownId))
                             },
-                            onDelete = { viewModel.deleteCountdown(state.countdown) },
+                            onDelete = { if (viewModel.loadState.value == CountdownLoadState.READY) viewModel.deleteCountdown(state.countdown) },
                             onModalBusyChanged = { isBusy ->
                                 onChildModalBusyChanged(screen, isBusy)
                             },
@@ -1774,19 +1800,36 @@ private fun MainScreen(
                         }
                     }
                     val destinationState by viewModel.destinationState.collectAsState()
+                    val readStatus by viewModel.loadState.collectAsState()
                     when (val state = destinationState) {
-                        CountdownDestinationState.Loading -> DestinationLoadingScreen()
-                        CountdownDestinationState.Missing -> MissingDestinationScreen(
-                            message = countdownNotFound,
-                            onBack = { if (!isSaving) popBackStackWithWorkspaceReturn() },
-                        )
+                        CountdownDestinationState.Loading,
+                        CountdownDestinationState.Missing -> if (state == CountdownDestinationState.Missing && readStatus == CountdownLoadState.READY) {
+                            MissingDestinationScreen(
+                                message = countdownNotFound,
+                                onBack = { if (!isSaving) popBackStackWithWorkspaceReturn() },
+                            )
+                        } else {
+                            CountdownDetailScreen(
+                                countdown = null,
+                                isBusy = isSaving,
+                                onBack = { if (!isSaving) popBackStackWithWorkspaceReturn() },
+                                onEdit = {},
+                                onDelete = {},
+                                readStatus = if (readStatus == CountdownLoadState.ERROR) CountdownLoadState.ERROR else CountdownLoadState.LOADING,
+                                onRetryRead = viewModel::retryLoad,
+                                canMutate = false,
+                            )
+                        }
                         is CountdownDestinationState.Ready -> CreateCountdownScreen(
                             editCountdown = state.countdown,
                             initialType = state.countdown.countdownType,
                             currentDate = currentDate,
-                            onSave = viewModel::updateCountdown,
+                            onSave = { if (viewModel.loadState.value == CountdownLoadState.READY) viewModel.updateCountdown(it) },
                             onBack = { if (!isSaving) popBackStackWithWorkspaceReturn() },
                             isSaving = isSaving,
+                            readStatus = readStatus,
+                            onRetryRead = viewModel::retryLoad,
+                            canMutate = readStatus == CountdownLoadState.READY,
                         )
                     }
                 }

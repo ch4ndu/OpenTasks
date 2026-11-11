@@ -62,12 +62,28 @@ class CountdownRepositoryImpl(
 
     override suspend fun update(countdown: Countdown): CommittedMutation<Countdown> = mutationGate.withExclusive {
         log.v { "Updating countdown: ${countdown.id}" }
-        val committed = countdown.copy(
-            isSynced = false,
-            updatedAt = maxOf(localNow(), countdown.updatedAt),
-        )
-        withContext(ioDispatcher) {
-            countdownDao.update(committed.withUtcTimestamps())
+        val committed = withContext(ioDispatcher) {
+            val stored = checkNotNull(countdownDao.getCountdownByIdUtc(countdown.id)) {
+                "Cannot update a missing countdown"
+            }
+            check(!stored.isDeleted) { "Cannot update a deleted countdown" }
+            val updated = stored.copy(
+                title = countdown.title,
+                targetDate = localToUtc(countdown.targetDate),
+                countdownType = countdown.countdownType,
+                countingMode = countdown.countingMode,
+                reminders = countdown.reminders,
+                recurrenceType = countdown.recurrenceType,
+                smartListVisibility = countdown.smartListVisibility,
+                isSynced = false,
+                updatedAt = maxOf(
+                    localToUtc(localNow()),
+                    localToUtc(countdown.updatedAt),
+                    stored.updatedAt + 1,
+                ),
+            )
+            countdownDao.update(updated)
+            updated.withLocalTimestamps()
         }
         CommittedMutation(committed).withPostCommitWarning(
             triggerSyncAfterCommit(),

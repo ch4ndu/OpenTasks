@@ -25,7 +25,7 @@ import com.udnahc.opentasks.viewmodel.WeeklyReviewViewModel
 import com.udnahc.opentasks.viewmodel.LogbookViewModel
 import com.udnahc.opentasks.viewmodel.BulkTasksViewModel
 import com.udnahc.opentasks.viewmodel.NoteTasksViewModel
-import com.udnahc.opentasks.domain.time.LocalizedDateTimeFormatter
+import com.udnahc.opentasks.domain.time.DateTimeTextFormatter
 import com.udnahc.opentasks.data.database.MIGRATION_16_17
 import com.udnahc.opentasks.data.database.MIGRATION_15_16
 import com.udnahc.opentasks.data.repository.CompletionRepository
@@ -235,10 +235,10 @@ val sharedModule = module {
     single { ObserveAllTasksUseCase(get()) }
     single { ObserveCompletionsUseCase(get()) }
     single { BulkUpdateTasksAction(get(), get(), get<AccountBoundaryExecutor>()) }
-    viewModel { WeeklyReviewViewModel(get(), get(), get(), get(), get(), get(), get()) }
-    viewModel { LogbookViewModel(get(), get(), get(), LocalizedDateTimeFormatter()) }
+    viewModel { WeeklyReviewViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { LogbookViewModel(get(), get(), get(), get<DateTimeTextFormatter>()) }
     viewModel { (filter: TaskListFilter?) -> BulkTasksViewModel(filter, get(), get(), get(), get(), get(), get()) }
-    viewModel { (noteId: String) -> NoteTasksViewModel(noteId, get(), get(), get(), get()) }
+    viewModel { (noteId: String) -> NoteTasksViewModel(noteId, get(), get(), get(), get(), get()) }
     single { TaskCompletionSyncAdapter(get()) }
     single { get<AppDatabase>().categoryDao() }
     single { get<AppDatabase>().noteDao() }

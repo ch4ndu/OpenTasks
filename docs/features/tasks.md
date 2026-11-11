@@ -52,6 +52,8 @@ Shortlist is an explicit, persistent selection of unfinished tasks to tackle nex
 
 Tasks overview → Weekly review opens four steps: Inbox, overdue work, important undated work (HIGH or MEDIUM), and the persistent Shortlist. Each step shows unfinished tasks. Open a task to edit it, complete it using the existing occurrence/series choice, or add/remove Shortlist membership. Previous/Next navigates the review; Finish review returns to the overview. Review does not reset the Shortlist or change dates automatically.
 
+Done requests completion explicitly, so repeated submission cannot reopen the task. Row actions are disabled while their status or Shortlist request is pending. A local read failure shows Retry instead of an empty review step.
+
 ## Completion logbook
 
 Tasks overview → Completion logbook shows completion snapshots with Last 7 days, Last 30 days, and All time filters, plus a list filter. The date windows include today and use local civil-day boundaries. Entries retain the title and list name captured when the task was completed, even if the task is subsequently renamed, moved, reopened, or deleted. A retained entry opens the task when it still exists; deleted tasks are identified as unavailable.
@@ -67,6 +69,8 @@ Room migration 15 → 16 seeds entries for existing active DONE tasks with a kno
 Open Bulk task actions from the Tasks overview for all unfinished tasks, or from a task list/Shortlist for that view. Select rows individually or select all visible rows. Available operations are moving to a list, changing priority, and adding/removing Shortlist membership. Moving clears the old list's section. Dates, content, recurrence, tags, note links, and other unrelated fields are preserved.
 
 Operations are idempotent narrow writes against current persisted tasks, under the foreground account boundary. A batch reports the number updated and failed, removes successful selections, and retains still-visible failed selections for explicit retry. It does not claim transaction-wide atomicity. Cancellation stops further work; already committed rows remain changed. Bulk completion/deletion and date rescheduling are outside this feature.
+
+Back is guarded while a batch is running so its result remains available on the screen. Local read failures use Retry to reload saved data; selection changes reuse the existing row projection.
 
 ## Tasks linked to notes
 

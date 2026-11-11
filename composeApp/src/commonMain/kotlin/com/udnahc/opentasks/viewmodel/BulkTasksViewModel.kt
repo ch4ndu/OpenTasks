@@ -8,10 +8,13 @@ import com.udnahc.opentasks.domain.action.task.*
 import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.task.*
 import com.udnahc.opentasks.domain.usecase.category.ObserveAllCategoriesUseCase
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 
-data class BulkTasksState(val rows: List<WorkflowTaskRow> = emptyList(), val categories: List<Category> = emptyList(), val selected: Set<String> = emptySet())
+data class BulkTasksState(val rows: List<WorkflowTaskRow> = emptyList(), val categories: List<Category> = emptyList(), val selected: Set<String> = emptySet(), val loading: Boolean = true, val error: Boolean = false)
+@OptIn(ExperimentalCoroutinesApi::class)
 class BulkTasksViewModel(
     filter: TaskListFilter?,
     tasks: ObserveAllTasksUseCase,
@@ -27,15 +30,29 @@ class BulkTasksViewModel(
     val busy: StateFlow<Boolean> = _busy
     private val _result = MutableStateFlow<BulkTaskResult?>(null)
     val result: StateFlow<BulkTaskResult?> = _result
-    val state = combine(tasks(), categories(), day.dates, selection) { all, lists, today, selected ->
-        val visible = all.filter { it.status != TaskStatus.DONE && (filter == null || filter.includes(it, TaskFilterDay(today))) }.sortedFor(TaskSortOption.BY_TITLE)
-        BulkTasksState(workflowRows(visible, lists, due), lists, selected.intersect(visible.mapTo(mutableSetOf()) { it.id }))
-    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), BulkTasksState())
+    private val readGeneration = MutableStateFlow(0L)
+    fun retryLoad() { readGeneration.value += 1L }
+    private data class Projection(val state: BulkTasksState, val visibleIds: Set<String> = emptySet())
+    private val projection = readGeneration.flatMapLatest {
+        combine(tasks(), categories(), day.dates, day.formattingContexts { due.formattingContextKey }) { all, lists, today, _ ->
+            val visible = all.filter { it.status != TaskStatus.DONE && (filter == null || filter.includes(it, TaskFilterDay(today))) }.sortedFor(TaskSortOption.BY_TITLE)
+            Projection(BulkTasksState(workflowRows(visible, lists, due), lists, loading = false), visible.mapTo(mutableSetOf()) { it.id })
+        }.onStart { emit(Projection(BulkTasksState())) }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                emit(Projection(BulkTasksState(loading = false, error = true)))
+            }
+    }.flowOn(Dispatchers.Default)
+    val state = combine(projection, selection) { projected, selected ->
+        projected.state.copy(selected = selected.intersect(projected.visibleIds))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), BulkTasksState())
+    private fun canMutate() = !_busy.value && !state.value.loading && !state.value.error
 
-    fun toggle(id: String) { if (!_busy.value) selection.update { if (id in it) it - id else it + id } }
-    fun selectAll() { if (!_busy.value) selection.value = state.value.rows.mapTo(mutableSetOf()) { it.task.id } }
-    fun clear() { if (!_busy.value) selection.value = emptySet() }
+    fun toggle(id: String) { if (canMutate()) selection.update { if (id in it) it - id else it + id } }
+    fun selectAll() { if (canMutate()) selection.value = state.value.rows.mapTo(mutableSetOf()) { it.task.id } }
+    fun clear() { if (canMutate()) selection.value = emptySet() }
     fun apply(change: BulkTaskChange) {
+        if (!canMutate()) return
         val ids = state.value.selected
         if (ids.isEmpty() || !_busy.compareAndSet(false, true)) return
         _result.value = null

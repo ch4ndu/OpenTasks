@@ -59,6 +59,7 @@ import com.udnahc.opentasks.ui.theme.OpenTasksTheme
 import com.udnahc.opentasks.ui.theme.PrimaryBlue
 import com.udnahc.opentasks.ui.theme.priorityColor
 import com.udnahc.opentasks.viewmodel.TaskListViewModel
+import com.udnahc.opentasks.viewmodel.TaskListLoadState
 import com.udnahc.opentasks.viewmodel.TaskListViewModel.ActiveTaskListSection
 import com.udnahc.opentasks.viewmodel.TaskListViewModel.SectionGroup
 import opentasks.composeapp.generated.resources.bulk_tasks
@@ -102,6 +103,7 @@ fun TaskListScreen(
     val sortOption by viewModel.sortOption.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val categoryName by viewModel.categoryName.collectAsState()
+    val loadState by viewModel.loadState.collectAsState()
     var isSortMenuBusy by remember { mutableStateOf(false) }
     ModalBusyEffect(
         taskPendingSeriesChoice != null || isSortMenuBusy,
@@ -116,7 +118,20 @@ fun TaskListScreen(
         WindowInsets.navigationBars.getBottom(this).toDp()
     }
 
-    when (viewMode) {
+    if (loadState != TaskListLoadState.READY) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            TaskListTopBar(
+                listName = listName,
+                onAllViewsClick = onAllViewsClick,
+                sortOption = sortOption,
+                onSortOptionSelected = viewModel::setSortOption,
+                viewMode = viewMode,
+                onViewModeSelected = viewModel::setViewMode,
+                onSortMenuBusyChanged = { isSortMenuBusy = it },
+            )
+            ReimaginedReadStatus(loadState == TaskListLoadState.LOADING, viewModel::retryLoad, Modifier.weight(1f))
+        }
+    } else when (viewMode) {
         TaskListViewMode.LIST -> {
             val listProjection by viewModel.listProjection.collectAsState()
             val taskImageSummaries by viewModel.taskImageSummaries.collectAsState()
@@ -186,7 +201,7 @@ fun TaskListScreen(
         }
     }
 
-    if (taskPendingSeriesChoice != null) {
+    if (taskPendingSeriesChoice != null && loadState == TaskListLoadState.READY) {
         CompleteSeriesDialog(
             onCompleteOccurrence = { viewModel.completeOccurrence() },
             onCompleteSeries = { viewModel.completeSeries() },

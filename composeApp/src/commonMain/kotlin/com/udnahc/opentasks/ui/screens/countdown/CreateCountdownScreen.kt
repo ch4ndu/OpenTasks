@@ -62,6 +62,8 @@ import com.udnahc.opentasks.ui.screens.DialogOkTextButton
 import com.udnahc.opentasks.ui.screens.CalendarDatePickerDialog
 import com.udnahc.opentasks.ui.screens.MultiSelectReminderDialog
 import com.udnahc.opentasks.ui.screens.NoIconLabelValueNavigationRow
+import com.udnahc.opentasks.viewmodel.CountdownLoadState
+import com.udnahc.opentasks.ui.screens.ReimaginedReadStatus
 import com.udnahc.opentasks.ui.screens.OpenTasksCloseButton
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBar
 import com.udnahc.opentasks.ui.screens.OpenTasksTopBarContainerStyle
@@ -203,6 +205,9 @@ fun CreateCountdownScreen(
     onSave: (Countdown) -> Unit,
     onBack: () -> Unit,
     isSaving: Boolean = false,
+    readStatus: CountdownLoadState = CountdownLoadState.READY,
+    onRetryRead: () -> Unit = {},
+    canMutate: Boolean = true,
 ) {
     CreateCountdownContent(
         editCountdown = editCountdown,
@@ -211,6 +216,9 @@ fun CreateCountdownScreen(
         onSave = onSave,
         onBack = onBack,
         isSaving = isSaving,
+        readStatus = readStatus,
+        onRetryRead = onRetryRead,
+        canMutate = canMutate,
     )
 }
 
@@ -223,6 +231,9 @@ internal fun CreateCountdownContent(
     onSave: (Countdown) -> Unit,
     onBack: () -> Unit,
     isSaving: Boolean,
+    readStatus: CountdownLoadState = CountdownLoadState.READY,
+    onRetryRead: () -> Unit = {},
+    canMutate: Boolean = true,
 ) {
     val dimens = OpenTasksTheme.dimens
     val reimagined = isReimagined
@@ -284,7 +295,7 @@ internal fun CreateCountdownContent(
     val typeColor = countdownTypeColor(selectedType)
 
     fun saveCountdown() {
-        if (isSaving) return
+        if (isSaving || !canMutate || readStatus != CountdownLoadState.READY) return
         if (name.isBlank()) { showNameError = true; return }
         val targetDateMillis =
             computeLocalMillis(selectedYear, selectedMonth, selectedDay, 0, 0)
@@ -314,7 +325,7 @@ internal fun CreateCountdownContent(
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).then(if (reimagined) Modifier.navigationBarsPadding().imePadding() else Modifier)) {
         if (reimagined) ReimaginedScreenHeader(stringResource(if (editCountdown != null) Res.string.edit else Res.string.countdown_new), { if (!isSaving) onBack() }) {
-            TextButton(onClick = ::saveCountdown, enabled = !isSaving) { Text(stringResource(Res.string.save)) }
+            TextButton(onClick = ::saveCountdown, enabled = !isSaving && canMutate && readStatus == CountdownLoadState.READY) { Text(stringResource(Res.string.save)) }
         }
     Box(
         modifier = Modifier
@@ -334,6 +345,13 @@ internal fun CreateCountdownContent(
                     OpenTasksCloseButton(onClick = { if (!isSaving) onBack() })
                 },
             )
+
+            if (readStatus != CountdownLoadState.READY) {
+                ReimaginedReadStatus(
+                    loading = readStatus == CountdownLoadState.LOADING,
+                    onRetry = onRetryRead,
+                )
+            }
 
             if (reimagined) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = dimens.paddingXLarge), horizontalArrangement = Arrangement.spacedBy(dimens.paddingSmall)) {
                 CountdownType.entries.forEach { type ->
@@ -459,7 +477,7 @@ internal fun CreateCountdownContent(
 
             // Classic save position is retained; modern Save stays above the scrolling form.
             if (!reimagined) Button(
-                enabled = !isSaving,
+                enabled = !isSaving && canMutate && readStatus == CountdownLoadState.READY,
                 onClick = ::saveCountdown,
                 modifier = Modifier
                     .fillMaxWidth()

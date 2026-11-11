@@ -48,7 +48,7 @@ class TaskCompletionHandler(
         occurrenceDeadlineLocalMillis: Long?,
     ) {
         if (status != TaskStatus.DONE && recurrenceType != RecurrenceType.NONE && occurrenceDeadlineLocalMillis != null) {
-            _taskPendingSeriesChoice.value = TaskCompletionChoice(taskId, occurrenceDeadlineLocalMillis)
+            requestSeriesChoice(taskId, occurrenceDeadlineLocalMillis)
         } else {
             launchMutation(
                 onBoundaryRejected = onMutationBoundaryRejected,
@@ -58,6 +58,12 @@ class TaskCompletionHandler(
                     handleResult(taskId, result)
                 },
             )
+        }
+    }
+
+    fun requestSeriesChoice(taskId: String, expectedOccurrence: Long) {
+        if (!_taskPendingSeriesChoice.compareAndSet(null, TaskCompletionChoice(taskId, expectedOccurrence))) {
+            onMutationRejected()
         }
     }
 
@@ -129,10 +135,7 @@ class TaskCompletionHandler(
                 }
             }
             is TaskWriteResult.CompletionChoiceRequired -> {
-                _taskPendingSeriesChoice.value = TaskCompletionChoice(
-                    taskId = taskId,
-                    expectedOccurrence = result.expectedOccurrence,
-                )
+                requestSeriesChoice(taskId, result.expectedOccurrence)
             }
             TaskWriteResult.Missing,
             TaskWriteResult.NoOp,

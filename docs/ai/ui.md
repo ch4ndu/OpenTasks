@@ -19,6 +19,7 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 - Prefer dense, functional task-management UI over decorative layouts.
 - Text must fit its container on mobile and desktop.
 - Do not add nested cards or unrelated decorative surfaces.
+- The signed-out Welcome screen uses a stacked brand/illustration/form at compact and medium widths, and a split welcome/form panel at expanded widths. Its artwork and controls use the active Classic or Reimagined color scheme in both light and dark mode. Keep credential state above responsive layout branches, passwords non-saveable, and sign-in/local-use actions on the existing account boundary flow. The entry surface owns safe drawing and keyboard insets and scrolls when content cannot fit.
 
 ## Interaction Targets
 
@@ -75,6 +76,9 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 ## Review, logbook, bulk actions, and note links
 
 - Weekly review, logbook, bulk selection, and note-task destinations own separate entry ViewModels. Projections and date filtering run off the UI thread; task/history lists remain lazy with stable IDs.
+- Workflow date labels observe formatting-context changes independently of civil-day changes. Bulk selection combines selected IDs with already-projected rows, so a checkbox change does not repeat sorting or date formatting.
+- Weekly review's Done requests DONE explicitly; it never toggles a completed task open. Pending status requests disable the row actions, and recurring choice admission must preserve an existing choice during confirmation.
+- Bulk batches guard toolbar, platform, and navigation Back while busy. Keep the entry alive for the result; cancellation from other lifecycle changes still preserves already committed rows.
 - The note-to-linked-tasks action saves the open draft and navigates only on the matching successful note operation. A plain Save or Delete clears a pending linked-task navigation request. Source-note navigation from a task retains that task editor entry and its draft.
 - All workflow destinations count as busy for shared intake, preventing a system share from replacing an active review or batch-selection flow.
 
@@ -86,6 +90,8 @@ Load this for Compose UI, screens, bottom sheets, previews, theme work, or recom
 - Display text projections compare content/deadline inputs before expensive formatting and independently invalidate on formatter-context changes. This includes both Matrix overview experiences and selected-quadrant/list/board labels. Notes cache previews by content and date labels by timestamp/context per note ID, evict removed notes, and retain the current Note for callbacks on metadata-only updates. Do not suppress sync bookkeeping globally in repositories; current entities remain available to mutation callbacks.
 - Calendar overlap lanes use the same minimum display duration as timeline bars, while retaining actual event endpoints for labels and editing. Reimagined timelines and synchronized hour columns include enough measured trailing space to reach a minimum-height event starting at 23:59. Metadata-only updates may reuse formatted projections but must refresh their Task references.
 - Classic and Reimagined Calendar, Matrix, and Countdown surfaces expose local read failures and invoke the ViewModel's local retry; a network refresh is not a substitute for that retry. Matrix quadrant detail also exposes task read failures in both experiences; only its Classic list branch depends on category readiness. Calendar category readiness is required only in the modes/experience that collect category names, using the same predicate for collection and readiness.
+- Workflow and Task List local-read readiness includes every source required by the visible content. Loading or failure must not imply an empty list or missing record. Task List attachment readiness and collection belong only to list mode; keep the mode control usable during a list-only failure.
+- Countdown detail/edit retries retain the last successful same-ID lookup. Keep an already-loaded editor mounted through error and retry so its draft is not reseeded. Read status and mutation availability are separate from mutation busy state; local read failure exposes Retry and permits Back. Only a successful absent lookup means Missing.
 
 ## Notes organization controls
 

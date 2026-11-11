@@ -28,9 +28,14 @@ import com.udnahc.opentasks.domain.usecase.task.sortedFor
 import com.udnahc.opentasks.domain.usecase.task.taskPreviewTexts
 import com.udnahc.opentasks.domain.usecase.task.distinctDueTextInputs
 import com.udnahc.opentasks.domain.time.LocalDaySignal
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +48,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 
+enum class TaskListLoadState { LOADING, READY, ERROR }
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class TaskListViewModel(
     val filter: TaskListFilter,
     observeTasksForFilter: ObserveTasksForFilterUseCase,
@@ -98,31 +106,90 @@ class TaskListViewModel(
     )
     val taskPendingSeriesChoice = completionHandler.taskPendingSeriesChoice
 
-    val tasksForSelectedCategory: StateFlow<List<Task>> = observeTasksForFilter(filter)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val categoryName: StateFlow<String> = if (filter is TaskListFilter.Category) {
-        observeAllCategories()
-            .map { categories -> categories.find { it.id == filter.id }?.name.orEmpty() }
-            .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
-    } else {
-        MutableStateFlow("")
+    private val readGeneration = MutableStateFlow(0L)
+    private val readStates = MutableStateFlow(mapOf(
+        "tasks" to TaskListLoadState.LOADING,
+        "sort" to TaskListLoadState.LOADING,
+        "mode" to TaskListLoadState.LOADING,
+        "category" to if (filter is TaskListFilter.Category) TaskListLoadState.LOADING else TaskListLoadState.READY,
+        "images" to TaskListLoadState.LOADING,
+    ))
+    private fun readStatus(source: String, status: TaskListLoadState) {
+        readStates.update { it + (source to status) }
+    }
+    fun retryLoad() {
+        readStates.update { states -> states.mapValues { (source, _) ->
+            if (source == "category" && filter !is TaskListFilter.Category) TaskListLoadState.READY else TaskListLoadState.LOADING
+        } }
+        readGeneration.value += 1L
     }
 
-    val sortOption: StateFlow<TaskSortOption> = observeTaskSortOption()
-        .stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5000),
-            TaskSortOption.RECENTLY_UPDATED
-        )
+    val tasksForSelectedCategory: StateFlow<List<Task>> = readGeneration.flatMapLatest {
+        observeTasksForFilter(filter)
+            .onStart { readStatus("tasks", TaskListLoadState.LOADING) }
+            .transform { value -> emit(value); readStatus("tasks", TaskListLoadState.READY) }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                readStatus("tasks", TaskListLoadState.ERROR)
+            }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val viewMode: StateFlow<TaskListViewMode> = observeTaskListViewMode()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskListViewMode.LIST)
+    val categoryName: StateFlow<String> = if (filter is TaskListFilter.Category) {
+        readGeneration.flatMapLatest {
+            observeAllCategories()
+                .map { categories -> categories.find { it.id == filter.id }?.name.orEmpty() }
+                .onStart { readStatus("category", TaskListLoadState.LOADING) }
+                .transform { value -> emit(value); readStatus("category", TaskListLoadState.READY) }
+                .catch { error ->
+                    if (error is CancellationException) throw error
+                    readStatus("category", TaskListLoadState.ERROR)
+                }
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    } else MutableStateFlow("")
 
-    val taskImageSummaries: StateFlow<Map<String, AttachmentSummary>> = observeTaskImageSummaries()
-        .flowOn(Dispatchers.Default)
+    val sortOption: StateFlow<TaskSortOption> = readGeneration.flatMapLatest {
+        observeTaskSortOption()
+            .onStart { readStatus("sort", TaskListLoadState.LOADING) }
+            .transform { value -> emit(value); readStatus("sort", TaskListLoadState.READY) }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                readStatus("sort", TaskListLoadState.ERROR)
+            }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskSortOption.RECENTLY_UPDATED)
+
+    val viewMode: StateFlow<TaskListViewMode> = readGeneration.flatMapLatest {
+        observeTaskListViewMode()
+            .onStart { readStatus("mode", TaskListLoadState.LOADING) }
+            .transform { value -> emit(value); readStatus("mode", TaskListLoadState.READY) }
+            .catch { error ->
+                if (error is CancellationException) throw error
+                readStatus("mode", TaskListLoadState.ERROR)
+            }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskListViewMode.LIST)
+
+    val taskImageSummaries: StateFlow<Map<String, AttachmentSummary>> = combine(viewMode, readGeneration) { mode, _ -> mode }
+        .flatMapLatest { mode ->
+            if (mode == TaskListViewMode.LIST) {
+                observeTaskImageSummaries()
+                    .onStart { readStatus("images", TaskListLoadState.LOADING) }
+                    .transform { value -> emit(value); readStatus("images", TaskListLoadState.READY) }
+                    .catch { error ->
+                        if (error is CancellationException) throw error
+                        readStatus("images", TaskListLoadState.ERROR)
+                    }
+            } else flowOf(emptyMap())
+        }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    private val requiredReads = combine(tasksForSelectedCategory, categoryName, sortOption, viewMode, taskImageSummaries) { _, _, _, mode, _ -> mode }
+    val loadState: StateFlow<TaskListLoadState> = combine(requiredReads, readStates) { mode, states ->
+        val active = states.filterKeys { it != "images" || mode == TaskListViewMode.LIST }.values
+        when {
+            TaskListLoadState.ERROR in active -> TaskListLoadState.ERROR
+            TaskListLoadState.LOADING in active -> TaskListLoadState.LOADING
+            else -> TaskListLoadState.READY
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskListLoadState.LOADING)
 
     val taskContentPreviews: StateFlow<Map<String, String>> = tasksForSelectedCategory
         .taskPreviewTexts()
@@ -181,20 +248,24 @@ class TaskListViewModel(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ListProjection())
 
-    fun toggleComplete(task: Task) = completionHandler.toggleComplete(
-        task.id,
-        task.status,
-        task.recurrenceType,
-        task.deadline,
-    )
-    fun completeOccurrence() = completionHandler.completeOccurrence()
-    fun completeSeries() = completionHandler.completeSeries()
+    fun toggleComplete(task: Task) {
+        if (loadState.value != TaskListLoadState.READY) return
+        completionHandler.toggleComplete(
+            task.id,
+            task.status,
+            task.recurrenceType,
+            task.deadline,
+        )
+    }
+    fun completeOccurrence() { if (loadState.value == TaskListLoadState.READY) completionHandler.completeOccurrence() }
+    fun completeSeries() { if (loadState.value == TaskListLoadState.READY) completionHandler.completeSeries() }
     fun dismissSeriesChoice() = completionHandler.dismissSeriesChoice()
 
     fun consumeTaskMutationFailureEvent(event: TaskMutationFailureEvent): Boolean =
         taskMutationFailureEvents.consume(event)
 
     fun toggleStar(task: Task) {
+        if (loadState.value != TaskListLoadState.READY) return
         mutationLauncher.launch(
             onBoundaryRejected = {
                 taskMutationFailureEvents.publish(TaskMutationFailureReason.BOUNDARY_CHANGED)
@@ -235,7 +306,7 @@ class TaskListViewModel(
         task: Task,
         targetStatus: TaskStatus
     ) {
-        if (targetStatus == task.status) return
+        if (loadState.value != TaskListLoadState.READY || targetStatus == task.status) return
         if (targetStatus == TaskStatus.DONE && task.status != TaskStatus.DONE) {
             toggleComplete(task)
         } else {

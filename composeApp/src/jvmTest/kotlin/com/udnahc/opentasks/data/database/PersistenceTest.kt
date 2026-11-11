@@ -474,6 +474,77 @@ class PersistenceTest {
     }
 
     @Test
+    fun countdownStaleUpdateRejectsTombstoneAndMissingRowWithoutSync() = runTest {
+        var syncCalls = 0
+        val repository = CountdownRepositoryImpl(
+            countdownDao = database.countdownDao(),
+            syncTrigger = object : SyncTrigger {
+                override suspend fun triggerSync() { syncCalls++ }
+            },
+            mutationGate = mutationGate,
+        )
+        val stale = testCountdown(id = "stale-countdown")
+        database.countdownDao().insert(stale)
+        val tombstone = stale.copy(isDeleted = true, isSynced = true, updatedAt = 9_000L)
+        database.countdownDao().update(tombstone)
+
+        assertFailsWith<IllegalStateException> { repository.update(stale.copy(title = "Resurrected")) }
+        assertEquals(tombstone, database.countdownDao().getCountdownByIdUtc(stale.id))
+        assertFailsWith<IllegalStateException> { repository.update(stale.copy(id = "missing-countdown")) }
+        assertNull(database.countdownDao().getCountdownByIdUtc("missing-countdown"))
+        assertEquals(0, syncCalls)
+    }
+
+    @Test
+    fun countdownEditPreservesRawMetadataAndAdvancesUtcAcrossDstOverlap() = runTest {
+        val previousZone = java.util.TimeZone.getDefault()
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Chicago"))
+        try {
+            val firstOccurrence = java.time.Instant.parse("2030-11-03T06:30:00Z").toEpochMilli()
+            val secondOccurrence = java.time.Instant.parse("2030-11-03T07:30:00Z").toEpochMilli()
+            assertEquals(utcToLocal(firstOccurrence), utcToLocal(secondOccurrence))
+            var syncCalls = 0
+            val repository = CountdownRepositoryImpl(
+                countdownDao = database.countdownDao(),
+                syncTrigger = object : SyncTrigger {
+                    override suspend fun triggerSync() { syncCalls++ }
+                },
+                mutationGate = mutationGate,
+            )
+            val stale = testCountdown(id = "overlap-countdown", createdAt = firstOccurrence, updatedAt = firstOccurrence)
+                .copy(recurrenceInterval = 2, recurrenceDaysOfWeek = "1,3")
+            database.countdownDao().insert(stale)
+            val stored = stale.copy(
+                pbId = "remote-countdown",
+                isCompleted = true,
+                isSynced = true,
+                createdAt = secondOccurrence,
+                updatedAt = secondOccurrence,
+                recurrenceInterval = 3,
+                recurrenceDaysOfWeek = "2,4",
+            )
+            database.countdownDao().update(stored)
+            val submitted = stale.toLocalTimestamps().copy(title = "Edited", reminders = "on_day")
+
+            val result = repository.update(submitted)
+            val raw = assertNotNull(database.countdownDao().getCountdownByIdUtc(stale.id))
+
+            assertEquals(stored.copy(
+                title = submitted.title,
+                targetDate = localToUtc(submitted.targetDate),
+                reminders = submitted.reminders,
+                isSynced = false,
+                updatedAt = secondOccurrence + 1,
+            ), raw)
+            assertTrue(raw.updatedAt > stored.updatedAt)
+            assertEquals(raw.toLocalTimestamps(), result.value)
+            assertEquals(1, syncCalls)
+        } finally {
+            java.util.TimeZone.setDefault(previousZone)
+        }
+    }
+
+    @Test
     fun countdownRepositoryUpdateReturnsWarningAndDeleteRethrowsCancellationAfterCommit() = runTest {
         val warningRepository = CountdownRepositoryImpl(
             countdownDao = database.countdownDao(),

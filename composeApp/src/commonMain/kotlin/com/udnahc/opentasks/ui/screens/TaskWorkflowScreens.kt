@@ -52,14 +52,18 @@ fun WeeklyReviewScreen(viewModel: WeeklyReviewViewModel, onBack: () -> Unit, onT
     val state by viewModel.state.collectAsState()
     val pending by viewModel.pendingIds.collectAsState()
     val choice by viewModel.completion.taskPendingSeriesChoice.collectAsState()
-    WeeklyReviewContent(state, pending, onBack, onTaskClick, viewModel::selectStep, viewModel::complete, viewModel::setShortlisted)
-    if (choice != null) CompleteSeriesDialog(viewModel.completion::completeOccurrence, viewModel.completion::completeSeries, viewModel.completion::dismissSeriesChoice)
+    WeeklyReviewContent(state, pending, onBack, onTaskClick, viewModel::selectStep, viewModel::complete, viewModel::setShortlisted, viewModel::retryLoad)
+    if (choice != null && !state.loading && !state.error) CompleteSeriesDialog(viewModel.completion::completeOccurrence, viewModel.completion::completeSeries, viewModel.completion::dismissSeriesChoice)
     TaskMutationFailureEffect(viewModel.failure, viewModel::consumeFailure, onFailure)
 }
 
 @Composable
-private fun WeeklyReviewContent(state: WeeklyReviewState, pending: Set<String>, onBack: () -> Unit, onTaskClick: (Task) -> Unit, onStep: (ReviewStep) -> Unit, onComplete: (Task) -> Unit, onShortlist: (Task) -> Unit) {
+private fun WeeklyReviewContent(state: WeeklyReviewState, pending: Set<String>, onBack: () -> Unit, onTaskClick: (Task) -> Unit, onStep: (ReviewStep) -> Unit, onComplete: (Task) -> Unit, onShortlist: (Task) -> Unit, onRetry: () -> Unit) {
     WorkflowLayout(stringResource(Res.string.weekly_review), onBack) {
+        if (state.loading || state.error) {
+            ReimaginedReadStatus(state.loading, onRetry, Modifier.weight(1f))
+            return@WorkflowLayout
+        }
         if (isReimagined) {
             LinearProgressIndicator(progress = { (state.step.ordinal + 1).toFloat() / ReviewStep.entries.size }, modifier = Modifier.fillMaxWidth().padding(OpenTasksTheme.dimens.paddingLarge))
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = OpenTasksTheme.dimens.paddingLarge), horizontalArrangement = Arrangement.spacedBy(OpenTasksTheme.dimens.paddingSmall)) {
@@ -87,7 +91,7 @@ private fun WeeklyReviewContent(state: WeeklyReviewState, pending: Set<String>, 
                 Column {
                     WorkflowTaskItem(row, { onTaskClick(row.task) })
                     FlowRow(Modifier.padding(horizontal = OpenTasksTheme.dimens.paddingMedium)) {
-                        TextButton(onClick = { onComplete(row.task) }) { Text(stringResource(Res.string.workflow_done)) }
+                        TextButton(onClick = { onComplete(row.task) }, enabled = row.task.id !in pending) { Text(stringResource(Res.string.workflow_done)) }
                         TextButton(onClick = { onShortlist(row.task) }, enabled = row.task.id !in pending) {
                             Text(stringResource(if (row.task.isShortlisted) Res.string.shortlist_remove_from else Res.string.shortlist_add_to))
                         }
@@ -108,13 +112,17 @@ private fun WeeklyReviewContent(state: WeeklyReviewState, pending: Set<String>, 
 @Composable
 fun LogbookScreen(viewModel: LogbookViewModel, onBack: () -> Unit, onTaskClick: (String) -> Unit) {
     val state by viewModel.state.collectAsState()
-    LogbookContent(state, onBack, onTaskClick, viewModel::setPeriod, viewModel::setCategory)
+    LogbookContent(state, onBack, onTaskClick, viewModel::setPeriod, viewModel::setCategory, viewModel::retryLoad)
 }
 
 @Composable
-private fun LogbookContent(state: LogbookState, onBack: () -> Unit, onTaskClick: (String) -> Unit, onPeriod: (LogbookPeriod) -> Unit, onCategory: (String?) -> Unit) {
+private fun LogbookContent(state: LogbookState, onBack: () -> Unit, onTaskClick: (String) -> Unit, onPeriod: (LogbookPeriod) -> Unit, onCategory: (String?) -> Unit, onRetry: () -> Unit) {
     var showLists by remember { mutableStateOf(false) }
     WorkflowLayout(stringResource(Res.string.completion_logbook), onBack) {
+        if (state.loading || state.error) {
+            ReimaginedReadStatus(state.loading, onRetry, Modifier.weight(1f))
+            return@WorkflowLayout
+        }
         LazyColumn(Modifier.weight(1f)) {
             item {
                 WorkflowMessage(stringResource(Res.string.logbook_help))
@@ -143,7 +151,7 @@ private fun LogbookContent(state: LogbookState, onBack: () -> Unit, onTaskClick:
             }
         }
     }
-    if (showLists) AlertDialog(onDismissRequest = { showLists = false }, title = { Text(stringResource(Res.string.logbook_all_lists)) }, text = {
+    if (showLists && !state.loading && !state.error) AlertDialog(onDismissRequest = { showLists = false }, title = { Text(stringResource(Res.string.logbook_all_lists)) }, text = {
         LazyColumn {
             item { TextButton(onClick = { onCategory(null); showLists = false }) { Text(stringResource(Res.string.logbook_all_lists)) } }
             items(state.categories, key = { it.id }) { category ->
@@ -158,14 +166,18 @@ fun BulkTasksScreen(viewModel: BulkTasksViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val result by viewModel.result.collectAsState()
-    BulkTasksContent(state, busy, result, onBack, viewModel::toggle, viewModel::selectAll, viewModel::clear, viewModel::apply)
+    BulkTasksContent(state, busy, result, { if (!viewModel.busy.value) onBack() }, viewModel::toggle, viewModel::selectAll, viewModel::clear, viewModel::apply, viewModel::retryLoad)
 }
 
 @Composable
-private fun BulkTasksContent(state: BulkTasksState, busy: Boolean, result: BulkTaskResult?, onBack: () -> Unit, onToggle: (String) -> Unit, onAll: () -> Unit, onClear: () -> Unit, onApply: (BulkTaskChange) -> Unit) {
+private fun BulkTasksContent(state: BulkTasksState, busy: Boolean, result: BulkTaskResult?, onBack: () -> Unit, onToggle: (String) -> Unit, onAll: () -> Unit, onClear: () -> Unit, onApply: (BulkTaskChange) -> Unit, onRetry: () -> Unit) {
     var showMove by remember { mutableStateOf(false) }
     var showPriority by remember { mutableStateOf(false) }
     WorkflowLayout(stringResource(Res.string.bulk_tasks), onBack) {
+        if (state.loading || state.error) {
+            ReimaginedReadStatus(state.loading, onRetry, Modifier.weight(1f))
+            return@WorkflowLayout
+        }
         LazyColumn(Modifier.weight(1f)) {
             item {
                 WorkflowMessage(stringResource(Res.string.bulk_help))
@@ -192,12 +204,12 @@ private fun BulkTasksContent(state: BulkTasksState, busy: Boolean, result: BulkT
             TextButton(onClick = { onApply(BulkTaskChange.Shortlist(false)) }, enabled = enabled) { Text(stringResource(Res.string.shortlist_remove_from)) }
         }
     }
-    if (showMove) AlertDialog(onDismissRequest = { showMove = false }, title = { Text(stringResource(Res.string.bulk_move)) }, text = {
+    if (showMove && !busy && !state.loading && !state.error) AlertDialog(onDismissRequest = { showMove = false }, title = { Text(stringResource(Res.string.bulk_move)) }, text = {
         LazyColumn { items(state.categories, key = { it.id }) { category ->
             TextButton(onClick = { showMove = false; onApply(BulkTaskChange.Move(category.id)) }) { Text(category.name) }
         } }
     }, confirmButton = { TextButton(onClick = { showMove = false }) { Text(stringResource(Res.string.cancel)) } })
-    if (showPriority) AlertDialog(onDismissRequest = { showPriority = false }, title = { Text(stringResource(Res.string.bulk_priority)) }, text = {
+    if (showPriority && !busy && !state.loading && !state.error) AlertDialog(onDismissRequest = { showPriority = false }, title = { Text(stringResource(Res.string.bulk_priority)) }, text = {
         Column { TaskPriority.entries.forEach { priority ->
             TextButton(onClick = { showPriority = false; onApply(BulkTaskChange.Priority(priority)) }) { Text(stringResource(when (priority) { TaskPriority.HIGH -> Res.string.high_priority; TaskPriority.MEDIUM -> Res.string.medium_priority; TaskPriority.LOW -> Res.string.low_priority; TaskPriority.NONE -> Res.string.no_priority })) }
         } }
@@ -207,31 +219,32 @@ private fun BulkTasksContent(state: BulkTasksState, busy: Boolean, result: BulkT
 @Composable
 fun NoteTasksScreen(viewModel: NoteTasksViewModel, onBack: () -> Unit, onTaskClick: (Task) -> Unit, onCreate: (Note) -> Unit, onOpenNote: (Note) -> Unit) {
     val state by viewModel.state.collectAsState()
-    NoteTasksContent(state, onBack, onTaskClick, onCreate, onOpenNote)
+    NoteTasksContent(state, onBack, onTaskClick, onCreate, onOpenNote, viewModel::retryLoad)
 }
 
 @Composable
-private fun NoteTasksContent(state: NoteTasksState, onBack: () -> Unit, onTaskClick: (Task) -> Unit, onCreate: (Note) -> Unit, onOpenNote: (Note) -> Unit) {
+private fun NoteTasksContent(state: NoteTasksState, onBack: () -> Unit, onTaskClick: (Task) -> Unit, onCreate: (Note) -> Unit, onOpenNote: (Note) -> Unit, onRetry: () -> Unit) {
     WorkflowLayout(stringResource(Res.string.linked_tasks), onBack) {
+        if (state.loading || state.error) {
+            ReimaginedReadStatus(state.loading, onRetry, Modifier.weight(1f))
+            return@WorkflowLayout
+        }
         LazyColumn(Modifier.weight(1f)) {
             item {
-                if (state.loading) CircularProgressIndicator()
+                val note = state.note
+                if (note == null) WorkflowMessage(stringResource(Res.string.note_unavailable))
                 else {
-                    val note = state.note
-                    if (note == null) WorkflowMessage(stringResource(Res.string.note_unavailable))
-                    else {
-                        if (isReimagined) ReimaginedPanel(Modifier.fillMaxWidth().padding(OpenTasksTheme.dimens.paddingLarge)) {
-                            ReimaginedSectionLabel(stringResource(Res.string.source_note))
-                            Text(note.title, style = MaterialTheme.typography.titleLarge)
-                        } else WorkflowMessage(note.title)
-                        FlowRow(Modifier.padding(horizontal = OpenTasksTheme.dimens.paddingMedium)) {
-                            TextButton(onClick = { onOpenNote(note) }) { Text(stringResource(Res.string.note_edit_source)) }
-                            TextButton(onClick = { onCreate(note) }) { Text(stringResource(Res.string.note_create_task)) }
-                        }
+                    if (isReimagined) ReimaginedPanel(Modifier.fillMaxWidth().padding(OpenTasksTheme.dimens.paddingLarge)) {
+                        ReimaginedSectionLabel(stringResource(Res.string.source_note))
+                        Text(note.title, style = MaterialTheme.typography.titleLarge)
+                    } else WorkflowMessage(note.title)
+                    FlowRow(Modifier.padding(horizontal = OpenTasksTheme.dimens.paddingMedium)) {
+                        TextButton(onClick = { onOpenNote(note) }) { Text(stringResource(Res.string.note_edit_source)) }
+                        TextButton(onClick = { onCreate(note) }) { Text(stringResource(Res.string.note_create_task)) }
                     }
                 }
             }
-            if (!state.loading && state.rows.isEmpty()) item { WorkflowMessage(stringResource(Res.string.workflow_empty)) }
+            if (state.rows.isEmpty()) item { WorkflowMessage(stringResource(Res.string.workflow_empty)) }
             items(state.rows, key = { it.task.id }) { row ->
                 WorkflowTaskItem(row, { onTaskClick(row.task) }, trailing = {
                     if (row.task.status == TaskStatus.DONE) Text(stringResource(Res.string.workflow_completed))

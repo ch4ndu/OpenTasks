@@ -3,26 +3,23 @@ package com.udnahc.opentasks.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import com.udnahc.opentasks.ui.theme.isReimagined
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -36,64 +33,73 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import com.udnahc.opentasks.data.auth.AccountReauthenticationReason
 import com.udnahc.opentasks.data.auth.AccountSessionState
 import com.udnahc.opentasks.data.auth.AccountTransition
 import com.udnahc.opentasks.data.auth.AccountTransitionPhase
 import com.udnahc.opentasks.data.auth.AuthenticatedAccount
 import com.udnahc.opentasks.ui.theme.OpenTasksTheme
-import com.udnahc.opentasks.ui.theme.WindowSizeCategory
+import com.udnahc.opentasks.ui.theme.isReimagined
 import com.udnahc.opentasks.viewmodel.AccountOperation
 import com.udnahc.opentasks.viewmodel.AccountUiError
 import com.udnahc.opentasks.viewmodel.displayLabel
 import opentasks.composeapp.generated.resources.Res
+import opentasks.composeapp.generated.resources.account_dismiss
 import opentasks.composeapp.generated.resources.account_email
-import opentasks.composeapp.generated.resources.account_endpoint
 import opentasks.composeapp.generated.resources.account_endpoint_hint
 import opentasks.composeapp.generated.resources.account_endpoint_read_only
+import opentasks.composeapp.generated.resources.account_hide_password
+import opentasks.composeapp.generated.resources.account_local_description
 import opentasks.composeapp.generated.resources.account_password
 import opentasks.composeapp.generated.resources.account_reauthenticate
 import opentasks.composeapp.generated.resources.account_reauthenticate_description
 import opentasks.composeapp.generated.resources.account_reauthentication_reason_authentication_rejected
-import opentasks.composeapp.generated.resources.account_reauthentication_reason_cache_binding_missing
 import opentasks.composeapp.generated.resources.account_reauthentication_reason_cache_binding_mismatch
+import opentasks.composeapp.generated.resources.account_reauthentication_reason_cache_binding_missing
 import opentasks.composeapp.generated.resources.account_reauthentication_reason_capability_mismatch
 import opentasks.composeapp.generated.resources.account_reauthentication_reason_legacy_cache
 import opentasks.composeapp.generated.resources.account_reauthentication_reason_persisted_state
 import opentasks.composeapp.generated.resources.account_reauthentication_reason_token_unavailable
 import opentasks.composeapp.generated.resources.account_restore
-import opentasks.composeapp.generated.resources.account_restoring
 import opentasks.composeapp.generated.resources.account_restore_failed
+import opentasks.composeapp.generated.resources.account_restoring
+import opentasks.composeapp.generated.resources.account_retry
+import opentasks.composeapp.generated.resources.account_server_address
+import opentasks.composeapp.generated.resources.account_server_help
+import opentasks.composeapp.generated.resources.account_session_cache_ownership_unproven
 import opentasks.composeapp.generated.resources.account_session_connection_failed
 import opentasks.composeapp.generated.resources.account_session_credentials_rejected
 import opentasks.composeapp.generated.resources.account_session_generic_error
 import opentasks.composeapp.generated.resources.account_session_invalid_input
+import opentasks.composeapp.generated.resources.account_session_local_seed_source_invalid
+import opentasks.composeapp.generated.resources.account_session_replacement_conflict
 import opentasks.composeapp.generated.resources.account_session_server_unsupported
 import opentasks.composeapp.generated.resources.account_session_storage_failed
 import opentasks.composeapp.generated.resources.account_session_transition_blocked
-import opentasks.composeapp.generated.resources.account_session_transition_prepared
 import opentasks.composeapp.generated.resources.account_session_transition_needs_activation
+import opentasks.composeapp.generated.resources.account_session_transition_prepared
 import opentasks.composeapp.generated.resources.account_session_transitioning
-import opentasks.composeapp.generated.resources.account_session_cache_ownership_unproven
+import opentasks.composeapp.generated.resources.account_show_password
 import opentasks.composeapp.generated.resources.account_sign_in
-import opentasks.composeapp.generated.resources.account_sign_in_description
-import opentasks.composeapp.generated.resources.account_sign_in_title
 import opentasks.composeapp.generated.resources.account_storage_warning
-import opentasks.composeapp.generated.resources.account_dismiss
-import opentasks.composeapp.generated.resources.account_retry
+import opentasks.composeapp.generated.resources.account_welcome_title
+import opentasks.composeapp.generated.resources.ic_visibility
+import opentasks.composeapp.generated.resources.ic_visibility_off
 import opentasks.composeapp.generated.resources.loading
 import opentasks.composeapp.generated.resources.local_clear_files_pending
 import opentasks.composeapp.generated.resources.local_clear_pre_reset
-import opentasks.composeapp.generated.resources.replacement_remote_delete_pending
 import opentasks.composeapp.generated.resources.replacement_exact_seed_pending
 import opentasks.composeapp.generated.resources.replacement_preview_changed
-import opentasks.composeapp.generated.resources.account_session_replacement_conflict
-import opentasks.composeapp.generated.resources.account_session_local_seed_source_invalid
+import opentasks.composeapp.generated.resources.replacement_remote_delete_pending
 import opentasks.composeapp.generated.resources.use_without_sync
+import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 internal enum class AccountSessionEntryMode {
@@ -116,7 +122,6 @@ internal fun AccountSessionScreen(
     onUseWithoutSync: () -> Unit,
     onClearError: () -> Unit,
 ) {
-    val dimens = OpenTasksTheme.dimens
     var endpointInput by rememberSaveable(mode) { mutableStateOf(endpoint.orEmpty()) }
     var emailInput by rememberSaveable(mode, account?.accountId) {
         mutableStateOf(account?.email.orEmpty())
@@ -148,74 +153,26 @@ internal fun AccountSessionScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .then(if (isReimagined) Modifier.statusBarsPadding().navigationBarsPadding().imePadding() else Modifier)
-            .verticalScroll(rememberScrollState()),
-        contentAlignment = Alignment.Center,
-    ) {
-        val panelModifier = Modifier
-            .fillMaxWidth()
-            .widthIn(max = dimens.authPanelMaxWidth)
-            .padding(
-                horizontal = when (OpenTasksTheme.windowSizeCategory) {
-                    WindowSizeCategory.COMPACT -> dimens.paddingXLarge
-                    WindowSizeCategory.MEDIUM -> dimens.paddingXXLarge
-                    WindowSizeCategory.EXPANDED -> dimens.paddingXXLarge
-                },
-                vertical = dimens.paddingXXLarge,
-            )
-        if (accountSessionLayoutFor(OpenTasksTheme.windowSizeCategory) == AccountSessionLayout.COMPACT) {
-            AccountSessionForm(
-                modifier = panelModifier,
-                mode = mode,
-                account = account,
-                endpointInput = endpointInput,
-                emailInput = emailInput,
-                passwordInput = passwordInput,
-                isBusy = isBusy,
-                error = error,
-                storageWarning = storageWarning,
-                reauthenticationReason = reauthenticationReason,
-                allowLocalOnly = allowLocalOnly,
-                onEndpointChanged = { endpointInput = it },
-                onEmailChanged = { emailInput = it },
-                onPasswordChanged = { passwordInput = it },
-                onSubmit = ::submit,
-                onUseWithoutSync = onUseWithoutSync,
-                onClearError = onClearError,
-            )
-        } else {
-            Card(
-                modifier = panelModifier,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-            ) {
-                AccountSessionForm(
-                    modifier = Modifier.padding(dimens.paddingXXLarge),
-                    mode = mode,
-                    account = account,
-                    endpointInput = endpointInput,
-                    emailInput = emailInput,
-                    passwordInput = passwordInput,
-                    isBusy = isBusy,
-                    error = error,
-                    storageWarning = storageWarning,
-                    reauthenticationReason = reauthenticationReason,
-                    allowLocalOnly = allowLocalOnly,
-                    onEndpointChanged = { endpointInput = it },
-                    onEmailChanged = { emailInput = it },
-                    onPasswordChanged = { passwordInput = it },
-                    onSubmit = ::submit,
-                    onUseWithoutSync = onUseWithoutSync,
-                    onClearError = onClearError,
-                )
-            }
-        }
+    AccountWelcomeLayout(showWelcome = mode == AccountSessionEntryMode.SIGN_IN) {
+        AccountSessionForm(
+            modifier = Modifier.fillMaxWidth(),
+            mode = mode,
+            account = account,
+            endpointInput = endpointInput,
+            emailInput = emailInput,
+            passwordInput = passwordInput,
+            isBusy = isBusy,
+            error = error,
+            storageWarning = storageWarning,
+            reauthenticationReason = reauthenticationReason,
+            allowLocalOnly = allowLocalOnly,
+            onEndpointChanged = { endpointInput = it },
+            onEmailChanged = { emailInput = it },
+            onPasswordChanged = { passwordInput = it },
+            onSubmit = ::submit,
+            onUseWithoutSync = onUseWithoutSync,
+            onClearError = onClearError,
+        )
     }
 }
 
@@ -241,16 +198,10 @@ private fun AccountSessionForm(
 ) {
     val dimens = OpenTasksTheme.dimens
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    var passwordVisible by remember(mode) { mutableStateOf(false) }
     val title = when (mode) {
-        AccountSessionEntryMode.SIGN_IN -> stringResource(Res.string.account_sign_in_title)
+        AccountSessionEntryMode.SIGN_IN -> stringResource(Res.string.account_welcome_title)
         AccountSessionEntryMode.REAUTHENTICATE -> stringResource(Res.string.account_reauthenticate)
-    }
-    val description = when (mode) {
-        AccountSessionEntryMode.SIGN_IN -> stringResource(Res.string.account_sign_in_description)
-        AccountSessionEntryMode.REAUTHENTICATE -> stringResource(
-            Res.string.account_reauthenticate_description,
-            account?.displayLabel().orEmpty(),
-        )
     }
     val submitLabel = when (mode) {
         AccountSessionEntryMode.SIGN_IN -> stringResource(Res.string.account_sign_in)
@@ -261,39 +212,50 @@ private fun AccountSessionForm(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(dimens.spacerXLarge),
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = if (isReimagined) FontWeight.Medium else FontWeight.Bold,
-        )
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (mode == AccountSessionEntryMode.REAUTHENTICATE ||
+            accountSessionLayoutFor(OpenTasksTheme.windowSizeCategory) == AccountSessionLayout.LARGER
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        if (mode == AccountSessionEntryMode.REAUTHENTICATE) {
+            Text(
+                text = stringResource(Res.string.account_reauthenticate_description, account?.displayLabel().orEmpty()),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         if (mode == AccountSessionEntryMode.SIGN_IN && allowLocalOnly) {
             OutlinedTextField(
                 value = endpointInput,
                 onValueChange = onEndpointChanged,
-                label = { Text(stringResource(Res.string.account_endpoint)) },
+                label = { Text(stringResource(Res.string.account_server_address)) },
                 placeholder = { Text(stringResource(Res.string.account_endpoint_hint)) },
+                supportingText = { Text(stringResource(Res.string.account_server_help)) },
                 singleLine = true,
                 enabled = !isBusy,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
                 modifier = Modifier.fillMaxWidth(),
-                colors = accountTextFieldColors(),
+                colors = accountTextFieldColors(filled = true),
+                shape = RoundedCornerShape(dimens.cornerXLarge),
             )
         } else if (endpointInput.isNotBlank()) {
             OutlinedTextField(
                 value = endpointInput,
                 onValueChange = {},
-                label = { Text(stringResource(Res.string.account_endpoint)) },
+                label = { Text(stringResource(Res.string.account_server_address)) },
                 supportingText = { Text(stringResource(Res.string.account_endpoint_read_only)) },
                 singleLine = true,
                 enabled = false,
                 modifier = Modifier.fillMaxWidth(),
-                colors = accountTextFieldColors(),
+                colors = accountTextFieldColors(filled = true),
+                shape = RoundedCornerShape(dimens.cornerXLarge),
             )
         }
 
@@ -307,8 +269,10 @@ private fun AccountSessionForm(
                 keyboardType = KeyboardType.Email,
                 imeAction = ImeAction.Next,
             ),
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
             modifier = Modifier.fillMaxWidth(),
-            colors = accountTextFieldColors(),
+            colors = accountTextFieldColors(filled = true),
+            shape = RoundedCornerShape(dimens.cornerXLarge),
         )
         OutlinedTextField(
             value = passwordInput,
@@ -316,7 +280,17 @@ private fun AccountSessionForm(
             label = { Text(stringResource(Res.string.account_password)) },
             singleLine = true,
             enabled = !isBusy,
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { passwordVisible = !passwordVisible }, enabled = !isBusy) {
+                    Icon(
+                        painterResource(if (passwordVisible) Res.drawable.ic_visibility_off else Res.drawable.ic_visibility),
+                        contentDescription = stringResource(
+                            if (passwordVisible) Res.string.account_hide_password else Res.string.account_show_password,
+                        ),
+                    )
+                }
+            },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Password,
                 imeAction = ImeAction.Done,
@@ -328,7 +302,8 @@ private fun AccountSessionForm(
                 },
             ),
             modifier = Modifier.fillMaxWidth(),
-            colors = accountTextFieldColors(),
+            colors = accountTextFieldColors(filled = true),
+            shape = RoundedCornerShape(dimens.cornerXLarge),
         )
 
         if (storageWarning != null && mode == AccountSessionEntryMode.SIGN_IN) {
@@ -360,7 +335,8 @@ private fun AccountSessionForm(
                 passwordInput = passwordInput,
                 isBusy = isBusy,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().heightIn(min = dimens.minimumInteractiveTargetSize),
+            shape = RoundedCornerShape(dimens.cornerXLarge),
         ) {
             if (isBusy) {
                 CircularProgressIndicator(
@@ -373,21 +349,29 @@ private fun AccountSessionForm(
             Text(if (isBusy) stringResource(Res.string.loading) else submitLabel)
         }
         if (mode == AccountSessionEntryMode.SIGN_IN && allowLocalOnly) {
-            TextButton(
+            OutlinedButton(
                 onClick = onUseWithoutSync,
                 enabled = !isBusy,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().heightIn(min = dimens.minimumInteractiveTargetSize),
+                shape = RoundedCornerShape(dimens.cornerXLarge),
             ) {
                 Text(stringResource(Res.string.use_without_sync))
             }
+            Text(
+                text = stringResource(Res.string.account_local_description),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
 
 @Composable
-internal fun accountTextFieldColors(): TextFieldColors = OutlinedTextFieldDefaults.colors(
-    focusedContainerColor = if (isReimagined) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
-    unfocusedContainerColor = if (isReimagined) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
+internal fun accountTextFieldColors(filled: Boolean = false): TextFieldColors = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = if (filled || isReimagined) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
+    unfocusedContainerColor = if (filled || isReimagined) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
     focusedTextColor = MaterialTheme.colorScheme.onSurface,
     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
     disabledTextColor = MaterialTheme.colorScheme.onSurface,

@@ -13,6 +13,7 @@ import com.udnahc.opentasks.domain.time.LocalDaySignal
 import com.udnahc.opentasks.domain.usecase.countdown.CountdownOccurrence
 import com.udnahc.opentasks.domain.usecase.countdown.ObserveCountdownByIdUseCase
 import com.udnahc.opentasks.domain.usecase.countdown.projectCountdownOccurrence
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -20,6 +21,8 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -69,6 +72,10 @@ class CountdownFormViewModel(
     accountBoundaryExecutor: AccountBoundaryExecutor? = null,
 ) : ViewModel() {
 
+    private val readGeneration = MutableStateFlow(0L)
+    private val _loadState = MutableStateFlow(CountdownLoadState.LOADING)
+    val loadState: StateFlow<CountdownLoadState> = _loadState
+    private var retainedCountdown: Countdown? = null
     private val _countdownId = MutableStateFlow<String?>(null)
     private val _mutationEvent = MutableStateFlow<CountdownMutationEvent?>(null)
     val mutationEvent: StateFlow<CountdownMutationEvent?> = _mutationEvent
@@ -82,17 +89,29 @@ class CountdownFormViewModel(
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private val rawDestinationState = _countdownId.flatMapLatest { id ->
-        if (id == null) {
-            flowOf(RawCountdownDestinationState.Loading)
-        } else {
-            observeCountdownByIdUseCase(id)
-                .map { countdown ->
-                    countdown?.let(RawCountdownDestinationState::Ready)
-                        ?: RawCountdownDestinationState.Missing
-                }
-                .onStart { emit(RawCountdownDestinationState.Loading) }
+        readGeneration.flatMapLatest {
+            if (id == null) {
+                flowOf(RawCountdownDestinationState.Loading)
+            } else {
+                observeCountdownByIdUseCase(id)
+                    .map<Countdown?, RawCountdownDestinationState> { countdown ->
+                        retainedCountdown = countdown
+                        countdown?.let(RawCountdownDestinationState::Ready)
+                            ?: RawCountdownDestinationState.Missing
+                    }
+                    .onEach { _loadState.value = CountdownLoadState.READY }
+                    .onStart {
+                        _loadState.value = CountdownLoadState.LOADING
+                        emit(retainedCountdown?.let(RawCountdownDestinationState::Ready)
+                            ?: RawCountdownDestinationState.Loading)
+                    }
+                    .catch { error ->
+                        if (error is CancellationException) throw error
+                        _loadState.value = CountdownLoadState.ERROR
+                    }
+            }
         }
-    }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RawCountdownDestinationState.Loading)
 
     val destinationState: StateFlow<CountdownDestinationState> = combine(
         rawDestinationState,
@@ -121,7 +140,15 @@ class CountdownFormViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     fun setCountdownId(id: String) {
+        if (_countdownId.value == id) return
+        retainedCountdown = null
+        _loadState.value = CountdownLoadState.LOADING
         _countdownId.value = id
+    }
+
+    fun retryLoad() {
+        _loadState.value = CountdownLoadState.LOADING
+        readGeneration.value += 1L
     }
 
     fun consumeMutationEvent(event: CountdownMutationEvent): Boolean =

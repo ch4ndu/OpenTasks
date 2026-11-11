@@ -17,6 +17,7 @@ Load this for Room, DAOs, repositories, migrations, sync, import/export, reminde
 - Writes convert local to UTC with `withUtcTimestamps()`.
 - Inserts fill zero `createdAt` and `updatedAt` values with `localNow()`.
 - Deletes are soft deletes: update the entity with `isDeleted = true` and `isSynced = false`.
+- Countdown updates reread raw persisted truth under the account mutation gate, reject missing or deleted rows, and overlay editor fields while preserving identity, sync identity, completion state, and raw UTC creation time. Enforce strictly increasing stored UTC update time after converting the submitted timestamp; a pseudo-local round trip cannot preserve every instant in a repeated daylight-saving hour.
 - A retained soft-delete path must stamp `updatedAt` with `localNow()` before storage conversion. Remove repository delete methods with no callers rather than retaining stale write paths.
 - Read `Flow`s apply `distinctUntilChanged()` after timestamp conversion so Room re-emissions with identical content (for example sync-only `isSynced`/`updatedAt` churn) do not propagate to ViewModels or trigger recomposition.
 
